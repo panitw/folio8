@@ -85,7 +85,7 @@ func TestSectionBreakCommandsTakeAnOptionalPage(t *testing.T) {
 
 	// Straddles are judged by the page the element sits on or lands on.
 	sectionBreakRefusal(t, tpl, `{"kind":"moveComponent","version":1,"id":"ee","x":0,"y":55,"snap":false}`, componentApply)
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"moveComponent","version":1,"id":"e6","x":0,"y":55,"snap":false}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"moveComponent","version":1,"id":"e6","x":0,"y":55,"snap":false}`)); err != nil {
 		t.Errorf("a page-1 element moved across page 2's break offset was refused: %v", err)
 	}
 	refusePageCommand(t, multiPageTemplateWithPage2Break(t), moveToPage([]string{"e5"}, "e5", "0", "55", 1), "component.geometry")
@@ -379,7 +379,7 @@ func TestADuplicateIsJudgedByItsSourcePagesBreak(t *testing.T) {
 	}
 	// Page 1's break at 125 crosses no page-1 element and must not judge a page-2 copy.
 	pageOne := multiPageTemplate(t, editMultiPage(t, func(d *template.Document) { d.Pages[0].SectionBreak = pts(125) }))
-	if _, err := ApplyComponentCommand(pageOne, []byte(duplicate)); err != nil {
+	if _, err := applyComponentCommand(pageOne, []byte(duplicate)); err != nil {
 		t.Fatalf("a page-2 copy was refused by page 1's break: %v", err)
 	}
 	if _, err := ParseTemplate(mustSerializeTemplate(t, pageOne)); err != nil {

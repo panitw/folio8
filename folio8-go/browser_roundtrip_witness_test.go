@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 	"github.com/panitw/folio8/folio8-go/internal/template"
 )
 
@@ -103,19 +104,19 @@ func assertRoundTripChain(t *testing.T, name string, witness roundTripWitness) {
 
 func assertDifferentGoOwnedShapes(t *testing.T, golden, alternate []byte) {
 	t.Helper()
-	parse := func(name string, raw []byte) CanvasProjection {
+	parse := func(name string, raw []byte) designer.CanvasProjection {
 		tpl, err := ParseTemplate(raw)
 		if err != nil {
 			t.Fatalf("%s: ParseTemplate: %v", name, err)
 		}
-		projection, err := CanvasWithTextPaint(tpl, testShippedFontSet())
+		projection, err := canvasWithTextPaint(tpl, testShippedFontSet())
 		if err != nil {
 			t.Fatalf("%s: CanvasWithTextPaint: %v", name, err)
 		}
 		return projection
 	}
 	left, right := parse("golden", golden), parse("alternate", alternate)
-	shape := func(c CanvasProjection) map[string]int {
+	shape := func(c designer.CanvasProjection) map[string]int {
 		out := map[string]int{}
 		for _, component := range c.Components {
 			out[fmt.Sprintf("%s/%s", component.Band, component.Type)]++

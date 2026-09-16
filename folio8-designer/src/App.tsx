@@ -1593,7 +1593,7 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
   // table sets `as`) and writes `Bind = "{{" + alias + "." + field + "}}"`.
   // Nothing is sent before it — no `configureTableBinding` — because the column
   // is only offered fields of the collection the table is ALREADY bound to. That
-  // is what makes AC6's one undo step true: `wasm/engine.go`'s `Apply` pushes
+  // is what makes AC6's one undo step true: `folio8-go/internal/wasm/engine.go`'s `Apply` pushes
   // exactly one undo per accepted byte-changing command. It is asserted, not
   // built.
   const bindPickedColumn = async (field: string) => {
@@ -1845,7 +1845,7 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
   // decimal the projection was read out of, so a gesture that returned to its
   // start compares equal below and costs no round trip, no history entry and no
   // dirty mark — the same send-only-if-changed rule the panel's typed path
-  // obeys, and what wasm/engine.go's byte-equality short circuit backs up.
+  // obeys, and what folio8-go/internal/wasm/engine.go's byte-equality short circuit backs up.
   const sendBandHeight = (band: CappingBand, proposed: number, original: number) => {
     if (proposed === original) return
     void commitComponent(bandHeightCommand(band, points(proposed), snapEnabled))
@@ -2367,7 +2367,7 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
   //
   // NO REVISION, NO HISTORY ENTRY, NO UNDO, BY CONSTRUCTION rather than by
   // suppression. History is whole canonical `.folio` byte snapshots and `Apply`
-  // short-circuits when the bytes do not move (`folio8-go/wasm/engine.go`), so an
+  // short-circuits when the bytes do not move (`folio8-go/internal/wasm/engine.go`), so an
   // action that sends no command cannot move any of the three.
   const addFamilyToDocument = async (source: FamilySource, responseGeneration: number, selectionKey: string, announce: 'panel' | 'caller' = 'panel'): Promise<string | undefined> => {
     if (!engine) return 'This designer has no engine to send the change to.'
@@ -5679,7 +5679,7 @@ const orientationSegments: ReadonlyArray<Readonly<{ value: LineOrientation; labe
 //
 // Swapping the dimensions of a square is the identity, so no implementation
 // could make the press meaningful: the command would carry the numbers the
-// document already holds, `wasm/engine.go` would find the produced bytes equal
+// document already holds, `folio8-go/internal/wasm/engine.go` would find the produced bytes equal
 // to the current bytes and not commit at all — no revision, no undo entry, no
 // dirty flag — and the author would be left pressing a live control whose
 // silence is its whole answer. In the epic whose subject is the panel telling

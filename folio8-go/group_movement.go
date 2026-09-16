@@ -7,18 +7,13 @@ import (
 	"io"
 	"slices"
 
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 	"github.com/panitw/folio8/folio8-go/internal/geom"
 	"github.com/panitw/folio8/folio8-go/internal/template"
 )
 
-// ComponentMove is engine-owned geometry evidence, in document millipoints.
-type ComponentMove struct {
-	DX int64 `json:"dx"`
-	DY int64 `json:"dy"`
-}
-
 type groupMember struct {
-	band         CanvasBand
+	band         designer.CanvasBand
 	element      *template.Element
 	windowOrigin geom.Length
 	windowHeight geom.Length
@@ -30,12 +25,12 @@ type groupMember struct {
 // Project once per operation; looking up every member through findComponent
 // would repeat pagination and text projection for each selected ID.
 func groupMemberIndex(t *Template, fonts ...FontSet) (map[string]groupMember, error) {
-	var projection CanvasProjection
+	var projection designer.CanvasProjection
 	var err error
 	if len(fonts) > 0 {
-		projection, err = CanvasWithTextPaint(t, fonts[0])
+		projection, err = canvasWithTextPaint(t, fonts[0])
 	} else {
-		projection, err = Canvas(t)
+		projection, err = canvas(t)
 	}
 	if err != nil {
 		return nil, err
@@ -72,22 +67,22 @@ func groupMemberIndex(t *Template, fonts ...FontSet) (map[string]groupMember, er
 	return members, nil
 }
 
-// PreviewComponentMove accepts exactly the atomic movement command vocabulary.
+// previewComponentMove accepts exactly the atomic movement command vocabulary.
 // It is read-only and shares its solver with the public mutation door.
 // Supply the same FontSet used by CanvasWithTextPaint when constraining to
 // displayed windows; without fonts the canvas only has its fallback window.
-func PreviewComponentMove(t *Template, command []byte, fonts ...FontSet) (ComponentMove, error) {
+func previewComponentMove(t *Template, command []byte, fonts ...FontSet) (designer.ComponentMove, error) {
 	if t == nil {
-		return ComponentMove{}, errNilTemplate
+		return designer.ComponentMove{}, errNilTemplate
 	}
 	if err := refuseDuplicateCommandKeys(command, componentCommandPath); err != nil {
-		return ComponentMove{}, err
+		return designer.ComponentMove{}, err
 	}
 	var raw map[string]json.RawMessage
 	d := json.NewDecoder(bytes.NewReader(command))
 	var trailing any
 	if d.Decode(&raw) != nil || d.Decode(&trailing) != io.EOF {
-		return ComponentMove{}, fmt.Errorf("folio8: group move is malformed")
+		return designer.ComponentMove{}, fmt.Errorf("folio8: group move is malformed")
 	}
 	solved, err := solveComponentMove(t, raw, fonts...)
 	return solved.move, err
@@ -98,7 +93,7 @@ func PreviewComponentMove(t *Template, command []byte, fonts ...FontSet) (Compon
 // the page they are on.
 type solvedMove struct {
 	ids       []string
-	move      ComponentMove
+	move      designer.ComponentMove
 	crossPage bool
 	target    int
 }
@@ -122,7 +117,7 @@ func solveComponentMove(t *Template, raw map[string]json.RawMessage, fonts ...Fo
 		return fail("", "component.move", "group move has unknown or missing fields")
 	}
 	var revision *uint64
-	if json.Unmarshal(raw["expectedRevision"], &revision) != nil || revision == nil || *revision > uint64(MaxCanvasMillipoints) {
+	if json.Unmarshal(raw["expectedRevision"], &revision) != nil || revision == nil || *revision > uint64(designer.MaxCanvasMillipoints) {
 		return fail("", "component.move", "group move requires a safe revision")
 	}
 	var ids []string
@@ -149,7 +144,7 @@ func solveComponentMove(t *Template, raw map[string]json.RawMessage, fonts ...Fo
 	if err != nil {
 		return solvedMove{}, err
 	}
-	bound := geom.Length(MaxCanvasMillipoints)
+	bound := geom.Length(designer.MaxCanvasMillipoints)
 	minX, maxX, minY, maxY := -bound, bound, -bound, bound
 	var refX, refY geom.Length
 	seen := make(map[string]bool, len(ids))
@@ -232,7 +227,7 @@ func solveComponentMove(t *Template, raw map[string]json.RawMessage, fonts ...Fo
 		if !snap {
 			return legal
 		}
-		grid := geom.Length(GridIncrement)
+		grid := geom.Length(designer.GridIncrement)
 		// The reference's feasible origins are nonnegative. Find the first and
 		// last grid points; clamp the nearest grid point into that interval.
 		first := ((origin + low + grid - 1) / grid) * grid
@@ -240,34 +235,34 @@ func solveComponentMove(t *Template, raw map[string]json.RawMessage, fonts ...Fo
 		if first > last {
 			return legal
 		}
-		nearest, _ := SnapToGrid(origin + legal)
+		nearest, _ := snapToGrid(origin + legal)
 		return min(max(nearest, first), last) - origin
 	}
-	solved.move = ComponentMove{DX: int64(accept(dx, minX, maxX, refX)), DY: int64(accept(dy, minY, maxY, refY))}
+	solved.move = designer.ComponentMove{DX: int64(accept(dx, minX, maxX, refX)), DY: int64(accept(dy, minY, maxY, refY))}
 	return solved, nil
 }
 
-func moveComponents(t *Template, raw map[string]json.RawMessage, fonts ...FontSet) (CanvasProjection, error) {
+func moveComponents(t *Template, raw map[string]json.RawMessage, fonts ...FontSet) (designer.CanvasProjection, error) {
 	solved, err := solveComponentMove(t, raw, fonts...)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	ids, move := solved.ids, solved.move
 	before, err := SerializeTemplate(t)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	working, err := ParseTemplate(before)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	members, err := groupMemberIndex(working)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	if solved.crossPage {
 		if err := moveComponentsToPage(working, members, ids, move, solved.target); err != nil {
-			return CanvasProjection{}, err
+			return designer.CanvasProjection{}, err
 		}
 		return installMovedComponents(t, working)
 	}
@@ -277,14 +272,14 @@ func moveComponents(t *Template, raw map[string]json.RawMessage, fonts ...FontSe
 		x, y := element.X+geom.Length(move.DX), element.Y+geom.Length(move.DY)
 		width, height := projectedSize(*element)
 		if err := containComponent(band, x, y, width, height); err != nil {
-			return CanvasProjection{}, componentFailure(id, "component.geometry", err.Error())
+			return designer.CanvasProjection{}, componentFailure(id, "component.geometry", err.Error())
 		}
 		// spec-section-break: any member across the break refuses the whole
 		// group, before anything is installed.
 		candidate := *element
 		candidate.X, candidate.Y = x, y
 		if err := refuseSectionBreakStraddle(working, band.Name, candidate, "component.geometry"); err != nil {
-			return CanvasProjection{}, err
+			return designer.CanvasProjection{}, err
 		}
 		element.X, element.Y = x, y
 	}
@@ -293,18 +288,18 @@ func moveComponents(t *Template, raw map[string]json.RawMessage, fonts ...FontSe
 
 // installMovedComponents installs a moved working copy through canonical
 // bytes, so the caller's template changes only when every check passed.
-func installMovedComponents(t, working *Template) (CanvasProjection, error) {
+func installMovedComponents(t, working *Template) (designer.CanvasProjection, error) {
 	canonical, err := SerializeTemplate(working)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	installed, err := ParseTemplate(canonical)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
-	projection, err := Canvas(installed)
+	projection, err := canvas(installed)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	t.doc, t.derivedFooters = installed.doc, installed.derivedFooters
 	return projection, nil
@@ -314,12 +309,12 @@ func installMovedComponents(t, working *Template) (CanvasProjection, error) {
 // mutation: each keeps its id and lands at its own position plus move, in the
 // target page's column. Every check runs before anything is spliced, so a
 // refusal leaves working untouched.
-func moveComponentsToPage(working *Template, members map[string]groupMember, ids []string, move ComponentMove, target int) error {
+func moveComponentsToPage(working *Template, members map[string]groupMember, ids []string, move designer.ComponentMove, target int) error {
 	moving := make(map[string]bool, len(ids))
 	for _, id := range ids {
 		moving[id] = true
 	}
-	bound := geom.Length(MaxCanvasMillipoints)
+	bound := geom.Length(designer.MaxCanvasMillipoints)
 	positions := make(map[string][2]geom.Length, len(ids))
 	for _, id := range ids {
 		member := members[id]

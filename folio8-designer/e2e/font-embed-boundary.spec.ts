@@ -165,7 +165,7 @@ type Row = { family: string; carried: string; outcome: string }
 // the two-command order is read off the wire, with a payload in hand, in
 // `src/App.test.tsx`. `UNCHANGED` says only that the revision did not move,
 // which is the consequence a browser CAN observe of
-// `folio8-go/wasm/engine.go:240-246` returning its stable snapshot.
+// `folio8-go/internal/wasm/engine.go:334-340` returning its stable snapshot.
 const ADVANCED = 'ADVANCED (the pick changed the element\'s family and the engine committed it: the revision moved)'
 const UNCHANGED = 'UNCHANGED (the element already carried this family: the pick landed, the engine kept its stable snapshot, and the revision held for the whole watch window)'
 
@@ -372,7 +372,7 @@ test('every family is offered in the group its declaredness puts it in, the pick
       } else if (carried === family) {
         // THE NO-OP ARM. `choose` sends the command unconditionally — there is no
         // comparison against `committed` in `App.tsx` — and the ENGINE is what
-        // decides the pick was not a mutation: `folio8-go/wasm/engine.go:240-246`
+        // decides the pick was not a mutation: `folio8-go/internal/wasm/engine.go:334-340`
         // returns the stable snapshot for canonical bytes that did not move, so
         // the revision, the dirty flag and both history branches stay exactly as
         // they were. That is the AD-15 property, and the browser can only see its

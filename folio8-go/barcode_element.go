@@ -21,6 +21,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/panitw/folio8/folio8-go/internal/barcode"
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 	"github.com/panitw/folio8/folio8-go/internal/expr"
 	"github.com/panitw/folio8/folio8-go/internal/template"
 )
@@ -178,37 +179,6 @@ func unescapeBarcodeLiteral(s string) (string, error) {
 	return b.String(), nil
 }
 
-// CanvasBarcodeBar is one bar, in millipoints, its X relative to the
-// component's own left edge. Every bar spans the component's full height.
-type CanvasBarcodeBar struct {
-	X     int64 `json:"x"`
-	Width int64 `json:"width"`
-}
-
-// CanvasBarcodePaint is the Go-computed geometry the canvas draws for a
-// barcode: the same bars layoutBarcode gives the render path.
-type CanvasBarcodePaint struct {
-	ModuleWidth int64              `json:"moduleWidth"`
-	Bars        []CanvasBarcodeBar `json:"bars"`
-}
-
-// CanvasQRCodeRect is one horizontal run of dark modules, in millipoints,
-// relative to the component's top-left corner.
-type CanvasQRCodeRect struct {
-	X      int64 `json:"x"`
-	Y      int64 `json:"y"`
-	Width  int64 `json:"width"`
-	Height int64 `json:"height"`
-}
-
-// CanvasQRCodePaint is the Go-computed geometry the canvas draws for a
-// qrcode: the same rects layoutQRCode gives the render path, rows top to
-// bottom and left to right within a row.
-type CanvasQRCodePaint struct {
-	ModuleWidth int64              `json:"moduleWidth"`
-	Rects       []CanvasQRCodeRect `json:"rects"`
-}
-
 // BarcodeUnavailable's bounded values, set only when Barcode is absent for a
 // barcode with a non-empty value.
 const (
@@ -249,8 +219,8 @@ func illustrativeBarcodeContent(value string) string {
 // draws illustrative geometry (illustrativeBarcodeContent) — the preview
 // shows the real code. A code that cannot be painted degrades to a bounded
 // reason and never fails the projection.
-func addCanvasBarcodePaint(t *Template, projection *CanvasProjection) error {
-	components := make(map[string]*CanvasComponent, len(projection.Components))
+func addCanvasBarcodePaint(t *Template, projection *designer.CanvasProjection) error {
+	components := make(map[string]*designer.CanvasComponent, len(projection.Components))
 	for i := range projection.Components {
 		component := &projection.Components[i]
 		components[component.ID] = component
@@ -287,9 +257,9 @@ func addCanvasBarcodePaint(t *Template, projection *CanvasProjection) error {
 					}
 					continue
 				}
-				paint := &CanvasQRCodePaint{ModuleWidth: int64(lay.moduleWidth), Rects: make([]CanvasQRCodeRect, 0, len(lay.rects))}
+				paint := &designer.CanvasQRCodePaint{ModuleWidth: int64(lay.moduleWidth), Rects: make([]designer.CanvasQRCodeRect, 0, len(lay.rects))}
 				for _, r := range lay.rects {
-					paint.Rects = append(paint.Rects, CanvasQRCodeRect{X: int64(r.X), Y: int64(r.Y), Width: int64(r.W), Height: int64(r.H)})
+					paint.Rects = append(paint.Rects, designer.CanvasQRCodeRect{X: int64(r.X), Y: int64(r.Y), Width: int64(r.W), Height: int64(r.H)})
 				}
 				component.QRCode = paint
 				continue
@@ -305,9 +275,9 @@ func addCanvasBarcodePaint(t *Template, projection *CanvasProjection) error {
 				}
 				continue
 			}
-			paint := &CanvasBarcodePaint{ModuleWidth: int64(lay.moduleWidth), Bars: make([]CanvasBarcodeBar, 0, len(lay.bars))}
+			paint := &designer.CanvasBarcodePaint{ModuleWidth: int64(lay.moduleWidth), Bars: make([]designer.CanvasBarcodeBar, 0, len(lay.bars))}
 			for _, bar := range lay.bars {
-				paint.Bars = append(paint.Bars, CanvasBarcodeBar{X: int64(bar.X), Width: int64(bar.W)})
+				paint.Bars = append(paint.Bars, designer.CanvasBarcodeBar{X: int64(bar.X), Width: int64(bar.W)})
 			}
 			component.Barcode = paint
 		}

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 	"github.com/panitw/folio8/folio8-go/internal/geom"
 	"github.com/panitw/folio8/folio8-go/internal/template"
 )
@@ -14,9 +15,9 @@ import (
 // SPEC-multi-pages story 2: the addPage, deletePage and setPageBreak engine
 // commands, their shape changes (D-G.1) and their refusals.
 
-func applyPageCommand(t *testing.T, tpl *Template, command string) CanvasProjection {
+func applyPageCommand(t *testing.T, tpl *Template, command string) designer.CanvasProjection {
 	t.Helper()
-	projection, err := ApplyComponentCommand(tpl, []byte(command))
+	projection, err := applyComponentCommand(tpl, []byte(command))
 	if err != nil {
 		t.Fatalf("%s: %v", command, err)
 	}
@@ -29,8 +30,8 @@ func refusePageCommand(t *testing.T, tpl *Template, command, wantPath string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = ApplyComponentCommand(tpl, []byte(command))
-	var failure *ComponentCommandError
+	_, err = applyComponentCommand(tpl, []byte(command))
+	var failure *designer.ComponentCommandError
 	if !errors.As(err, &failure) {
 		t.Fatalf("%s: err = %v, want a located refusal", command, err)
 	}
@@ -274,7 +275,7 @@ func TestCreateAndDropPlaceOnTheTargetPage(t *testing.T) {
 		t.Errorf("created at %d,%d, want 100000,50000", el.X, el.Y)
 	}
 
-	canvas, err := Canvas(tpl)
+	canvas, err := canvas(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -291,7 +292,7 @@ func TestCreateAndDropPlaceOnTheTargetPage(t *testing.T) {
 
 func TestPagedCreateDropAndMoveRefuseWhatTheyCannotDo(t *testing.T) {
 	tpl := multiPageTemplate(t, multiPageStatementTemplateJSON)
-	canvas, err := Canvas(tpl)
+	canvas, err := canvas(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -345,7 +346,7 @@ func TestMoveToAnotherPageSnapsWithoutClampingInPreview(t *testing.T) {
 	tpl := multiPageTemplate(t, multiPageStatementTemplateJSON)
 	original, _ := SerializeTemplate(tpl)
 	command := []byte(strings.Replace(moveToPage([]string{"e5"}, "e5", "0", "203", 1), `"snap":false`, `"snap":true`, 1))
-	move, err := PreviewComponentMove(tpl, command)
+	move, err := previewComponentMove(tpl, command)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -353,7 +354,7 @@ func TestMoveToAnotherPageSnapsWithoutClampingInPreview(t *testing.T) {
 		t.Errorf("preview %+v, want dy 204000 snapped to the grid", move)
 	}
 	// Beyond the band: the preview still answers, unclamped; only the commit refuses.
-	wide, err := PreviewComponentMove(tpl, []byte(moveToPage([]string{"e5"}, "e5", "100", "0", 1)))
+	wide, err := previewComponentMove(tpl, []byte(moveToPage([]string{"e5"}, "e5", "100", "0", 1)))
 	if err != nil || wide.DX != 100000 {
 		t.Errorf("preview %+v %v, want dx 100000", wide, err)
 	}
@@ -385,8 +386,8 @@ func TestMoveToAnotherPageKeepsAKeepTogetherGroupWhole(t *testing.T) {
 	// Split a group: only eg moves.
 	split := multiPageTemplate(t, src)
 	refusePageCommand(t, split, moveToPage([]string{"eg"}, "eg", "0", "300", 0), pagesPath)
-	_, err := ApplyComponentCommand(split, []byte(moveToPage([]string{"eg"}, "eg", "0", "300", 0)))
-	var failure *ComponentCommandError
+	_, err := applyComponentCommand(split, []byte(moveToPage([]string{"eg"}, "eg", "0", "300", 0)))
+	var failure *designer.ComponentCommandError
 	if !errors.As(err, &failure) || failure.ElementID != "eg" || !strings.Contains(failure.Message, `"signature"`) {
 		t.Errorf("refusal %v does not name the element and the group", err)
 	}

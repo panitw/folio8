@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"testing"
 
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 	"github.com/panitw/folio8/folio8-go/internal/template"
 )
 
@@ -47,7 +48,7 @@ func joinQuoted(values []string) string {
 	return out
 }
 
-func canvasComponentByID(projection CanvasProjection, id string) *CanvasComponent {
+func canvasComponentByID(projection designer.CanvasProjection, id string) *designer.CanvasComponent {
 	for i := range projection.Components {
 		if projection.Components[i].ID == id {
 			return &projection.Components[i]
@@ -78,7 +79,7 @@ func TestCanvasImagePaintExactlyMatchesTheShippingRunPath(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	projection, err := CanvasWithTextPaint(tpl, testFontSet())
+	projection, err := canvasWithTextPaint(tpl, testFontSet())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +144,7 @@ func TestCanvasImagePaintTracksAResize(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	before, err := CanvasWithTextPaint(tpl, testFontSet())
+	before, err := canvasWithTextPaint(tpl, testFontSet())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,10 +152,10 @@ func TestCanvasImagePaintTracksAResize(t *testing.T) {
 	if beforeImage == nil {
 		t.Fatal("expected an image paint before resize")
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"resizeComponent","version":1,"id":"e1","width":180,"height":30,"snap":false}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"resizeComponent","version":1,"id":"e1","width":180,"height":30,"snap":false}`)); err != nil {
 		t.Fatal(err)
 	}
-	after, err := CanvasWithTextPaint(tpl, testFontSet())
+	after, err := canvasWithTextPaint(tpl, testFontSet())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +202,7 @@ func TestCanvasImagePaintIsAbsentNotZeroForAnUndecodableAsset(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	projection, err := CanvasWithTextPaint(tpl, testFontSet())
+	projection, err := canvasWithTextPaint(tpl, testFontSet())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,7 +257,7 @@ func TestCanvasImagePaintIsAbsentForAMissingAssetKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	projection, err := CanvasWithTextPaint(tpl, testFontSet())
+	projection, err := canvasWithTextPaint(tpl, testFontSet())
 	if err != nil {
 		t.Fatal(err)
 	}

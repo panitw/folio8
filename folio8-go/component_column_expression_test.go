@@ -19,7 +19,7 @@ func expressionCommand(id, columnID, binding string) []byte {
 
 func TestTableColumnExpressionPreservesCompleteTextAndProjection(t *testing.T) {
 	tpl, id := tableColumnAuthoringFixture(t, []geom.Length{100000}, 0)
-	view, _ := TableColumns(tpl, id)
+	view, _ := tableColumns(tpl, id)
 	columnID := view.Columns[0].ID
 	for _, binding := range []string{
 		"{{row.date}}", `{{upper(row.trn_code)}}`, `{{formatDate(row.date, "dd/MM/yyyy")}}`,
@@ -28,22 +28,22 @@ func TestTableColumnExpressionPreservesCompleteTextAndProjection(t *testing.T) {
 		"  Code: {{ upper(row.trn_code) }}\r\n", "literal text", "", strings.Repeat("x", 256), strings.Repeat("é", 128),
 	} {
 		t.Run(binding, func(t *testing.T) {
-			if _, err := ApplyComponentCommand(tpl, expressionCommand(id, columnID, binding)); err != nil {
+			if _, err := applyComponentCommand(tpl, expressionCommand(id, columnID, binding)); err != nil {
 				t.Fatal(err)
 			}
-			view, err := TableColumns(tpl, id)
+			view, err := tableColumns(tpl, id)
 			if err != nil || view.Columns[0].Binding != binding {
 				t.Fatalf("binding bytes changed: %#v, %v", view, err)
 			}
 			before := canonicalBytes(t, tpl)
-			if _, err := ApplyComponentCommand(tpl, expressionCommand(id, columnID, binding)); err != nil || !bytes.Equal(before, canonicalBytes(t, tpl)) {
+			if _, err := applyComponentCommand(tpl, expressionCommand(id, columnID, binding)); err != nil || !bytes.Equal(before, canonicalBytes(t, tpl)) {
 				t.Fatalf("unchanged binding was not a no-op: %v", err)
 			}
 			reopened, err := ParseTemplate(before)
 			if err != nil {
 				t.Fatal(err)
 			}
-			again, err := TableColumns(reopened, id)
+			again, err := tableColumns(reopened, id)
 			if err != nil || again.Columns[0].Binding != binding {
 				t.Fatalf("reopen changed binding: %#v, %v", again, err)
 			}
@@ -53,14 +53,14 @@ func TestTableColumnExpressionPreservesCompleteTextAndProjection(t *testing.T) {
 
 func TestTableColumnExpressionRefusesMalformedEnvelopeAndLocatedExpressionsAtomically(t *testing.T) {
 	tpl, id := tableColumnAuthoringFixture(t, []geom.Length{100000}, 0)
-	view, _ := TableColumns(tpl, id)
+	view, _ := tableColumns(tpl, id)
 	columnID := view.Columns[0].ID
 	before := canonicalBytes(t, tpl)
 	prefix := fmt.Sprintf(`{"kind":"updateTableColumnExpression","version":1,"id":%q,"columnId":%q`, id, columnID)
 	commands := []string{prefix + `}`, prefix + `,"binding":null}`, prefix + `,"binding":  null  }`, prefix + `,"binding":4}`, prefix + `,"binding":true}`, prefix + `,"binding":[]}`, prefix + `,"binding":{}}`, prefix + `,"binding":"","extra":0}`, prefix + `,"binding":"","binding":"again"}`}
 	commands = append(commands, string(expressionCommand(id, columnID, strings.Repeat("x", 257))), string(expressionCommand(id, columnID, strings.Repeat("é", 129))), string(expressionCommand("missing", columnID, "")), string(expressionCommand(id, "missing", "")))
 	for _, command := range commands {
-		if _, err := ApplyComponentCommand(tpl, []byte(command)); err == nil {
+		if _, err := applyComponentCommand(tpl, []byte(command)); err == nil {
 			t.Fatalf("invalid command accepted: %s", command)
 		}
 		if !bytes.Equal(before, canonicalBytes(t, tpl)) {
@@ -71,7 +71,7 @@ func TestTableColumnExpressionRefusesMalformedEnvelopeAndLocatedExpressionsAtomi
 	// number-kind bind such as {{row.amount * 1.07}} is legal since the
 	// number-in-text spec, 2026-09-13.)
 	for _, binding := range []string{`{{upper(}}`, `{{unknown(row.date)}}`, `{{upper(7)}}`, `{{row.amount > 1.07}}`} {
-		_, err := ApplyComponentCommand(tpl, expressionCommand(id, columnID, binding))
+		_, err := applyComponentCommand(tpl, expressionCommand(id, columnID, binding))
 		var diagnosed *RenderError
 		var located *expr.LocatedError
 		if !errors.As(err, &diagnosed) || !errors.As(err, &located) || diagnosed.Diagnostic.Code != DiagCodeExpressionInvalid || diagnosed.Diagnostic.ElementID != columnID || diagnosed.Diagnostic.DataPath != "bind" {
@@ -87,7 +87,7 @@ func TestTableColumnExpressionKeepsFooterAndAliasValidationAtomic(t *testing.T) 
 	for _, footer := range []string{"sum", "avg"} {
 		t.Run(footer, func(t *testing.T) {
 			tpl, id := tableColumnAuthoringFixture(t, []geom.Length{100000}, 0)
-			view, _ := TableColumns(tpl, id)
+			view, _ := tableColumns(tpl, id)
 			columnID := view.Columns[0].ID
 			configure := func(source string) {
 				t.Helper()
@@ -96,31 +96,31 @@ func TestTableColumnExpressionKeepsFooterAndAliasValidationAtomic(t *testing.T) 
 			configure("")
 			for _, binding := range []string{"", "literal", `{{formatNumber(row.amount * 1.07, "#,##0.00")}}`} {
 				before := canonicalBytes(t, tpl)
-				_, err := ApplyComponentCommand(tpl, expressionCommand(id, columnID, binding))
+				_, err := applyComponentCommand(tpl, expressionCommand(id, columnID, binding))
 				var diagnosed *RenderError
 				if !errors.As(err, &diagnosed) || diagnosed.Diagnostic.Code != DiagCodeTableFooterSourceUnresolved || !bytes.Equal(before, canonicalBytes(t, tpl)) {
 					t.Fatalf("implicit footer should refuse %q atomically: %v", binding, err)
 				}
 			}
 			for _, binding := range []string{`{{row.amount}}`, `{{formatNumber(row.amount, "#,##0.00")}}`} {
-				if _, err := ApplyComponentCommand(tpl, expressionCommand(id, columnID, binding)); err != nil {
+				if _, err := applyComponentCommand(tpl, expressionCommand(id, columnID, binding)); err != nil {
 					t.Fatal(err)
 				}
 			}
 			configure("items.amount")
 			formula := `{{formatNumber(row.amount * 1.07, "#,##0.00")}}`
-			if _, err := ApplyComponentCommand(tpl, expressionCommand(id, columnID, formula)); err != nil {
+			if _, err := applyComponentCommand(tpl, expressionCommand(id, columnID, formula)); err != nil {
 				t.Fatal(err)
 			}
 			before := canonicalBytes(t, tpl)
-			if _, err := ApplyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"configureTableBinding","version":1,"id":%q,"collection":"items[]","alias":"txn"}`, id))); err == nil || !bytes.Equal(before, canonicalBytes(t, tpl)) {
+			if _, err := applyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"configureTableBinding","version":1,"id":%q,"collection":"items[]","alias":"txn"}`, id))); err == nil || !bytes.Equal(before, canonicalBytes(t, tpl)) {
 				t.Fatalf("unsupported alias migration must refuse atomically: %v", err)
 			}
-			if _, err := ApplyComponentCommand(tpl, expressionCommand(id, columnID, `{{formatNumber(row.amount, "#,##0.00")}}`)); err != nil {
+			if _, err := applyComponentCommand(tpl, expressionCommand(id, columnID, `{{formatNumber(row.amount, "#,##0.00")}}`)); err != nil {
 				t.Fatal(err)
 			}
 			mustApplyToTable(t, tpl, fmt.Sprintf(`{"kind":"configureTableBinding","version":1,"id":%q,"collection":"items[]","alias":"txn"}`, id))
-			view, _ = TableColumns(tpl, id)
+			view, _ = tableColumns(tpl, id)
 			if view.Columns[0].Binding != `{{formatNumber(txn.amount, "#,##0.00")}}` || view.Columns[0].FooterOf != "items.amount" {
 				t.Fatalf("supported alias migration changed footer: %#v", view)
 			}

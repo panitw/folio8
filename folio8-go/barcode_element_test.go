@@ -8,6 +8,7 @@ import (
 
 	"github.com/panitw/folio8/folio8-go/internal/barcode"
 	"github.com/panitw/folio8/folio8-go/internal/bind"
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 	"github.com/panitw/folio8/folio8-go/internal/geom"
 	"github.com/panitw/folio8/folio8-go/internal/pagemodel"
 )
@@ -272,7 +273,7 @@ func TestBarcodeEscapesRoundTrip(t *testing.T) {
 	}
 }
 
-func findCanvasComponent(t *testing.T, projection CanvasProjection, id string) CanvasComponent {
+func findCanvasComponent(t *testing.T, projection designer.CanvasProjection, id string) designer.CanvasComponent {
 	t.Helper()
 	for _, c := range projection.Components {
 		if c.ID == id {
@@ -280,7 +281,7 @@ func findCanvasComponent(t *testing.T, projection CanvasProjection, id string) C
 		}
 	}
 	t.Fatalf("component %s is not projected", id)
-	return CanvasComponent{}
+	return designer.CanvasComponent{}
 }
 
 func TestBarcodeCommandsAndCanvas(t *testing.T) {
@@ -288,7 +289,7 @@ func TestBarcodeCommandsAndCanvas(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	projection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"dropComponent","version":1,"type":"barcode","x":100,"y":100,"snap":false}`))
+	projection, err := applyComponentCommand(tpl, []byte(`{"kind":"dropComponent","version":1,"type":"barcode","x":100,"y":100,"snap":false}`))
 	if err != nil {
 		t.Fatalf("drop: %v", err)
 	}
@@ -298,7 +299,7 @@ func TestBarcodeCommandsAndCanvas(t *testing.T) {
 	}
 
 	// The designer sends escapes; the document stores characters.
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"expression":{"op":"set","value":"|0994000123456{{suffix}}\\r{{ref1}}"}}}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"expression":{"op":"set","value":"|0994000123456{{suffix}}\\r{{ref1}}"}}}`)); err != nil {
 		t.Fatalf("set expression: %v", err)
 	}
 	saved, err := SerializeTemplate(tpl)
@@ -311,7 +312,7 @@ func TestBarcodeCommandsAndCanvas(t *testing.T) {
 	if !strings.Contains(string(saved), `"version": "4.0"`) {
 		t.Fatalf("a barcode document must save as 4.0:\n%s", saved)
 	}
-	canvas, err := CanvasWithTextPaint(tpl, testShippedFontSet())
+	canvas, err := canvasWithTextPaint(tpl, testShippedFontSet())
 	if err != nil {
 		t.Fatalf("canvas: %v", err)
 	}
@@ -347,16 +348,16 @@ func TestBarcodeCommandsAndCanvas(t *testing.T) {
 		`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"background":{"op":"set","value":"#ff0000"}}}`,
 		`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"fontSize":{"op":"set","value":12}}}`,
 	} {
-		if _, err := ApplyComponentCommand(tpl, []byte(bad)); err == nil {
+		if _, err := applyComponentCommand(tpl, []byte(bad)); err == nil {
 			t.Errorf("command must be refused: %s", bad)
 		}
 	}
 
 	// Binding from the Data panel.
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"bindComponentScalar","version":1,"id":"e1","segments":["ref"]}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"bindComponentScalar","version":1,"id":"e1","segments":["ref"]}`)); err != nil {
 		t.Fatalf("bind: %v", err)
 	}
-	canvas, err = CanvasWithTextPaint(tpl, testShippedFontSet())
+	canvas, err = canvasWithTextPaint(tpl, testShippedFontSet())
 	if err != nil {
 		t.Fatalf("canvas: %v", err)
 	}
@@ -370,7 +371,7 @@ func TestStaticBarcodeCanvasMatchesRender(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	canvas, err := CanvasWithTextPaint(tpl, testShippedFontSet())
+	canvas, err := canvasWithTextPaint(tpl, testShippedFontSet())
 	if err != nil {
 		t.Fatalf("canvas: %v", err)
 	}
@@ -394,7 +395,7 @@ func TestBoundBarcodeCanvasDrawsIllustrativeBarsAndIsInexact(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	canvas, err := CanvasWithTextPaint(tpl, testShippedFontSet())
+	canvas, err := canvasWithTextPaint(tpl, testShippedFontSet())
 	if err != nil {
 		t.Fatalf("canvas: %v", err)
 	}
@@ -416,7 +417,7 @@ func TestUnfitStaticBarcodeProjectsDoesNotFitAndNoColumnItem(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	canvas, err := CanvasWithTextPaint(tpl, testShippedFontSet())
+	canvas, err := canvasWithTextPaint(tpl, testShippedFontSet())
 	if err != nil {
 		t.Fatalf("canvas: %v", err)
 	}

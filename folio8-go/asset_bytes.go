@@ -6,7 +6,7 @@ import (
 	"github.com/panitw/folio8/folio8-go/internal/template"
 )
 
-// AssetBytes returns one asset's raw, decoded bytes and declared media type
+// assetBytes returns one asset's raw, decoded bytes and declared media type
 // by its content-addressed key. It is Story 5.13's per-key paintable-bytes
 // route (D-5.13.2's "Producer" clause): the canvas projection itself
 // (CanvasImagePaint) carries geometry and identity only, never bytes
@@ -16,7 +16,7 @@ import (
 //
 // It is a read-only query: it never touches revision, undo/redo history, or
 // canonical bytes.
-func AssetBytes(t *Template, key string) ([]byte, string, error) {
+func assetBytes(t *Template, key string) ([]byte, string, error) {
 	if t == nil {
 		return nil, "", errNilTemplate
 	}

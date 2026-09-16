@@ -3,6 +3,8 @@ package folio8
 import (
 	"strings"
 	"testing"
+
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 )
 
 // This file pins `projectFontChainEntry` (page_setup.go) — the EMBEDDED
@@ -63,13 +65,13 @@ func canvasChainDoc(t *testing.T, displayKeys string) string {
 // projectedChainEntries runs a document through the REAL projection entry
 // point — the one that reaches the browser — and returns the `body` chain's
 // entries.
-func projectedChainEntries(t *testing.T, source string) []CanvasFontChainEntry {
+func projectedChainEntries(t *testing.T, source string) []designer.CanvasFontChainEntry {
 	t.Helper()
 	tpl, err := ParseTemplate([]byte(source))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	projection, err := Canvas(tpl)
+	projection, err := canvas(tpl)
 	if err != nil {
 		t.Fatalf("Canvas: %v", err)
 	}
@@ -92,19 +94,19 @@ func TestProjectedEmbeddedEntryCarriesTheDiscriminantAndTheRecord(t *testing.T) 
 	for _, tc := range []struct {
 		name   string
 		record string
-		want   CanvasFontChainEntry
+		want   designer.CanvasFontChainEntry
 	}{
 		{
 			name:   "family and style from the record",
 			record: `"family": "Noto Sans Thai", "style": "Regular"`,
-			want:   CanvasFontChainEntry{AssetKey: key, Family: "Noto Sans Thai", Style: "Regular"},
+			want:   designer.CanvasFontChainEntry{AssetKey: key, Family: "Noto Sans Thai", Style: "Regular"},
 		},
 		{
 			// The style is genuinely optional, and an absent one projects
 			// empty — which the browser accepts, unlike an empty family.
 			name:   "family only",
 			record: `"family": "Noto Sans Thai"`,
-			want:   CanvasFontChainEntry{AssetKey: key, Family: "Noto Sans Thai"},
+			want:   designer.CanvasFontChainEntry{AssetKey: key, Family: "Noto Sans Thai"},
 		},
 		{
 			// THE FALLBACK, and the whole reason this file exists. No
@@ -113,7 +115,7 @@ func TestProjectedEmbeddedEntryCarriesTheDiscriminantAndTheRecord(t *testing.T) 
 			// an empty name it would have to invent a rule for.
 			name:   "no family — the asset key is the fallback",
 			record: `"style": "Regular"`,
-			want:   CanvasFontChainEntry{AssetKey: key, Family: key, Style: "Regular"},
+			want:   designer.CanvasFontChainEntry{AssetKey: key, Family: key, Style: "Regular"},
 		},
 		{
 			// STORY 8.6 REPLACED TWO ROWS WITH THIS ONE, and the reason is
@@ -128,7 +130,7 @@ func TestProjectedEmbeddedEntryCarriesTheDiscriminantAndTheRecord(t *testing.T) 
 			// fallback still has to hold.
 			name:   "the required terms and no display identity at all",
 			record: "",
-			want:   CanvasFontChainEntry{AssetKey: key, Family: key},
+			want:   designer.CanvasFontChainEntry{AssetKey: key, Family: key},
 		},
 		{
 			// An explicit null is a legal, round-trippable spelling in the
@@ -137,7 +139,7 @@ func TestProjectedEmbeddedEntryCarriesTheDiscriminantAndTheRecord(t *testing.T) 
 			// (Presence round-trips it); it simply does not reach the panel.
 			name:   "an explicitly null family",
 			record: `"family": null, "style": "Regular"`,
-			want:   CanvasFontChainEntry{AssetKey: key, Family: key, Style: "Regular"},
+			want:   designer.CanvasFontChainEntry{AssetKey: key, Family: key, Style: "Regular"},
 		},
 		{
 			// An empty-STRING family is a name the panel cannot draw, so it
@@ -145,12 +147,12 @@ func TestProjectedEmbeddedEntryCarriesTheDiscriminantAndTheRecord(t *testing.T) 
 			// rejects the snapshot.
 			name:   "an empty-string family",
 			record: `"family": "", "style": "Regular"`,
-			want:   CanvasFontChainEntry{AssetKey: key, Family: key, Style: "Regular"},
+			want:   designer.CanvasFontChainEntry{AssetKey: key, Family: key, Style: "Regular"},
 		},
 		{
 			name:   "an explicitly null style",
 			record: `"family": "Noto Sans Thai", "style": null`,
-			want:   CanvasFontChainEntry{AssetKey: key, Family: "Noto Sans Thai"},
+			want:   designer.CanvasFontChainEntry{AssetKey: key, Family: "Noto Sans Thai"},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -160,7 +162,7 @@ func TestProjectedEmbeddedEntryCarriesTheDiscriminantAndTheRecord(t *testing.T) 
 			}
 			// The NAMED face first — asserted whole, so a display string
 			// leaking onto it is caught here rather than in the browser.
-			if want := (CanvasFontChainEntry{Face: "Noto Sans"}); entries[0] != want {
+			if want := (designer.CanvasFontChainEntry{Face: "Noto Sans"}); entries[0] != want {
 				t.Errorf("named-face entry = %+v, want %+v — a named face's name IS its identity and it carries no family or style", entries[0], want)
 			}
 			if entries[1] != tc.want {
@@ -208,7 +210,7 @@ func TestProjectedEntryStringsAreBounded(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parse: %v", err)
 			}
-			_, cerr := Canvas(tpl)
+			_, cerr := canvas(tpl)
 			if tc.refused {
 				if cerr == nil {
 					t.Fatal("a projected string over the bound must be REFUSED with a stated reason, never silently cut")
@@ -320,7 +322,7 @@ func TestProjectedEntryCarriesTheDeclaredStyleVariantsVerbatim(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
 		chain string
-		want  []CanvasFontChainEntry
+		want  []designer.CanvasFontChainEntry
 	}{
 		{
 			// A BARE STRING DECLARES NOTHING, and all three keys are still
@@ -330,12 +332,12 @@ func TestProjectedEntryCarriesTheDeclaredStyleVariantsVerbatim(t *testing.T) {
 			// and the symptom is a blank canvas.
 			name:  "a bare face entry declares no variant",
 			chain: `["Noto Sans"]`,
-			want:  []CanvasFontChainEntry{{Face: "Noto Sans"}},
+			want:  []designer.CanvasFontChainEntry{{Face: "Noto Sans"}},
 		},
 		{
 			name:  "a face entry declaring all three",
 			chain: `[{"bold": "Noto Sans Bold", "boldItalic": "Noto Sans Bold Italic", "face": "Noto Sans", "italic": "Noto Sans Italic"}]`,
-			want: []CanvasFontChainEntry{{
+			want: []designer.CanvasFontChainEntry{{
 				Face: "Noto Sans", Bold: "Noto Sans Bold", Italic: "Noto Sans Italic", BoldItalic: "Noto Sans Bold Italic",
 			}},
 		},
@@ -346,7 +348,7 @@ func TestProjectedEntryCarriesTheDeclaredStyleVariantsVerbatim(t *testing.T) {
 			// of its two controls.
 			name:  "a face entry declaring bold only",
 			chain: `[{"bold": "Noto Sans Thai Bold", "face": "Noto Sans Thai"}]`,
-			want:  []CanvasFontChainEntry{{Face: "Noto Sans Thai", Bold: "Noto Sans Thai Bold"}},
+			want:  []designer.CanvasFontChainEntry{{Face: "Noto Sans Thai", Bold: "Noto Sans Thai Bold"}},
 		},
 		{
 			// AD-8: AN EMBEDDED ENTRY'S VARIANT IS AN ASSETS KEY. The expected
@@ -355,7 +357,7 @@ func TestProjectedEntryCarriesTheDeclaredStyleVariantsVerbatim(t *testing.T) {
 			// that crossed the two namespaces would have produced.
 			name:  "an embedded entry declaring a variant asset key",
 			chain: `[{"asset": "` + variantFixtureFirstKey + `", "bold": "` + variantFixtureSecondKey + `"}]`,
-			want: []CanvasFontChainEntry{{
+			want: []designer.CanvasFontChainEntry{{
 				AssetKey: variantFixtureFirstKey, Family: "Maximal Sans", Style: "Regular", Bold: variantFixtureSecondKey,
 			}},
 		},
@@ -365,7 +367,7 @@ func TestProjectedEntryCarriesTheDeclaredStyleVariantsVerbatim(t *testing.T) {
 			// caught rather than being invisible in a one-entry chain.
 			name:  "a mixed chain keeps each entry's own variants",
 			chain: `[{"bold": "Noto Sans Bold", "face": "Noto Sans"}, {"asset": "` + variantFixtureFirstKey + `", "boldItalic": "` + variantFixtureSecondKey + `"}, "Noto Sans SC"]`,
-			want: []CanvasFontChainEntry{
+			want: []designer.CanvasFontChainEntry{
 				{Face: "Noto Sans", Bold: "Noto Sans Bold"},
 				{AssetKey: variantFixtureFirstKey, Family: "Maximal Sans", Style: "Regular", BoldItalic: variantFixtureSecondKey},
 				{Face: "Noto Sans SC"},
@@ -408,7 +410,7 @@ func TestAProjectedVariantIsBoundedLikeEveryOtherProjectedString(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parse: %v", err)
 			}
-			_, cerr := Canvas(tpl)
+			_, cerr := canvas(tpl)
 			if tc.refused {
 				if cerr == nil {
 					t.Fatal("a projected variant over the bound must be REFUSED with a stated reason, never silently cut")

@@ -304,7 +304,7 @@ describe('a table column is bound from the main window', () => {
     // resolves the alias itself and writes `{{alias.field}}`.
     expect(sent.commands[0]).toBe('{"kind":"updateTableColumnBinding","version":1,"id":"e7","columnId":"e11","field":"debit"}')
     // AC6 — ONE COMMAND IS ONE UNDO STEP, and the guarantee is Go's:
-    // `wasm/engine.go`'s `Apply` pushes exactly one undo per accepted
+    // `folio8-go/internal/wasm/engine.go`'s `Apply` pushes exactly one undo per accepted
     // byte-changing command. The browser's part is not to bypass the command
     // path and not to send a second command (a `configureTableBinding` first,
     // say). That is what this asserts; nothing was built for it.

@@ -2,47 +2,23 @@ package folio8
 
 import (
 	"fmt"
+
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 	"github.com/panitw/folio8/folio8-go/internal/geom"
 	"github.com/panitw/folio8/folio8-go/internal/template"
 )
 
-// AuthoredProperty is bounded inspector evidence, separate from paint. It
-// preserves authored absence/null and values even when a border paints no ink.
-type AuthoredProperty[T any] struct {
-	State string `json:"state"`
-	Value *T     `json:"value,omitempty"`
-}
-
-type CanvasAuthoredProperties struct {
-	VisibleIf   AuthoredProperty[string]      `json:"visibleIf"`
-	FontFamily  AuthoredProperty[string]      `json:"fontFamily"`
-	FontSize    AuthoredProperty[geom.Length] `json:"fontSize"`
-	LineSpacing AuthoredProperty[int64]       `json:"lineSpacing"`
-	Bold        AuthoredProperty[bool]        `json:"bold"`
-	Italic      AuthoredProperty[bool]        `json:"italic"`
-	Align       AuthoredProperty[string]      `json:"align"`
-	Valign      AuthoredProperty[string]      `json:"valign"`
-	Color       AuthoredProperty[string]      `json:"color"`
-	Background  AuthoredProperty[string]      `json:"background"`
-	BorderWidth AuthoredProperty[geom.Length] `json:"borderWidth"`
-	BorderColor AuthoredProperty[string]      `json:"borderColor"`
-	BorderEdges AuthoredProperty[[]string]    `json:"borderEdges"`
-	// ErrorCorrection is a qrcode's authored level (absent means the default
-	// M); always absent on every other kind.
-	ErrorCorrection AuthoredProperty[string] `json:"errorCorrection"`
-}
-
-func authoredProperty[T any](value template.Presence[T], parentNull bool) AuthoredProperty[T] {
+func authoredProperty[T any](value template.Presence[T], parentNull bool) designer.AuthoredProperty[T] {
 	if parentNull || value.Set && value.Null {
-		return AuthoredProperty[T]{State: "null"}
+		return designer.AuthoredProperty[T]{State: "null"}
 	}
 	if !value.Set {
-		return AuthoredProperty[T]{State: "absent"}
+		return designer.AuthoredProperty[T]{State: "absent"}
 	}
-	return AuthoredProperty[T]{State: "value", Value: &value.Value}
+	return designer.AuthoredProperty[T]{State: "value", Value: &value.Value}
 }
 
-func canvasAuthoredProperties(element template.Element) (*CanvasAuthoredProperties, error) {
+func canvasAuthoredProperties(element template.Element) (*designer.CanvasAuthoredProperties, error) {
 	style := element.Style.Value
 	border := style.Border.Value
 	styleNull := element.Style.Set && element.Style.Null
@@ -51,7 +27,7 @@ func canvasAuthoredProperties(element template.Element) (*CanvasAuthoredProperti
 	if border.Edges.Set && !border.Edges.Null && border.Edges.Value == nil {
 		border.Edges.Value = []string{}
 	}
-	result := &CanvasAuthoredProperties{
+	result := &designer.CanvasAuthoredProperties{
 		VisibleIf:   authoredProperty(element.VisibleIf, false),
 		FontFamily:  authoredProperty(style.FontFamily, styleNull),
 		FontSize:    authoredProperty(style.FontSize, styleNull),
@@ -70,22 +46,22 @@ func canvasAuthoredProperties(element template.Element) (*CanvasAuthoredProperti
 		ErrorCorrection: authoredProperty(element.ErrorCorrection, false),
 	}
 	if element.Type != template.ElementText && element.Type != template.ElementTable {
-		result.FontFamily = AuthoredProperty[string]{State: "absent"}
-		result.FontSize = AuthoredProperty[geom.Length]{State: "absent"}
-		result.LineSpacing = AuthoredProperty[int64]{State: "absent"}
-		result.Bold = AuthoredProperty[bool]{State: "absent"}
-		result.Italic = AuthoredProperty[bool]{State: "absent"}
-		result.Align = AuthoredProperty[string]{State: "absent"}
-		result.Valign = AuthoredProperty[string]{State: "absent"}
-		result.Color = AuthoredProperty[string]{State: "absent"}
+		result.FontFamily = designer.AuthoredProperty[string]{State: "absent"}
+		result.FontSize = designer.AuthoredProperty[geom.Length]{State: "absent"}
+		result.LineSpacing = designer.AuthoredProperty[int64]{State: "absent"}
+		result.Bold = designer.AuthoredProperty[bool]{State: "absent"}
+		result.Italic = designer.AuthoredProperty[bool]{State: "absent"}
+		result.Align = designer.AuthoredProperty[string]{State: "absent"}
+		result.Valign = designer.AuthoredProperty[string]{State: "absent"}
+		result.Color = designer.AuthoredProperty[string]{State: "absent"}
 	}
-	for _, field := range []AuthoredProperty[string]{result.VisibleIf, result.FontFamily, result.Align, result.Valign, result.Color, result.Background, result.BorderColor, result.ErrorCorrection} {
+	for _, field := range []designer.AuthoredProperty[string]{result.VisibleIf, result.FontFamily, result.Align, result.Valign, result.Color, result.Background, result.BorderColor, result.ErrorCorrection} {
 		if field.Value != nil && len(*field.Value) > maxCanvasPropertyString {
 			return nil, fmt.Errorf("folio8: authored property exceeds projection bound")
 		}
 	}
-	for _, field := range []AuthoredProperty[geom.Length]{result.FontSize, result.BorderWidth} {
-		if field.Value != nil && (*field.Value < -geom.Length(MaxCanvasMillipoints) || *field.Value > geom.Length(MaxCanvasMillipoints)) {
+	for _, field := range []designer.AuthoredProperty[geom.Length]{result.FontSize, result.BorderWidth} {
+		if field.Value != nil && (*field.Value < -geom.Length(designer.MaxCanvasMillipoints) || *field.Value > geom.Length(designer.MaxCanvasMillipoints)) {
 			return nil, fmt.Errorf("folio8: authored property exceeds safe geometry")
 		}
 	}

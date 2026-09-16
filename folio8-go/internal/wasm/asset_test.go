@@ -39,11 +39,11 @@ func setAssetCommand(id, mediaType string, data []byte) []byte {
 // picture already in place sets one itself.
 func loadedImageEngine(t *testing.T) (*Engine, string) {
 	t.Helper()
-	input, err := os.ReadFile("../testdata/template/golden/worked-example.json")
+	input, err := os.ReadFile("../../testdata/template/golden/worked-example.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine()
+	engine := NewEngine(testClock())
 	if _, err := engine.Load(input); err != nil {
 		t.Fatal(err)
 	}

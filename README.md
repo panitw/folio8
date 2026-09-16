@@ -26,7 +26,7 @@ approximation of it.
 | --- | --- |
 | [folio8-go/](folio8-go/) | The rendering engine and reference implementation — expression evaluation, layout, pagination, PDF output. A Go module: `github.com/panitw/folio8/folio8-go`. See its [README](folio8-go/README.md). |
 | [folio8-go/cmd/folio8/](folio8-go/cmd/folio8/) | The `folio8` CLI: `validate` and `render`, and nothing else. |
-| [folio8-go/wasm/](folio8-go/wasm/) | The browser shell around the pure core — the same engine, compiled to wasm. |
+| [folio8-go/wasm/cmd/engine/](folio8-go/wasm/cmd/engine/) | The designer's js/wasm entry point over the internal session engine in `folio8-go/internal/wasm` — the same engine, compiled to wasm. Not public API. |
 | [folio8-designer/](folio8-designer/) | The visual designer: React + Vite, running the wasm engine in a worker. No server, no account, no upload. |
 | [fixtures/](fixtures/) | The golden corpus — template, data, params and the expected PDF for each fixture document. These bytes are the contract every renderer conforms against. |
 | [lint/](lint/) | The guardrails that fail the build: architecture/import rules, the float ban, and the third-party licence check ([MANIFEST.md](lint/MANIFEST.md)). A separate Go module. |

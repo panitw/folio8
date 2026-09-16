@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 	"github.com/panitw/folio8/folio8-go/internal/fontset"
 	"github.com/panitw/folio8/folio8-go/internal/geom"
 	"github.com/panitw/folio8/folio8-go/internal/template"
@@ -381,7 +382,7 @@ func TestLineSpacingIsRefusedIdenticallyByFileAndProperty(t *testing.T) {
 		}()
 		propErr := func() string {
 			tpl := mustParseLineSpacingTemplate(t, "")
-			_, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"lineSpacing":{"op":"set","value":`+value+`}}}`))
+			_, err := applyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"lineSpacing":{"op":"set","value":`+value+`}}}`))
 			if err == nil {
 				t.Fatalf("%s: the property command accepted an out-of-domain value", value)
 			}
@@ -400,7 +401,7 @@ func TestLineSpacingIsRefusedIdenticallyByFileAndProperty(t *testing.T) {
 	// And the positive control: a legal value is accepted through the
 	// command and reaches the document.
 	tpl := mustParseLineSpacingTemplate(t, "")
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"lineSpacing":{"op":"set","value":1.5}}}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"lineSpacing":{"op":"set","value":1.5}}}`)); err != nil {
 		t.Fatalf("a legal lineSpacing must be accepted through the property command: %v", err)
 	}
 	out, err := SerializeTemplate(tpl)
@@ -429,11 +430,11 @@ func TestLineSpacingClearedFromTheOnlyStyleFieldStrandsNoStyleBlock(t *testing.T
 		t.Fatalf("parse: %v", err)
 	}
 	set := []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"lineSpacing":{"op":"set","value":1.5}}}`)
-	if _, err := ApplyComponentCommand(tpl, set); err != nil {
+	if _, err := applyComponentCommand(tpl, set); err != nil {
 		t.Fatalf("set: %v", err)
 	}
 	clear := []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"lineSpacing":{"op":"clear"}}}`)
-	if _, err := ApplyComponentCommand(tpl, clear); err != nil {
+	if _, err := applyComponentCommand(tpl, clear); err != nil {
 		t.Fatalf("clear: %v", err)
 	}
 	out, err := SerializeTemplate(tpl)
@@ -637,11 +638,11 @@ func TestCanvasProjectsTheSameAdvanceTheRendererUses(t *testing.T) {
 	} {
 		t.Run(c.label, func(t *testing.T) {
 			tpl := mustParseLineSpacingTemplate(t, c.style)
-			projection, err := CanvasWithTextPaint(tpl, testShippedFontSet())
+			projection, err := canvasWithTextPaint(tpl, testShippedFontSet())
 			if err != nil {
 				t.Fatalf("CanvasWithTextPaint: %v", err)
 			}
-			var paint *CanvasTextPaint
+			var paint *designer.CanvasTextPaint
 			for i := range projection.Components {
 				if projection.Components[i].ID == "e1" {
 					paint = projection.Components[i].TextPaint
@@ -949,7 +950,7 @@ func TestCanvasProjectionCarriesTheDefaultLineSpacing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	projection, err := Canvas(tpl)
+	projection, err := canvas(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}

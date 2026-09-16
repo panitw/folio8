@@ -4847,7 +4847,7 @@ describe('typography controls over the engine-projected closed sets', () => {
   // implementation". THIS TEST IS NOT A NO-SEND GUARD. It asserts the send, and
   // then asserts that the ENGINE is what makes the send harmless.
   //
-  // The engine's half is `folio8-go/wasm/engine.go:240-246` — canonical bytes
+  // The engine's half is `folio8-go/internal/wasm/engine.go:334-340` — canonical bytes
   // that did not move return the stable snapshot, "not committed mutations:
   // preserve revision, dirty state, preview authority, and both history branches
   // exactly as they were". So the property that matters is a UI property: given

@@ -8,6 +8,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 )
 
 // THE ONE TEST THAT READS BOTH LANGUAGES.
@@ -138,14 +140,14 @@ func TestCommandJsonAuthorityAndTheEnginesRefusalLandTogether(t *testing.T) {
 			pageSetup := strings.Contains(probe.command, `"pageSetup"`)
 			var err error
 			if pageSetup {
-				_, err = ApplyPageSetupCommand(tpl, []byte(probe.command))
+				_, err = applyPageSetupCommand(tpl, []byte(probe.command))
 			} else {
-				_, err = ApplyComponentCommand(tpl, []byte(probe.command))
+				_, err = applyComponentCommand(tpl, []byte(probe.command))
 			}
 			if err == nil {
 				t.Fatal("the engine accepted the bytes an unquoted splice used to produce")
 			}
-			var failure *ComponentCommandError
+			var failure *designer.ComponentCommandError
 			// EACH DOOR IN ITS OWN SHAPE. The page-setup door must NOT raise a
 			// ComponentCommandError: the host matches that type before the
 			// page-setup fallback, so it would answer COMPONENT_INVALID for a

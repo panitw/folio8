@@ -14,6 +14,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 	"github.com/panitw/folio8/folio8-go/internal/expr"
 	"github.com/panitw/folio8/folio8-go/internal/fontset"
 	"github.com/panitw/folio8/folio8-go/internal/geom"
@@ -21,17 +22,10 @@ import (
 	"github.com/panitw/folio8/folio8-go/internal/template"
 )
 
-// ComponentCommandError is the stable, bounded diagnostic seam for component
-// mutations. It deliberately names only a paint-safe id and command field.
-type ComponentCommandError struct {
-	error
-	ElementID string
-	DataPath  string
-	Message   string
-}
-
+// componentFailure is the one way the engine refuses a component command: a
+// *designer.ComponentCommandError naming a paint-safe id and command field.
 func componentFailure(id, path, message string) error {
-	return &ComponentCommandError{error: fmt.Errorf("folio8: %s", message), ElementID: id, DataPath: path, Message: message}
+	return designer.NewComponentCommandError(id, path, message)
 }
 
 // The two exported command doors both name a DOCUMENT rather than an element
@@ -210,34 +204,34 @@ func drainValue(dec *json.Decoder, opening json.Delim) {
 	}
 }
 
-// ApplyComponentCommand applies Story 5.7's small, versioned authoring
+// applyComponentCommand applies Story 5.7's small, versioned authoring
 // vocabulary. The command is intentionally decoded in Go: the browser sends
 // opaque bytes and never receives the template or its canonical JSON shape.
 // Optional fonts give window-constrained movement the same pagination as
 // CanvasWithTextPaint. Other commands retain their existing behavior.
-func ApplyComponentCommand(t *Template, command []byte, fonts ...FontSet) (CanvasProjection, error) {
+func applyComponentCommand(t *Template, command []byte, fonts ...FontSet) (designer.CanvasProjection, error) {
 	if t == nil {
-		return CanvasProjection{}, errNilTemplate
+		return designer.CanvasProjection{}, errNilTemplate
 	}
 	if err := refuseDuplicateCommandKeys(command, componentCommandPath); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	dec := json.NewDecoder(bytes.NewReader(command))
 	dec.UseNumber()
 	var raw map[string]json.RawMessage
 	if err := dec.Decode(&raw); err != nil {
-		return CanvasProjection{}, fmt.Errorf("folio8: component command is malformed")
+		return designer.CanvasProjection{}, fmt.Errorf("folio8: component command is malformed")
 	}
 	var surplus any
 	if err := dec.Decode(&surplus); err != io.EOF {
-		return CanvasProjection{}, fmt.Errorf("folio8: component command is malformed")
+		return designer.CanvasProjection{}, fmt.Errorf("folio8: component command is malformed")
 	}
 	if !equalNumber(raw["version"], "1") {
-		return CanvasProjection{}, fmt.Errorf("folio8: unknown component command")
+		return designer.CanvasProjection{}, fmt.Errorf("folio8: unknown component command")
 	}
 	var kind string
 	if json.Unmarshal(raw["kind"], &kind) != nil {
-		return CanvasProjection{}, fmt.Errorf("folio8: unknown component command")
+		return designer.CanvasProjection{}, fmt.Errorf("folio8: unknown component command")
 	}
 	switch kind {
 	case "createComponent":
@@ -329,7 +323,7 @@ func ApplyComponentCommand(t *Template, command []byte, fonts ...FontSet) (Canva
 	case "updateTableRules":
 		return applyTableColumnCommand(t, raw, updateTableRules)
 	default:
-		return CanvasProjection{}, fmt.Errorf("folio8: unknown component command")
+		return designer.CanvasProjection{}, fmt.Errorf("folio8: unknown component command")
 	}
 }
 
@@ -337,29 +331,29 @@ func ApplyComponentCommand(t *Template, command []byte, fonts ...FontSet) (Canva
 // wasm.Engine.Apply. The individual handlers may mutate their candidate while
 // checking geometry, but the caller's template is installed only after that
 // candidate serializes, reparses, and projects successfully.
-func applyTableColumnCommand(t *Template, raw map[string]json.RawMessage, apply func(*Template, map[string]json.RawMessage) (CanvasProjection, error)) (CanvasProjection, error) {
+func applyTableColumnCommand(t *Template, raw map[string]json.RawMessage, apply func(*Template, map[string]json.RawMessage) (designer.CanvasProjection, error)) (designer.CanvasProjection, error) {
 	before, err := SerializeTemplate(t)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	working, err := ParseTemplate(before)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	if _, err := apply(working, raw); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	canonical, err := SerializeTemplate(working)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	installed, err := ParseTemplate(canonical)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
-	projection, err := Canvas(installed)
+	projection, err := canvas(installed)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	t.doc, t.derivedFooters = installed.doc, installed.derivedFooters
 	return projection, nil
@@ -367,34 +361,34 @@ func applyTableColumnCommand(t *Template, raw map[string]json.RawMessage, apply 
 
 // The table commands are a deliberately closed authoring vocabulary. Sample
 // input never enters these commands: it only helps the UI discover candidates.
-func addTableColumn(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func addTableColumn(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	if err := componentFields(raw, 4); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	id, err := commandString(raw, "id")
 	if err != nil {
-		return CanvasProjection{}, componentFailure("", "table.id", err.Error())
+		return designer.CanvasProjection{}, componentFailure("", "table.id", err.Error())
 	}
 	index, err := commandInt(raw, "index")
 	if err != nil {
-		return CanvasProjection{}, componentFailure(id, "column.index", err.Error())
+		return designer.CanvasProjection{}, componentFailure(id, "column.index", err.Error())
 	}
 	_, band, _, element, err := findComponent(t, id)
 	if err != nil {
-		return CanvasProjection{}, componentFailure(id, "table.id", "table was not found")
+		return designer.CanvasProjection{}, componentFailure(id, "table.id", "table was not found")
 	}
 	if element.Type != template.ElementTable || !element.Table.Set || element.Table.Null {
-		return CanvasProjection{}, componentFailure(id, "table.id", "component is not a table")
+		return designer.CanvasProjection{}, componentFailure(id, "table.id", "component is not a table")
 	}
 	columns := element.Table.Value.Columns
 	if len(columns) >= maxTableColumns {
-		return CanvasProjection{}, componentFailure(id, "column.index", "table has too many columns")
+		return designer.CanvasProjection{}, componentFailure(id, "column.index", "table has too many columns")
 	}
 	if index < 0 || index > len(columns) {
-		return CanvasProjection{}, componentFailure(id, "column.index", "column index is out of range")
+		return designer.CanvasProjection{}, componentFailure(id, "column.index", "column index is out of range")
 	}
 	if t.doc.NextID <= 0 || t.doc.NextID == 1<<63-1 {
-		return CanvasProjection{}, componentFailure(id, "column.id", "nextId cannot allocate another column")
+		return designer.CanvasProjection{}, componentFailure(id, "column.id", "nextId cannot allocate another column")
 	}
 	// Keep the normal width when it fits. Otherwise split one existing column
 	// in exact millipoints; the candidate clone makes the resize and insertion
@@ -409,7 +403,7 @@ func addTableColumn(t *Template, raw map[string]json.RawMessage) (CanvasProjecti
 			}
 		}
 		if widest < 0 {
-			return CanvasProjection{}, componentFailure(id, "column.width", "no column can be split into two positive widths")
+			return designer.CanvasProjection{}, componentFailure(id, "column.width", "no column can be split into two positive widths")
 		}
 		newWidth = columns[widest].Width / 2
 		// The existing column keeps an odd millipoint; the first widest wins ties.
@@ -424,78 +418,78 @@ func addTableColumn(t *Template, raw map[string]json.RawMessage) (CanvasProjecti
 	copy(element.Table.Value.Columns[index+1:], element.Table.Value.Columns[index:])
 	element.Table.Value.Columns[index] = column
 	if _, err := template.TableColumnWidths(*element); err != nil {
-		return CanvasProjection{}, wrapTableWidthError(err)
+		return designer.CanvasProjection{}, wrapTableWidthError(err)
 	}
 	width, height := projectedSize(*element)
 	if err := containComponent(band, element.X, element.Y, width, height); err != nil {
-		return CanvasProjection{}, componentFailure(id, "column.width", err.Error())
+		return designer.CanvasProjection{}, componentFailure(id, "column.width", err.Error())
 	}
 	t.doc.NextID++
-	return Canvas(t)
+	return canvas(t)
 }
 
-func removeTableColumn(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func removeTableColumn(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	if err := componentFields(raw, 4); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	id, err := commandString(raw, "id")
 	if err != nil {
-		return CanvasProjection{}, componentFailure("", "table.id", err.Error())
+		return designer.CanvasProjection{}, componentFailure("", "table.id", err.Error())
 	}
 	columnID, err := commandString(raw, "columnId")
 	if err != nil {
-		return CanvasProjection{}, componentFailure(id, "column.id", err.Error())
+		return designer.CanvasProjection{}, componentFailure(id, "column.id", err.Error())
 	}
 	_, _, _, element, err := findComponent(t, id)
 	if err != nil {
-		return CanvasProjection{}, componentFailure(id, "table.id", "table was not found")
+		return designer.CanvasProjection{}, componentFailure(id, "table.id", "table was not found")
 	}
 	if element.Type != template.ElementTable || !element.Table.Set || element.Table.Null {
-		return CanvasProjection{}, componentFailure(id, "table.id", "component is not a table")
+		return designer.CanvasProjection{}, componentFailure(id, "table.id", "component is not a table")
 	}
 	index := tableColumnIndex(element, columnID)
 	if index < 0 {
-		return CanvasProjection{}, componentFailure(id, "column.id", "column was not found")
+		return designer.CanvasProjection{}, componentFailure(id, "column.id", "column was not found")
 	}
 	columns := element.Table.Value.Columns
 	copy(columns[index:], columns[index+1:])
 	element.Table.Value.Columns = columns[:len(columns)-1]
-	return Canvas(t)
+	return canvas(t)
 }
 
-func moveTableColumn(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func moveTableColumn(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	if err := componentFields(raw, 5); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	id, err := commandString(raw, "id")
 	if err != nil {
-		return CanvasProjection{}, componentFailure("", "table.id", err.Error())
+		return designer.CanvasProjection{}, componentFailure("", "table.id", err.Error())
 	}
 	columnID, err := commandString(raw, "columnId")
 	if err != nil {
-		return CanvasProjection{}, componentFailure(id, "column.id", err.Error())
+		return designer.CanvasProjection{}, componentFailure(id, "column.id", err.Error())
 	}
 	toIndex, err := commandInt(raw, "toIndex")
 	if err != nil {
-		return CanvasProjection{}, componentFailure(id, "column.toIndex", err.Error())
+		return designer.CanvasProjection{}, componentFailure(id, "column.toIndex", err.Error())
 	}
 	_, _, _, element, err := findComponent(t, id)
 	if err != nil {
-		return CanvasProjection{}, componentFailure(id, "table.id", "table was not found")
+		return designer.CanvasProjection{}, componentFailure(id, "table.id", "table was not found")
 	}
 	if element.Type != template.ElementTable || !element.Table.Set || element.Table.Null {
-		return CanvasProjection{}, componentFailure(id, "table.id", "component is not a table")
+		return designer.CanvasProjection{}, componentFailure(id, "table.id", "component is not a table")
 	}
 	fromIndex := tableColumnIndex(element, columnID)
 	if fromIndex < 0 {
-		return CanvasProjection{}, componentFailure(id, "column.id", "column was not found")
+		return designer.CanvasProjection{}, componentFailure(id, "column.id", "column was not found")
 	}
 	columns := element.Table.Value.Columns
 	if toIndex < 0 || toIndex >= len(columns) {
-		return CanvasProjection{}, componentFailure(id, "column.toIndex", "column index is out of range")
+		return designer.CanvasProjection{}, componentFailure(id, "column.toIndex", "column index is out of range")
 	}
 	if fromIndex == toIndex {
-		return Canvas(t)
+		return canvas(t)
 	}
 	column := columns[fromIndex]
 	if fromIndex < toIndex {
@@ -504,39 +498,39 @@ func moveTableColumn(t *Template, raw map[string]json.RawMessage) (CanvasProject
 		copy(columns[toIndex+1:fromIndex+1], columns[toIndex:fromIndex])
 	}
 	columns[toIndex] = column
-	return Canvas(t)
+	return canvas(t)
 }
 
-func updateTableColumn(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func updateTableColumn(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	if err := componentFields(raw, 6); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	id, err := commandString(raw, "id")
 	if err != nil {
-		return CanvasProjection{}, componentFailure("", "table.id", err.Error())
+		return designer.CanvasProjection{}, componentFailure("", "table.id", err.Error())
 	}
 	columnID, err := commandString(raw, "columnId")
 	if err != nil {
-		return CanvasProjection{}, componentFailure(id, "column.id", err.Error())
+		return designer.CanvasProjection{}, componentFailure(id, "column.id", err.Error())
 	}
 	field, err := commandString(raw, "field")
 	if err != nil {
-		return CanvasProjection{}, componentFailure(id, "column.field", err.Error())
+		return designer.CanvasProjection{}, componentFailure(id, "column.field", err.Error())
 	}
 	value, ok := raw["value"]
 	if !ok {
-		return CanvasProjection{}, componentFailure(id, "column.value", "column value is required")
+		return designer.CanvasProjection{}, componentFailure(id, "column.value", "column value is required")
 	}
 	_, band, _, element, err := findComponent(t, id)
 	if err != nil {
-		return CanvasProjection{}, componentFailure(id, "table.id", "table was not found")
+		return designer.CanvasProjection{}, componentFailure(id, "table.id", "table was not found")
 	}
 	if element.Type != template.ElementTable || !element.Table.Set || element.Table.Null {
-		return CanvasProjection{}, componentFailure(id, "table.id", "component is not a table")
+		return designer.CanvasProjection{}, componentFailure(id, "table.id", "component is not a table")
 	}
 	index := tableColumnIndex(element, columnID)
 	if index < 0 {
-		return CanvasProjection{}, componentFailure(id, "column.id", "column was not found")
+		return designer.CanvasProjection{}, componentFailure(id, "column.id", "column was not found")
 	}
 	column := &element.Table.Value.Columns[index]
 	switch field {
@@ -551,37 +545,37 @@ func updateTableColumn(t *Template, raw map[string]json.RawMessage) (CanvasProje
 		// two doors agree — a label the panel accepted and the engine
 		// refused was a refusal with no field the author could see.
 		if err != nil || utf8.RuneCountInString(label) > 256 {
-			return CanvasProjection{}, componentFailure(id, "column.header", "header must be at most 256 characters")
+			return designer.CanvasProjection{}, componentFailure(id, "column.header", "header must be at most 256 characters")
 		}
 		column.Label = label
 	case "width":
 		if element.Width.Set {
-			return CanvasProjection{}, componentFailure(id, "column.width", "edit the proportion in proportional sizing")
+			return designer.CanvasProjection{}, componentFailure(id, "column.width", "edit the proportion in proportional sizing")
 		}
 		width, err := authoredTableLength(value, "width")
 		if err != nil || width <= 0 {
-			return CanvasProjection{}, componentFailure(id, "column.width", "width must be a positive length")
+			return designer.CanvasProjection{}, componentFailure(id, "column.width", "width must be a positive length")
 		}
 		column.Width = width
 	case "proportion":
 		if !element.Width.Set {
-			return CanvasProjection{}, componentFailure(id, "column.proportion", "this table uses point widths")
+			return designer.CanvasProjection{}, componentFailure(id, "column.proportion", "this table uses point widths")
 		}
 		literal := string(value)
 		if len(value) > 0 && value[0] == '"' {
 			if err := json.Unmarshal(value, &literal); err != nil {
-				return CanvasProjection{}, componentFailure(id, "column.proportion", "proportion must be a decimal")
+				return designer.CanvasProjection{}, componentFailure(id, "column.proportion", "proportion must be a decimal")
 			}
 		}
 		proportion, err := template.DecodeProportion(literal)
 		if err != nil {
-			return CanvasProjection{}, componentFailure(columnID, "column.proportion", err.Error())
+			return designer.CanvasProjection{}, componentFailure(columnID, "column.proportion", err.Error())
 		}
 		column.Proportion = template.Presence[int64]{Set: true, Value: proportion}
 	case "align":
 		align, err := commandString(map[string]json.RawMessage{"value": value}, "value")
 		if err != nil || (align != "left" && align != "center" && align != "right") {
-			return CanvasProjection{}, componentFailure(id, "column.align", "alignment must be left, center, or right")
+			return designer.CanvasProjection{}, componentFailure(id, "column.align", "alignment must be left, center, or right")
 		}
 		column.Align = template.Presence[string]{Set: true, Value: align}
 	case "headerAlign":
@@ -591,20 +585,20 @@ func updateTableColumn(t *Template, raw map[string]json.RawMessage) (CanvasProje
 		// command door and the file door cannot admit different values.
 		headerAlign, err := commandString(map[string]json.RawMessage{"value": value}, "value")
 		if err != nil || !template.IsColumnHeaderAlign(headerAlign) {
-			return CanvasProjection{}, componentFailure(id, "column.headerAlign", "header alignment must be left, center, or right")
+			return designer.CanvasProjection{}, componentFailure(id, "column.headerAlign", "header alignment must be left, center, or right")
 		}
 		column.HeaderAlign = template.Presence[string]{Set: true, Value: headerAlign}
 	default:
-		return CanvasProjection{}, componentFailure(id, "column.field", "column field is not editable")
+		return designer.CanvasProjection{}, componentFailure(id, "column.field", "column field is not editable")
 	}
 	if _, err := template.TableColumnWidths(*element); err != nil {
-		return CanvasProjection{}, wrapTableWidthError(err)
+		return designer.CanvasProjection{}, wrapTableWidthError(err)
 	}
 	width, height := projectedSize(*element)
 	if err := containComponent(band, element.X, element.Y, width, height); err != nil {
-		return CanvasProjection{}, componentFailure(id, "column.width", err.Error())
+		return designer.CanvasProjection{}, componentFailure(id, "column.width", err.Error())
 	}
-	return Canvas(t)
+	return canvas(t)
 }
 
 // Table controls send untouched text; Go owns both decimal validation and
@@ -620,34 +614,34 @@ func authoredTableLength(raw json.RawMessage, field string) (geom.Length, error)
 	return propertyLength(raw, field)
 }
 
-func setTableWidth(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func setTableWidth(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	if err := componentFields(raw, 4); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	id, err := commandString(raw, "id")
 	if err != nil {
-		return CanvasProjection{}, componentFailure("", "table.id", err.Error())
+		return designer.CanvasProjection{}, componentFailure("", "table.id", err.Error())
 	}
 	_, band, _, element, err := findComponent(t, id)
 	if err != nil || element.Type != template.ElementTable || !element.Table.Set || element.Table.Null {
-		return CanvasProjection{}, componentFailure(id, "table.id", "table was not found")
+		return designer.CanvasProjection{}, componentFailure(id, "table.id", "table was not found")
 	}
 	if !element.Width.Set {
-		return CanvasProjection{}, componentFailure(id, "table.width", "total width requires proportional columns")
+		return designer.CanvasProjection{}, componentFailure(id, "table.width", "total width requires proportional columns")
 	}
 	width, err := authoredTableLength(raw["value"], "width")
 	if err != nil || width <= 0 {
-		return CanvasProjection{}, componentFailure(id, "table.width", "total width must be a positive decimal with at most three decimal places")
+		return designer.CanvasProjection{}, componentFailure(id, "table.width", "total width must be a positive decimal with at most three decimal places")
 	}
 	element.Width.Value = width
 	if _, err := template.TableColumnWidths(*element); err != nil {
-		return CanvasProjection{}, wrapTableWidthError(err)
+		return designer.CanvasProjection{}, wrapTableWidthError(err)
 	}
 	_, height := projectedSize(*element)
 	if err := containComponent(band, element.X, element.Y, width, height); err != nil {
-		return CanvasProjection{}, componentFailure(id, "table.width", err.Error())
+		return designer.CanvasProjection{}, componentFailure(id, "table.width", err.Error())
 	}
-	return Canvas(t)
+	return canvas(t)
 }
 
 var rootCollectionPath = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*\[\]$`)
@@ -657,40 +651,40 @@ var rootValuePath = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-
 // bindTableCollection accepts decoded sample keys without changing aliases or
 // column expressions. Explicit footer sources follow the collection while
 // retaining their row-relative fields.
-func bindTableCollection(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func bindTableCollection(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	if err := componentFields(raw, 4); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	id, err := commandString(raw, "id")
 	if err != nil {
-		return CanvasProjection{}, componentFailure("", "table.id", err.Error())
+		return designer.CanvasProjection{}, componentFailure("", "table.id", err.Error())
 	}
 	var segments []string
 	if json.Unmarshal(raw["segments"], &segments) != nil || len(segments) == 0 {
-		return CanvasProjection{}, componentFailure(id, "table.collection", "collection segments must be a non-empty string array")
+		return designer.CanvasProjection{}, componentFailure(id, "table.collection", "collection segments must be a non-empty string array")
 	}
 	for _, segment := range segments {
 		// Check each decoded key before joining, so a key containing a dot can
 		// never be silently reinterpreted as multiple object keys.
 		if !boundedIdentifier.MatchString(segment) {
-			return CanvasProjection{}, componentFailure(id, "table.collection", "collection segments must be identifiers")
+			return designer.CanvasProjection{}, componentFailure(id, "table.collection", "collection segments must be identifiers")
 		}
 	}
 	collection := strings.Join(segments, ".") + "[]"
 	if !validRootCollection(collection) {
-		return CanvasProjection{}, componentFailure(id, "table.collection", "collection must be a bounded root collection path ending in []")
+		return designer.CanvasProjection{}, componentFailure(id, "table.collection", "collection must be a bounded root collection path ending in []")
 	}
 	_, _, _, element, err := findComponent(t, id)
 	if err != nil {
-		return CanvasProjection{}, componentFailure(id, "table.id", "table was not found")
+		return designer.CanvasProjection{}, componentFailure(id, "table.id", "table was not found")
 	}
 	if element.Type != template.ElementTable || !element.Table.Set || element.Table.Null {
-		return CanvasProjection{}, componentFailure(id, "table.id", "component is not a table")
+		return designer.CanvasProjection{}, componentFailure(id, "table.id", "component is not a table")
 	}
 	if err := setTableCollection(element, collection); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
-	return Canvas(t)
+	return canvas(t)
 }
 
 func validRootCollection(collection string) bool {
@@ -722,32 +716,32 @@ func setTableCollection(element *template.Element, collection string) error {
 // configureTableBinding changes the two document-owned row-scope settings as
 // one candidate. An empty alias deliberately means the schema's absent `as`
 // form; render resolution supplies the established default alias, `row`.
-func configureTableBinding(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func configureTableBinding(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	if err := componentFields(raw, 5); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	id, err := commandString(raw, "id")
 	if err != nil {
-		return CanvasProjection{}, componentFailure("", "table.id", err.Error())
+		return designer.CanvasProjection{}, componentFailure("", "table.id", err.Error())
 	}
 	collection, err := commandString(raw, "collection")
 	if err != nil || !validRootCollection(collection) {
-		return CanvasProjection{}, componentFailure(id, "table.collection", "collection must be a bounded root collection path ending in []")
+		return designer.CanvasProjection{}, componentFailure(id, "table.collection", "collection must be a bounded root collection path ending in []")
 	}
 	aliasRaw, ok := raw["alias"]
 	if !ok {
-		return CanvasProjection{}, componentFailure(id, "table.alias", "alias is required")
+		return designer.CanvasProjection{}, componentFailure(id, "table.alias", "alias is required")
 	}
 	var alias string
 	if json.Unmarshal(aliasRaw, &alias) != nil || len(alias) > 64 || (alias != "" && (!boundedIdentifier.MatchString(alias) || reservedRowAlias(alias))) {
-		return CanvasProjection{}, componentFailure(id, "table.alias", "alias must be a bounded identifier or empty for row")
+		return designer.CanvasProjection{}, componentFailure(id, "table.alias", "alias must be a bounded identifier or empty for row")
 	}
 	_, _, _, element, err := findComponent(t, id)
 	if err != nil {
-		return CanvasProjection{}, componentFailure(id, "table.id", "table was not found")
+		return designer.CanvasProjection{}, componentFailure(id, "table.id", "table was not found")
 	}
 	if element.Type != template.ElementTable || !element.Table.Set || element.Table.Null {
-		return CanvasProjection{}, componentFailure(id, "table.id", "component is not a table")
+		return designer.CanvasProjection{}, componentFailure(id, "table.id", "component is not a table")
 	}
 	oldAlias := resolvedTableAlias(element.Table.Value.As)
 	newAlias := alias
@@ -758,59 +752,59 @@ func configureTableBinding(t *Template, raw map[string]json.RawMessage) (CanvasP
 		for i := range element.Table.Value.Columns {
 			next, migrated, used, migrationErr := expr.RewriteRowBinding(element.Table.Value.Columns[i].Bind, oldAlias, newAlias)
 			if migrationErr != nil || (used && !migrated) {
-				return CanvasProjection{}, componentFailure(id, "table.alias", "alias change cannot migrate a row-scoped column binding")
+				return designer.CanvasProjection{}, componentFailure(id, "table.alias", "alias change cannot migrate a row-scoped column binding")
 			}
 			if migrated {
 				if len(next) > maxCanvasBindingString {
-					return CanvasProjection{}, componentFailure(id, "table.alias", "alias change would exceed the table editor binding text limit")
+					return designer.CanvasProjection{}, componentFailure(id, "table.alias", "alias change would exceed the table editor binding text limit")
 				}
 				element.Table.Value.Columns[i].Bind = next
 			}
 		}
 	}
 	if err := setTableCollection(element, collection); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	if alias == "" {
 		element.Table.Value.As = template.Presence[string]{}
 	} else {
 		element.Table.Value.As = template.Presence[string]{Set: true, Value: alias}
 	}
-	return Canvas(t)
+	return canvas(t)
 }
 
 // updateTableColumnBinding accepts a single row-relative field path or an
 // empty field to clear. Go owns the actual expression spelling.
-func updateTableColumnBinding(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func updateTableColumnBinding(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	if err := componentFields(raw, 5); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	id, err := commandString(raw, "id")
 	if err != nil {
-		return CanvasProjection{}, componentFailure("", "table.id", err.Error())
+		return designer.CanvasProjection{}, componentFailure("", "table.id", err.Error())
 	}
 	columnID, err := commandString(raw, "columnId")
 	if err != nil {
-		return CanvasProjection{}, componentFailure(id, "column.id", err.Error())
+		return designer.CanvasProjection{}, componentFailure(id, "column.id", err.Error())
 	}
 	field, ok := optionalCommandString(raw, "field", 192)
 	if !ok || bytes.Equal(bytes.TrimSpace(raw["field"]), []byte("null")) || (field != "" && !rootValuePath.MatchString(field)) {
-		return CanvasProjection{}, componentFailure(id, "column.bind", "field must be a bounded row field path")
+		return designer.CanvasProjection{}, componentFailure(id, "column.bind", "field must be a bounded row field path")
 	}
 	_, _, _, element, err := findComponent(t, id)
 	if err != nil {
-		return CanvasProjection{}, componentFailure(id, "table.id", "table was not found")
+		return designer.CanvasProjection{}, componentFailure(id, "table.id", "table was not found")
 	}
 	if element.Type != template.ElementTable || !element.Table.Set || element.Table.Null {
-		return CanvasProjection{}, componentFailure(id, "table.id", "component is not a table")
+		return designer.CanvasProjection{}, componentFailure(id, "table.id", "component is not a table")
 	}
 	index := tableColumnIndex(element, columnID)
 	if index < 0 {
-		return CanvasProjection{}, componentFailure(id, "column.id", "column was not found")
+		return designer.CanvasProjection{}, componentFailure(id, "column.id", "column was not found")
 	}
 	if field == "" {
 		element.Table.Value.Columns[index].Bind = ""
-		return Canvas(t)
+		return canvas(t)
 	}
 	alias := "row"
 	if element.Table.Value.As.Set && !element.Table.Value.As.Null {
@@ -818,44 +812,44 @@ func updateTableColumnBinding(t *Template, raw map[string]json.RawMessage) (Canv
 	}
 	binding := "{{" + alias + "." + field + "}}"
 	if len(binding) > maxCanvasBindingString {
-		return CanvasProjection{}, componentFailure(id, "column.bind", "binding with the current row alias exceeds the table editor text limit")
+		return designer.CanvasProjection{}, componentFailure(id, "column.bind", "binding with the current row alias exceeds the table editor text limit")
 	}
 	element.Table.Value.Columns[index].Bind = binding
-	return Canvas(t)
+	return canvas(t)
 }
 
 // updateTableColumnExpression accepts the complete authored text unchanged.
 // applyTableColumnCommand reparses the candidate with canonical text-expression
 // and footer validation before installing any document changes.
-func updateTableColumnExpression(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func updateTableColumnExpression(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	if err := componentFields(raw, 5); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	id, err := commandString(raw, "id")
 	if err != nil {
-		return CanvasProjection{}, componentFailure("", "table.id", err.Error())
+		return designer.CanvasProjection{}, componentFailure("", "table.id", err.Error())
 	}
 	columnID, err := commandString(raw, "columnId")
 	if err != nil {
-		return CanvasProjection{}, componentFailure(id, "column.id", err.Error())
+		return designer.CanvasProjection{}, componentFailure(id, "column.id", err.Error())
 	}
 	binding, ok := optionalCommandString(raw, "binding", maxCanvasBindingString)
 	if !ok || bytes.Equal(bytes.TrimSpace(raw["binding"]), []byte("null")) {
-		return CanvasProjection{}, componentFailure(id, "column.bind", "binding must be an explicit string of at most 256 bytes")
+		return designer.CanvasProjection{}, componentFailure(id, "column.bind", "binding must be an explicit string of at most 256 bytes")
 	}
 	_, _, _, element, err := findComponent(t, id)
 	if err != nil {
-		return CanvasProjection{}, componentFailure(id, "table.id", "table was not found")
+		return designer.CanvasProjection{}, componentFailure(id, "table.id", "table was not found")
 	}
 	if element.Type != template.ElementTable || !element.Table.Set || element.Table.Null {
-		return CanvasProjection{}, componentFailure(id, "table.id", "component is not a table")
+		return designer.CanvasProjection{}, componentFailure(id, "table.id", "component is not a table")
 	}
 	index := tableColumnIndex(element, columnID)
 	if index < 0 {
-		return CanvasProjection{}, componentFailure(id, "column.id", "column was not found")
+		return designer.CanvasProjection{}, componentFailure(id, "column.id", "column was not found")
 	}
 	element.Table.Value.Columns[index].Bind = binding
-	return Canvas(t)
+	return canvas(t)
 }
 
 func reservedRowAlias(alias string) bool {
@@ -872,50 +866,50 @@ func resolvedTableAlias(value template.Presence[string]) string {
 // updateTableColumnFooter is intentionally a complete footer configuration,
 // not three independent mutations. Empty companion strings mean absent schema
 // fields, making an accepted command one revision/history step.
-func updateTableColumnFooter(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func updateTableColumnFooter(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	if err := componentFields(raw, 7); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	id, err := commandString(raw, "id")
 	if err != nil {
-		return CanvasProjection{}, componentFailure("", "table.id", err.Error())
+		return designer.CanvasProjection{}, componentFailure("", "table.id", err.Error())
 	}
 	columnID, err := commandString(raw, "columnId")
 	if err != nil {
-		return CanvasProjection{}, componentFailure(id, "column.id", err.Error())
+		return designer.CanvasProjection{}, componentFailure(id, "column.id", err.Error())
 	}
 	footer, ok := optionalCommandString(raw, "footer", 16)
 	if !ok || (footer != "" && footer != "sum" && footer != "avg" && footer != "count") {
-		return CanvasProjection{}, componentFailure(id, "column.footer", "footer must be sum, avg, count, or empty")
+		return designer.CanvasProjection{}, componentFailure(id, "column.footer", "footer must be sum, avg, count, or empty")
 	}
 	footerOf, ok := optionalCommandString(raw, "footerOf", 256)
 	if !ok || (footerOf != "" && !rootValuePath.MatchString(footerOf)) {
-		return CanvasProjection{}, componentFailure(id, "column.footerOf", "footerOf must be a bounded root data path")
+		return designer.CanvasProjection{}, componentFailure(id, "column.footerOf", "footerOf must be a bounded root data path")
 	}
 	footerFormat, ok := optionalCommandString(raw, "footerFormat", 256)
 	if !ok {
-		return CanvasProjection{}, componentFailure(id, "column.footerFormat", "footerFormat must be a bounded string")
+		return designer.CanvasProjection{}, componentFailure(id, "column.footerFormat", "footerFormat must be a bounded string")
 	}
 	if footer == "" && (footerOf != "" || footerFormat != "") {
-		return CanvasProjection{}, componentFailure(id, "column.footer", "footer companions require a footer")
+		return designer.CanvasProjection{}, componentFailure(id, "column.footer", "footer companions require a footer")
 	}
 	if footer == "count" && footerOf != "" {
-		return CanvasProjection{}, componentFailure(id, "column.footerOf", "count uses the table collection and forbids footerOf")
+		return designer.CanvasProjection{}, componentFailure(id, "column.footerOf", "count uses the table collection and forbids footerOf")
 	}
 	_, _, _, element, err := findComponent(t, id)
 	if err != nil {
-		return CanvasProjection{}, componentFailure(id, "table.id", "table was not found")
+		return designer.CanvasProjection{}, componentFailure(id, "table.id", "table was not found")
 	}
 	if element.Type != template.ElementTable || !element.Table.Set || element.Table.Null {
-		return CanvasProjection{}, componentFailure(id, "table.id", "component is not a table")
+		return designer.CanvasProjection{}, componentFailure(id, "table.id", "component is not a table")
 	}
 	index := tableColumnIndex(element, columnID)
 	if index < 0 {
-		return CanvasProjection{}, componentFailure(id, "column.id", "column was not found")
+		return designer.CanvasProjection{}, componentFailure(id, "column.id", "column was not found")
 	}
 	collection := strings.TrimSuffix(element.Table.Value.Bind, "[]")
 	if footerOf != "" && !strings.HasPrefix(footerOf, collection+".") {
-		return CanvasProjection{}, componentFailure(id, "column.footerOf", "footerOf must stay within the table collection")
+		return designer.CanvasProjection{}, componentFailure(id, "column.footerOf", "footerOf must stay within the table collection")
 	}
 	column := &element.Table.Value.Columns[index]
 	column.Footer, column.FooterOf, column.FooterFormat = template.Presence[string]{}, template.Presence[string]{}, template.Presence[string]{}
@@ -928,7 +922,7 @@ func updateTableColumnFooter(t *Template, raw map[string]json.RawMessage) (Canva
 	if footerFormat != "" {
 		column.FooterFormat = template.Presence[string]{Set: true, Value: footerFormat}
 	}
-	return Canvas(t)
+	return canvas(t)
 }
 
 func optionalCommandString(raw map[string]json.RawMessage, name string, max int) (string, bool) {
@@ -975,37 +969,37 @@ func commandInt(raw map[string]json.RawMessage, name string) (int, error) {
 // browser-side validity judgment. This command owns the conversion to folio8's
 // established expression grammar and rejects every non-root/reserved form
 // before touching the target element.
-func bindComponentScalar(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func bindComponentScalar(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	if err := componentFields(raw, 4); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	id, err := commandString(raw, "id")
 	if err != nil {
-		return CanvasProjection{}, componentFailure("", "component.id", err.Error())
+		return designer.CanvasProjection{}, componentFailure("", "component.id", err.Error())
 	}
 	segmentsRaw, ok := raw["segments"]
 	if !ok {
-		return CanvasProjection{}, componentFailure(id, "binding.segments", "binding segments are required")
+		return designer.CanvasProjection{}, componentFailure(id, "binding.segments", "binding segments are required")
 	}
 	var segments []string
 	if json.Unmarshal(segmentsRaw, &segments) != nil || len(segments) == 0 || len(segments) > 32 {
-		return CanvasProjection{}, componentFailure(id, "binding.segments", "binding segments must be a non-empty bounded string array")
+		return designer.CanvasProjection{}, componentFailure(id, "binding.segments", "binding segments must be a non-empty bounded string array")
 	}
 	for _, segment := range segments {
 		if segment == "" || len(segment) > 64 {
-			return CanvasProjection{}, componentFailure(id, "binding.segments", "binding segments must be bounded non-empty strings")
+			return designer.CanvasProjection{}, componentFailure(id, "binding.segments", "binding segments must be bounded non-empty strings")
 		}
 	}
 	if segments[0] == "params" {
-		return CanvasProjection{}, componentFailure(id, "binding.segments", "params is not a root data binding")
+		return designer.CanvasProjection{}, componentFailure(id, "binding.segments", "params is not a root data binding")
 	}
 	path := strings.Join(segments, ".")
 	if len(path) > maxCanvasBindingString {
-		return CanvasProjection{}, componentFailure(id, "binding.segments", "binding path exceeds the projection bound")
+		return designer.CanvasProjection{}, componentFailure(id, "binding.segments", "binding path exceeds the projection bound")
 	}
 	parsed, err := expr.Parse(path)
 	if err != nil {
-		return CanvasProjection{}, componentFailure(id, "binding.segments", "binding path is not a valid folio8 expression")
+		return designer.CanvasProjection{}, componentFailure(id, "binding.segments", "binding path is not a valid folio8 expression")
 	}
 	pathExpr, ok := parsed.(*expr.PathExpr)
 	// Joining is only an intermediate representation for folio8's established
@@ -1013,23 +1007,23 @@ func bindComponentScalar(t *Template, raw map[string]json.RawMessage) (CanvasPro
 	// "a.b" as two keys. Keys that folio8 cannot represent are rejected before
 	// mutation, rather than silently binding a different path.
 	if !ok || !sameSegments(pathExpr.Segments, segments) || expr.IsReserved(path) {
-		return CanvasProjection{}, componentFailure(id, "binding.segments", "binding path must be a non-reserved root data path")
+		return designer.CanvasProjection{}, componentFailure(id, "binding.segments", "binding path must be a non-reserved root data path")
 	}
 	if err := expr.Check(parsed); err != nil {
-		return CanvasProjection{}, componentFailure(id, "binding.segments", "binding path is not a valid folio8 expression")
+		return designer.CanvasProjection{}, componentFailure(id, "binding.segments", "binding path is not a valid folio8 expression")
 	}
 	_, _, _, element, err := findComponent(t, id)
 	if err != nil {
-		return CanvasProjection{}, componentFailure(id, "component.id", "component was not found")
+		return designer.CanvasProjection{}, componentFailure(id, "component.id", "component was not found")
 	}
 	if element.Type != template.ElementText && element.Type != template.ElementBarcode && element.Type != template.ElementQRCode {
-		return CanvasProjection{}, componentFailure(id, "component.id", "only text, barcode and qrcode components can receive a scalar binding")
+		return designer.CanvasProjection{}, componentFailure(id, "component.id", "only text, barcode and qrcode components can receive a scalar binding")
 	}
 	// The generated expression is canonical and then independently reparsed by
 	// wasm.Engine before installation. No sample bytes or local tree metadata
 	// enter the template.
 	element.Value = template.Presence[string]{Set: true, Value: "{{" + path + "}}"}
-	return Canvas(t)
+	return canvas(t)
 }
 
 func sameSegments(left, right []string) bool {
@@ -1047,28 +1041,28 @@ func sameSegments(left, right []string) bool {
 // updateComponentProperties is deliberately a small closed mutation language.
 // It applies the supplied changes to every named component as one candidate;
 // the engine's serialize/reparse transaction makes the update atomic.
-func updateComponentProperties(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func updateComponentProperties(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	before, err := SerializeTemplate(t)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	working, err := ParseTemplate(before)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	projection, err := updateComponentPropertiesInPlace(working, raw)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	// Keep the public helper transactional too. wasm.Apply uses a fresh clone,
 	// but direct callers must receive the same no-partial-mutation guarantee.
 	canonical, err := SerializeTemplate(working)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	installed, err := ParseTemplate(canonical)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	t.doc, t.derivedFooters = installed.doc, installed.derivedFooters
 	return projection, nil
@@ -1123,67 +1117,67 @@ const maxComponentAssetBytes = (engineProtocolMaxPayloadBytes - maxComponentAsse
 // key, never a document-wide sweep (D-5.13.3). The whole thing runs inside
 // one serialize/reparse/project transaction, matching every other component
 // command's no-partial-mutation guarantee.
-func setComponentAsset(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func setComponentAsset(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	before, err := SerializeTemplate(t)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	working, err := ParseTemplate(before)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	projection, err := setComponentAssetInPlace(working, raw)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	canonical, err := SerializeTemplate(working)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	installed, err := ParseTemplate(canonical)
 	if err != nil {
-		return CanvasProjection{}, componentFailure("", "component.asset", "component asset did not pass format validation")
+		return designer.CanvasProjection{}, componentFailure("", "component.asset", "component asset did not pass format validation")
 	}
 	t.doc, t.derivedFooters = installed.doc, installed.derivedFooters
 	return projection, nil
 }
 
-func setComponentAssetInPlace(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func setComponentAssetInPlace(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	if err := componentFields(raw, 5); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	id, err := commandString(raw, "id")
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	_, _, _, element, err := findComponent(t, id)
 	if err != nil {
-		return CanvasProjection{}, componentFailure(id, "component.id", "component was not found")
+		return designer.CanvasProjection{}, componentFailure(id, "component.id", "component was not found")
 	}
 	if element.Type != template.ElementImage {
-		return CanvasProjection{}, componentFailure(id, "component.id", "only an image component can receive an asset")
+		return designer.CanvasProjection{}, componentFailure(id, "component.id", "only an image component can receive an asset")
 	}
 	mediaType, err := commandString(raw, "mediaType")
 	if err != nil {
-		return CanvasProjection{}, componentFailure(id, "component.mediaType", err.Error())
+		return designer.CanvasProjection{}, componentFailure(id, "component.mediaType", err.Error())
 	}
 	dataRaw, ok := raw["data"]
 	if !ok {
-		return CanvasProjection{}, componentFailure(id, "component.data", "asset data is required")
+		return designer.CanvasProjection{}, componentFailure(id, "component.data", "asset data is required")
 	}
 	var dataB64 string
 	if json.Unmarshal(dataRaw, &dataB64) != nil || dataB64 == "" {
-		return CanvasProjection{}, componentFailure(id, "component.data", "asset data must be a non-empty base64 string")
+		return designer.CanvasProjection{}, componentFailure(id, "component.data", "asset data must be a non-empty base64 string")
 	}
 	decoded, err := base64.StdEncoding.Strict().DecodeString(dataB64)
 	if err != nil {
-		return CanvasProjection{}, componentFailure(id, "component.data", "asset data must be valid base64")
+		return designer.CanvasProjection{}, componentFailure(id, "component.data", "asset data must be valid base64")
 	}
 	if len(decoded) == 0 {
-		return CanvasProjection{}, componentFailure(id, "component.data", "asset data cannot be empty")
+		return designer.CanvasProjection{}, componentFailure(id, "component.data", "asset data cannot be empty")
 	}
 	if len(decoded) > maxComponentAssetBytes {
-		return CanvasProjection{}, componentFailure(id, "component.data", fmt.Sprintf("asset exceeds the %d-byte supported size", maxComponentAssetBytes))
+		return designer.CanvasProjection{}, componentFailure(id, "component.data", fmt.Sprintf("asset exceeds the %d-byte supported size", maxComponentAssetBytes))
 	}
 	digest := sha256.Sum256(decoded)
 	key := fmt.Sprintf("%x", digest)
@@ -1192,7 +1186,7 @@ func setComponentAssetInPlace(t *Template, raw map[string]json.RawMessage) (Canv
 	// file this library version cannot decode is refused here, before
 	// anything is written to t.doc.Assets.
 	if _, err := template.DecodeImageForRender(mediaType, decoded, key, id); err != nil {
-		return CanvasProjection{}, componentFailure(id, "component.mediaType", err.Error())
+		return designer.CanvasProjection{}, componentFailure(id, "component.mediaType", err.Error())
 	}
 	previousKey := ""
 	if element.Asset.Set && !element.Asset.Null {
@@ -1211,7 +1205,7 @@ func setComponentAssetInPlace(t *Template, raw map[string]json.RawMessage) (Canv
 	if previousKey != "" && previousKey != key && !assetKeyReferenced(t, previousKey) {
 		delete(t.doc.Assets, previousKey)
 	}
-	return Canvas(t)
+	return canvas(t)
 }
 
 // assetKeyReferenced reports whether anything in the document still names key —
@@ -1278,60 +1272,60 @@ func assetKeyReferenced(t *Template, key string) bool {
 	return false
 }
 
-func updateComponentPropertiesInPlace(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func updateComponentPropertiesInPlace(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	if err := componentFields(raw, 4); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	idsRaw, ok := raw["ids"]
 	if !ok {
-		return CanvasProjection{}, componentFailure("", "component.ids", "component ids are required")
+		return designer.CanvasProjection{}, componentFailure("", "component.ids", "component ids are required")
 	}
 	var ids []string
 	if json.Unmarshal(idsRaw, &ids) != nil || len(ids) == 0 {
-		return CanvasProjection{}, componentFailure("", "component.ids", "component ids must be a non-empty string array")
+		return designer.CanvasProjection{}, componentFailure("", "component.ids", "component ids must be a non-empty string array")
 	}
 	seen := map[string]bool{}
 	for _, id := range ids {
 		if id == "" || seen[id] {
-			return CanvasProjection{}, componentFailure(id, "component.ids", "component ids must be unique non-empty strings")
+			return designer.CanvasProjection{}, componentFailure(id, "component.ids", "component ids must be unique non-empty strings")
 		}
 		seen[id] = true
 	}
 	changesRaw, ok := raw["changes"]
 	if !ok {
-		return CanvasProjection{}, componentFailure("", "component.changes", "component changes are required")
+		return designer.CanvasProjection{}, componentFailure("", "component.changes", "component changes are required")
 	}
 	var changes map[string]json.RawMessage
 	if json.Unmarshal(changesRaw, &changes) != nil || len(changes) == 0 {
-		return CanvasProjection{}, componentFailure("", "component.changes", "component changes must be a non-empty object")
+		return designer.CanvasProjection{}, componentFailure("", "component.changes", "component changes must be a non-empty object")
 	}
 	if len(ids) > 1 {
 		if _, ok := changes["value"]; ok {
-			return CanvasProjection{}, componentFailure("", "component.value", "text value cannot be edited across a selection")
+			return designer.CanvasProjection{}, componentFailure("", "component.value", "text value cannot be edited across a selection")
 		}
 	}
 	for _, id := range ids {
 		_, band, _, element, err := findComponent(t, id)
 		if err != nil {
-			return CanvasProjection{}, componentFailure(id, "component.id", "component was not found")
+			return designer.CanvasProjection{}, componentFailure(id, "component.id", "component was not found")
 		}
 		if err := applyPropertyChanges(t, element, changes); err != nil {
-			return CanvasProjection{}, componentFailure(id, "component."+propertyPath(changes), err.Error())
+			return designer.CanvasProjection{}, componentFailure(id, "component."+propertyPath(changes), err.Error())
 		}
 		width, height := projectedSize(*element)
 		if err := containComponent(band, element.X, element.Y, width, height); err != nil {
-			return CanvasProjection{}, componentFailure(id, "component.geometry", err.Error())
+			return designer.CanvasProjection{}, componentFailure(id, "component.geometry", err.Error())
 		}
 		if err := refuseSectionBreakStraddle(t, band.Name, *element, "component."+propertyPath(changes)); err != nil {
-			return CanvasProjection{}, err
+			return designer.CanvasProjection{}, err
 		}
 	}
 	// Validate authored expressions before projection bounds can mask their
 	// located cause. The caller still installs this copy only after reparse.
 	if _, err := validateAndDeriveExpressions(t.doc); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
-	return Canvas(t)
+	return canvas(t)
 }
 
 func propertyPath(changes map[string]json.RawMessage) string {
@@ -1835,7 +1829,7 @@ func componentLength(raw map[string]json.RawMessage, name string, snap bool) (ge
 }
 
 func snapField(name string, value geom.Length) (geom.Length, error) {
-	snapped, valid := SnapToGrid(value)
+	snapped, valid := snapToGrid(value)
 	if !valid {
 		return 0, fmt.Errorf("folio8: component.%s overflows grid snapping", name)
 	}
@@ -1850,10 +1844,10 @@ func commandBand(raw map[string]json.RawMessage) (string, *template.Band, error)
 	return name, nil, nil
 }
 
-func bandByName(t *Template, name string) (*template.Band, CanvasBand, error) {
-	projection, err := Canvas(t)
+func bandByName(t *Template, name string) (*template.Band, designer.CanvasBand, error) {
+	projection, err := canvas(t)
 	if err != nil {
-		return nil, CanvasBand{}, err
+		return nil, designer.CanvasBand{}, err
 	}
 	for _, projected := range projection.Bands {
 		if projected.Name != name {
@@ -1869,55 +1863,55 @@ func bandByName(t *Template, name string) (*template.Band, CanvasBand, error) {
 			return &t.doc.Bands.PageFooter, projected, nil
 		}
 	}
-	return nil, CanvasBand{}, fmt.Errorf("folio8: component.band must be pageHeader, content, or pageFooter")
+	return nil, designer.CanvasBand{}, fmt.Errorf("folio8: component.band must be pageHeader, content, or pageFooter")
 }
 
-func createComponent(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func createComponent(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	fields := 9
 	if _, ok := raw["page"]; ok {
 		fields++
 	}
 	if err := componentFields(raw, fields); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	kind, err := commandString(raw, "type")
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	elementType := template.ElementType(kind)
 	if !paletteElementType(elementType) {
-		return CanvasProjection{}, fmt.Errorf("folio8: component.type must be text, image, table, line, rect, barcode, or qrcode")
+		return designer.CanvasProjection{}, fmt.Errorf("folio8: component.type must be text, image, table, line, rect, barcode, or qrcode")
 	}
 	bandName, _, err := commandBand(raw)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	snap, err := commandBool(raw, "snap")
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	x, err := componentLength(raw, "x", snap)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	y, err := componentLength(raw, "y", snap)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	width, err := componentLength(raw, "width", snap)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	height, err := componentLength(raw, "height", snap)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	page, hasPage, err := optionalPageField(t, raw)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	if hasPage && bandName != bandContent {
-		return CanvasProjection{}, contentOnlyPage(bandName, "")
+		return designer.CanvasProjection{}, contentOnlyPage(bandName, "")
 	}
 	return createComponentInBand(t, elementType, bandName, page, x, y, width, height)
 }
@@ -1969,46 +1963,46 @@ func paletteElementType(elementType template.ElementType) bool {
 	return false
 }
 
-func dropComponent(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func dropComponent(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	fields := 6
 	if _, ok := raw["page"]; ok {
 		fields++
 	}
 	if err := componentFields(raw, fields); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	kind, err := commandString(raw, "type")
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	elementType := template.ElementType(kind)
 	if !paletteElementType(elementType) {
-		return CanvasProjection{}, componentFailure("", "component.type", "component type must be text, image, table, line, rect, barcode, or qrcode")
+		return designer.CanvasProjection{}, componentFailure("", "component.type", "component type must be text, image, table, line, rect, barcode, or qrcode")
 	}
 	snap, err := commandBool(raw, "snap")
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	pageX, err := componentLength(raw, "x", false)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	pageY, err := componentLength(raw, "y", false)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	// The point is a sheet point of the target page; the band rectangles are
 	// the same on every page, so only which page's column receives it changes.
 	page, hasPage, err := optionalPageField(t, raw)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	_, projected, err := hitTestBand(t, pageX, pageY)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	if hasPage && projected.Name != bandContent {
-		return CanvasProjection{}, contentOnlyPage(projected.Name, "")
+		return designer.CanvasProjection{}, contentOnlyPage(projected.Name, "")
 	}
 	width, height := dropWidth, dropHeight
 	if elementType == template.ElementImage {
@@ -2033,13 +2027,13 @@ func dropComponent(t *Template, raw map[string]json.RawMessage) (CanvasProjectio
 	fitImage := elementType == template.ElementImage && slices.Contains(bandsCappingVertically, projected.Name)
 	if snap {
 		var valid bool
-		x, valid = SnapToGrid(x)
+		x, valid = snapToGrid(x)
 		if !valid {
-			return CanvasProjection{}, componentFailure("", "component.x", "component x overflows grid snapping")
+			return designer.CanvasProjection{}, componentFailure("", "component.x", "component x overflows grid snapping")
 		}
-		y, valid = SnapToGrid(y)
+		y, valid = snapToGrid(y)
 		if !valid {
-			return CanvasProjection{}, componentFailure("", "component.y", "component y overflows grid snapping")
+			return designer.CanvasProjection{}, componentFailure("", "component.y", "component y overflows grid snapping")
 		}
 		if !fitImage && containComponent(projected, unsnappedX, unsnappedY, width, height) == nil {
 			x = containEdge(x, geom.Length(projected.Width)-width)
@@ -2063,10 +2057,10 @@ func dropComponent(t *Template, raw map[string]json.RawMessage) (CanvasProjectio
 
 // createComponentInBand creates into bandName; for content, into page's
 // column (0 is page 1).
-func createComponentInBand(t *Template, elementType template.ElementType, bandName string, page int, x, y, width, height geom.Length) (CanvasProjection, error) {
+func createComponentInBand(t *Template, elementType template.ElementType, bandName string, page int, x, y, width, height geom.Length) (designer.CanvasProjection, error) {
 	band, projected, err := bandByName(t, bandName)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	if bandName == bandContent {
 		band = t.doc.ContentBands()[page]
@@ -2076,7 +2070,7 @@ func createComponentInBand(t *Template, elementType template.ElementType, bandNa
 		idsNeeded = 2
 	}
 	if t.doc.NextID <= 0 || t.doc.NextID > (1<<63-1)-idsNeeded {
-		return CanvasProjection{}, fmt.Errorf("folio8: nextId cannot allocate another component")
+		return designer.CanvasProjection{}, fmt.Errorf("folio8: nextId cannot allocate another component")
 	}
 	// Allocate against a local cursor; a refusal consumes neither the table's
 	// id nor its starter column's id.
@@ -2094,7 +2088,7 @@ func createComponentInBand(t *Template, elementType template.ElementType, bandNa
 		// proportion receives the band's available authored total.
 	} else {
 		if width <= 0 || height <= 0 {
-			return CanvasProjection{}, fmt.Errorf("folio8: component.width and component.height must be positive")
+			return designer.CanvasProjection{}, fmt.Errorf("folio8: component.width and component.height must be positive")
 		}
 		element.Width = template.Presence[geom.Length]{Set: true, Value: width}
 		element.Height = template.Presence[geom.Length]{Set: true, Value: height}
@@ -2140,18 +2134,18 @@ func createComponentInBand(t *Template, elementType template.ElementType, bandNa
 		}
 	}
 	if err := containComponent(projected, x, y, width, height); err != nil {
-		return CanvasProjection{}, componentFailure("", "component.geometry", err.Error())
+		return designer.CanvasProjection{}, componentFailure("", "component.geometry", err.Error())
 	}
 	if err := refuseSectionBreakStraddleOnPage(t, bandName, page, element, "component.geometry"); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	previousElements, previousID := band.Elements, t.doc.NextID
 	band.Elements = append(band.Elements, element)
 	t.doc.NextID = ids.NextID
-	projection, err := Canvas(t)
+	projection, err := canvas(t)
 	if err != nil {
 		band.Elements, t.doc.NextID = previousElements, previousID
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	return projection, nil
 }
@@ -2170,10 +2164,10 @@ func defaultFontFamily(t *Template) string {
 	return ""
 }
 
-func hitTestBand(t *Template, x, y geom.Length) (*template.Band, CanvasBand, error) {
-	projection, err := Canvas(t)
+func hitTestBand(t *Template, x, y geom.Length) (*template.Band, designer.CanvasBand, error) {
+	projection, err := canvas(t)
 	if err != nil {
-		return nil, CanvasBand{}, err
+		return nil, designer.CanvasBand{}, err
 	}
 	for _, band := range projection.Bands {
 		left, top := geom.Length(band.X), geom.Length(band.Y)
@@ -2191,14 +2185,14 @@ func hitTestBand(t *Template, x, y geom.Length) (*template.Band, CanvasBand, err
 			return &t.doc.Bands.PageFooter, band, nil
 		}
 	}
-	return nil, CanvasBand{}, componentFailure("", "component.drop", "drop point is outside a page band")
+	return nil, designer.CanvasBand{}, componentFailure("", "component.drop", "drop point is outside a page band")
 }
 
-func findComponent(t *Template, id string) (*template.Band, CanvasBand, int, *template.Element, error) {
+func findComponent(t *Template, id string) (*template.Band, designer.CanvasBand, int, *template.Element, error) {
 	for _, name := range []string{bandPageHeader, bandContent, bandPageFooter} {
 		band, projected, err := bandByName(t, name)
 		if err != nil {
-			return nil, CanvasBand{}, 0, nil, err
+			return nil, designer.CanvasBand{}, 0, nil, err
 		}
 		// SPEC-multi-pages: an element is found on whichever designed page
 		// holds it, and returned with that page's band.
@@ -2214,41 +2208,41 @@ func findComponent(t *Template, id string) (*template.Band, CanvasBand, int, *te
 			}
 		}
 	}
-	return nil, CanvasBand{}, 0, nil, fmt.Errorf("folio8: component %q was not found", id)
+	return nil, designer.CanvasBand{}, 0, nil, fmt.Errorf("folio8: component %q was not found", id)
 }
 
-func moveComponent(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func moveComponent(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	if err := componentFields(raw, 6); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	id, err := commandString(raw, "id")
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	snap, err := commandBool(raw, "snap")
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	unsnappedX, err := componentLength(raw, "x", false)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	unsnappedY, err := componentLength(raw, "y", false)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	x, y := unsnappedX, unsnappedY
 	if snap {
 		if x, err = snapField("x", unsnappedX); err != nil {
-			return CanvasProjection{}, err
+			return designer.CanvasProjection{}, err
 		}
 		if y, err = snapField("y", unsnappedY); err != nil {
-			return CanvasProjection{}, err
+			return designer.CanvasProjection{}, err
 		}
 	}
 	_, projected, _, element, err := findComponent(t, id)
 	if err != nil {
-		return CanvasProjection{}, componentFailure(id, "component.id", "component was not found")
+		return designer.CanvasProjection{}, componentFailure(id, "component.id", "component was not found")
 	}
 	width, height := projectedSize(*element)
 	if snap && containComponent(projected, unsnappedX, unsnappedY, width, height) == nil {
@@ -2256,59 +2250,59 @@ func moveComponent(t *Template, raw map[string]json.RawMessage) (CanvasProjectio
 		y = containEdgeY(projected, y, geom.Length(projected.Height)-height)
 	}
 	if err := containComponent(projected, x, y, width, height); err != nil {
-		return CanvasProjection{}, componentFailure(id, "component.geometry", err.Error())
+		return designer.CanvasProjection{}, componentFailure(id, "component.geometry", err.Error())
 	}
 	candidate := *element
 	candidate.X, candidate.Y = x, y
 	if err := refuseSectionBreakStraddle(t, projected.Name, candidate, "component.geometry"); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	element.X, element.Y = x, y
-	return Canvas(t)
+	return canvas(t)
 }
 
-func resizeComponent(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func resizeComponent(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	if err := componentFields(raw, 6); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	id, err := commandString(raw, "id")
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	snap, err := commandBool(raw, "snap")
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	width, err := componentLength(raw, "width", snap)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	height, err := componentLength(raw, "height", snap)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	_, projected, _, element, err := findComponent(t, id)
 	if err != nil {
-		return CanvasProjection{}, componentFailure(id, "component.id", "component was not found")
+		return designer.CanvasProjection{}, componentFailure(id, "component.id", "component was not found")
 	}
 	if element.Type == template.ElementTable {
-		return CanvasProjection{}, componentFailure(id, "component.geometry", "table has derived geometry and cannot be resized")
+		return designer.CanvasProjection{}, componentFailure(id, "component.geometry", "table has derived geometry and cannot be resized")
 	}
 	if width <= 0 || height <= 0 {
-		return CanvasProjection{}, componentFailure(id, "component.geometry", "component width and height must be positive")
+		return designer.CanvasProjection{}, componentFailure(id, "component.geometry", "component width and height must be positive")
 	}
 	if err := containComponent(projected, element.X, element.Y, width, height); err != nil {
-		return CanvasProjection{}, componentFailure(id, "component.geometry", err.Error())
+		return designer.CanvasProjection{}, componentFailure(id, "component.geometry", err.Error())
 	}
 	candidate := *element
 	candidate.Width = template.Presence[geom.Length]{Set: true, Value: width}
 	candidate.Height = template.Presence[geom.Length]{Set: true, Value: height}
 	if err := refuseSectionBreakStraddle(t, projected.Name, candidate, "component.geometry"); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	element.Width = template.Presence[geom.Length]{Set: true, Value: width}
 	element.Height = template.Presence[geom.Length]{Set: true, Value: height}
-	return Canvas(t)
+	return canvas(t)
 }
 
 // setComponentBounds is one rectangle, not a move followed by a resize. A
@@ -2316,40 +2310,40 @@ func resizeComponent(t *Template, raw map[string]json.RawMessage) (CanvasProject
 // origin and the size together; sending moveComponent and resizeComponent in
 // sequence would put two entries in history for one drag and would test
 // containment against an intermediate rectangle the caller never asked for.
-func setComponentBounds(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func setComponentBounds(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	if err := componentFields(raw, 8); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	id, err := commandString(raw, "id")
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	snap, err := commandBool(raw, "snap")
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	unsnappedX, err := componentLength(raw, "x", false)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	unsnappedY, err := componentLength(raw, "y", false)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	unsnappedWidth, err := componentLength(raw, "width", false)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	unsnappedHeight, err := componentLength(raw, "height", false)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	_, projected, _, element, err := findComponent(t, id)
 	if err != nil {
-		return CanvasProjection{}, componentFailure(id, "component.id", "component was not found")
+		return designer.CanvasProjection{}, componentFailure(id, "component.id", "component was not found")
 	}
 	if element.Type == template.ElementTable {
-		return CanvasProjection{}, componentFailure(id, "component.geometry", "table has derived geometry and cannot be resized")
+		return designer.CanvasProjection{}, componentFailure(id, "component.geometry", "table has derived geometry and cannot be resized")
 	}
 	// A line's short axis is its authored thickness, not a grid dimension.
 	// Use the committed orientation so a short endpoint drag cannot swap axes.
@@ -2366,7 +2360,7 @@ func setComponentBounds(t *Template, raw map[string]json.RawMessage) (CanvasProj
 				continue
 			}
 			if *field.value, err = snapField(field.name, *field.value); err != nil {
-				return CanvasProjection{}, err
+				return designer.CanvasProjection{}, err
 			}
 		}
 	}
@@ -2379,7 +2373,7 @@ func setComponentBounds(t *Template, raw map[string]json.RawMessage) (CanvasProj
 		height = unsnappedHeight
 	}
 	if width <= 0 || height <= 0 {
-		return CanvasProjection{}, componentFailure(id, "component.geometry", "component width and height must be positive")
+		return designer.CanvasProjection{}, componentFailure(id, "component.geometry", "component width and height must be positive")
 	}
 	if snap && containComponent(projected, unsnappedX, unsnappedY, unsnappedWidth, unsnappedHeight) == nil {
 		if !verticalLine {
@@ -2400,70 +2394,70 @@ func setComponentBounds(t *Template, raw map[string]json.RawMessage) (CanvasProj
 		}
 	}
 	if err := containComponent(projected, x, y, width, height); err != nil {
-		return CanvasProjection{}, componentFailure(id, "component.geometry", err.Error())
+		return designer.CanvasProjection{}, componentFailure(id, "component.geometry", err.Error())
 	}
 	candidate := *element
 	candidate.X, candidate.Y = x, y
 	candidate.Width = template.Presence[geom.Length]{Set: true, Value: width}
 	candidate.Height = template.Presence[geom.Length]{Set: true, Value: height}
 	if err := refuseSectionBreakStraddle(t, projected.Name, candidate, "component.geometry"); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	element.X, element.Y = x, y
 	element.Width = template.Presence[geom.Length]{Set: true, Value: width}
 	element.Height = template.Presence[geom.Length]{Set: true, Value: height}
-	return Canvas(t)
+	return canvas(t)
 }
 
-func deleteComponent(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func deleteComponent(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	if err := componentFields(raw, 3); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	id, err := commandString(raw, "id")
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	band, _, index, _, err := findComponent(t, id)
 	if err != nil {
-		return CanvasProjection{}, componentFailure(id, "component.id", "component was not found")
+		return designer.CanvasProjection{}, componentFailure(id, "component.id", "component was not found")
 	}
 	band.Elements = append(band.Elements[:index:index], band.Elements[index+1:]...)
-	return Canvas(t)
+	return canvas(t)
 }
 
-func duplicateComponent(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func duplicateComponent(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	if err := componentFields(raw, 4); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	id, err := commandString(raw, "id")
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	snap, err := commandBool(raw, "snap")
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	band, projected, _, element, err := findComponent(t, id)
 	if err != nil {
-		return CanvasProjection{}, componentFailure(id, "component.id", "component was not found")
+		return designer.CanvasProjection{}, componentFailure(id, "component.id", "component was not found")
 	}
 	if idsNeeded := componentIDsNeeded(*element); t.doc.NextID <= 0 || t.doc.NextID > (1<<63-1)-idsNeeded {
-		return CanvasProjection{}, fmt.Errorf("folio8: nextId cannot allocate another component")
+		return designer.CanvasProjection{}, fmt.Errorf("folio8: nextId cannot allocate another component")
 	}
 	ids := template.Document{NextID: t.doc.NextID}
 	clone := cloneComponent(*element, projected, snap, &ids)
 	// The copy lands on its source's page, so that page's break judges it (the
 	// clone's new id is in no page index yet).
 	if err := refuseSectionBreakStraddleOnPage(t, projected.Name, contentPageIndex(t)[id], clone, "component.geometry"); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	previousElements, previousID := band.Elements, t.doc.NextID
 	band.Elements = append(band.Elements, clone)
 	t.doc.NextID = ids.NextID
-	projection, err := Canvas(t)
+	projection, err := canvas(t)
 	if err != nil {
 		band.Elements, t.doc.NextID = previousElements, previousID
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	return projection, nil
 }
@@ -2480,7 +2474,7 @@ func componentIDsNeeded(element template.Element) int64 {
 // cloneComponent is the one copy rule shared by duplicateComponent and
 // duplicateComponents. It allocates from ids, so several copies in one command
 // draw from one counter; the caller has already checked the counter has room.
-func cloneComponent(element template.Element, projected CanvasBand, snap bool, ids *template.Document) template.Element {
+func cloneComponent(element template.Element, projected designer.CanvasBand, snap bool, ids *template.Document) template.Element {
 	clone := element
 	clone.ID = template.AllocateElementID(ids)
 	ids.NextID++
@@ -2514,8 +2508,8 @@ func cloneComponent(element template.Element, projected CanvasBand, snap bool, i
 	width, height := projectedSize(clone)
 	x, y := clone.X+6000, clone.Y+6000
 	if snap {
-		x, _ = SnapToGrid(x)
-		y, _ = SnapToGrid(y)
+		x, _ = snapToGrid(x)
+		y, _ = snapToGrid(y)
 	}
 	if containComponent(projected, x, y, width, height) != nil {
 		x, y = clone.X, clone.Y
@@ -2556,18 +2550,18 @@ func workingComponentCopy(t *Template) (*Template, error) {
 	return ParseTemplate(before)
 }
 
-func installComponentCopy(t, working *Template) (CanvasProjection, error) {
+func installComponentCopy(t, working *Template) (designer.CanvasProjection, error) {
 	canonical, err := SerializeTemplate(working)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	installed, err := ParseTemplate(canonical)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
-	projection, err := Canvas(installed)
+	projection, err := canvas(installed)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	t.doc, t.derivedFooters = installed.doc, installed.derivedFooters
 	return projection, nil
@@ -2575,22 +2569,22 @@ func installComponentCopy(t, working *Template) (CanvasProjection, error) {
 
 // deleteComponents removes a whole selection in one command, so a group delete
 // is one history entry. Every id is found before anything is removed.
-func deleteComponents(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func deleteComponents(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	if err := componentFields(raw, 3); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	ids, err := commandComponentIDs(raw)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	working, err := workingComponentCopy(t)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	for _, id := range ids {
 		band, _, index, _, err := findComponent(working, id)
 		if err != nil {
-			return CanvasProjection{}, componentFailure(id, "component.id", "component was not found")
+			return designer.CanvasProjection{}, componentFailure(id, "component.id", "component was not found")
 		}
 		band.Elements = append(band.Elements[:index:index], band.Elements[index+1:]...)
 	}
@@ -2605,34 +2599,34 @@ func deleteComponents(t *Template, raw map[string]json.RawMessage) (CanvasProjec
 // page. A copy landing on a page other than its source's keeps the source's
 // page-local position (there is nothing there to stair-step away from); a copy
 // on its own page is offset as always. Header and footer copies ignore it.
-func duplicateComponents(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func duplicateComponents(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	fields := 4
 	if _, ok := raw["page"]; ok {
 		fields++
 	}
 	if err := componentFields(raw, fields); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	ids, err := commandComponentIDs(raw)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	snap, err := commandBool(raw, "snap")
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	target, hasPage, err := optionalPageField(t, raw)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	working, err := workingComponentCopy(t)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	pageOf := contentPageIndex(working)
 	type source struct {
 		band      *template.Band
-		projected CanvasBand
+		projected designer.CanvasBand
 		element   template.Element
 		page      int
 	}
@@ -2641,7 +2635,7 @@ func duplicateComponents(t *Template, raw map[string]json.RawMessage) (CanvasPro
 	for _, id := range ids {
 		band, projected, _, element, err := findComponent(working, id)
 		if err != nil {
-			return CanvasProjection{}, componentFailure(id, "component.id", "component was not found")
+			return designer.CanvasProjection{}, componentFailure(id, "component.id", "component was not found")
 		}
 		// Copy the element value now: appending clones below may move the
 		// band's backing array out from under a pointer.
@@ -2649,7 +2643,7 @@ func duplicateComponents(t *Template, raw map[string]json.RawMessage) (CanvasPro
 		idsNeeded += componentIDsNeeded(*element)
 	}
 	if working.doc.NextID <= 0 || working.doc.NextID > (1<<63-1)-idsNeeded {
-		return CanvasProjection{}, fmt.Errorf("folio8: nextId cannot allocate another component")
+		return designer.CanvasProjection{}, fmt.Errorf("folio8: nextId cannot allocate another component")
 	}
 	counter := template.Document{NextID: working.doc.NextID}
 	for _, src := range sources {
@@ -2664,7 +2658,7 @@ func duplicateComponents(t *Template, raw map[string]json.RawMessage) (CanvasPro
 		}
 		// The copy is judged by the break of the page it lands on.
 		if err := refuseSectionBreakStraddleOnPage(working, src.projected.Name, page, clone, "component.geometry"); err != nil {
-			return CanvasProjection{}, err
+			return designer.CanvasProjection{}, err
 		}
 		band.Elements = append(band.Elements, clone)
 	}
@@ -2674,14 +2668,14 @@ func duplicateComponents(t *Template, raw map[string]json.RawMessage) (CanvasPro
 
 // pastedPosition is where a copy pasted onto another page lands: the source's
 // own page-local position, snapped when that still fits the band.
-func pastedPosition(element template.Element, projected CanvasBand, snap bool) (geom.Length, geom.Length) {
+func pastedPosition(element template.Element, projected designer.CanvasBand, snap bool) (geom.Length, geom.Length) {
 	x, y := element.X, element.Y
 	if !snap {
 		return x, y
 	}
 	width, height := projectedSize(element)
-	sx, _ := SnapToGrid(x)
-	sy, _ := SnapToGrid(y)
+	sx, _ := snapToGrid(x)
+	sy, _ := snapToGrid(y)
 	if containComponent(projected, sx, sy, width, height) != nil {
 		return x, y
 	}
@@ -2719,7 +2713,7 @@ func floorToGrid(value geom.Length) geom.Length {
 	if value <= 0 {
 		return 0
 	}
-	return geom.Length(int64(value) / GridIncrement * GridIncrement)
+	return geom.Length(int64(value) / designer.GridIncrement * designer.GridIncrement)
 }
 
 // The three band identities, as page_setup.go mints them and as every command
@@ -2774,7 +2768,7 @@ var bandsCappingVertically = []string{bandPageHeader, bandPageFooter}
 // The split keys on band.Name INSIDE this function and never at a call site.
 // findComponent, bandByName and hitTestBand each range over all three names,
 // so every one of the eleven callers can receive any of the three bands.
-func containComponent(band CanvasBand, x, y, width, height geom.Length) error {
+func containComponent(band designer.CanvasBand, x, y, width, height geom.Length) error {
 	outside := x < 0 || y < 0 || width < 0 || height < 0 || x > geom.Length(band.Width) || width > geom.Length(band.Width)-x
 	if !outside && slices.Contains(bandsCappingVertically, band.Name) {
 		outside = y > geom.Length(band.Height) || height > geom.Length(band.Height)-y
@@ -2795,7 +2789,7 @@ func containComponent(band CanvasBand, x, y, width, height geom.Length) error {
 // quietly pull its Y back to the foot of page one: "this component may live
 // on page four" would become "this component snapped to the bottom of page
 // one", with no refusal and no explanation.
-func containEdgeY(band CanvasBand, value, limit geom.Length) geom.Length {
+func containEdgeY(band designer.CanvasBand, value, limit geom.Length) geom.Length {
 	if !slices.Contains(bandsCappingVertically, band.Name) {
 		return value
 	}
@@ -2883,13 +2877,13 @@ func bandSnapPath(name string) string {
 // type. template.FormatPoints is appendPoints — the format's own canonical
 // exact-decimal spelling, the same one the file on disk uses — so a message and
 // the document agree by construction rather than by care.
-func setBandHeight(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func setBandHeight(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	if err := componentFields(raw, 5); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	name, err := commandString(raw, "band")
 	if err != nil {
-		return CanvasProjection{}, componentFailure("", "bands", "band must be a non-empty string")
+		return designer.CanvasProjection{}, componentFailure("", "bands", "band must be a non-empty string")
 	}
 	// Only the members of bandsCappingVertically have a height to set. The
 	// content band is refused HERE, which is what keeps `height` absent from it
@@ -2897,13 +2891,13 @@ func setBandHeight(t *Template, raw map[string]json.RawMessage) (CanvasProjectio
 	// content band that was ever written would carry one forever.
 	if !slices.Contains(bandsCappingVertically, name) {
 		if name == bandContent {
-			return CanvasProjection{}, componentFailure("", bandHeightPath(name), "the content band's height is derived from the page and the two bands that cap it, and cannot be set")
+			return designer.CanvasProjection{}, componentFailure("", bandHeightPath(name), "the content band's height is derived from the page and the two bands that cap it, and cannot be set")
 		}
-		return CanvasProjection{}, componentFailure("", bandHeightPath(name), "only pageHeader and pageFooter have a height a command may set")
+		return designer.CanvasProjection{}, componentFailure("", bandHeightPath(name), "only pageHeader and pageFooter have a height a command may set")
 	}
 	proposed, err := lengthField(raw, "height")
 	if err != nil {
-		return CanvasProjection{}, componentFailure("", bandHeightPath(name), err.Error())
+		return designer.CanvasProjection{}, componentFailure("", bandHeightPath(name), err.Error())
 	}
 	// SNAPPING IS THE ENGINE'S, AND IT HAPPENS FIRST (Story 12.5, R3). Every
 	// other geometry command already carries `snap` and rounds here, through
@@ -2914,7 +2908,7 @@ func setBandHeight(t *Template, raw map[string]json.RawMessage) (CanvasProjectio
 	// 83 and no document the panel writes moves a byte.
 	snap, err := commandBool(raw, "snap")
 	if err != nil {
-		return CanvasProjection{}, componentFailure("", bandSnapPath(name), err.Error())
+		return designer.CanvasProjection{}, componentFailure("", bandSnapPath(name), err.Error())
 	}
 	literal := string(raw["height"])
 	// AND IT HAPPENS BEFORE EVERY CHECK BELOW, so a refusal names the number
@@ -2926,15 +2920,15 @@ func setBandHeight(t *Template, raw map[string]json.RawMessage) (CanvasProjectio
 	// canonical decimal — the same appendPoints the file on disk uses. An
 	// unsnapped command still echoes the author's own bytes, untouched.
 	if snap {
-		snapped, valid := SnapToGrid(proposed)
+		snapped, valid := snapToGrid(proposed)
 		if !valid {
-			return CanvasProjection{}, componentFailure("", bandHeightPath(name), fmt.Sprintf("a %s height of %spt overflows grid snapping", name, literal))
+			return designer.CanvasProjection{}, componentFailure("", bandHeightPath(name), fmt.Sprintf("a %s height of %spt overflows grid snapping", name, literal))
 		}
 		proposed = snapped
 		literal = template.FormatPoints(proposed)
 	}
 	if proposed < 0 {
-		return CanvasProjection{}, componentFailure("", bandHeightPath(name), fmt.Sprintf("a %s height of %spt is negative", name, literal))
+		return designer.CanvasProjection{}, componentFailure("", bandHeightPath(name), fmt.Sprintf("a %s height of %spt is negative", name, literal))
 	}
 	band, otherName := &t.doc.Bands.PageHeader, bandPageFooter
 	if name == bandPageFooter {
@@ -2960,12 +2954,12 @@ func setBandHeight(t *Template, raw map[string]json.RawMessage) (CanvasProjectio
 	// (internal/layout's BandOrigins: "the partition is exact"), so their
 	// projected heights add up to it, and adding up what layout.ContentHeight
 	// already derived is not a second derivation of it.
-	projection, err := Canvas(t)
+	projection, err := canvas(t)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	var innerH, other geom.Length
-	var projected CanvasBand
+	var projected designer.CanvasBand
 	found := false
 	for _, existing := range projection.Bands {
 		innerH += geom.Length(existing.Height)
@@ -2989,7 +2983,7 @@ func setBandHeight(t *Template, raw map[string]json.RawMessage) (CanvasProjectio
 	// future Canvas, not against a document, and it stays because the failure it
 	// prevents is invisible.
 	if !found {
-		return CanvasProjection{}, componentFailure("", bandHeightPath(name), fmt.Sprintf("the %s band is not in this document's projection, so a height for it cannot be checked", name))
+		return designer.CanvasProjection{}, componentFailure("", bandHeightPath(name), fmt.Sprintf("the %s band is not in this document's projection, so a height for it cannot be checked", name))
 	}
 	header, footer := proposed, other
 	if name == bandPageFooter {
@@ -3001,14 +2995,14 @@ func setBandHeight(t *Template, raw map[string]json.RawMessage) (CanvasProjectio
 		// `innerH-other`, say — would be a second spelling of the arithmetic
 		// inside the very function whose job is to CALL it, and the only symptom
 		// of the drift would be a refusal quoting a number the check rejects.
-		return CanvasProjection{}, componentFailure("", bandHeightPath(name), fmt.Sprintf("a %s height of %spt leaves no content band: %s takes %spt of the %spt between the page margins, so %s must be at most %spt", name, literal, otherName, template.FormatPoints(other), template.FormatPoints(innerH), name, template.FormatPoints(bandContentWindowCeiling(other, innerH))))
+		return designer.CanvasProjection{}, componentFailure("", bandHeightPath(name), fmt.Sprintf("a %s height of %spt leaves no content band: %s takes %spt of the %spt between the page margins, so %s must be at most %spt", name, literal, otherName, template.FormatPoints(other), template.FormatPoints(innerH), name, template.FormatPoints(bandContentWindowCeiling(other, innerH))))
 	}
 	// The band as it WOULD BE, in the three fields containComponent reads:
 	// Name selects the vertical cap, Width bounds the horizontal extent, Height
 	// is the number under test. X and Y are deliberately absent rather than
 	// copied — the page footer's origin moves with its height, and a candidate
 	// carrying the old one would be a coordinate this command has not derived.
-	candidate := CanvasBand{Name: projected.Name, Width: projected.Width, Height: int64(proposed)}
+	candidate := designer.CanvasBand{Name: projected.Name, Width: projected.Width, Height: int64(proposed)}
 	for _, element := range band.Elements {
 		_, height := projectedSize(element)
 		// ONLY THE VERTICAL AXIS IS THIS COMMAND'S BUSINESS. containComponent
@@ -3025,7 +3019,7 @@ func setBandHeight(t *Template, raw map[string]json.RawMessage) (CanvasProjectio
 		// height<0 terms. Weakening the vertical test is what would not be
 		// allowed, and nothing here does.
 		if containComponent(candidate, 0, element.Y, 0, height) != nil {
-			return CanvasProjection{}, componentFailure(string(element.ID), bandHeightPath(name), fmt.Sprintf("a %s height of %spt would leave %s outside the band: it reaches %spt", name, literal, element.ID, template.FormatPoints(element.Y+height)))
+			return designer.CanvasProjection{}, componentFailure(string(element.ID), bandHeightPath(name), fmt.Sprintf("a %s height of %spt would leave %s outside the band: it reaches %spt", name, literal, element.ID, template.FormatPoints(element.Y+height)))
 		}
 	}
 	// Atomic on ONE field: the previous Presence is held, the new one written,
@@ -3038,18 +3032,18 @@ func setBandHeight(t *Template, raw map[string]json.RawMessage) (CanvasProjectio
 	// window, and must not strand a table's minHeight.
 	if err := refuseStrandedFloor(t, bandHeightPath(name)); err != nil {
 		band.Height = previous
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	// spec-section-break: a taller band must not leave the break at or below
 	// the content band's bottom.
 	if err := refuseSectionBreakBeyondContent(t); err != nil {
 		band.Height = previous
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
-	updated, err := Canvas(t)
+	updated, err := canvas(t)
 	if err != nil {
 		band.Height = previous
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	return updated, nil
 }
@@ -3087,19 +3081,19 @@ func setBandHeight(t *Template, raw map[string]json.RawMessage) (CanvasProjectio
 // updateComponentProperties derives its align refusal from StyleAlignTokens. A
 // command stricter or looser than its loader is a document the engine can stamp
 // and then refuse to reopen.
-func setDocumentLocale(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func setDocumentLocale(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	if err := componentFields(raw, 3); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	// commandString refuses a missing key, a non-string and the empty string in
 	// one call, and its plain error is re-phrased here so the refusal is LOCATED
 	// on the field the author has to change.
 	tag, err := commandString(raw, documentLocalePath)
 	if err != nil {
-		return CanvasProjection{}, componentFailure("", documentLocalePath, "locale must be a non-empty string")
+		return designer.CanvasProjection{}, componentFailure("", documentLocalePath, "locale must be a non-empty string")
 	}
 	if !template.IsLocale(tag) {
-		return CanvasProjection{}, componentFailure("", documentLocalePath, fmt.Sprintf("locale must be one of %s (AD-12)", strings.Join(template.LocaleTags, ", ")))
+		return designer.CanvasProjection{}, componentFailure("", documentLocalePath, fmt.Sprintf("locale must be one of %s (AD-12)", strings.Join(template.LocaleTags, ", ")))
 	}
 	// Atomic on ONE field: the previous value is held, the new one written, and
 	// the projection decides whether it stands. Nothing else in the document has
@@ -3107,10 +3101,10 @@ func setDocumentLocale(t *Template, raw map[string]json.RawMessage) (CanvasProje
 	// document byte for byte. UTCOffset is not read and not written here.
 	previous := t.doc.Locale
 	t.doc.Locale = tag
-	updated, err := Canvas(t)
+	updated, err := canvas(t)
 	if err != nil {
 		t.doc.Locale = previous
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	return updated, nil
 }
@@ -3130,25 +3124,25 @@ func setDocumentLocale(t *Template, raw map[string]json.RawMessage) (CanvasProje
 // repairing the loader. The command is therefore not stricter than the file
 // door and not looser: it is the same predicate, and they agree by construction
 // rather than by care.
-func setDocumentUTCOffset(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func setDocumentUTCOffset(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	if err := componentFields(raw, 3); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	offset, err := commandString(raw, documentUTCOffsetPath)
 	if err != nil {
-		return CanvasProjection{}, componentFailure("", documentUTCOffsetPath, "utcOffset must be a non-empty string")
+		return designer.CanvasProjection{}, componentFailure("", documentUTCOffsetPath, "utcOffset must be a non-empty string")
 	}
 	if !template.IsUTCOffset(offset) {
-		return CanvasProjection{}, componentFailure("", documentUTCOffsetPath, fmt.Sprintf("utcOffset must match %s", template.UTCOffsetSyntax))
+		return designer.CanvasProjection{}, componentFailure("", documentUTCOffsetPath, fmt.Sprintf("utcOffset must match %s", template.UTCOffsetSyntax))
 	}
 	// Atomic on ONE field, exactly as the locale arm is. Locale is not read and
 	// not written here.
 	previous := t.doc.UTCOffset
 	t.doc.UTCOffset = offset
-	updated, err := Canvas(t)
+	updated, err := canvas(t)
 	if err != nil {
 		t.doc.UTCOffset = previous
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	return updated, nil
 }
@@ -3249,13 +3243,13 @@ var tableHeaderStyleFields = []string{"fontFamily", "fontSize", "lineSpacing", "
 // tableCommandTarget repeats the two-line gate all seven column arms share:
 // the element must exist and it must be a table. It is the same pair of
 // sentences, from one place rather than ten.
-func tableCommandTarget(t *Template, id string) (CanvasBand, *template.Element, error) {
+func tableCommandTarget(t *Template, id string) (designer.CanvasBand, *template.Element, error) {
 	_, band, _, element, err := findComponent(t, id)
 	if err != nil {
-		return CanvasBand{}, nil, componentFailure(id, "table.id", "table was not found")
+		return designer.CanvasBand{}, nil, componentFailure(id, "table.id", "table was not found")
 	}
 	if element.Type != template.ElementTable || !element.Table.Set || element.Table.Null {
-		return CanvasBand{}, nil, componentFailure(id, "table.id", "component is not a table")
+		return designer.CanvasBand{}, nil, componentFailure(id, "table.id", "component is not a table")
 	}
 	return band, element, nil
 }
@@ -3320,34 +3314,34 @@ func tableCommandOp(raw map[string]json.RawMessage, id, path string, base int) (
 // change that reached the author as an unlocated ENGINE_REJECTED with no field
 // to look at. Every other refusal across the three arms goes through
 // componentFailure, and now so does this one.
-func setTableHeaderHeight(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func setTableHeaderHeight(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	id, err := commandString(raw, "id")
 	if err != nil {
-		return CanvasProjection{}, componentFailure("", "table.id", err.Error())
+		return designer.CanvasProjection{}, componentFailure("", "table.id", err.Error())
 	}
 	band, element, err := tableCommandTarget(t, id)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	if _, refused := raw["op"]; refused {
-		return CanvasProjection{}, componentFailure(id, "table.headerHeight", "headerHeight is required: it accepts neither a clear nor a null")
+		return designer.CanvasProjection{}, componentFailure(id, "table.headerHeight", "headerHeight is required: it accepts neither a clear nor a null")
 	}
 	if err := componentFields(raw, 4); err != nil {
-		return CanvasProjection{}, componentFailure(id, "table.headerHeight", "setTableHeaderHeight takes exactly kind, version, id and height")
+		return designer.CanvasProjection{}, componentFailure(id, "table.headerHeight", "setTableHeaderHeight takes exactly kind, version, id and height")
 	}
 	height, err := propertyLength(raw["height"], "height")
 	if err != nil || height <= 0 {
-		return CanvasProjection{}, componentFailure(id, "table.headerHeight", "headerHeight must be a positive length")
+		return designer.CanvasProjection{}, componentFailure(id, "table.headerHeight", "headerHeight must be a positive length")
 	}
 	element.Table.Value.HeaderHeight = height
 	width, projected := projectedSize(*element)
 	if err := containComponent(band, element.X, element.Y, width, projected); err != nil {
-		return CanvasProjection{}, componentFailure(id, "table.headerHeight", err.Error())
+		return designer.CanvasProjection{}, componentFailure(id, "table.headerHeight", err.Error())
 	}
 	if err := refuseSectionBreakStraddle(t, band.Name, *element, "table.headerHeight"); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
-	return Canvas(t)
+	return canvas(t)
 }
 
 // setTableMinHeight writes SPEC-table-rules §3's floor under the table's own
@@ -3370,38 +3364,38 @@ func setTableHeaderHeight(t *Template, raw map[string]json.RawMessage) (CanvasPr
 // enforces (a minHeight taller than the content window is
 // TABLE_MIN_HEIGHT_UNPLACEABLE), and it is enforced at the file door where it
 // belongs rather than approximated here against a band.
-func setTableMinHeight(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func setTableMinHeight(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	id, err := commandString(raw, "id")
 	if err != nil {
-		return CanvasProjection{}, componentFailure("", "table.id", err.Error())
+		return designer.CanvasProjection{}, componentFailure("", "table.id", err.Error())
 	}
 	band, element, err := tableCommandTarget(t, id)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	op, value, err := tableCommandOp(raw, id, "table.minHeight", 4)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	if op == "clear" {
 		element.Table.Value.MinHeight = template.Presence[geom.Length]{}
-		return Canvas(t)
+		return canvas(t)
 	}
 	height, err := propertyLength(value, "value")
 	if err != nil || height <= 0 {
-		return CanvasProjection{}, componentFailure(id, "table.minHeight", "minHeight must be a positive length: it is a floor under the table's derived height, and a floor of zero is what clearing it already means")
+		return designer.CanvasProjection{}, componentFailure(id, "table.minHeight", "minHeight must be a positive length: it is a floor under the table's derived height, and a floor of zero is what clearing it already means")
 	}
 	// Review item 2: a floor taller than the content window is refused HERE,
 	// at its own field, rather than by the re-parse as an unlocated error.
 	if band.Name == bandContent {
 		if g, gerr := pageGeometryOf(t); gerr == nil {
 			if window := layout.ContentHeight(g); height > window {
-				return CanvasProjection{}, componentFailure(id, "table.minHeight", fmt.Sprintf("minHeight %spt is taller than the content window (%spt), so the table would fit on no page", template.FormatPoints(height), template.FormatPoints(window)))
+				return designer.CanvasProjection{}, componentFailure(id, "table.minHeight", fmt.Sprintf("minHeight %spt is taller than the content window (%spt), so the table would fit on no page", template.FormatPoints(height), template.FormatPoints(window)))
 			}
 		}
 	}
 	element.Table.Value.MinHeight = template.Presence[geom.Length]{Set: true, Value: height}
-	return Canvas(t)
+	return canvas(t)
 }
 
 // updateTableRules writes ONE attribute of SPEC-table-rules §2's interior-line
@@ -3424,27 +3418,27 @@ func setTableMinHeight(t *Template, raw map[string]json.RawMessage) (CanvasProje
 // here: a command door that admitted a boundary the file door refuses could
 // stamp out a document the designer cannot reopen — the failure updateTableHeaderStyle's
 // own comment names.
-func updateTableRules(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func updateTableRules(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	id, err := commandString(raw, "id")
 	if err != nil {
-		return CanvasProjection{}, componentFailure("", "table.id", err.Error())
+		return designer.CanvasProjection{}, componentFailure("", "table.id", err.Error())
 	}
 	_, element, err := tableCommandTarget(t, id)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	field, err := commandString(raw, "field")
 	if err != nil {
-		return CanvasProjection{}, componentFailure(id, "table.rules", err.Error())
+		return designer.CanvasProjection{}, componentFailure(id, "table.rules", err.Error())
 	}
 	switch field {
 	case "width", "color", "between":
 	default:
-		return CanvasProjection{}, componentFailure(id, "table.rules", "field must be width, color or between")
+		return designer.CanvasProjection{}, componentFailure(id, "table.rules", "field must be width, color or between")
 	}
 	op, value, err := tableCommandOp(raw, id, "table.rules."+field, 5)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 
 	rules := template.TableRules{}
@@ -3454,7 +3448,7 @@ func updateTableRules(t *Template, raw map[string]json.RawMessage) (CanvasProjec
 
 	if op == "clear" {
 		if element.Table.Value.Rules.Set && element.Table.Value.Rules.Null {
-			return Canvas(t)
+			return canvas(t)
 		}
 		switch field {
 		case "width":
@@ -3463,7 +3457,7 @@ func updateTableRules(t *Template, raw map[string]json.RawMessage) (CanvasProjec
 			rules.Color = template.Presence[string]{}
 		case "between":
 			element.Table.Value.Rules = template.Presence[template.TableRules]{}
-			return Canvas(t)
+			return canvas(t)
 		}
 		// THE BLOCK COLLAPSES WHEN NOTHING IS LEFT IN IT, the same move
 		// cleanupEmptyStyle makes for element.Style: an empty `rules: {}`
@@ -3471,34 +3465,34 @@ func updateTableRules(t *Template, raw map[string]json.RawMessage) (CanvasProjec
 		// would make "clear the last attribute" a no-op in the bytes.
 		if !rules.Width.Set && !rules.Color.Set && !rules.Between.Set && len(rules.Extra) == 0 {
 			element.Table.Value.Rules = template.Presence[template.TableRules]{}
-			return Canvas(t)
+			return canvas(t)
 		}
 		element.Table.Value.Rules = template.Presence[template.TableRules]{Set: true, Value: rules}
-		return Canvas(t)
+		return canvas(t)
 	}
 
 	switch field {
 	case "width":
 		width, werr := propertyLength(value, "value")
 		if werr != nil || width < 0 {
-			return CanvasProjection{}, componentFailure(id, "table.rules.width", "rules.width must not be negative: a PDF line width is non-negative (ISO 32000-1 8.4.3.2); use 0 for the thinnest line")
+			return designer.CanvasProjection{}, componentFailure(id, "table.rules.width", "rules.width must not be negative: a PDF line width is non-negative (ISO 32000-1 8.4.3.2); use 0 for the thinnest line")
 		}
 		rules.Width = template.Presence[geom.Length]{Set: true, Value: width}
 	case "color":
 		colour, cerr := propertyString(value)
 		if cerr != nil || !validPropertyColor(colour) {
-			return CanvasProjection{}, componentFailure(id, "table.rules.color", "rules.color must be a #RRGGBB colour")
+			return designer.CanvasProjection{}, componentFailure(id, "table.rules.color", "rules.color must be a #RRGGBB colour")
 		}
 		rules.Color = template.Presence[string]{Set: true, Value: colour}
 	case "between":
 		var names []string
 		if jerr := json.Unmarshal(value, &names); jerr != nil {
-			return CanvasProjection{}, componentFailure(id, "table.rules.between", "between must be an array of boundary names")
+			return designer.CanvasProjection{}, componentFailure(id, "table.rules.between", "between must be an array of boundary names")
 		}
 		seen := map[string]bool{}
 		for _, name := range names {
 			if !template.IsRuleBoundary(name) || seen[name] {
-				return CanvasProjection{}, componentFailure(id, "table.rules.between", "between must name each of columns, rows at most once")
+				return designer.CanvasProjection{}, componentFailure(id, "table.rules.between", "between must name each of columns, rows at most once")
 			}
 			seen[name] = true
 		}
@@ -3515,7 +3509,7 @@ func updateTableRules(t *Template, raw map[string]json.RawMessage) (CanvasProjec
 		rules.Between = template.Presence[[]string]{Set: true, Value: ordered}
 	}
 	element.Table.Value.Rules = template.Presence[template.TableRules]{Set: true, Value: rules}
-	return Canvas(t)
+	return canvas(t)
 }
 
 // setTableAltRowBackground writes the one colour Story 4.8 already renders on
@@ -3529,29 +3523,29 @@ func updateTableRules(t *Template, raw map[string]json.RawMessage) (CanvasProjec
 //
 // THE TABLE GATE IS ASKED BEFORE THE OP GRAMMAR (Finding P8), the same order
 // its two siblings now use.
-func setTableAltRowBackground(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func setTableAltRowBackground(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	id, err := commandString(raw, "id")
 	if err != nil {
-		return CanvasProjection{}, componentFailure("", "table.id", err.Error())
+		return designer.CanvasProjection{}, componentFailure("", "table.id", err.Error())
 	}
 	_, element, err := tableCommandTarget(t, id)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	op, value, err := tableCommandOp(raw, id, "table.altRowBackground", 4)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	if op == "clear" {
 		element.Table.Value.AltRowBackground = template.Presence[string]{}
-		return Canvas(t)
+		return canvas(t)
 	}
 	colour, err := propertyString(value)
 	if err != nil || !validPropertyColor(colour) {
-		return CanvasProjection{}, componentFailure(id, "table.altRowBackground", "altRowBackground must be a #RRGGBB colour")
+		return designer.CanvasProjection{}, componentFailure(id, "table.altRowBackground", "altRowBackground must be a #RRGGBB colour")
 	}
 	element.Table.Value.AltRowBackground = template.Presence[string]{Set: true, Value: colour}
-	return Canvas(t)
+	return canvas(t)
 }
 
 // updateTableHeaderStyle writes ONE field of the header-only Style block, and
@@ -3582,29 +3576,29 @@ func setTableAltRowBackground(t *Template, raw map[string]json.RawMessage) (Canv
 // first attribute authored is the moment the table's border stops reaching the
 // header row — a consequence the PANEL discloses in words, never one this arm
 // papers over by filling in the other two.
-func updateTableHeaderStyle(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func updateTableHeaderStyle(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	id, err := commandString(raw, "id")
 	if err != nil {
-		return CanvasProjection{}, componentFailure("", "table.id", err.Error())
+		return designer.CanvasProjection{}, componentFailure("", "table.id", err.Error())
 	}
 	// THE TABLE GATE IS ASKED FIRST (Finding P8). Naming a headerStyle field on
 	// an element that does not exist is a refusal that points the author at the
 	// wrong thing; all three arms now reach this gate at the same point.
 	_, element, err := tableCommandTarget(t, id)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	field, err := commandString(raw, "field")
 	if err != nil {
-		return CanvasProjection{}, componentFailure(id, "table.headerStyle", err.Error())
+		return designer.CanvasProjection{}, componentFailure(id, "table.headerStyle", err.Error())
 	}
 	if !slices.Contains(tableHeaderStyleFields, field) {
-		return CanvasProjection{}, componentFailure(id, "table.headerStyle", "headerStyle field must be one of "+strings.Join(tableHeaderStyleFields, ", "))
+		return designer.CanvasProjection{}, componentFailure(id, "table.headerStyle", "headerStyle field must be one of "+strings.Join(tableHeaderStyleFields, ", "))
 	}
 	path := "table.headerStyle." + field
 	op, value, err := tableCommandOp(raw, id, path, 5)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	// CLEARING A FIELD OF A BLOCK THAT IS NOT THERE MUST MOVE NO BYTES (Finding
 	// P9), and it is checked BEFORE headerStyleFor rather than inside it,
@@ -3614,10 +3608,10 @@ func updateTableHeaderStyle(t *Template, raw map[string]json.RawMessage) (Canvas
 	// three states walked for a command asked to remove a field that was
 	// ALREADY absent. The document would change and an undo entry would burn,
 	// and the author would have got nothing for either. An absent or null block
-	// has no field to clear, so this is a no-op, and wasm/engine.go's
+	// has no field to clear, so this is a no-op, and folio8-go/internal/wasm/engine.go's
 	// canonical-bytes short-circuit then reports it as the silent success it is.
 	if op == "clear" && (!element.Table.Value.HeaderStyle.Set || element.Table.Value.HeaderStyle.Null) {
-		return Canvas(t)
+		return canvas(t)
 	}
 	style := headerStyleFor(element)
 	if op == "clear" {
@@ -3659,19 +3653,19 @@ func updateTableHeaderStyle(t *Template, raw map[string]json.RawMessage) (Canvas
 			}
 		}
 		cleanupEmptyHeaderStyle(element, field)
-		return Canvas(t)
+		return canvas(t)
 	}
 	switch field {
 	case "fontSize":
 		size, err := propertyLength(value, "fontSize")
 		if err != nil || size <= 0 {
-			return CanvasProjection{}, componentFailure(id, path, "fontSize must be a positive length")
+			return designer.CanvasProjection{}, componentFailure(id, path, "fontSize must be a positive length")
 		}
 		style.FontSize = template.Presence[geom.Length]{Set: true, Value: size}
 	case "lineSpacing":
 		thousandths, err := template.DecodeLineSpacingRaw(value)
 		if err != nil {
-			return CanvasProjection{}, componentFailure(id, path, err.Error())
+			return designer.CanvasProjection{}, componentFailure(id, path, err.Error())
 		}
 		style.LineSpacing = template.Presence[int64]{Set: true, Value: thousandths}
 	case "bold", "italic":
@@ -3680,7 +3674,7 @@ func updateTableHeaderStyle(t *Template, raw map[string]json.RawMessage) (Canvas
 		// element-level style.bold command uses, never a second decoder.
 		flag, err := propertyBool(value)
 		if err != nil {
-			return CanvasProjection{}, componentFailure(id, path, field+": "+err.Error())
+			return designer.CanvasProjection{}, componentFailure(id, path, field+": "+err.Error())
 		}
 		if field == "bold" {
 			style.Bold = template.Presence[bool]{Set: true, Value: flag}
@@ -3699,10 +3693,10 @@ func updateTableHeaderStyle(t *Template, raw map[string]json.RawMessage) (Canvas
 		// field, and the author is told nothing they can act on.
 		width, err := propertyLength(value, "border.width")
 		if err != nil {
-			return CanvasProjection{}, componentFailure(id, path, "border.width must be a length in points with at most three decimal places")
+			return designer.CanvasProjection{}, componentFailure(id, path, "border.width must be a length in points with at most three decimal places")
 		}
 		if width < 0 {
-			return CanvasProjection{}, componentFailure(id, path, "border.width must not be negative: a PDF line width is non-negative (ISO 32000-1 8.4.3.2); use 0 for the thinnest line")
+			return designer.CanvasProjection{}, componentFailure(id, path, "border.width must not be negative: a PDF line width is non-negative (ISO 32000-1 8.4.3.2); use 0 for the thinnest line")
 		}
 		headerBorderFor(style).Width = template.Presence[geom.Length]{Set: true, Value: width}
 	case "border.edges":
@@ -3722,46 +3716,46 @@ func updateTableHeaderStyle(t *Template, raw map[string]json.RawMessage) (Canvas
 		// the file door still refuses.
 		var edges []string
 		if json.Unmarshal(value, &edges) != nil || len(edges) == 0 {
-			return CanvasProjection{}, componentFailure(id, path, "border.edges must be a non-empty string array")
+			return designer.CanvasProjection{}, componentFailure(id, path, "border.edges must be a non-empty string array")
 		}
 		for _, edge := range edges {
 			if !template.IsBorderEdge(edge) {
-				return CanvasProjection{}, componentFailure(id, path, "border.edges must name only "+strings.Join(template.BorderEdgeTokens, ", ")+": "+edge+" is not one of them")
+				return designer.CanvasProjection{}, componentFailure(id, path, "border.edges must name only "+strings.Join(template.BorderEdgeTokens, ", ")+": "+edge+" is not one of them")
 			}
 		}
 		headerBorderFor(style).Edges = template.Presence[[]string]{Set: true, Value: edges}
 	default:
 		text, err := propertyString(value)
 		if err != nil {
-			return CanvasProjection{}, componentFailure(id, path, err.Error())
+			return designer.CanvasProjection{}, componentFailure(id, path, err.Error())
 		}
 		if stringsContainsPlaceholder(text) {
-			return CanvasProjection{}, componentFailure(id, path, field+" must not contain a placeholder")
+			return designer.CanvasProjection{}, componentFailure(id, path, field+" must not contain a placeholder")
 		}
 		switch field {
 		case "fontFamily":
 			if !knownFontFamily(t, text) {
-				return CanvasProjection{}, componentFailure(id, path, "fontFamily must name a declared non-empty font chain")
+				return designer.CanvasProjection{}, componentFailure(id, path, "fontFamily must name a declared non-empty font chain")
 			}
 			style.FontFamily = template.Presence[string]{Set: true, Value: text}
 		case "background":
 			if !validPropertyColor(text) {
-				return CanvasProjection{}, componentFailure(id, path, "background must be a #RRGGBB colour")
+				return designer.CanvasProjection{}, componentFailure(id, path, "background must be a #RRGGBB colour")
 			}
 			style.Background = template.Presence[string]{Set: true, Value: text}
 		case "color":
 			if !validPropertyColor(text) {
-				return CanvasProjection{}, componentFailure(id, path, "color must be a #RRGGBB colour")
+				return designer.CanvasProjection{}, componentFailure(id, path, "color must be a #RRGGBB colour")
 			}
 			style.Color = template.Presence[string]{Set: true, Value: text}
 		case "valign":
 			if !template.IsStyleValign(text) {
-				return CanvasProjection{}, componentFailure(id, path, "valign must be one of "+strings.Join(template.StyleValignTokens, ", "))
+				return designer.CanvasProjection{}, componentFailure(id, path, "valign must be one of "+strings.Join(template.StyleValignTokens, ", "))
 			}
 			style.Valign = template.Presence[string]{Set: true, Value: text}
 		case "align":
 			if !template.IsTableStyleAlign(text) {
-				return CanvasProjection{}, componentFailure(id, path, "align must be one of "+strings.Join(template.TableStyleAlignTokens, ", "))
+				return designer.CanvasProjection{}, componentFailure(id, path, "align must be one of "+strings.Join(template.TableStyleAlignTokens, ", "))
 			}
 			style.Align = template.Presence[string]{Set: true, Value: text}
 		case "border.color":
@@ -3772,12 +3766,12 @@ func updateTableHeaderStyle(t *Template, raw map[string]json.RawMessage) (Canvas
 			// malformed one loads and surfaces at RENDER. Refusing it at the
 			// command door is what keeps the author's own edit located.
 			if !validPropertyColor(text) {
-				return CanvasProjection{}, componentFailure(id, path, "border.color must be a #RRGGBB colour")
+				return designer.CanvasProjection{}, componentFailure(id, path, "border.color must be a #RRGGBB colour")
 			}
 			headerBorderFor(style).Color = template.Presence[string]{Set: true, Value: text}
 		}
 	}
-	return Canvas(t)
+	return canvas(t)
 }
 
 // headerBorderFor is headerStyleFor's one-level-deeper twin: it materialises the
@@ -3950,29 +3944,29 @@ func truncateAtRuneBoundary(value string, limit int) string {
 // applyTableColumnCommand: a handler may mutate its candidate freely, and the
 // caller's document is replaced only after that candidate serializes,
 // reparses and projects.
-func applyFontChainCommand(t *Template, raw map[string]json.RawMessage, apply func(*Template, map[string]json.RawMessage) error) (CanvasProjection, error) {
+func applyFontChainCommand(t *Template, raw map[string]json.RawMessage, apply func(*Template, map[string]json.RawMessage) error) (designer.CanvasProjection, error) {
 	before, err := SerializeTemplate(t)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	working, err := ParseTemplate(before)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	if err := apply(working, raw); err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	canonical, err := SerializeTemplate(working)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	installed, err := ParseTemplate(canonical)
 	if err != nil {
-		return CanvasProjection{}, componentFailure("", "fonts", "font chains did not pass format validation")
+		return designer.CanvasProjection{}, componentFailure("", "fonts", "font chains did not pass format validation")
 	}
-	projection, err := Canvas(installed)
+	projection, err := canvas(installed)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	t.doc, t.derivedFooters = installed.doc, installed.derivedFooters
 	return projection, nil

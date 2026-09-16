@@ -10,10 +10,12 @@ import (
 	"io"
 	"strings"
 	"syscall/js"
+	"time"
 
 	folio8 "github.com/panitw/folio8/folio8-go"
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 	"github.com/panitw/folio8/folio8-go/internal/text"
-	"github.com/panitw/folio8/folio8-go/wasm"
+	"github.com/panitw/folio8/folio8-go/internal/wasm"
 )
 
 // request is intentionally byte-oriented. The JavaScript boundary never
@@ -27,22 +29,22 @@ type request struct {
 }
 
 type response struct {
-	GroupMove                  *wasm.GroupMoveResult          `json:"groupMove,omitempty"`
-	OK                         bool                           `json:"ok"`
-	Snapshot                   wasm.Snapshot                  `json:"snapshot,omitempty"`
-	BytesBase64                string                         `json:"bytesBase64,omitempty"`
-	DiagnosticCode             string                         `json:"diagnosticCode,omitempty"`
-	Message                    string                         `json:"message,omitempty"`
-	ElementID                  string                         `json:"elementId,omitempty"`
-	DataPath                   string                         `json:"dataPath,omitempty"`
-	DictionarySHA256           string                         `json:"dictionarySha256,omitempty"`
-	PDFSHA256                  string                         `json:"pdfSha256,omitempty"`
-	PreviewIdentity            string                         `json:"previewIdentity,omitempty"`
-	RenderRevision             uint64                         `json:"renderRevision,omitempty"`
-	ParameterReferences        *[]string                      `json:"parameterReferences,omitempty"`
-	ParameterReferenceRevision uint64                         `json:"parameterReferenceRevision,omitempty"`
-	TableColumns               *folio8.TableColumnsProjection `json:"tableColumns,omitempty"`
-	TableColumnsRevision       uint64                         `json:"tableColumnsRevision,omitempty"`
+	GroupMove                  *wasm.GroupMoveResult            `json:"groupMove,omitempty"`
+	OK                         bool                             `json:"ok"`
+	Snapshot                   wasm.Snapshot                    `json:"snapshot,omitempty"`
+	BytesBase64                string                           `json:"bytesBase64,omitempty"`
+	DiagnosticCode             string                           `json:"diagnosticCode,omitempty"`
+	Message                    string                           `json:"message,omitempty"`
+	ElementID                  string                           `json:"elementId,omitempty"`
+	DataPath                   string                           `json:"dataPath,omitempty"`
+	DictionarySHA256           string                           `json:"dictionarySha256,omitempty"`
+	PDFSHA256                  string                           `json:"pdfSha256,omitempty"`
+	PreviewIdentity            string                           `json:"previewIdentity,omitempty"`
+	RenderRevision             uint64                           `json:"renderRevision,omitempty"`
+	ParameterReferences        *[]string                        `json:"parameterReferences,omitempty"`
+	ParameterReferenceRevision uint64                           `json:"parameterReferenceRevision,omitempty"`
+	TableColumns               *designer.TableColumnsProjection `json:"tableColumns,omitempty"`
+	TableColumnsRevision       uint64                           `json:"tableColumnsRevision,omitempty"`
 	// Diagnostics is deliberately not omitempty: an otherwise successful
 	// render has the same closed response shape whether it has zero warnings
 	// or many. JavaScript treats [] as evidence, while a missing/null field is
@@ -65,8 +67,18 @@ type diagnostic struct {
 	Message   string `json:"message"`
 }
 
+// elapsedClock is the engine's render-elapsed clock: nanoseconds since the
+// shell started, read from the monotonic clock. internal/wasm may not import
+// `time` (AD-1's forbidden-import rule covers everything under internal/), so
+// this shell, outside internal/, is the one place that reads it. Nothing it
+// returns reaches a rendered byte.
+func elapsedClock() func() int64 {
+	origin := time.Now()
+	return func() int64 { return time.Since(origin).Nanoseconds() }
+}
+
 func main() {
-	engine := wasm.NewEngine()
+	engine := wasm.NewEngine(elapsedClock())
 	handle := js.FuncOf(func(_ js.Value, args []js.Value) any {
 		if len(args) != 1 || args[0].Type() != js.TypeString {
 			return marshal(response{DiagnosticCode: "WASM_PROTOCOL_INVALID", Message: "expected one JSON request string"})
@@ -263,7 +275,7 @@ func engineFailure(err error) response {
 	if errors.Is(err, wasm.ErrNoRedo) {
 		return response{DiagnosticCode: "REDO_UNAVAILABLE", Message: "Nothing to redo"}
 	}
-	var componentErr *folio8.ComponentCommandError
+	var componentErr *designer.ComponentCommandError
 	if errors.As(err, &componentErr) {
 		return response{
 			DiagnosticCode: "COMPONENT_INVALID",

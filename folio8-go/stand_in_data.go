@@ -8,35 +8,9 @@ import (
 	"strings"
 
 	"github.com/panitw/folio8/folio8-go/internal/bind"
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 	"github.com/panitw/folio8/folio8-go/internal/expr"
 	"github.com/panitw/folio8/folio8-go/internal/template"
-)
-
-// StandInInstant is formatDate's stand-in operand: ONE FIXED INSTANT,
-// never time.Now(). Byte-determinism is the whole point — the same
-// template must produce the same stand-in bytes on every run and every
-// target, because those bytes are hashed into the preview identity.
-//
-// WHY MID-RANGE AND NOT AN EDGE INSTANT. validateCivilRanges and
-// civilFromInstantMs (internal/expr) re-bound the SHIFTED civil year to
-// [1, 9999], so an instant near either bound can flip validity under the
-// document's own utcOffset. A midday instant in the middle of the range
-// cannot.
-const StandInInstant = "2024-01-15T12:00:00Z"
-
-// MaxStandInDataPaths bounds how many distinct data paths one template
-// may contribute to a stand-in document, and MaxStandInDataBytes bounds
-// the document those paths produce.
-//
-// THE GENERATOR MUST BOUND ITS OWN OUTPUT. engine.worker.ts decodes a
-// byte response with `base64ToBytesBounded(..., operation === 'render' ?
-// MAX_ENGINE_RENDER_PDF_BYTES : undefined)` — `undefined` for every
-// operation that is not a render, this one included — so there is no
-// transport bound behind this one. ParameterReferences bounds at 128 for
-// the same reason.
-const (
-	MaxStandInDataPaths = 512
-	MaxStandInDataBytes = 256 << 10
 )
 
 // standInValue is the CLOSED set of values a stand-in path may resolve
@@ -132,7 +106,7 @@ func (v standInValue) jsonValue() any {
 	case standInTrue:
 		return true
 	case standInInstant:
-		return StandInInstant
+		return designer.StandInInstant
 	case standInZero:
 		return 0
 	case standInOne:
@@ -378,7 +352,7 @@ type standInGenerator struct {
 	order []string
 }
 
-// StandInData returns the stand-in JSON data document for tpl: a real
+// standInData returns the stand-in JSON data document for tpl: a real
 // JSON document whose value at each referenced path is chosen by the
 // EXPRESSION WRAPPING THAT PATH, so a page can be laid out before any
 // sample data exists.
@@ -396,7 +370,7 @@ type standInGenerator struct {
 //
 // A path whose contexts share no legal value is a REFUSAL naming the path
 // and its contexts — never a mangled document.
-func StandInData(tpl *Template) ([]byte, error) {
+func standInData(tpl *Template) ([]byte, error) {
 	if tpl == nil || tpl.doc == nil {
 		return nil, fmt.Errorf("folio8: stand-in data requires a template")
 	}
@@ -414,8 +388,8 @@ func StandInData(tpl *Template) ([]byte, error) {
 	// Substitution.Path that resolution already produced, so an entry
 	// matching nothing is silently inert and an entry matching something
 	// names a path some band already contributed.
-	if len(g.order) > MaxStandInDataPaths {
-		return nil, fmt.Errorf("folio8: stand-in data: template references more than %d data paths", MaxStandInDataPaths)
+	if len(g.order) > designer.MaxStandInDataPaths {
+		return nil, fmt.Errorf("folio8: stand-in data: template references more than %d data paths", designer.MaxStandInDataPaths)
 	}
 	// Reconcile only direct scalar candidates. Each pass removes candidates,
 	// so the finite path/value set bounds this intersection to a fixed point.
@@ -455,8 +429,8 @@ func StandInData(tpl *Template) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("folio8: stand-in data: %w", err)
 	}
-	if len(out) > MaxStandInDataBytes {
-		return nil, fmt.Errorf("folio8: stand-in data: document exceeds the %d-byte limit", MaxStandInDataBytes)
+	if len(out) > designer.MaxStandInDataBytes {
+		return nil, fmt.Errorf("folio8: stand-in data: document exceeds the %d-byte limit", designer.MaxStandInDataBytes)
 	}
 	// Check each divisor, including those in unselected branches. Preview
 	// never claims to solve formulas or to make visibility conditions true.

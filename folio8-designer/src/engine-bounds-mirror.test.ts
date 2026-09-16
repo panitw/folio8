@@ -71,7 +71,7 @@ const goSources = {
   // now has to know — and `historyLimit` appears in Go at exactly two places
   // (its declaration and `appendBounded`) and nowhere in TypeScript until this
   // story mirrored it.
-  history: path.resolve(sourceDir, '../../folio8-go/wasm/engine.go'),
+  history: path.resolve(sourceDir, '../../folio8-go/internal/wasm/engine.go'),
 } as const
 const tsPath = path.join(sourceDir, 'engine-protocol.ts')
 // Story 7.6's THIRD consumer of the band-containment tie. The drag clamp used
@@ -147,7 +147,7 @@ describe('canvas projection bounds mirror', () => {
     // member would otherwise leave this file reading one source and still
     // calling itself the tie. (`goSources` itself now has SIX entries — the
     // locale and template-model files are read by the predicate describes at
-    // the foot of this file, and `wasm/engine.go` by Story 14.7b's history-limit
+    // the foot of this file, and `folio8-go/internal/wasm/engine.go` by Story 14.7b's history-limit
     // describe, none of them by a numeral pair in THIS list.)
     expect(pairs).toHaveLength(9)
     // The NUMERAL pairs read three of the SIX sources: componentCommands
@@ -264,7 +264,7 @@ describe('band containment mirror', () => {
     // A list nothing reads would tie dead declarations together while the
     // real gates kept their own inline spellings.
     expect(go).toMatch(/if !outside && slices\.Contains\(bandsCappingVertically, band\.Name\) \{/)
-    expect(go).toMatch(/func containEdgeY\(band CanvasBand, value, limit geom\.Length\) geom\.Length \{\n\tif !slices\.Contains\(bandsCappingVertically, band\.Name\) \{/)
+    expect(go).toMatch(/func containEdgeY\(band designer\.CanvasBand, value, limit geom\.Length\) geom\.Length \{\n\tif !slices\.Contains\(bandsCappingVertically, band\.Name\) \{/)
     expect(ts).toMatch(/BANDS_CAPPING_VERTICALLY\.includes\(component\.band as string\) && !\(box\.y \+ box\.height <= band\.height\)/)
     // The DRAG CLAMP (DW-36), which reads the list from engine-protocol.ts
     // rather than restating it, and gates the ONE vertical limit both of its
@@ -697,7 +697,7 @@ function goElementTypes(model: string): ReadonlyMap<string, string> {
 // site — so a reformat, a moved gate or a reworded refusal produces a RED here
 // rather than a vacuous pass. That is what the non-vacuity `it` below is for.
 function goScalarBindingTypes(commands: string, model: string): ReadonlyArray<string> {
-  const gate = commands.match(/^\tif ((?:element\.Type != template\.Element[A-Za-z]+(?: && )?)+) \{\n\t\treturn CanvasProjection\{\}, componentFailure\(id, "component\.id", "only [a-z, ]+ components can receive a scalar binding"\)$/m)?.[1]
+  const gate = commands.match(/^\tif ((?:element\.Type != template\.Element[A-Za-z]+(?: && )?)+) \{\n\t\treturn designer\.CanvasProjection\{\}, componentFailure\(id, "component\.id", "only [a-z, ]+ components can receive a scalar binding"\)$/m)?.[1]
   if (gate === undefined) return []
   const types = goElementTypes(model)
   const resolved = [...gate.matchAll(/template\.(Element[A-Za-z]+)/g)].map((match) => types.get(match[1] as string))
@@ -806,7 +806,7 @@ describe('scalar binding legality mirror', () => {
     // FROM GO, by deleting it — which must red the NON-VACUITY row, not the
     // agreement one, so the maintainer is told the extraction stopped reading
     // rather than that the two sides disagree.
-    const deletedGo = go.replace(/^\tif element\.Type != template\.ElementText && element\.Type != template\.ElementBarcode && element\.Type != template\.ElementQRCode \{\n\t\treturn CanvasProjection\{\}, componentFailure\(id, "component\.id", "only text, barcode and qrcode components can receive a scalar binding"\)\n\t\}\n/m, '')
+    const deletedGo = go.replace(/^\tif element\.Type != template\.ElementText && element\.Type != template\.ElementBarcode && element\.Type != template\.ElementQRCode \{\n\t\treturn designer\.CanvasProjection\{\}, componentFailure\(id, "component\.id", "only text, barcode and qrcode components can receive a scalar binding"\)\n\t\}\n/m, '')
     expect(deletedGo).not.toBe(go)
     expect(goScalarBindingTypes(deletedGo, model)).toEqual([])
     // FROM GO, by renaming the kind constant out from under the gate: the
@@ -856,7 +856,7 @@ describe('engine history limit mirror', () => {
   const dialog = fs.readFileSync(path.join(sourceDir, 'TableEditor.tsx'), 'utf8')
   const app = fs.readFileSync(path.join(sourceDir, 'App.tsx'), 'utf8')
 
-  it('reads a declared historyLimit from wasm/engine.go at all', () => {
+  it('reads a declared historyLimit from folio8-go/internal/wasm/engine.go at all', () => {
     // NON-VACUITY, AND IT IS DELIBERATELY BLIND TO THE NUMBER. A RENAME of the
     // Go constant would make `goConstant` return `undefined`, and an equality
     // between two `undefined`s is a tie that compares nothing while passing. So

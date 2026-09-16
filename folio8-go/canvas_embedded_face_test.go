@@ -46,7 +46,7 @@ func TestCanvasMeasuresWithTheEmbeddedFace(t *testing.T) {
 	}
 	fs := testShippedFontSet()
 
-	projection, err := CanvasWithTextPaint(tpl, fs)
+	projection, err := canvasWithTextPaint(tpl, fs)
 	if err != nil {
 		t.Fatalf("canvas projection: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestCanvasVerticalModelUsesTheEmbeddedFacesOwnMetrics(t *testing.T) {
 		t.Fatalf("the carried face contributed nothing to the vertical model: %#v", withCarried)
 	}
 
-	projection, err := CanvasWithTextPaint(tpl, fs)
+	projection, err := canvasWithTextPaint(tpl, fs)
 	if err != nil {
 		t.Fatalf("canvas projection: %v", err)
 	}
@@ -243,11 +243,11 @@ func TestCanvasDegradesRatherThanAbortingOnANonFontChainEntry(t *testing.T) {
 
 	// The geometry-only projection never shaped anything and always worked;
 	// asserting it here is what makes the paint half's failure specific.
-	if _, gerr := Canvas(tpl); gerr != nil {
+	if _, gerr := canvas(tpl); gerr != nil {
 		t.Fatalf("the geometry projection must succeed: %v", gerr)
 	}
 
-	projection, err := CanvasWithTextPaint(tpl, fs)
+	projection, err := canvasWithTextPaint(tpl, fs)
 	if err != nil {
 		t.Fatalf("a document the FORMAT calls valid must still open in the designer — the surface on which its chain can be repaired: %v", err)
 	}
@@ -375,11 +375,11 @@ func TestCanvasDegradesRatherThanAbortingOnAnUnreadableCarriedFace(t *testing.T)
 	}
 	// The geometry-only projection never shaped anything and always worked;
 	// asserting it here is what makes the paint half's failure specific.
-	if _, gerr := Canvas(tpl); gerr != nil {
+	if _, gerr := canvas(tpl); gerr != nil {
 		t.Fatalf("the geometry projection must succeed: %v", gerr)
 	}
 
-	projection, perr := CanvasWithTextPaint(tpl, testShippedFontSet())
+	projection, perr := canvasWithTextPaint(tpl, testShippedFontSet())
 	if perr != nil {
 		t.Fatalf("a document the FORMAT calls valid must still open in the designer — the surface on which its chain entry can be repaired (D-8.4.12): %v", perr)
 	}
@@ -476,11 +476,11 @@ func TestCanvasStillAbortsOnAHostFontSetFaceThatWillNotParse(t *testing.T) {
 
 	// The geometry-only projection never shaped anything and always worked;
 	// asserting it here is what makes the paint half's failure specific.
-	if _, gerr := Canvas(tpl); gerr != nil {
+	if _, gerr := canvas(tpl); gerr != nil {
 		t.Fatalf("the geometry projection must succeed: %v", gerr)
 	}
 
-	_, perr := CanvasWithTextPaint(tpl, fs)
+	_, perr := canvasWithTextPaint(tpl, fs)
 	if perr == nil {
 		t.Fatal("the projection succeeded over a face THE CALLER supplied and this build cannot read. D-8.4.12 widened the canvas on the ATTRIBUTABILITY axis and explicitly did NOT absorb this case: a FontSet face is the host application's, not the document's, and no edit on the canvas repairs it. If the abort is to go, that is a ruling, not a scoping tweak")
 	}

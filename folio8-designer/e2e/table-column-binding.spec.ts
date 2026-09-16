@@ -164,7 +164,7 @@ test('binds a table column from the main window: click the column, pick its row 
   // bare row-relative field; Go resolves `txn` itself.
   await expect(page.locator(`.canvas-component:not(.canvas-component-echo) .canvas-table-cell[data-column-id="${NOTE_COLUMN}"]`)).toHaveText('{{txn.ref}}')
 
-  // AC6 — ONE UNDO STEP. Asserted, not built: `wasm/engine.go`'s `Apply` pushes
+  // AC6 — ONE UNDO STEP. Asserted, not built: `folio8-go/internal/wasm/engine.go`'s `Apply` pushes
   // exactly one undo per accepted byte-changing command, so a single Undo must
   // put the previous binding back.
   await page.getByRole('button', { name: 'Undo' }).click()

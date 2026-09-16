@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 	"github.com/panitw/folio8/folio8-go/internal/geom"
 	"github.com/panitw/folio8/folio8-go/internal/template"
 )
@@ -18,8 +19,8 @@ func groupFixture(t *testing.T) (*Template, []string) {
 	tpl.doc.Bands.Content.Elements = nil
 	ids := []string{}
 	for index, kind := range []string{"text", "rect", "image", "line", "table"} {
-		before, _ := Canvas(tpl)
-		after, err := ApplyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"createComponent","version":1,"type":%q,"band":"content","x":%d.125,"y":%d.225,"width":24,"height":12,"snap":false}`, kind, 13+index*40, 10+index*30)))
+		before, _ := canvas(tpl)
+		after, err := applyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"createComponent","version":1,"type":%q,"band":"content","x":%d.125,"y":%d.225,"width":24,"height":12,"snap":false}`, kind, 13+index*40, 10+index*30)))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -28,7 +29,7 @@ func groupFixture(t *testing.T) (*Template, []string) {
 			// Preserve this fixture's empty authored table and movable origin.
 			id := ids[len(ids)-1]
 			removeStarterColumn(t, tpl, id)
-			if _, err := ApplyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"moveComponent","version":1,"id":%q,"x":%d.125,"y":%d.225,"snap":false}`, id, 13+index*40, 10+index*30))); err != nil {
+			if _, err := applyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"moveComponent","version":1,"id":%q,"x":%d.125,"y":%d.225,"snap":false}`, id, 13+index*40, 10+index*30))); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -57,7 +58,7 @@ func TestBulkBorderEdgeClearRemovesNullAndRetainsOtherProperties(t *testing.T) {
 		}}
 	}
 	command := []byte(fmt.Sprintf(`{"kind":"updateComponentProperties","version":1,"ids":[%q,%q],"changes":{"borderEdges":{"op":"clear"}}}`, ids[0], ids[1]))
-	projection, err := ApplyComponentCommand(tpl, command)
+	projection, err := applyComponentCommand(tpl, command)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,10 +72,10 @@ func TestBulkBorderEdgeClearRemovesNullAndRetainsOtherProperties(t *testing.T) {
 func TestGroupMoveAllKindsCommonDeltaAndReadOnlyPreview(t *testing.T) {
 	for _, snap := range []bool{false, true} {
 		tpl, ids := groupFixture(t)
-		before, _ := Canvas(tpl)
+		before, _ := canvas(tpl)
 		original, _ := SerializeTemplate(tpl)
 		command := moveIntent(ids, ids[0], "1.126", "2.227", snap)
-		preview, err := PreviewComponentMove(tpl, command)
+		preview, err := previewComponentMove(tpl, command)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -82,14 +83,14 @@ func TestGroupMoveAllKindsCommonDeltaAndReadOnlyPreview(t *testing.T) {
 		if !bytes.Equal(original, untouched) {
 			t.Fatal("preview mutated template")
 		}
-		want := ComponentMove{1126, 2227}
+		want := designer.ComponentMove{DX: 1126, DY: 2227}
 		if snap {
-			want = ComponentMove{-1125, 1775}
+			want = designer.ComponentMove{DX: -1125, DY: 1775}
 		}
 		if preview != want {
 			t.Fatalf("snap=%t preview=%+v want=%+v", snap, preview, want)
 		}
-		after, err := ApplyComponentCommand(tpl, command)
+		after, err := applyComponentCommand(tpl, command)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -116,7 +117,7 @@ func TestGroupMoveAtomicRefusalsAndZero(t *testing.T) {
 		moveIntent(ids, ids[0], "9007199254740.992", "5", false),
 		bytes.Replace(moveIntent(ids, ids[0], "5", "5", false), []byte(`"expectedRevision":1`), []byte(`"expectedRevision":null`), 1),
 	} {
-		if _, err := ApplyComponentCommand(tpl, command); err == nil {
+		if _, err := applyComponentCommand(tpl, command); err == nil {
 			t.Fatalf("invalid group accepted: %s", command)
 		}
 		after, _ := SerializeTemplate(tpl)
@@ -124,7 +125,7 @@ func TestGroupMoveAtomicRefusalsAndZero(t *testing.T) {
 			t.Fatal("refusal partially mutated group")
 		}
 	}
-	if _, err := ApplyComponentCommand(tpl, moveIntent(ids, ids[0], "0", "0", true)); err != nil {
+	if _, err := applyComponentCommand(tpl, moveIntent(ids, ids[0], "0", "0", true)); err != nil {
 		t.Fatal(err)
 	}
 	after, _ := SerializeTemplate(tpl)
@@ -143,28 +144,28 @@ func TestGroupMoveIntersectedBoundsAndGridFallback(t *testing.T) {
 	last.X = geom.Length(band.Width) - lastWidth - 125
 	_, _, _, reference, _ := findComponent(tpl, ids[2])
 	reference.X = 10125
-	move, err := PreviewComponentMove(tpl, moveIntent(ids, ids[2], "999", "0", true))
+	move, err := previewComponentMove(tpl, moveIntent(ids, ids[2], "999", "0", true))
 	if err != nil || move.DX != 125 {
 		t.Fatalf("no feasible grid fallback: %+v, %v", move, err)
 	}
 	reference.X = 11900
-	move, err = PreviewComponentMove(tpl, moveIntent(ids, ids[2], "-999", "0", true))
+	move, err = previewComponentMove(tpl, moveIntent(ids, ids[2], "-999", "0", true))
 	if err != nil || move.DX != 100 {
 		t.Fatalf("feasible grid point must win over fallback: %+v, %v", move, err)
 	}
 	// Header height is the first vertical limit; content remains a column.
-	before, _ := Canvas(tpl)
-	after, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"rect","band":"pageHeader","x":10,"y":4,"width":24,"height":12,"snap":false}`))
+	before, _ := canvas(tpl)
+	after, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"rect","band":"pageHeader","x":10,"y":4,"width":24,"height":12,"snap":false}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	header := newProjectedComponent(t, before, after)
 	_, headerBand, _, _, _ := findComponent(tpl, header.ID)
-	move, err = PreviewComponentMove(tpl, moveIntent(append(ids, header.ID), ids[0], "0", "999999", false))
+	move, err = previewComponentMove(tpl, moveIntent(append(ids, header.ID), ids[0], "0", "999999", false))
 	if err != nil || move.DY != headerBand.Height-header.Y-header.Height {
 		t.Fatalf("header intersection: %+v, %v", move, err)
 	}
-	move, err = PreviewComponentMove(tpl, moveIntent(ids, ids[0], "0", "999999", false))
+	move, err = previewComponentMove(tpl, moveIntent(ids, ids[0], "0", "999999", false))
 	if err != nil || move.DY != 999999000 {
 		t.Fatalf("content was vertically capped: %+v, %v", move, err)
 	}
@@ -186,7 +187,7 @@ func TestAuthoredInspectorRetainsNullFalseZeroAndHiddenBorders(t *testing.T) {
 		t.Fatal(err)
 	}
 	text.Style.Value.Bold = template.Presence[bool]{Set: true, Value: false}
-	projected, err := Canvas(tpl)
+	projected, err := canvas(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,10 +213,10 @@ func TestWindowMoveFullBoxSnapAndSharedDelta(t *testing.T) {
 			for _, travel := range []string{"-999999", "999999"} {
 				tpl, ids := groupFixture(t)
 				ids = ids[:count]
-				before, _ := Canvas(tpl)
+				before, _ := canvas(tpl)
 				original, _ := SerializeTemplate(tpl)
 				command := windowMoveIntent(ids, ids[0], "0", travel, snap)
-				preview, err := PreviewComponentMove(tpl, command)
+				preview, err := previewComponentMove(tpl, command)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -227,7 +228,7 @@ func TestWindowMoveFullBoxSnapAndSharedDelta(t *testing.T) {
 						expected = min(expected, before.ContentWindowHeight-component.Y-component.Height)
 					}
 					if snap {
-						expected = ((referenceY+expected)/int64(GridIncrement))*int64(GridIncrement) - referenceY
+						expected = ((referenceY+expected)/int64(designer.GridIncrement))*int64(designer.GridIncrement) - referenceY
 					}
 				}
 				if preview.DY != expected {
@@ -237,7 +238,7 @@ func TestWindowMoveFullBoxSnapAndSharedDelta(t *testing.T) {
 				if !bytes.Equal(original, unchanged) {
 					t.Fatal("preview mutated authored geometry")
 				}
-				after, err := ApplyComponentCommand(tpl, command)
+				after, err := applyComponentCommand(tpl, command)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -263,15 +264,15 @@ func TestWindowMoveFullBoxSnapAndSharedDelta(t *testing.T) {
 
 func TestWindowMoveLaterPageAndExistingOverflow(t *testing.T) {
 	tpl := parseWindowCountTemplate(t, canvasWindowCountControlTemplateJSON)
-	initial, _ := CanvasWithTextPaint(tpl, testFontSet())
-	created, err := ApplyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"createComponent","version":1,"type":"rect","band":"content","x":13.125,"y":%s,"width":24,"height":12,"snap":false}`, pointLiteral(initial.ContentWindowHeight*2+12000))))
+	initial, _ := canvasWithTextPaint(tpl, testFontSet())
+	created, err := applyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"createComponent","version":1,"type":"rect","band":"content","x":13.125,"y":%s,"width":24,"height":12,"snap":false}`, pointLiteral(initial.ContentWindowHeight*2+12000))))
 	if err != nil {
 		t.Fatal(err)
 	}
 	id := newProjectedComponent(t, initial, created).ID
 	ids := []string{"", id}
 	_, _, _, element, _ := findComponent(tpl, id)
-	before, _ := CanvasWithTextPaint(tpl, testFontSet())
+	before, _ := canvasWithTextPaint(tpl, testFontSet())
 	members, _ := groupMemberIndex(tpl, testFontSet())
 	member := members[id]
 	if member.windowOrigin == 0 {
@@ -279,7 +280,7 @@ func TestWindowMoveLaterPageAndExistingOverflow(t *testing.T) {
 	}
 
 	for _, travel := range []string{"-999999", "999999"} {
-		move, err := PreviewComponentMove(tpl, windowMoveIntent([]string{ids[1]}, ids[1], "0", travel, false), testFontSet())
+		move, err := previewComponentMove(tpl, windowMoveIntent([]string{ids[1]}, ids[1], "0", travel, false), testFontSet())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -292,12 +293,12 @@ func TestWindowMoveLaterPageAndExistingOverflow(t *testing.T) {
 	element.Y = 10000
 	element.Height = template.Presence[geom.Length]{Set: true, Value: geom.Length(before.ContentWindowHeight + 10000)}
 	for _, snap := range []bool{false, true} {
-		move, err := PreviewComponentMove(tpl, windowMoveIntent([]string{ids[1]}, ids[1], "10", "999999", snap), testFontSet())
+		move, err := previewComponentMove(tpl, windowMoveIntent([]string{ids[1]}, ids[1], "10", "999999", snap), testFontSet())
 		if err != nil || move.DX == 0 || move.DY > 0 {
 			t.Fatalf("overflow increased or horizontal movement blocked: %+v %v", move, err)
 		}
-		zero, err := PreviewComponentMove(tpl, windowMoveIntent([]string{ids[1]}, ids[1], "0", "0", snap), testFontSet())
-		if err != nil || zero != (ComponentMove{}) {
+		zero, err := previewComponentMove(tpl, windowMoveIntent([]string{ids[1]}, ids[1], "0", "0", snap), testFontSet())
+		if err != nil || zero != (designer.ComponentMove{}) {
 			t.Fatalf("zero changed existing geometry: %+v %v", zero, err)
 		}
 	}
@@ -312,14 +313,14 @@ func TestWindowMoveStopsAtOverlappingNextOrigin(t *testing.T) {
 		`{"kind":"createComponent","version":1,"type":"rect","band":"content","x":0,"y":715,"width":24,"height":24,"snap":false}`,
 		`{"kind":"createComponent","version":1,"type":"line","band":"content","x":40,"y":700,"width":24,"height":1,"snap":false}`,
 	} {
-		before, _ := Canvas(tpl)
-		after, err := ApplyComponentCommand(tpl, []byte(command))
+		before, _ := canvas(tpl)
+		after, err := applyComponentCommand(tpl, []byte(command))
 		if err != nil {
 			t.Fatal(err)
 		}
 		lineID = newProjectedComponent(t, before, after).ID
 	}
-	projection, err := CanvasWithTextPaint(tpl, testFontSet())
+	projection, err := canvasWithTextPaint(tpl, testFontSet())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -328,7 +329,7 @@ func TestWindowMoveStopsAtOverlappingNextOrigin(t *testing.T) {
 	}
 	for _, snap := range []bool{false, true} {
 		command := windowMoveIntent([]string{lineID}, lineID, "0", "99999", snap)
-		preview, err := PreviewComponentMove(tpl, command, testFontSet())
+		preview, err := previewComponentMove(tpl, command, testFontSet())
 		if err != nil {
 			t.Fatal(err)
 		}

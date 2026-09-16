@@ -14,11 +14,11 @@ import (
 // work on a multi-page document. Each of update, move and delete on a page-2
 // element changes only that element, and one undo restores the bytes.
 func TestIdAddressedCommandsWorkOnALaterPageElementAndUndo(t *testing.T) {
-	input, err := os.ReadFile("../../fixtures/multi-page-statement/input.folio")
+	input, err := os.ReadFile("../../../fixtures/multi-page-statement/input.folio")
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine()
+	engine := NewEngine(testClock())
 	if _, err := engine.Load(input); err != nil {
 		t.Fatal(err)
 	}
@@ -112,11 +112,11 @@ func TestIdAddressedCommandsWorkOnALaterPageElementAndUndo(t *testing.T) {
 // SPEC-multi-pages story 2: every page command is one undo entry, and one undo
 // restores the exact bytes — across the one-page and pages shapes.
 func TestPageCommandsAreOneUndoEntryEachAndRestoreTheBytes(t *testing.T) {
-	input, err := os.ReadFile("../../fixtures/multi-page-statement/input.folio")
+	input, err := os.ReadFile("../../../fixtures/multi-page-statement/input.folio")
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine()
+	engine := NewEngine(testClock())
 	if _, err := engine.Load(input); err != nil {
 		t.Fatal(err)
 	}
@@ -211,11 +211,11 @@ func TestPageCommandsAreOneUndoEntryEachAndRestoreTheBytes(t *testing.T) {
 // SPEC-multi-pages story 3: a move to another page, and a create onto one, are
 // one undo entry each, and one undo restores the bytes.
 func TestCrossPageMoveAndPagedCreateAreOneUndoEntryEach(t *testing.T) {
-	input, err := os.ReadFile("../../fixtures/multi-page-statement/input.folio")
+	input, err := os.ReadFile("../../../fixtures/multi-page-statement/input.folio")
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine()
+	engine := NewEngine(testClock())
 	loaded, err := engine.Load(input)
 	if err != nil {
 		t.Fatal(err)

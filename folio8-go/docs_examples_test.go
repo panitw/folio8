@@ -25,7 +25,7 @@ import (
 // These tests keep those statements true: every example is rendered here and
 // its page count, placement and diagnostic codes are asserted, every example
 // file must appear verbatim in the guide, and every exported identifier of the
-// folio8, fonts and wasm packages must be named in the guide.
+// folio8 and fonts packages must be named in the guide.
 
 func docsDir(t *testing.T) string {
 	t.Helper()
@@ -397,7 +397,7 @@ func exportedIdentifiers(t *testing.T, dir string) []string {
 func TestDocsGuideNamesEveryExportedIdentifier(t *testing.T) {
 	root := filepath.Join(repoRootFromTest(t), "folio8-go")
 	total := 0
-	for _, pkg := range []string{".", "fonts", "wasm"} {
+	for _, pkg := range []string{".", "fonts"} {
 		ids := exportedIdentifiers(t, filepath.Join(root, pkg))
 		if len(ids) == 0 {
 			t.Fatalf("package %s exports nothing — the census read the wrong directory", pkg)
@@ -412,7 +412,7 @@ func TestDocsGuideNamesEveryExportedIdentifier(t *testing.T) {
 			}
 		}
 	}
-	if total < 250 {
+	if total < 60 {
 		t.Fatalf("census found only %d identifiers", total)
 	}
 }

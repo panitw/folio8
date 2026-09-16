@@ -14,11 +14,11 @@ import (
 )
 
 func TestProportionAuthoringHistoryAndRefusals(t *testing.T) {
-	input, err := os.ReadFile("../../folio8-designer/public/templates/starter.folio")
+	input, err := os.ReadFile("../../../folio8-designer/public/templates/starter.folio")
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine()
+	engine := NewEngine(testClock())
 	if _, err := engine.Load(input); err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func TestProportionAuthoringHistoryAndRefusals(t *testing.T) {
 			t.Fatalf("redo %d lost sizing state", i)
 		}
 	}
-	reloaded := NewEngine()
+	reloaded := NewEngine(testClock())
 	if _, err := reloaded.Load(serialized()); err != nil {
 		t.Fatal(err)
 	}
@@ -102,11 +102,11 @@ func TestProportionAuthoringHistoryAndRefusals(t *testing.T) {
 func TestProportionStructuralRefusalsPreserveLocatedHistory(t *testing.T) {
 	for _, kind := range []string{"remove", "move", "add"} {
 		t.Run(kind, func(t *testing.T) {
-			input, err := os.ReadFile("../../folio8-designer/public/templates/starter.folio")
+			input, err := os.ReadFile("../../../folio8-designer/public/templates/starter.folio")
 			if err != nil {
 				t.Fatal(err)
 			}
-			engine := NewEngine()
+			engine := NewEngine(testClock())
 			if _, err := engine.Load(input); err != nil {
 				t.Fatal(err)
 			}

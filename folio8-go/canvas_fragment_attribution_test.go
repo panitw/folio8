@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 )
 
 // Story 8.4a: the canvas projection carries, per PAINT FRAGMENT, which of the
@@ -32,13 +34,13 @@ import (
 // the SHIPPED font set — the same one canvas_embedded_face_test.go uses, so
 // the chain's first entry ("Noto Sans") really is resolvable and the fall
 // through to the carried face is a coverage answer rather than an absence.
-func carriedFaceProjection(t *testing.T, source string) CanvasProjection {
+func carriedFaceProjection(t *testing.T, source string) designer.CanvasProjection {
 	t.Helper()
 	tpl, err := ParseTemplate([]byte(source))
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	projection, err := CanvasWithTextPaint(tpl, testShippedFontSet())
+	projection, err := canvasWithTextPaint(tpl, testShippedFontSet())
 	if err != nil {
 		t.Fatalf("CanvasWithTextPaint: %v", err)
 	}
@@ -53,8 +55,8 @@ func carriedFaceProjection(t *testing.T, source string) CanvasProjection {
 	return projection
 }
 
-func projectedFragments(projection CanvasProjection) []CanvasTextFragment {
-	var out []CanvasTextFragment
+func projectedFragments(projection designer.CanvasProjection) []designer.CanvasTextFragment {
+	var out []designer.CanvasTextFragment
 	for _, component := range projection.Components {
 		if component.TextPaint == nil {
 			continue
@@ -316,7 +318,7 @@ func TestTwoCarriedFacesInOneChainAreAttributedToTheirOwnKeys(t *testing.T) {
 
 // shippedFaceNamesInProjection collects the distinct face names a projection's
 // fragments were attributed to, in first-appearance order.
-func shippedFaceNamesInProjection(fragments []CanvasTextFragment) []string {
+func shippedFaceNamesInProjection(fragments []designer.CanvasTextFragment) []string {
 	var out []string
 	for _, fragment := range fragments {
 		if fragment.Face == "" {
@@ -397,7 +399,7 @@ func TestLatinThroughAThaiFirstChainIsAttributedToTheThaiFace(t *testing.T) {
 		t.Fatalf("parse: %v", err)
 	}
 	fs := testShippedFontSet()
-	projection, err := CanvasWithTextPaint(tpl, fs)
+	projection, err := canvasWithTextPaint(tpl, fs)
 	if err != nil {
 		t.Fatalf("CanvasWithTextPaint: %v", err)
 	}
@@ -478,7 +480,7 @@ func TestEveryProjectedFragmentCarriesExactlyOneFaceIdentity(t *testing.T) {
 	mixed := strings.Replace(embeddedFontTemplateJSON(), `"value": "สัญญา"`, `"value": "Deed สัญญา"`, 1)
 	for _, population := range []struct {
 		name      string
-		fragments []CanvasTextFragment
+		fragments []designer.CanvasTextFragment
 	}{
 		{"a chain of shipped faces only", projectedFragments(projectWithPaint(t, parseWindowCountTemplate(t, canvasWindowCountControlTemplateJSON)))},
 		{"a chain of carried faces only", projectedFragments(carriedFaceProjection(t, twoCarried))},

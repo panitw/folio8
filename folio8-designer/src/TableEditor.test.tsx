@@ -729,7 +729,7 @@ describe('the matrix sends no command it does not have to', () => {
   it('does not re-commit an alignment that is already committed', async () => {
     // Every other commit path in this panel suppresses an unchanged value; the
     // ALIGN cell did not, so clicking the segment already pressed sent a
-    // command. THE COST IS NOT AN UNDO ENTRY — `folio8-go/wasm/engine.go`
+    // command. THE COST IS NOT AN UNDO ENTRY — `folio8-go/internal/wasm/engine.go`
     // short-circuits on `bytes.Equal(canonical, e.bytes)` and returns BEFORE
     // `pushUndo`, before the redo branch is cleared and before the revision
     // moves — it is a wasted engine round trip and a `busy` flicker over the

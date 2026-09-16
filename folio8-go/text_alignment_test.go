@@ -144,7 +144,7 @@ func TestCanvasPaintMatchesTheShippingRunPathUnderAlignment(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	projection, err := CanvasWithTextPaint(tpl, testFontSet())
+	projection, err := canvasWithTextPaint(tpl, testFontSet())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -194,7 +194,7 @@ func TestCanvasProjectionCarriesTheDeclaredFamiliesAndTheDefaultSize(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
-	projection, err := Canvas(tpl)
+	projection, err := canvas(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -659,7 +659,7 @@ func TestCanvasPaintMatchesTheShippingRunPathUnderJustification(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	projection, err := CanvasWithTextPaint(tpl, testFontSet())
+	projection, err := canvasWithTextPaint(tpl, testFontSet())
 	if err != nil {
 		t.Fatal(err)
 	}

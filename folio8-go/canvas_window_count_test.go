@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 	"github.com/panitw/folio8/folio8-go/internal/layout"
 )
 
@@ -18,9 +19,9 @@ func parseWindowCountTemplate(t *testing.T, source string) *Template {
 	return tpl
 }
 
-func projectWithPaint(t *testing.T, tpl *Template) CanvasProjection {
+func projectWithPaint(t *testing.T, tpl *Template) designer.CanvasProjection {
 	t.Helper()
-	projection, err := CanvasWithTextPaint(tpl, testFontSet())
+	projection, err := canvasWithTextPaint(tpl, testFontSet())
 	if err != nil {
 		t.Fatalf("CanvasWithTextPaint: %v", err)
 	}
@@ -230,10 +231,10 @@ func TestCanvasGroupedTwinDiffersOnlyByTheTags(t *testing.T) {
 // the same template through the render path's own builders — rather than
 // asserting the flag. A flag is a claim about a count; it says nothing about
 // whether the count is right.
-func assertCanvasAgreesWithTheRenderPath(t *testing.T, name, source string, fs FontSet, wantCount int64, wantOrigins []int64) CanvasProjection {
+func assertCanvasAgreesWithTheRenderPath(t *testing.T, name, source string, fs FontSet, wantCount int64, wantOrigins []int64) designer.CanvasProjection {
 	t.Helper()
 	tpl := parseWindowCountTemplate(t, source)
-	projection, err := CanvasWithTextPaint(tpl, fs)
+	projection, err := canvasWithTextPaint(tpl, fs)
 	if err != nil {
 		t.Fatalf("%s: CanvasWithTextPaint: %v", name, err)
 	}
@@ -507,7 +508,7 @@ func TestGroupingIsNotARegisteredCauseOfInexactness(t *testing.T) {
 			fs = testShippedFontSet()
 		}
 		tpl := parseWindowCountTemplate(t, grouped.source)
-		projection, err := CanvasWithTextPaint(tpl, fs)
+		projection, err := canvasWithTextPaint(tpl, fs)
 		if err != nil {
 			t.Fatalf("%s: %v", grouped.name, err)
 		}
@@ -537,7 +538,7 @@ func TestGroupingIsNotARegisteredCauseOfInexactness(t *testing.T) {
 // answer for a column it cannot place.
 func TestCanvasWindowCountDegradesRatherThanFailingTheProjection(t *testing.T) {
 	tpl := parseWindowCountTemplate(t, canvasWindowCountOversizedTemplateJSON)
-	projection, err := CanvasWithTextPaint(tpl, testFontSet())
+	projection, err := canvasWithTextPaint(tpl, testFontSet())
 	if err != nil {
 		t.Fatalf("an over-tall content component failed the projection: %v", err)
 	}
@@ -589,7 +590,7 @@ func TestCanvasWindowCountIsAFloorForABoundTable(t *testing.T) {
 // zero. A zero here would reach Story 7.6 as a canvas with no sheets on it.
 func TestCanvasReportsOneWindowForAnEmptyColumn(t *testing.T) {
 	tpl := componentTemplate(t)
-	bare, err := Canvas(tpl)
+	bare, err := canvas(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -614,7 +615,7 @@ func TestCanvasReportsOneWindowForAnEmptyColumn(t *testing.T) {
 // here. A projection that fails any of them is not merely wrong: it is
 // rejected by parseInbound, which discards the WHOLE snapshot and blanks the
 // canvas with no attributable error.
-func assertWindowOriginsAreWellFormed(t *testing.T, name string, projection CanvasProjection) {
+func assertWindowOriginsAreWellFormed(t *testing.T, name string, projection designer.CanvasProjection) {
 	t.Helper()
 	origins := projection.ContentWindowOrigins
 	if origins == nil {
@@ -799,7 +800,7 @@ func TestCanvasOriginsForAnEmptyColumnAndForTheShapelessEntryPoint(t *testing.T)
 	// Canvas has no FontSet, cannot shape, and says so in both fields: one
 	// window beginning at zero, DECLARED a floor. It never reaches the
 	// browser, but the struct is shared and its values must be honest.
-	bare, err := Canvas(componentTemplate(t))
+	bare, err := canvas(componentTemplate(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -839,12 +840,12 @@ func TestAComponentAuthoredWindowsDownTheColumnLandsOnItsOwnSheet(t *testing.T) 
 	tpl := parseWindowCountTemplate(t, canvasWindowCountControlTemplateJSON)
 	bands := projectedBands(t, tpl)
 	content := bands["content"]
-	before, err := Canvas(tpl)
+	before, err := canvas(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
 	deep := content.Height*2 + 5000
-	created, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"rect","band":"content","x":0,"y":`+pointLiteral(deep)+`,"width":72,"height":24,"snap":false}`))
+	created, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"rect","band":"content","x":0,"y":`+pointLiteral(deep)+`,"width":72,"height":24,"snap":false}`))
 	if err != nil {
 		t.Fatalf("createComponent two windows down the column was refused: %v", err)
 	}
@@ -878,7 +879,7 @@ func TestAComponentAuthoredWindowsDownTheColumnLandsOnItsOwnSheet(t *testing.T) 
 	// AND FURTHER DOWN, through the ordinary opaque move the drag commits —
 	// a COLUMN coordinate, not a pin to a sheet.
 	deeper := content.Height*5 + 5000
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"moveComponent","version":1,"id":"`+component.ID+`","x":0,"y":`+pointLiteral(deeper)+`,"snap":false}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"moveComponent","version":1,"id":"`+component.ID+`","x":0,"y":`+pointLiteral(deeper)+`,"snap":false}`)); err != nil {
 		t.Fatalf("a move five windows down the column was refused: %v", err)
 	}
 	movedBytes, err := SerializeTemplate(tpl)

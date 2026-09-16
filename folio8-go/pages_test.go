@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 	"github.com/panitw/folio8/folio8-go/internal/geom"
 	"github.com/panitw/folio8/folio8-go/internal/template"
 )
@@ -77,9 +78,9 @@ func multiPageText(id string, y int64, value string) template.Element {
 		Style: template.Presence[template.Style]{Set: true, Value: template.Style{FontFamily: template.Presence[string]{Set: true, Value: "body"}, FontSize: pts(10)}}}
 }
 
-func shippedProjection(t *testing.T, tpl *Template) CanvasProjection {
+func shippedProjection(t *testing.T, tpl *Template) designer.CanvasProjection {
 	t.Helper()
-	projection, err := CanvasWithTextPaint(tpl, testShippedFontSet())
+	projection, err := canvasWithTextPaint(tpl, testShippedFontSet())
 	if err != nil {
 		t.Fatalf("CanvasWithTextPaint: %v", err)
 	}
@@ -182,7 +183,7 @@ func TestTheCanvasProjectsEachWindowsDesignedPage(t *testing.T) {
 		}
 	}
 	// The zero projection (no paint) is one window per page too.
-	if bare, err := Canvas(multiPageTemplate(t, multiPageStatementTemplateJSON)); err != nil || !reflect.DeepEqual(bare.ContentWindowPages, []int{0, 1}) || !reflect.DeepEqual(bare.ContentWindowOrigins, []int64{0, 0}) {
+	if bare, err := canvas(multiPageTemplate(t, multiPageStatementTemplateJSON)); err != nil || !reflect.DeepEqual(bare.ContentWindowPages, []int{0, 1}) || !reflect.DeepEqual(bare.ContentWindowOrigins, []int64{0, 0}) {
 		t.Fatalf("Canvas: pages %v origins %v err %v", bare.ContentWindowPages, bare.ContentWindowOrigins, err)
 	}
 }
@@ -251,21 +252,21 @@ func TestPageOnesSectionBreakDoesNotConstrainALaterPage(t *testing.T) {
 		d.Pages[0].SectionBreak = pts(300)
 	}))
 	// ee is 14pt tall, so at y 295 it crosses 300.
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"moveComponent","version":1,"id":"ee","x":0,"y":295,"snap":false}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"moveComponent","version":1,"id":"ee","x":0,"y":295,"snap":false}`)); err != nil {
 		t.Fatalf("a page-2 element moved across page 1's break offset was refused: %v", err)
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"moveComponent","version":1,"id":"e6","x":0,"y":295,"snap":false}`)); err == nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"moveComponent","version":1,"id":"e6","x":0,"y":295,"snap":false}`)); err == nil {
 		t.Fatal("control: a page-1 element moved across its own break was accepted")
 	}
 }
 
 func TestSectionBreakCommandsOnAMultiPageDocumentUsePageOne(t *testing.T) {
 	tpl := multiPageTemplate(t, multiPageStatementTemplateJSON)
-	var failure *ComponentCommandError
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"removeSectionBreak","version":1}`)); !errors.As(err, &failure) || failure.DataPath != "pages[0].sectionBreak" {
+	var failure *designer.ComponentCommandError
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"removeSectionBreak","version":1}`)); !errors.As(err, &failure) || failure.DataPath != "pages[0].sectionBreak" {
 		t.Fatalf("refusal %v, want one located at pages[0].sectionBreak", err)
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"setSectionBreak","version":1,"offset":300,"snap":false}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"setSectionBreak","version":1,"offset":300,"snap":false}`)); err != nil {
 		t.Fatal(err)
 	}
 	saved, err := SerializeTemplate(tpl)
@@ -345,7 +346,7 @@ func TestAssetAndFontChainWalksSeeALaterPage(t *testing.T) {
 		ee.Style.Value = style
 	}))
 
-	if _, err := ApplyComponentCommand(tpl, setAssetCommand("ei", "image/png", png3x2RGB)); err != nil {
+	if _, err := applyComponentCommand(tpl, setAssetCommand("ei", "image/png", png3x2RGB)); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := tpl.doc.Assets[key]; !ok {
@@ -392,7 +393,7 @@ func TestReadWalksSeeALaterPage(t *testing.T) {
 			}
 		}},
 		{"stand-in data", setValue("Version {{terms.version}}"), func(t *testing.T, src string) {
-			data, err := StandInData(multiPageTemplate(t, src))
+			data, err := standInData(multiPageTemplate(t, src))
 			if err != nil || !strings.Contains(string(data), `"terms"`) {
 				t.Fatalf("stand-in data %s err %v, want a terms path", data, err)
 			}

@@ -24,6 +24,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 	"github.com/panitw/folio8/folio8-go/internal/template"
 )
 
@@ -37,7 +38,7 @@ const theWorkedExampleTable = "e2"
 func headerStyleFixture(t *testing.T) *Template {
 	t.Helper()
 	tpl := componentTemplate(t)
-	view, err := TableColumns(tpl, theWorkedExampleTable)
+	view, err := tableColumns(tpl, theWorkedExampleTable)
 	if err != nil {
 		t.Fatalf("fixture precondition: the worked example must project %s as a table: %v", theWorkedExampleTable, err)
 	}
@@ -49,7 +50,7 @@ func headerStyleFixture(t *testing.T) *Template {
 
 func applyToTable(t *testing.T, tpl *Template, command string) error {
 	t.Helper()
-	_, err := ApplyComponentCommand(tpl, []byte(command))
+	_, err := applyComponentCommand(tpl, []byte(command))
 	return err
 }
 
@@ -69,9 +70,9 @@ func canonicalBytes(t *testing.T, tpl *Template) []byte {
 	return encoded
 }
 
-func projectTable(t *testing.T, tpl *Template) TableColumnsProjection {
+func projectTable(t *testing.T, tpl *Template) designer.TableColumnsProjection {
 	t.Helper()
-	view, err := TableColumns(tpl, theWorkedExampleTable)
+	view, err := tableColumns(tpl, theWorkedExampleTable)
 	if err != nil {
 		t.Fatalf("project %s: %v", theWorkedExampleTable, err)
 	}
@@ -88,7 +89,7 @@ func refusalLeavesTheDocumentAlone(t *testing.T, tpl *Template, command, wantPat
 	if err == nil {
 		t.Fatalf("apply %s: expected a refusal", command)
 	}
-	located, ok := err.(*ComponentCommandError)
+	located, ok := err.(*designer.ComponentCommandError)
 	if !ok {
 		t.Fatalf("apply %s: error is %T, not a located *ComponentCommandError — an unlocated refusal reaches the author as ENGINE_REJECTED with no field to look at", command, err)
 	}
@@ -112,7 +113,7 @@ func refusalLeavesTheDocumentAlone(t *testing.T, tpl *Template, command, wantPat
 func refusalSaysWhy(t *testing.T, tpl *Template, command, wantPath, wantMessage string) {
 	t.Helper()
 	refusalLeavesTheDocumentAlone(t, tpl, command, wantPath)
-	located, ok := applyToTable(t, tpl, command).(*ComponentCommandError)
+	located, ok := applyToTable(t, tpl, command).(*designer.ComponentCommandError)
 	if !ok {
 		t.Fatalf("apply %s: expected a located refusal", command)
 	}
@@ -244,11 +245,11 @@ func TestTheHeaderHeightCannotBeCleared(t *testing.T) {
 // one new call site.
 func TestAHeaderHeightThatOverflowsItsBandIsRefused(t *testing.T) {
 	tpl := componentTemplate(t)
-	before, err := Canvas(tpl)
+	before, err := canvas(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
-	created, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"table","band":"pageHeader","x":0,"y":0,"width":72,"height":24,"snap":false}`))
+	created, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"table","band":"pageHeader","x":0,"y":0,"width":72,"height":24,"snap":false}`))
 	if err != nil {
 		t.Fatalf("create a table in the page header: %v", err)
 	}
@@ -260,7 +261,7 @@ func TestAHeaderHeightThatOverflowsItsBandIsRefused(t *testing.T) {
 	}
 	encoded := canonicalBytes(t, tpl)
 	err = applyToTable(t, tpl, `{"kind":"setTableHeaderHeight","version":1,"id":"`+table.ID+`","height":100}`)
-	located, ok := err.(*ComponentCommandError)
+	located, ok := err.(*designer.ComponentCommandError)
 	if !ok {
 		t.Fatalf("a header height taller than its band produced %T, want a located refusal", err)
 	}
@@ -416,11 +417,11 @@ func TestTheThreeArmsShareTheTableGate(t *testing.T) {
 		refusalLeavesTheDocumentAlone(t, tpl, command, "table.id")
 	}
 	// A component that exists and is not a table takes the second sentence.
-	before, err := Canvas(tpl)
+	before, err := canvas(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
-	created, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"rect","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
+	created, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"rect","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -434,7 +435,7 @@ func TestTheThreeArmsShareTheTableGate(t *testing.T) {
 func TestATableWhoseHeaderIsNotEditedSerializesIdentically(t *testing.T) {
 	tpl := headerStyleFixture(t)
 	before := canonicalBytes(t, tpl)
-	if _, err := TableColumns(tpl, theWorkedExampleTable); err != nil {
+	if _, err := tableColumns(tpl, theWorkedExampleTable); err != nil {
 		t.Fatal(err)
 	}
 	if after := canonicalBytes(t, tpl); !bytes.Equal(before, after) {
@@ -457,7 +458,7 @@ func TestATableWhoseHeaderIsNotEditedSerializesIdentically(t *testing.T) {
 
 // RE-SETTING A VALUE TO WHAT IT ALREADY IS IS A SILENT SUCCESS, not an error.
 // The canonical-bytes short-circuit that turns it into "no revision, no undo
-// entry" lives one layer up in wasm/engine.go's Apply, which runs it BEFORE
+// entry" lives one layer up in folio8-go/internal/wasm/engine.go's Apply, which runs it BEFORE
 // pushUndo and install; what is asserted here is the half this layer owns —
 // the command is accepted and the bytes do not move.
 func TestReSettingAHeaderStyleFieldToItsCurrentValueIsASilentNoOp(t *testing.T) {
@@ -726,14 +727,16 @@ func TestEveryResolvedProjectionMemberFollowsBothLegsOfTheCascade(t *testing.T) 
 		headerValue string
 		wantTable   string
 		wantHeader  string
-		read        func(TableColumnsProjection) string
+		read        func(designer.TableColumnsProjection) string
 	}{
 		{"fontFamily", "HeaderFontFamilyResolved", `"fontFamily": "body"`, `"display"`, "body", "display",
-			func(v TableColumnsProjection) string { return v.HeaderFontFamilyResolved }},
+			func(v designer.TableColumnsProjection) string { return v.HeaderFontFamilyResolved }},
 		{"fontSize", "HeaderFontSizeResolved", `"fontSize": 9`, `14`, "9000", "14000",
-			func(v TableColumnsProjection) string { return strconv.FormatInt(v.HeaderFontSizeResolved, 10) }},
+			func(v designer.TableColumnsProjection) string { return strconv.FormatInt(v.HeaderFontSizeResolved, 10) }},
 		{"lineSpacing", "HeaderLineSpacingResolved", `"lineSpacing": 1.5`, `2`, "1500", "2000",
-			func(v TableColumnsProjection) string { return strconv.FormatInt(v.HeaderLineSpacingResolved, 10) }},
+			func(v designer.TableColumnsProjection) string {
+				return strconv.FormatInt(v.HeaderLineSpacingResolved, 10)
+			}},
 		// ⚠ wantTable IS "" FOR THE CHROME FOUR (this row and the border
 		// trio below), and that is SPEC-table-rules §1 rather than a
 		// gap. `background` and `border` are the only members on this
@@ -745,22 +748,22 @@ func TestEveryResolvedProjectionMemberFollowsBothLegsOfTheCascade(t *testing.T) 
 		// ordinary spelling of absence — and leg two, which is what the
 		// author is actually authoring, is unchanged.
 		{"background", "HeaderBackgroundResolved", `"background": "#eeeeee"`, `"#101010"`, "", "#101010",
-			func(v TableColumnsProjection) string { return v.HeaderBackgroundResolved }},
+			func(v designer.TableColumnsProjection) string { return v.HeaderBackgroundResolved }},
 		{"color", "HeaderColorResolved", `"color": "#1b2a4a"`, `"#c81e1e"`, "#1b2a4a", "#c81e1e",
-			func(v TableColumnsProjection) string { return v.HeaderColorResolved }},
+			func(v designer.TableColumnsProjection) string { return v.HeaderColorResolved }},
 		{"valign", "HeaderValignResolved", `"valign": "middle"`, `"bottom"`, "middle", "bottom",
-			func(v TableColumnsProjection) string { return v.HeaderValignResolved }},
+			func(v designer.TableColumnsProjection) string { return v.HeaderValignResolved }},
 		{"align", "HeaderAlignResolved", `"align": "center"`, `"right"`, "center", "right",
-			func(v TableColumnsProjection) string { return v.HeaderAlignResolved }},
+			func(v designer.TableColumnsProjection) string { return v.HeaderAlignResolved }},
 		// STORY 11.3's TWO. Leg one puts `true` on the table's own style and
 		// leg two puts `false` on headerStyle, so the second leg is the one a
 		// member wired to `style.bold` cannot pass — the direction matters for
 		// a bool, because a leg-two value of `true` would also be produced by
 		// a member that simply echoed leg one.
 		{"bold", "HeaderBoldResolved", `"bold": true`, `false`, "true", "false",
-			func(v TableColumnsProjection) string { return strconv.FormatBool(v.HeaderBoldResolved) }},
+			func(v designer.TableColumnsProjection) string { return strconv.FormatBool(v.HeaderBoldResolved) }},
 		{"italic", "HeaderItalicResolved", `"italic": true`, `false`, "true", "false",
-			func(v TableColumnsProjection) string { return strconv.FormatBool(v.HeaderItalicResolved) }},
+			func(v designer.TableColumnsProjection) string { return strconv.FormatBool(v.HeaderItalicResolved) }},
 		// STORY 14.8's THREE, AND THEY WALK A DIFFERENT CASCADE FROM THEIR NINE
 		// SIBLINGS — which is exactly why they are worth walking. The nine above
 		// fall through FIELD BY FIELD, so leg one's value survives on every
@@ -775,15 +778,15 @@ func TestEveryResolvedProjectionMemberFollowsBothLegsOfTheCascade(t *testing.T) 
 		// wrote. A member wired to the committed field fails leg one; one wired
 		// to `style.border` fails leg two, exactly as for the nine.
 		{"border.width", "HeaderBorderWidthResolved", `"border": {"width": 3, "color": "#445566", "edges": ["top", "bottom"]}`, `1.5`, "", "1500",
-			func(v TableColumnsProjection) string { return v.HeaderBorderWidthResolved }},
+			func(v designer.TableColumnsProjection) string { return v.HeaderBorderWidthResolved }},
 		{"border.color", "HeaderBorderColorResolved", `"border": {"width": 3, "color": "#445566", "edges": ["top", "bottom"]}`, `"#c81e1e"`, "", "#c81e1e",
-			func(v TableColumnsProjection) string { return v.HeaderBorderColorResolved }},
+			func(v designer.TableColumnsProjection) string { return v.HeaderBorderColorResolved }},
 		// AND THE EDGES ROW IS THE ONE THAT PINS THE CANONICAL ORDER AS WELL AS
 		// THE CASCADE: the command sends `["left","top"]` and the projection must
 		// answer `top,left`, because the browser's guard admits only the format's
 		// own order and Go is the side that fixes it.
 		{"border.edges", "HeaderBorderEdgesResolved", `"border": {"width": 3, "color": "#445566", "edges": ["top", "bottom"]}`, `["left", "top"]`, "", "top,left",
-			func(v TableColumnsProjection) string { return v.HeaderBorderEdgesResolved }},
+			func(v designer.TableColumnsProjection) string { return v.HeaderBorderEdgesResolved }},
 	}
 	// THE TIE DW-240 WAS MISSING, AND THE DURABLE HALF OF ITS FIX. Nothing
 	// related `tableHeaderStyleFields` to this projection's member list, which
@@ -809,7 +812,7 @@ func TestEveryResolvedProjectionMemberFollowsBothLegsOfTheCascade(t *testing.T) 
 			// LEG ONE: the value lives on the table's own style and there is no
 			// headerStyle at all, so the resolved twin must read the table's.
 			tpl := headerCascadeDocument(t, `"style": {`+row.tableStyle+`},`, "")
-			view, err := TableColumns(tpl, "e1")
+			view, err := tableColumns(tpl, "e1")
 			if err != nil {
 				t.Fatalf("project the table: %v", err)
 			}
@@ -831,10 +834,10 @@ func TestEveryResolvedProjectionMemberFollowsBothLegsOfTheCascade(t *testing.T) 
 			}
 			// LEG TWO: headerStyle now declares a DIFFERENT value, so the
 			// resolved twin must abandon the table's style for it.
-			if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateTableHeaderStyle","version":1,"id":"e1","field":"`+row.field+`","op":"set","value":`+row.headerValue+`}`)); err != nil {
+			if _, err := applyComponentCommand(tpl, []byte(`{"kind":"updateTableHeaderStyle","version":1,"id":"e1","field":"`+row.field+`","op":"set","value":`+row.headerValue+`}`)); err != nil {
 				t.Fatalf("set headerStyle.%s: %v", row.field, err)
 			}
-			view, err = TableColumns(tpl, "e1")
+			view, err = tableColumns(tpl, "e1")
 			if err != nil {
 				t.Fatalf("re-project the table: %v", err)
 			}
@@ -844,10 +847,10 @@ func TestEveryResolvedProjectionMemberFollowsBothLegsOfTheCascade(t *testing.T) 
 			// AND BACK: clearing it returns the resolved twin to the table's
 			// own value, which is the row of the I/O matrix this whole story
 			// turns on, asserted here once per member rather than once total.
-			if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateTableHeaderStyle","version":1,"id":"e1","field":"`+row.field+`","op":"clear"}`)); err != nil {
+			if _, err := applyComponentCommand(tpl, []byte(`{"kind":"updateTableHeaderStyle","version":1,"id":"e1","field":"`+row.field+`","op":"clear"}`)); err != nil {
 				t.Fatalf("clear headerStyle.%s: %v", row.field, err)
 			}
-			view, err = TableColumns(tpl, "e1")
+			view, err = tableColumns(tpl, "e1")
 			if err != nil {
 				t.Fatalf("re-project the table after the clear: %v", err)
 			}
@@ -879,7 +882,7 @@ func TestEveryResolvedProjectionMemberFollowsBothLegsOfTheCascade(t *testing.T) 
 // any unpaired key through.
 func TestTheProjectionCarriesAPairForEveryHeaderStyleFieldACommandCanWrite(t *testing.T) {
 	tags := map[string]bool{}
-	value := reflect.TypeOf(TableColumnsProjection{})
+	value := reflect.TypeOf(designer.TableColumnsProjection{})
 	for i := 0; i < value.NumField(); i++ {
 		tag, _, _ := strings.Cut(value.Field(i).Tag.Get("json"), ",")
 		if tag != "" {
@@ -928,7 +931,7 @@ func TestTheProjectionCarriesAPairForEveryHeaderStyleFieldACommandCanWrite(t *te
 
 // committedTwin reads the COMMITTED member beside a resolved one, as a string,
 // so the test above can assert the pair are genuinely two members.
-func committedTwin(t *testing.T, view TableColumnsProjection, field string) string {
+func committedTwin(t *testing.T, view designer.TableColumnsProjection, field string) string {
 	t.Helper()
 	switch field {
 	case "fontFamily":
@@ -992,7 +995,7 @@ func TestClearingTheLastAuthorableHeaderFieldKeepsAHandAuthoredBorder(t *testing
 	if got := projectHeaderCascade(t, tpl).HeaderAlign; got != "center" {
 		t.Fatalf("precondition: the hand-authored align must project, got %q", got)
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateTableHeaderStyle","version":1,"id":"e1","field":"align","op":"clear"}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"updateTableHeaderStyle","version":1,"id":"e1","field":"align","op":"clear"}`)); err != nil {
 		t.Fatalf("clear headerStyle.align: %v", err)
 	}
 	encoded, err := SerializeTemplate(tpl)
@@ -1073,9 +1076,9 @@ func TestClearingANonBorderHeaderFieldKeepsAnEmptyHandAuthoredBorder(t *testing.
 	}
 }
 
-func projectHeaderCascade(t *testing.T, tpl *Template) TableColumnsProjection {
+func projectHeaderCascade(t *testing.T, tpl *Template) designer.TableColumnsProjection {
 	t.Helper()
-	view, err := TableColumns(tpl, "e1")
+	view, err := tableColumns(tpl, "e1")
 	if err != nil {
 		t.Fatalf("project e1: %v", err)
 	}
@@ -1096,7 +1099,7 @@ func TestClearingAFieldOfAnExplicitlyNullHeaderStyleMovesNoBytes(t *testing.T) {
 	if !bytes.Contains(before, []byte(`"headerStyle": null`)) {
 		t.Fatalf("precondition: the fixture must carry an explicit null headerStyle:\n%s", before)
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateTableHeaderStyle","version":1,"id":"e1","field":"align","op":"clear"}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"updateTableHeaderStyle","version":1,"id":"e1","field":"align","op":"clear"}`)); err != nil {
 		t.Fatalf("clear headerStyle.align on a null block: %v", err)
 	}
 	after, err := SerializeTemplate(tpl)

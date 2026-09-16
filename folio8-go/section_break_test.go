@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 	"github.com/panitw/folio8/folio8-go/internal/geom"
 	"github.com/panitw/folio8/folio8-go/internal/pagemodel"
 )
@@ -548,13 +549,13 @@ func TestSectionBreakDocumentRoundTripsThroughThePublicDoor(t *testing.T) {
 // and each content component's membership — and those two additions are the
 // only difference allowed.
 func TestSectionBreakLeavesTheCanvasPaginationUnchanged(t *testing.T) {
-	project := func(doc string) CanvasProjection {
+	project := func(doc string) designer.CanvasProjection {
 		t.Helper()
 		tpl, err := ParseTemplate([]byte(doc))
 		if err != nil {
 			t.Fatal(err)
 		}
-		projection, err := CanvasWithTextPaint(tpl, testShippedFontSet())
+		projection, err := canvasWithTextPaint(tpl, testShippedFontSet())
 		if err != nil {
 			t.Fatalf("CanvasWithTextPaint: %v", err)
 		}

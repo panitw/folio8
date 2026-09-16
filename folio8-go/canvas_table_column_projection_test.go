@@ -5,6 +5,8 @@ import (
 	"testing"
 	"unicode/utf16"
 	"unicode/utf8"
+
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 )
 
 // STORY 14.9 — THE CANVAS DRAWS THE TABLE IT WILL PRINT, and this file is the
@@ -69,7 +71,7 @@ const canvasSplitAlignTableTemplateJSON = `{
 }
 `
 
-func canvasTableColumnsOf(t *testing.T, projection CanvasProjection, id string) []CanvasTableColumn {
+func canvasTableColumnsOf(t *testing.T, projection designer.CanvasProjection, id string) []designer.CanvasTableColumn {
 	t.Helper()
 	for _, component := range projection.Components {
 		if component.ID == id {
@@ -89,7 +91,7 @@ func TestCanvasTableColumnsCarryTheDeclaredValues(t *testing.T) {
 	if len(columns) != 3 {
 		t.Fatalf("fixture precondition: want the table's three declared columns, got %d — %#v", len(columns), columns)
 	}
-	for index, want := range []CanvasTableColumn{
+	for index, want := range []designer.CanvasTableColumn{
 		{ID: "e3", Label: "Date", Width: 80000, Bind: "{{row.date}}"},
 		{ID: "e4", Label: "Amount", Width: 60000, Bind: "{{row.amount}}"},
 		{ID: "e5", Label: "", Width: 0, Bind: ""},
@@ -223,7 +225,7 @@ func TestCanvasTableColumnsRefuseNothingTheDocumentAlreadyPaints(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a zero-width and a negative-width column must still LOAD: %v", err)
 	}
-	projection, err := Canvas(tpl)
+	projection, err := canvas(tpl)
 	if err != nil {
 		t.Fatalf("a zero-width or negative-width column was refused a canvas projection, which blanks the whole designer for a document that paints today: %v", err)
 	}
@@ -273,7 +275,7 @@ func TestCanvasTableColumnStringsClipRatherThanRefuseTheDocument(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a 600-byte column label and bind must still LOAD — decodeColumn caps neither: %v", err)
 	}
-	projection, err := Canvas(tpl)
+	projection, err := canvas(tpl)
 	if err != nil {
 		t.Fatalf("a 600-byte column label aborted the canvas projection, which terminates the worker for a document that prints: %v", err)
 	}
@@ -353,7 +355,7 @@ func TestCanvasTableColumnClipLandsOnARuneBoundary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("a 200-character Thai column label must still LOAD: %v", err)
 	}
-	projection, err := Canvas(tpl)
+	projection, err := canvas(tpl)
 	if err != nil {
 		t.Fatalf("a 200-character Thai column label aborted the canvas projection: %v", err)
 	}

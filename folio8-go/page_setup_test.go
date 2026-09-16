@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 )
 
 func TestPageSetupCommandChangesOnlyValidCanonicalPageState(t *testing.T) {
@@ -21,7 +23,7 @@ func TestPageSetupCommandChangesOnlyValidCanonicalPageState(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	projection, err := ApplyPageSetupCommand(tpl, []byte(`{"kind":"pageSetup","version":1,"preset":"custom","orientation":"landscape","width":300.125,"height":400.5,"margin":{"top":10,"right":11.5,"bottom":12,"left":13}}`))
+	projection, err := applyPageSetupCommand(tpl, []byte(`{"kind":"pageSetup","version":1,"preset":"custom","orientation":"landscape","width":300.125,"height":400.5,"margin":{"top":10,"right":11.5,"bottom":12,"left":13}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +39,7 @@ func TestPageSetupCommandChangesOnlyValidCanonicalPageState(t *testing.T) {
 	}
 	stable := append([]byte(nil), after...)
 	for _, command := range [][]byte{[]byte(`{"kind":"pageSetup","version":1,"preset":"custom","orientation":"portrait","width":0,"height":200,"margin":{"top":1,"right":1,"bottom":1,"left":1}}`), []byte(`{"kind":"pageSetup","version":1,"preset":"custom","orientation":"portrait","width":1.0001,"height":2,"margin":{"top":1,"right":1,"bottom":1,"left":1}}`), []byte(`{"kind":"pageSetup","version":1,"preset":"A4","orientation":"diagonal","width":0,"height":0,"margin":{"top":1,"right":1,"bottom":1,"left":1}}`)} {
-		if _, err := ApplyPageSetupCommand(tpl, command); err == nil {
+		if _, err := applyPageSetupCommand(tpl, command); err == nil {
 			t.Fatalf("invalid command succeeded: %s", command)
 		}
 		got, err := SerializeTemplate(tpl)
@@ -57,12 +59,12 @@ func TestCustomLandscapeApplyIsByteStableAndTransportSafe(t *testing.T) {
 		t.Fatal(err)
 	}
 	command := []byte(`{"kind":"pageSetup","version":1,"preset":"custom","orientation":"landscape","width":300.125,"height":400.5,"margin":{"top":10,"right":11.5,"bottom":12,"left":13}}`)
-	projection, err := ApplyPageSetupCommand(tpl, command)
+	projection, err := applyPageSetupCommand(tpl, command)
 	if err != nil || projection.CommandWidth != 300125 || projection.CommandHeight != 400500 || projection.Width != 400500 || projection.Height != 300125 {
 		t.Fatalf("custom landscape projection = %#v, %v", projection, err)
 	}
 	before, _ := SerializeTemplate(tpl)
-	if _, err := ApplyPageSetupCommand(tpl, command); err != nil {
+	if _, err := applyPageSetupCommand(tpl, command); err != nil {
 		t.Fatal(err)
 	}
 	after, _ := SerializeTemplate(tpl)
@@ -70,7 +72,7 @@ func TestCustomLandscapeApplyIsByteStableAndTransportSafe(t *testing.T) {
 		t.Fatal("unchanged custom landscape command changed canonical bytes")
 	}
 	unsafe := []byte(`{"kind":"pageSetup","version":1,"preset":"custom","orientation":"portrait","width":9007199254740.992,"height":200,"margin":{"top":1,"right":1,"bottom":1,"left":1}}`)
-	if _, err := ApplyPageSetupCommand(tpl, unsafe); err == nil {
+	if _, err := applyPageSetupCommand(tpl, unsafe); err == nil {
 		t.Fatal("first JavaScript-unsafe millipoint was accepted")
 	}
 }
@@ -121,7 +123,7 @@ func TestApplyPageSetupCommandRefusesDuplicateKeys(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, err = ApplyPageSetupCommand(tpl, []byte(probe.command))
+			_, err = applyPageSetupCommand(tpl, []byte(probe.command))
 			if err == nil {
 				t.Fatal("duplicate-key bytes were accepted at the page-setup door")
 			}
@@ -131,7 +133,7 @@ func TestApplyPageSetupCommandRefusesDuplicateKeys(t *testing.T) {
 			// matched first by engineFailure and reported as COMPONENT_INVALID,
 			// which the designer's only code-branching page-setup consumer
 			// never sees.
-			var componentShaped *ComponentCommandError
+			var componentShaped *designer.ComponentCommandError
 			if errors.As(err, &componentShaped) {
 				t.Fatalf("the page-setup door raised a ComponentCommandError, so the host reports COMPONENT_INVALID for a page-setup command: %v", err)
 			}
@@ -150,7 +152,7 @@ func TestApplyPageSetupCommandRefusesDuplicateKeys(t *testing.T) {
 			}
 			// The other direction, in the same test, so the guard cannot be
 			// satisfied by refusing everything.
-			if _, err := ApplyPageSetupCommand(tpl, []byte(valid)); err != nil {
+			if _, err := applyPageSetupCommand(tpl, []byte(valid)); err != nil {
 				t.Fatalf("an unambiguous page setup command was refused: %v", err)
 			}
 		})
@@ -217,7 +219,7 @@ func TestPageSetupNumberDiagnosticNamesTheCauseItFound(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, err = ApplyPageSetupCommand(tpl, []byte(probe.command))
+			_, err = applyPageSetupCommand(tpl, []byte(probe.command))
 			if err == nil {
 				t.Fatal("the command was accepted; no silent write may follow either cause")
 			}

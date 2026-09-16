@@ -9,6 +9,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 )
 
 // This file guards the ONE SEAM neither side's own tests can see: the JSON
@@ -164,7 +166,7 @@ func canvasTextFragmentWireKeysWithout(key string) []string {
 
 // marshalledCanvasKeys is the Go side, taken from the bytes rather than from
 // the struct: whatever encoding/json puts on the wire for this value, sorted.
-func marshalledCanvasKeys(t *testing.T, projection CanvasProjection) []string {
+func marshalledCanvasKeys(t *testing.T, projection designer.CanvasProjection) []string {
 	t.Helper()
 	encoded, err := json.Marshal(projection)
 	if err != nil {
@@ -192,7 +194,7 @@ func TestCanvasProjectionWireKeysAreTheRecordedSet(t *testing.T) {
 	if !reflect.DeepEqual(projected, canvasProjectionWireKeys) {
 		t.Errorf("CanvasProjection marshals the keys\n\t%v\nand the recorded protocol set is\n\t%v", projected, canvasProjectionWireKeys)
 	}
-	zero := marshalledCanvasKeys(t, CanvasProjection{})
+	zero := marshalledCanvasKeys(t, designer.CanvasProjection{})
 	if !reflect.DeepEqual(zero, projected) {
 		t.Errorf("a zero CanvasProjection marshals\n\t%v\nand a projected one\n\t%v — a key that appears only sometimes is a key the browser's exact-key guard will reject only sometimes", zero, projected)
 	}
@@ -203,7 +205,7 @@ func TestCanvasProjectionWireKeysAreTheRecordedSet(t *testing.T) {
 	if !reflect.DeepEqual(chainKeys, canvasFontChainWireKeys) {
 		t.Errorf("CanvasFontChain marshals the keys\n\t%v\nand the recorded protocol set is\n\t%v", chainKeys, canvasFontChainWireKeys)
 	}
-	zeroChain := marshalledObjectKeys(t, mustMarshal(t, CanvasFontChain{}))
+	zeroChain := marshalledObjectKeys(t, mustMarshal(t, designer.CanvasFontChain{}))
 	if !reflect.DeepEqual(zeroChain, chainKeys) {
 		t.Errorf("a zero CanvasFontChain marshals\n\t%v\nand a projected one\n\t%v — an omitempty here drops a key the browser's exact-key guard requires", zeroChain, chainKeys)
 	}
@@ -213,7 +215,7 @@ func TestCanvasProjectionWireKeysAreTheRecordedSet(t *testing.T) {
 	if !reflect.DeepEqual(entryKeys, canvasFontChainEntryWireKeys) {
 		t.Errorf("CanvasFontChainEntry marshals the keys\n\t%v\nand the recorded protocol set is\n\t%v", entryKeys, canvasFontChainEntryWireKeys)
 	}
-	zeroEntry := marshalledObjectKeys(t, mustMarshal(t, CanvasFontChainEntry{}))
+	zeroEntry := marshalledObjectKeys(t, mustMarshal(t, designer.CanvasFontChainEntry{}))
 	if !reflect.DeepEqual(zeroEntry, entryKeys) {
 		t.Errorf("a zero CanvasFontChainEntry marshals\n\t%v\nand a projected one\n\t%v — an entry key that appears only for SOME entries (a named face carries no family; an embedded one does) is one the browser's exact-key guard rejects only for some documents", zeroEntry, entryKeys)
 	}
@@ -243,7 +245,7 @@ func TestCanvasProjectionWireKeysAreTheRecordedSet(t *testing.T) {
 // marshalled projection, by the same rule the two helpers above use: from the
 // bytes, never from the struct. The fixture must actually paint something, or
 // the check asserts nothing.
-func fragmentFromProjectionBytes(t *testing.T, projection CanvasProjection) []byte {
+func fragmentFromProjectionBytes(t *testing.T, projection designer.CanvasProjection) []byte {
 	t.Helper()
 	var object map[string]json.RawMessage
 	if err := json.Unmarshal(mustMarshal(t, projection), &object); err != nil {
@@ -292,7 +294,7 @@ func fragmentFromProjectionBytes(t *testing.T, projection CanvasProjection) []by
 // the marshalled projection, by the same rule chainFromProjectionBytes uses:
 // from the bytes, never from the struct. The fixture must declare a chain with
 // at least one entry, or the check asserts nothing.
-func entryFromProjectionBytes(t *testing.T, projection CanvasProjection) []byte {
+func entryFromProjectionBytes(t *testing.T, projection designer.CanvasProjection) []byte {
 	t.Helper()
 	var chain map[string]json.RawMessage
 	if err := json.Unmarshal(chainFromProjectionBytes(t, projection), &chain); err != nil {
@@ -338,7 +340,7 @@ func marshalledObjectKeys(t *testing.T, object []byte) []string {
 // chainFromProjectionBytes digs the first projected font chain out of the
 // marshalled projection. The fixture must declare one: a projection with no
 // chains would let this whole check pass while saying nothing.
-func chainFromProjectionBytes(t *testing.T, projection CanvasProjection) []byte {
+func chainFromProjectionBytes(t *testing.T, projection designer.CanvasProjection) []byte {
 	t.Helper()
 	var object map[string]json.RawMessage
 	if err := json.Unmarshal(mustMarshal(t, projection), &object); err != nil {
@@ -563,14 +565,14 @@ var tableProjectionGuardKeyList = regexp.MustCompile(`hasExactKeys\(value\.table
 // zero-value comparison below exists to hold — but a fixture that says it
 // exercises the members and does not is a fixture that will be believed by the
 // next reader.
-func projectedTableForWireKeys(t *testing.T) TableColumnsProjection {
+func projectedTableForWireKeys(t *testing.T) designer.TableColumnsProjection {
 	t.Helper()
 	tpl := componentTemplate(t)
-	before, err := Canvas(tpl)
+	before, err := canvas(tpl)
 	if err != nil {
 		t.Fatalf("project the fixture before creating a table: %v", err)
 	}
-	after, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"table","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
+	after, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"table","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
 	if err != nil {
 		t.Fatalf("create a table: %v", err)
 	}
@@ -591,11 +593,11 @@ func projectedTableForWireKeys(t *testing.T) TableColumnsProjection {
 		`{"kind":"updateTableHeaderStyle","version":1,"id":"` + table.ID + `","field":"border.color","op":"set","value":"#334455"}`,
 		`{"kind":"updateTableHeaderStyle","version":1,"id":"` + table.ID + `","field":"border.edges","op":"set","value":["top","bottom"]}`,
 	} {
-		if _, err := ApplyComponentCommand(tpl, []byte(command)); err != nil {
+		if _, err := applyComponentCommand(tpl, []byte(command)); err != nil {
 			t.Fatalf("apply %s: %v", command, err)
 		}
 	}
-	projection, err := TableColumns(tpl, table.ID)
+	projection, err := tableColumns(tpl, table.ID)
 	if err != nil {
 		t.Fatalf("project the table columns: %v", err)
 	}
@@ -624,7 +626,7 @@ func TestTableColumnsProjectionWireKeysAreTheRecordedSet(t *testing.T) {
 	if !reflect.DeepEqual(projected, tableColumnsProjectionWireKeys) {
 		t.Errorf("TableColumnsProjection marshals the keys\n\t%v\nand the recorded protocol set is\n\t%v", projected, tableColumnsProjectionWireKeys)
 	}
-	zero := marshalledObjectKeys(t, mustMarshal(t, TableColumnsProjection{}))
+	zero := marshalledObjectKeys(t, mustMarshal(t, designer.TableColumnsProjection{}))
 	if !reflect.DeepEqual(zero, projected) {
 		t.Errorf("a zero TableColumnsProjection marshals\n\t%v\nand a projected one\n\t%v — a key that appears only sometimes is a key the browser's exact-key guard rejects only sometimes, and the symptom is a terminated worker on exactly those documents", zero, projected)
 	}
@@ -750,7 +752,7 @@ var canvasTableComponentEmittedKeys = []string{"authored", "band", "columns", "f
 // componentsFromProjectionBytes reads the projected components as raw objects,
 // by the same rule every helper in this file uses: from the marshalled bytes,
 // never from the struct tags a rename would have edited in the same breath.
-func componentsFromProjectionBytes(t *testing.T, projection CanvasProjection) []json.RawMessage {
+func componentsFromProjectionBytes(t *testing.T, projection designer.CanvasProjection) []json.RawMessage {
 	t.Helper()
 	var object map[string]json.RawMessage
 	if err := json.Unmarshal(mustMarshal(t, projection), &object); err != nil {
@@ -836,7 +838,7 @@ func TestCanvasComponentWireKeysAreTheRecordedSet(t *testing.T) {
 	// projected one does. `label` and `bind` are required keys whose values may
 	// be empty, so this is the property that keeps an empty label from dropping
 	// a key the browser's exact-key guard requires.
-	zeroColumn := marshalledObjectKeys(t, mustMarshal(t, CanvasTableColumn{}))
+	zeroColumn := marshalledObjectKeys(t, mustMarshal(t, designer.CanvasTableColumn{}))
 	if !reflect.DeepEqual(zeroColumn, canvasComponentColumnWireKeys) {
 		t.Errorf("a zero CanvasTableColumn marshals\n\t%v\nand the recorded protocol set is\n\t%v — an omitempty here drops a key for exactly the documents that leave that column's label or bind empty, and those are the documents this story exists to draw honestly", zeroColumn, canvasComponentColumnWireKeys)
 	}

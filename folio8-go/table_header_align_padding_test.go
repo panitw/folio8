@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"errors"
 	"testing"
+
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 )
 
 // The header cell resolves columns[].headerAlign first; the data cell never
@@ -69,7 +71,7 @@ func TestTableColumnsProjectHeaderAlignResolved(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		view, err := TableColumns(tpl, "e1")
+		view, err := tableColumns(tpl, "e1")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -82,7 +84,7 @@ func TestTableColumnsProjectHeaderAlignResolved(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if view, err := TableColumns(plain, "e1"); err != nil || view.Columns[0].HeaderAlignResolved != "right" {
+	if view, err := tableColumns(plain, "e1"); err != nil || view.Columns[0].HeaderAlignResolved != "right" {
 		t.Fatalf("resolved = %#v, err=%v, want right from style.align", view.Columns, err)
 	}
 }
@@ -104,7 +106,7 @@ func TestTablePaddingInsetsHeaderAndDataCells(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	view, err := TableColumns(tpl, "e1")
+	view, err := tableColumns(tpl, "e1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +120,7 @@ func TestTablePaddingInsetsHeaderAndDataCells(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	canvas, err := Canvas(padded)
+	canvas, err := canvas(padded)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,13 +144,13 @@ func TestTablePaddingInsetsHeaderAndDataCells(t *testing.T) {
 // existing element property command.
 func TestTableEditorHeaderAlignAndPaddingCommands(t *testing.T) {
 	tpl := componentTemplate(t)
-	before, _ := Canvas(tpl)
-	projection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"table","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
+	before, _ := canvas(tpl)
+	projection, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"table","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	table := newProjectedComponent(t, before, projection)
-	view, err := TableColumns(tpl, table.ID)
+	view, err := tableColumns(tpl, table.ID)
 	if err != nil || len(view.Columns) == 0 {
 		t.Fatalf("projection = %#v, err=%v", view, err)
 	}
@@ -159,8 +161,8 @@ func TestTableEditorHeaderAlignAndPaddingCommands(t *testing.T) {
 
 	canonical, _ := SerializeTemplate(tpl)
 	for _, value := range []string{`"justify"`, `""`, `null`, `1`} {
-		_, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateTableColumn","version":1,"id":"`+table.ID+`","columnId":"`+column.ID+`","field":"headerAlign","value":`+value+`}`))
-		var located *ComponentCommandError
+		_, err := applyComponentCommand(tpl, []byte(`{"kind":"updateTableColumn","version":1,"id":"`+table.ID+`","columnId":"`+column.ID+`","field":"headerAlign","value":`+value+`}`))
+		var located *designer.ComponentCommandError
 		if !errors.As(err, &located) || located.DataPath != "column.headerAlign" {
 			t.Fatalf("headerAlign %s: err = %v, want a refusal located at column.headerAlign", value, err)
 		}
@@ -169,10 +171,10 @@ func TestTableEditorHeaderAlignAndPaddingCommands(t *testing.T) {
 		}
 	}
 
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateTableColumn","version":1,"id":"`+table.ID+`","columnId":"`+column.ID+`","field":"headerAlign","value":"center"}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"updateTableColumn","version":1,"id":"`+table.ID+`","columnId":"`+column.ID+`","field":"headerAlign","value":"center"}`)); err != nil {
 		t.Fatal(err)
 	}
-	view, _ = TableColumns(tpl, table.ID)
+	view, _ = tableColumns(tpl, table.ID)
 	if view.Columns[0].HeaderAlign != "center" || view.Columns[0].Align != "left" {
 		t.Fatalf("after set, column projects headerAlign=%q align=%q", view.Columns[0].HeaderAlign, view.Columns[0].Align)
 	}
@@ -181,17 +183,17 @@ func TestTableEditorHeaderAlignAndPaddingCommands(t *testing.T) {
 		t.Fatalf("document must carry headerAlign at 3.2:\n%s", out)
 	}
 
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["`+table.ID+`"],"changes":{"paddingLeft":{"op":"set","value":3},"paddingRight":{"op":"set","value":3}}}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["`+table.ID+`"],"changes":{"paddingLeft":{"op":"set","value":3},"paddingRight":{"op":"set","value":3}}}`)); err != nil {
 		t.Fatal(err)
 	}
-	view, _ = TableColumns(tpl, table.ID)
+	view, _ = tableColumns(tpl, table.ID)
 	if view.PaddingLeft != "3000" || view.PaddingRight != "3000" {
 		t.Fatalf("padding projects %q/%q, want 3000/3000", view.PaddingLeft, view.PaddingRight)
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["`+table.ID+`"],"changes":{"paddingLeft":{"op":"clear"},"paddingRight":{"op":"clear"}}}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["`+table.ID+`"],"changes":{"paddingLeft":{"op":"clear"},"paddingRight":{"op":"clear"}}}`)); err != nil {
 		t.Fatal(err)
 	}
-	view, _ = TableColumns(tpl, table.ID)
+	view, _ = tableColumns(tpl, table.ID)
 	_, _, _, element, err := findComponent(tpl, table.ID)
 	if err != nil {
 		t.Fatal(err)

@@ -27,6 +27,7 @@ import (
 
 	folio8 "github.com/panitw/folio8/folio8-go"
 	"github.com/panitw/folio8/folio8-go/fonts"
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 )
 
 const starterTemplatePath = "../folio8-designer/public/templates/starter.folio"
@@ -61,12 +62,12 @@ func loadStarterTemplate(t *testing.T) ([]byte, *folio8.Template) {
 // the starter.
 func TestTheShippedStarterDeclaresOnlyCutsTheEngineSupplies(t *testing.T) {
 	_, tpl := loadStarterTemplate(t)
-	projection, err := folio8.Canvas(tpl)
+	projection, err := designer.Canvas(tpl)
 	if err != nil {
 		t.Fatalf("project the shipped starter: %v", err)
 	}
 	shipped := fonts.Shipped()
-	var chain *folio8.CanvasFontChain
+	var chain *designer.CanvasFontChain
 	for i := range projection.FontChains {
 		if projection.FontChains[i].Name == starterChainName {
 			chain = &projection.FontChains[i]
@@ -171,14 +172,14 @@ func TestTheShippedStarterDeclaresTheVersionItsContentRequires(t *testing.T) {
 // rather than merely asserting the fragment is non-empty.
 func TestANewDocumentFromTheStarterCanActuallyBold(t *testing.T) {
 	_, tpl := loadStarterTemplate(t)
-	if _, err := folio8.ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"text","band":"content","x":40,"y":40,"width":200,"height":24,"snap":false}`)); err != nil {
+	if _, err := designer.ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"text","band":"content","x":40,"y":40,"width":200,"height":24,"snap":false}`)); err != nil {
 		t.Fatalf("create a text element in a new document: %v", err)
 	}
 	set := `{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"value":{"op":"set","value":"Heading"},"fontFamily":{"op":"set","value":"` + starterChainName + `"},"bold":{"op":"set","value":true}}}`
-	if _, err := folio8.ApplyComponentCommand(tpl, []byte(set)); err != nil {
+	if _, err := designer.ApplyComponentCommand(tpl, []byte(set)); err != nil {
 		t.Fatalf("bold the new element: %v", err)
 	}
-	projection, err := folio8.CanvasWithTextPaint(tpl, fonts.Shipped())
+	projection, err := designer.CanvasWithTextPaint(tpl, fonts.Shipped())
 	if err != nil {
 		t.Fatalf("project the paint: %v", err)
 	}
@@ -242,7 +243,7 @@ func declaredBoldOf(t *testing.T, chainName string) string {
 	return ""
 }
 
-func paintedFaces(projection folio8.CanvasProjection) []string {
+func paintedFaces(projection designer.CanvasProjection) []string {
 	var faces []string
 	for _, component := range projection.Components {
 		if component.TextPaint == nil {

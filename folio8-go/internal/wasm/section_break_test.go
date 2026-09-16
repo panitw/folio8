@@ -10,11 +10,11 @@ import (
 // accepted section-break command is ONE undo entry, and Undo then Redo return
 // the document bytes exactly to the before and after states.
 func TestSectionBreakCommandsUndoAndRedoByteForByte(t *testing.T) {
-	input, err := os.ReadFile("../../fixtures/section-break-statement/input.folio")
+	input, err := os.ReadFile("../../../fixtures/section-break-statement/input.folio")
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine()
+	engine := NewEngine(testClock())
 	if _, err := engine.Load(input); err != nil {
 		t.Fatal(err)
 	}

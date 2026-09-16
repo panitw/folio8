@@ -43,11 +43,11 @@ func embedFontCommand(chain string, face []byte) []byte {
 
 func loadedWorkedExample(t *testing.T) *Engine {
 	t.Helper()
-	input, err := os.ReadFile("../testdata/template/golden/worked-example.json")
+	input, err := os.ReadFile("../../testdata/template/golden/worked-example.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine()
+	engine := NewEngine(testClock())
 	if _, err := engine.Load(input); err != nil {
 		t.Fatal(err)
 	}

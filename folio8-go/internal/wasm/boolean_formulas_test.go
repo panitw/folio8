@@ -4,20 +4,22 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	folio8 "github.com/panitw/folio8/folio8-go"
-	"github.com/panitw/folio8/folio8-go/internal/expr"
 	"os"
 	"reflect"
 	"strings"
 	"testing"
+
+	folio8 "github.com/panitw/folio8/folio8-go"
+	"github.com/panitw/folio8/folio8-go/internal/designer"
+	"github.com/panitw/folio8/folio8-go/internal/expr"
 )
 
 func TestBooleanFormulasRealEngineHistoryPersistenceAndRefusal(t *testing.T) {
-	original, err := os.ReadFile("../testdata/example/first-pdf.folio")
+	original, err := os.ReadFile("../../testdata/example/first-pdf.folio")
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine()
+	engine := NewEngine(testClock())
 	if _, err = engine.Load(original); err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +51,7 @@ func TestBooleanFormulasRealEngineHistoryPersistenceAndRefusal(t *testing.T) {
 		if !bytes.Equal(redone, committed) {
 			t.Fatal("redo lost formula bytes")
 		}
-		reloaded := NewEngine()
+		reloaded := NewEngine(testClock())
 		if _, err := reloaded.Load(committed); err != nil {
 			t.Fatal(err)
 		}
@@ -76,11 +78,11 @@ func TestBooleanFormulasRealEngineHistoryPersistenceAndRefusal(t *testing.T) {
 }
 
 func TestBooleanFormulaValidOverEditorLimitIsAtomic(t *testing.T) {
-	original, err := os.ReadFile("../testdata/example/first-pdf.folio")
+	original, err := os.ReadFile("../../testdata/example/first-pdf.folio")
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine()
+	engine := NewEngine(testClock())
 	if _, err := engine.Load(original); err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +98,7 @@ func TestBooleanFormulaValidOverEditorLimitIsAtomic(t *testing.T) {
 	snapshot := engine.Snapshot()
 	raw, _ := json.Marshal(map[string]any{"kind": "updateComponentProperties", "version": 1, "ids": []string{"e1"}, "changes": map[string]any{"x": map[string]any{"op": "set", "value": 12}, "visibleIf": map[string]any{"op": "set", "value": formula}}})
 	_, err = engine.Apply(raw)
-	var failure *folio8.ComponentCommandError
+	var failure *designer.ComponentCommandError
 	if !errors.As(err, &failure) || failure.ElementID != "e1" || failure.DataPath != "component.visibleIf" || !strings.Contains(failure.Message, "512-byte") {
 		t.Fatalf("missing field/limit context: %v", err)
 	}

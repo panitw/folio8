@@ -58,7 +58,8 @@ var stageRankTable = []stageRank{
 	{"geom", 0},
 	{"diag", 1}, // Epic 3; ranked ahead of arrival so its first commit is already guarded
 	{"pagemodel", 1},
-	{"barcode", 1}, // spec-barcode-qr-elements: a pure encoder over geom only; the module root consumes it
+	{"barcode", 1},  // spec-barcode-qr-elements: a pure encoder over geom only; the module root consumes it
+	{"designer", 1}, // spec-client-libraries story 1: the designer's wire types and bridge; imports geom only
 	{"template", 2},
 	{"expr", 3}, // Epic 3; D-1.6.1's expr -/-> bind pre-commitment lives in this number
 	{"bind", 4},
@@ -66,6 +67,7 @@ var stageRankTable = []stageRank{
 	{"fontset", 6},
 	{"layout", 7},
 	{"pdf", 8},
+	{"wasm", 9}, // spec-client-libraries story 1: the designer's session engine; a shell above every stage, importing designer
 
 	// "." is the scan root itself — folio8-go/internal/, which holds the
 	// test-only `arch` fitness package (no non-test files; it exists to

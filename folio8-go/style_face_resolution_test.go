@@ -582,7 +582,7 @@ func TestWrappingFollowsTheFaceActuallyUsed(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		proj, err := CanvasWithTextPaint(tpl, testShippedFontSet())
+		proj, err := canvasWithTextPaint(tpl, testShippedFontSet())
 		if err != nil {
 			t.Fatal(err)
 		}

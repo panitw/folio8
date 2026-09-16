@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 	"github.com/panitw/folio8/folio8-go/internal/geom"
 )
 
@@ -14,7 +15,7 @@ func TestCanvasTextPaintUsesPackedProductionLineGeometryWithoutMutation(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	projection, err := CanvasWithTextPaint(tpl, testFontSet())
+	projection, err := canvasWithTextPaint(tpl, testFontSet())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -36,7 +37,7 @@ func TestCanvasTextPaintCarriesEngineOverflowInsteadOfRebreaking(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	projection, err := CanvasWithTextPaint(tpl, testFontSet())
+	projection, err := canvasWithTextPaint(tpl, testFontSet())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,13 +52,13 @@ func TestCanvasTextPaintCarriesEngineOverflowInsteadOfRebreaking(t *testing.T) {
 // second line below its box — the PDF prints the value, not the source.
 func TestCanvasTextPaintKeepsAPlaceholderOnOneLine(t *testing.T) {
 	const tplJSON = `{"version":"1.0","page":{"size":"A4","orientation":"portrait","margin":{"top":36,"right":36,"bottom":36,"left":36}},"bands":{"pageHeader":{"height":20,"elements":[]},"content":{"elements":[{"id":"e1","type":"text","x":0,"y":0,"width":120,"height":30,"value":"{{formatNumber(amountDue, \"#,##0.00\")}}","style":{"fontFamily":"body","fontSize":22}}]},"pageFooter":{"height":20,"elements":[]}},"fonts":{"body":["Roboto-Regular"]},"locale":"en","utcOffset":"+00:00","assets":{},"nextId":2}`
-	paintOf := func(src string) *CanvasTextPaint {
+	paintOf := func(src string) *designer.CanvasTextPaint {
 		t.Helper()
 		tpl, err := ParseTemplate([]byte(src))
 		if err != nil {
 			t.Fatal(err)
 		}
-		projection, err := CanvasWithTextPaint(tpl, testFontSet())
+		projection, err := canvasWithTextPaint(tpl, testFontSet())
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -77,7 +78,7 @@ func TestCanvasTextPaintKeepsAPlaceholderOnOneLine(t *testing.T) {
 
 func TestCanvasTextPaintExactlyMatchesTheShippingRunPath(t *testing.T) {
 	tpl := parseFontTestTemplate(t)
-	projection, err := CanvasWithTextPaint(tpl, testFontSet())
+	projection, err := canvasWithTextPaint(tpl, testFontSet())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,10 +154,10 @@ func shippingRunWidth(run textRunSource, fs FontSet, cache *fontCache) (geom.Len
 }
 
 func TestCanvasTextPaintRejectsDerivedCoordinatesOutsideTheJSRange(t *testing.T) {
-	if _, err := canvasLineTop(geom.Length(MaxCanvasMillipoints), 1, 1); err == nil {
+	if _, err := canvasLineTop(geom.Length(designer.MaxCanvasMillipoints), 1, 1); err == nil {
 		t.Fatal("overflowing later-line origin was accepted")
 	}
-	if _, err := canvasDerivedSum(geom.Length(MaxCanvasMillipoints), 1); err == nil {
+	if _, err := canvasDerivedSum(geom.Length(designer.MaxCanvasMillipoints), 1); err == nil {
 		t.Fatal("overflowing baseline was accepted")
 	}
 }
@@ -178,7 +179,7 @@ func TestCanvasTextPaintHonoursATypedBreak(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	projection, err := CanvasWithTextPaint(tpl, testFontSet())
+	projection, err := canvasWithTextPaint(tpl, testFontSet())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +221,7 @@ func TestCanvasTextPaintHonoursATypedBreak(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cp, err := CanvasWithTextPaint(control, testFontSet())
+	cp, err := canvasWithTextPaint(control, testFontSet())
 	if err != nil {
 		t.Fatal(err)
 	}

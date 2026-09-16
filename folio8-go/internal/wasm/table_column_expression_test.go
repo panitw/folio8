@@ -12,11 +12,11 @@ import (
 )
 
 func TestEngineColumnExpressionExactBytesHistoryAndRefusals(t *testing.T) {
-	input, err := os.ReadFile("../../fixtures/statement-1/input.folio")
+	input, err := os.ReadFile("../../../fixtures/statement-1/input.folio")
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine()
+	engine := NewEngine(testClock())
 	if _, err := engine.Load(input); err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +55,7 @@ func TestEngineColumnExpressionExactBytesHistoryAndRefusals(t *testing.T) {
 			if err != nil || projected.Table.Columns[0].Binding != binding {
 				t.Fatalf("projection changed expression: %#v %v", projected, err)
 			}
-			fresh := NewEngine()
+			fresh := NewEngine(testClock())
 			if _, err := fresh.Load(after); err != nil {
 				t.Fatal(err)
 			}
@@ -95,11 +95,11 @@ func TestEngineColumnExpressionExactBytesHistoryAndRefusals(t *testing.T) {
 }
 
 func TestEngineColumnExpressionFooterAndAliasRefusalPreserveHistory(t *testing.T) {
-	input, err := os.ReadFile("../../fixtures/statement-1/input.folio")
+	input, err := os.ReadFile("../../../fixtures/statement-1/input.folio")
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine()
+	engine := NewEngine(testClock())
 	if _, err := engine.Load(input); err != nil {
 		t.Fatal(err)
 	}

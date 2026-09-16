@@ -176,7 +176,7 @@ func TestQRCodeNonSquareBoxIsSizedToTheShortSideAndCentred(t *testing.T) {
 	if originX-20000 != geom.ScaleRound(200000-symbol, 1, 2) {
 		t.Errorf("not centred horizontally: left %d", originX-20000)
 	}
-	canvas, err := CanvasWithTextPaint(tpl, testShippedFontSet())
+	canvas, err := canvasWithTextPaint(tpl, testShippedFontSet())
 	if err != nil {
 		t.Fatalf("canvas: %v", err)
 	}
@@ -285,7 +285,7 @@ func TestQRCodeCommandsAndCanvas(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	projection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"dropComponent","version":1,"type":"qrcode","x":100,"y":300,"snap":false}`))
+	projection, err := applyComponentCommand(tpl, []byte(`{"kind":"dropComponent","version":1,"type":"qrcode","x":100,"y":300,"snap":false}`))
 	if err != nil {
 		t.Fatalf("drop: %v", err)
 	}
@@ -293,7 +293,7 @@ func TestQRCodeCommandsAndCanvas(t *testing.T) {
 	if dropped.Type != "qrcode" || dropped.Width != 72000 || dropped.Height != 72000 || dropped.Value == nil || *dropped.Value != qrcodeStarterValue {
 		t.Fatalf("dropped qrcode = %+v", dropped)
 	}
-	painted, err := CanvasWithTextPaint(tpl, testShippedFontSet())
+	painted, err := canvasWithTextPaint(tpl, testShippedFontSet())
 	if err != nil {
 		t.Fatalf("canvas: %v", err)
 	}
@@ -305,7 +305,7 @@ func TestQRCodeCommandsAndCanvas(t *testing.T) {
 		`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"errorCorrection":{"op":"set","value":"H"}}}`,
 		`{"kind":"bindComponentScalar","version":1,"id":"e1","segments":["ref"]}`,
 	} {
-		if _, err := ApplyComponentCommand(tpl, []byte(cmd)); err != nil {
+		if _, err := applyComponentCommand(tpl, []byte(cmd)); err != nil {
 			t.Fatalf("%s: %v", cmd, err)
 		}
 	}
@@ -318,7 +318,7 @@ func TestQRCodeCommandsAndCanvas(t *testing.T) {
 			t.Fatalf("saved document lacks %s:\n%s", want, saved)
 		}
 	}
-	canvas, err := CanvasWithTextPaint(tpl, testShippedFontSet())
+	canvas, err := canvasWithTextPaint(tpl, testShippedFontSet())
 	if err != nil {
 		t.Fatalf("canvas: %v", err)
 	}
@@ -339,7 +339,7 @@ func TestQRCodeCommandsAndCanvas(t *testing.T) {
 	}
 
 	// Escapes decode; clearing the level removes the key.
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"expression":{"op":"set","value":"A\\r{{ref}}"},"errorCorrection":{"op":"clear"}}}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"expression":{"op":"set","value":"A\\r{{ref}}"},"errorCorrection":{"op":"clear"}}}`)); err != nil {
 		t.Fatalf("set expression and clear level: %v", err)
 	}
 	saved, _ = SerializeTemplate(tpl)
@@ -353,7 +353,7 @@ func TestQRCodeCommandsAndCanvas(t *testing.T) {
 		`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"background":{"op":"set","value":"#ff0000"}}}`,
 		`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"value":{"op":"set","value":"a\\tb"}}}`,
 	} {
-		if _, err := ApplyComponentCommand(tpl, []byte(bad)); err == nil {
+		if _, err := applyComponentCommand(tpl, []byte(bad)); err == nil {
 			t.Errorf("command must be refused: %s", bad)
 		}
 	}
@@ -364,10 +364,10 @@ func TestErrorCorrectionIsRefusedOnOtherKinds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"errorCorrection":{"op":"set","value":"M"}}}`)); err == nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"errorCorrection":{"op":"set","value":"M"}}}`)); err == nil {
 		t.Fatal("errorCorrection must be refused on a barcode")
 	}
-	canvas, err := CanvasWithTextPaint(tpl, testShippedFontSet())
+	canvas, err := canvasWithTextPaint(tpl, testShippedFontSet())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -381,7 +381,7 @@ func TestStaticQRCodeCanvasMatchesRenderAndStaysExact(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	canvas, err := CanvasWithTextPaint(tpl, testShippedFontSet())
+	canvas, err := canvasWithTextPaint(tpl, testShippedFontSet())
 	if err != nil {
 		t.Fatalf("canvas: %v", err)
 	}
@@ -413,7 +413,7 @@ func TestUnfitStaticQRCodeProjectsDoesNotFitAndNoColumnItem(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parse: %v", err)
 		}
-		canvas, err := CanvasWithTextPaint(tpl, testShippedFontSet())
+		canvas, err := canvasWithTextPaint(tpl, testShippedFontSet())
 		if err != nil {
 			t.Fatalf("canvas: %v", err)
 		}
@@ -430,7 +430,7 @@ func TestUnfitStaticQRCodeProjectsDoesNotFitAndNoColumnItem(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	canvas, err := CanvasWithTextPaint(tpl, testShippedFontSet())
+	canvas, err := canvasWithTextPaint(tpl, testShippedFontSet())
 	if err != nil {
 		t.Fatalf("canvas: %v", err)
 	}
@@ -498,7 +498,7 @@ func TestRaisingQRCodeLevelOverCapacityIsRefused(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"errorCorrection":{"op":"set","value":"H"}}}`)); err == nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"errorCorrection":{"op":"set","value":"H"}}}`)); err == nil {
 		t.Fatal("raising the level to H must be refused: 1500 bytes exceed the 1273 version 40 holds at H")
 	}
 	after, err := SerializeTemplate(tpl)

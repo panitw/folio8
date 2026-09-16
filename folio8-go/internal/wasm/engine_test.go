@@ -13,14 +13,15 @@ import (
 
 	folio8 "github.com/panitw/folio8/folio8-go"
 	"github.com/panitw/folio8/folio8-go/fonts"
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 )
 
 func TestEngineTableCollectionBindingOwnsOneHistoryStep(t *testing.T) {
-	input, err := os.ReadFile("../../fixtures/statement-1/input.folio")
+	input, err := os.ReadFile("../../../fixtures/statement-1/input.folio")
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine()
+	engine := NewEngine(testClock())
 	loaded, err := engine.Load(input)
 	if err != nil {
 		t.Fatal(err)
@@ -69,7 +70,7 @@ func TestEngineTableCollectionBindingOwnsOneHistoryStep(t *testing.T) {
 }
 
 func TestEngineCollectionFooterRebaseIsOneHistoryStep(t *testing.T) {
-	input, err := os.ReadFile("../testdata/commands/table-collection-footers.folio")
+	input, err := os.ReadFile("../../testdata/commands/table-collection-footers.folio")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +86,7 @@ func TestEngineCollectionFooterRebaseIsOneHistoryStep(t *testing.T) {
 				encoded, _ := json.Marshal(payload)
 				return encoded
 			}
-			engine := NewEngine()
+			engine := NewEngine(testClock())
 			loaded, err := engine.Load(input)
 			if err != nil {
 				t.Fatal(err)
@@ -104,7 +105,7 @@ func TestEngineCollectionFooterRebaseIsOneHistoryStep(t *testing.T) {
 			if _, err := engine.Apply(command(strings.Repeat("a", 246) + "[]")); err == nil {
 				t.Fatal("over-limit explicit footer source succeeded")
 			} else {
-				var failure *folio8.ComponentCommandError
+				var failure *designer.ComponentCommandError
 				if !errors.As(err, &failure) || failure.ElementID != "e1" || failure.DataPath != "column.footerOf" {
 					t.Fatalf("footer overflow was not located: %v", err)
 				}
@@ -137,11 +138,11 @@ func TestEngineCollectionFooterRebaseIsOneHistoryStep(t *testing.T) {
 }
 
 func TestEngineLoadAndSerializeRoundTripsCanonicalBytes(t *testing.T) {
-	input, err := os.ReadFile("../testdata/template/golden/worked-example.json")
+	input, err := os.ReadFile("../../testdata/template/golden/worked-example.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine()
+	engine := NewEngine(testClock())
 	nonCanonical := append([]byte("\n  "), input...)
 	snapshot, err := engine.Load(nonCanonical)
 	if err != nil {
@@ -165,8 +166,8 @@ func TestEngineLoadAndSerializeRoundTripsCanonicalBytes(t *testing.T) {
 }
 
 func TestEngineParameterReferencesAreARevisionCorrelatedProjection(t *testing.T) {
-	engine := NewEngine()
-	input, err := os.ReadFile("../testdata/example/first-pdf.folio")
+	engine := NewEngine(testClock())
+	input, err := os.ReadFile("../../testdata/example/first-pdf.folio")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,8 +182,8 @@ func TestEngineParameterReferencesAreARevisionCorrelatedProjection(t *testing.T)
 }
 
 func TestEngineEmptyParameterReferencesRemainAnArrayForWorkerTransport(t *testing.T) {
-	engine := NewEngine()
-	input, err := os.ReadFile("../testdata/example/first-pdf.folio")
+	engine := NewEngine(testClock())
+	input, err := os.ReadFile("../../testdata/example/first-pdf.folio")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,11 +200,11 @@ func TestEngineEmptyParameterReferencesRemainAnArrayForWorkerTransport(t *testin
 }
 
 func TestEngineTableColumnsAreRevisionCorrelatedAndHistoryOwned(t *testing.T) {
-	input, err := os.ReadFile("../testdata/template/golden/worked-example.json")
+	input, err := os.ReadFile("../../testdata/template/golden/worked-example.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine()
+	engine := NewEngine(testClock())
 	if _, err := engine.Load(input); err != nil {
 		t.Fatal(err)
 	}
@@ -254,11 +255,11 @@ func TestEngineTableColumnsAreRevisionCorrelatedAndHistoryOwned(t *testing.T) {
 }
 
 func TestEngineTableCreationAndStarterColumnUndoRedoAtomically(t *testing.T) {
-	input, err := os.ReadFile("../testdata/template/golden/worked-example.json")
+	input, err := os.ReadFile("../../testdata/template/golden/worked-example.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine()
+	engine := NewEngine(testClock())
 	loaded, err := engine.Load(input)
 	if err != nil {
 		t.Fatal(err)
@@ -275,7 +276,7 @@ func TestEngineTableCreationAndStarterColumnUndoRedoAtomically(t *testing.T) {
 	for _, component := range loaded.Canvas.Components {
 		known[component.ID] = true
 	}
-	var table folio8.CanvasComponent
+	var table designer.CanvasComponent
 	for _, component := range created.Canvas.Components {
 		if !known[component.ID] {
 			table = component
@@ -316,17 +317,17 @@ func TestEngineTableCreationAndStarterColumnUndoRedoAtomically(t *testing.T) {
 
 func TestEngineRenderMatchesTheNativeProductionPathByteForByte(t *testing.T) {
 	fixtures := []struct{ name, template, data, params string }{
-		{"simple", "../testdata/example/first-pdf.folio", `{"customer":{"name":"Ada"}}`, `{"preview":null}`},
+		{"simple", "../../testdata/example/first-pdf.folio", `{"customer":{"name":"Ada"}}`, `{"preview":null}`},
 		// This is a genuine five-page, table/text, multi-script shipped-font
 		// document. A one-page ASCII fixture cannot detect pagination or font
 		// path divergence, so both inputs remain required parity subjects.
-		{"multipage-text-font", "../../fixtures/statement-5/input.folio", "../../fixtures/statement-5/data.json", "../../fixtures/statement-5/params.json"},
+		{"multipage-text-font", "../../../fixtures/statement-5/input.folio", "../../../fixtures/statement-5/data.json", "../../../fixtures/statement-5/params.json"},
 		// spec-section-break CAP-6: the golden statement whose legend moves to
 		// an added page. Preview (the wasm engine) must equal the native render.
-		{"section-break-statement", "../../fixtures/section-break-statement/input.folio", "../../fixtures/section-break-statement/data.json", `{}`},
+		{"section-break-statement", "../../../fixtures/section-break-statement/input.folio", "../../../fixtures/section-break-statement/data.json", `{}`},
 		// spec-section-break CAP-7: the unanchored golden, whose legend is
 		// pushed down on page 1. Preview must equal the native render.
-		{"section-break-unanchored", "../../fixtures/section-break-unanchored/input.folio", "../../fixtures/section-break-unanchored/data.json", `{}`},
+		{"section-break-unanchored", "../../../fixtures/section-break-unanchored/input.folio", "../../../fixtures/section-break-unanchored/data.json", `{}`},
 	}
 	for _, fixture := range fixtures {
 		t.Run(fixture.name, func(t *testing.T) {
@@ -347,7 +348,7 @@ func TestEngineRenderMatchesTheNativeProductionPathByteForByte(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			engine := NewEngine()
+			engine := NewEngine(testClock())
 			if _, err := engine.Load(input); err != nil {
 				t.Fatal(err)
 			}
@@ -392,21 +393,13 @@ func TestEngineRenderMatchesTheNativeProductionPathByteForByte(t *testing.T) {
 			if evidence.Version != folio8.Version {
 				t.Fatalf("engine version = %q, want %q", evidence.Version, folio8.Version)
 			}
-			// ⚠ `> 0`, AND ONLY ON THE FIXTURE THAT TAKES REAL TIME. The earlier
-			// `>= 0` here could not fail: an `int64` nobody assigns is 0, and
-			// 0 >= 0 — measured, by deleting the measurement outright and watching
-			// `go test ./wasm/...` stay green. `multipage-text-font` is a genuine
-			// five-page, multi-script, shipped-font render that takes roughly 0.9 s
-			// under `go test`, which is about 900x the threshold below, so this is
-			// a real reading of the clock rather than a tolerance. The one-page
-			// `simple` fixture is deliberately exempt: it can legitimately finish
-			// inside a millisecond and report `0 ms`, which is exactly the answer
-			// neither Go struct marks `omitempty` in order to preserve.
-			if evidence.ElapsedMs < 0 {
-				t.Fatalf("elapsed = %d ms, want a non-negative measurement", evidence.ElapsedMs)
-			}
-			if fixture.name == "multipage-text-font" && evidence.ElapsedMs <= 0 {
-				t.Fatalf("elapsed = %d ms for a five-page multi-script render: the clock was never read", evidence.ElapsedMs)
+			// THE ELAPSED NUMBER IS THE CLOCK'S, READ ONCE EACH SIDE OF THE RENDER.
+			// The engine takes its clock from NewEngine, and testClock advances a
+			// fixed step per reading, so exactly one step is the only answer that
+			// proves both readings happened. An `int64` nobody assigns is 0, and a
+			// clock read once, or read around more than the render, is a multiple.
+			if evidence.ElapsedMs != testClockStepMs {
+				t.Fatalf("elapsed = %d ms, want %d: the clock was not read exactly once on each side of Render", evidence.ElapsedMs, testClockStepMs)
 			}
 			// AND BOTH SURVIVE THE WIRE ENCODING, INCLUDING A ZERO. `omitempty` on
 			// either field would drop a legitimate `0 ms` render and an empty
@@ -425,7 +418,7 @@ func TestEngineRenderMatchesTheNativeProductionPathByteForByte(t *testing.T) {
 			// supply precisely the complete shipped set to the public identity
 			// contract. Omitting any production face in Engine.PreviewIdentity
 			// therefore disagrees with this independently assembled expectation.
-			wantIdentity := folio8.PreviewIdentity(canonical, folio8.Data(data), folio8.Params(params), fonts.Shipped())
+			wantIdentity := designer.PreviewIdentity(canonical, folio8.Data(data), folio8.Params(params), fonts.Shipped())
 			if err != nil || identity != wantIdentity || evidence.Identity != wantIdentity || identityRevision != snapshot.Revision {
 				t.Fatalf("identity evidence = %q/%d, render = %q, want=%q, err=%v", identity, identityRevision, evidence.Identity, wantIdentity, err)
 			}
@@ -434,7 +427,7 @@ func TestEngineRenderMatchesTheNativeProductionPathByteForByte(t *testing.T) {
 				changed[0] ^= 1
 				mutated := fonts.Shipped()
 				mutated[face] = changed
-				if folio8.PreviewIdentity(canonical, folio8.Data(data), folio8.Params(params), mutated) == wantIdentity {
+				if designer.PreviewIdentity(canonical, folio8.Data(data), folio8.Params(params), mutated) == wantIdentity {
 					t.Fatalf("shipped face %q did not affect preview identity", face)
 				}
 			}
@@ -446,11 +439,11 @@ func TestEngineRenderMatchesTheNativeProductionPathByteForByte(t *testing.T) {
 }
 
 func TestEngineRejectedLoadIsTransactional(t *testing.T) {
-	input, err := os.ReadFile("../testdata/template/golden/worked-example.json")
+	input, err := os.ReadFile("../../testdata/template/golden/worked-example.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine()
+	engine := NewEngine(testClock())
 	before, err := engine.Load(input)
 	if err != nil {
 		t.Fatal(err)
@@ -471,11 +464,11 @@ func TestEngineRejectedLoadIsTransactional(t *testing.T) {
 }
 
 func TestEngineRejectsUnknownCommandWithoutChangingDocument(t *testing.T) {
-	input, err := os.ReadFile("../testdata/template/golden/worked-example.json")
+	input, err := os.ReadFile("../../testdata/template/golden/worked-example.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine()
+	engine := NewEngine(testClock())
 	before, err := engine.Load(input)
 	if err != nil {
 		t.Fatal(err)
@@ -490,11 +483,11 @@ func TestEngineRejectsUnknownCommandWithoutChangingDocument(t *testing.T) {
 }
 
 func TestEngineCommitsComponentChangesThroughGoOwnedCommandChannel(t *testing.T) {
-	input, err := os.ReadFile("../testdata/template/golden/worked-example.json")
+	input, err := os.ReadFile("../../testdata/template/golden/worked-example.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine()
+	engine := NewEngine(testClock())
 	before, err := engine.Load(input)
 	if err != nil {
 		t.Fatal(err)
@@ -509,11 +502,11 @@ func TestEngineCommitsComponentChangesThroughGoOwnedCommandChannel(t *testing.T)
 }
 
 func TestEnginePageSetupRevisionAndProjectionChangeTogether(t *testing.T) {
-	input, err := os.ReadFile("../testdata/template/golden/worked-example.json")
+	input, err := os.ReadFile("../../testdata/template/golden/worked-example.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine()
+	engine := NewEngine(testClock())
 	before, err := engine.Load(input)
 	if err != nil {
 		t.Fatal(err)
@@ -528,11 +521,11 @@ func TestEnginePageSetupRevisionAndProjectionChangeTogether(t *testing.T) {
 }
 
 func TestEnginePropertyBatchAdvancesOneRevisionOrLeavesEverythingUntouched(t *testing.T) {
-	input, err := os.ReadFile("../testdata/template/golden/worked-example.json")
+	input, err := os.ReadFile("../../testdata/template/golden/worked-example.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine()
+	engine := NewEngine(testClock())
 	before, err := engine.Load(input)
 	if err != nil {
 		t.Fatal(err)
@@ -555,11 +548,11 @@ func TestEnginePropertyBatchAdvancesOneRevisionOrLeavesEverythingUntouched(t *te
 }
 
 func TestEngineUndoRedoOwnsCommittedCanonicalHistoryAndResetsOnLoad(t *testing.T) {
-	input, err := os.ReadFile("../testdata/template/golden/worked-example.json")
+	input, err := os.ReadFile("../../testdata/template/golden/worked-example.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine()
+	engine := NewEngine(testClock())
 	loaded, err := engine.Load(input)
 	if err != nil {
 		t.Fatal(err)
@@ -613,11 +606,11 @@ func TestEngineUndoRedoOwnsCommittedCanonicalHistoryAndResetsOnLoad(t *testing.T
 }
 
 func TestEngineScalarBindingIsOneCanonicalUndoableMutation(t *testing.T) {
-	input, err := os.ReadFile("../testdata/template/golden/worked-example.json")
+	input, err := os.ReadFile("../../testdata/template/golden/worked-example.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine()
+	engine := NewEngine(testClock())
 	loaded, err := engine.Load(input)
 	if err != nil {
 		t.Fatal(err)
@@ -664,11 +657,11 @@ func TestEngineScalarBindingIsOneCanonicalUndoableMutation(t *testing.T) {
 }
 
 func TestEngineScalarBindingRoundTripsAndNoOpPreservesHistoryBranches(t *testing.T) {
-	input, err := os.ReadFile("../testdata/template/golden/worked-example.json")
+	input, err := os.ReadFile("../../testdata/template/golden/worked-example.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine()
+	engine := NewEngine(testClock())
 	if _, err := engine.Load(input); err != nil {
 		t.Fatal(err)
 	}
@@ -701,14 +694,14 @@ func TestEngineScalarBindingRoundTripsAndNoOpPreservesHistoryBranches(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	reloaded := NewEngine()
+	reloaded := NewEngine(testClock())
 	loaded, err := reloaded.Load(canonical)
 	if err != nil || loaded.Canvas == nil || canvasComponentByID(t, loaded.Canvas, "e1").Binding == nil {
 		t.Fatalf("saved canonical binding did not survive load: %#v, err=%v", loaded, err)
 	}
 }
 
-func canvasComponentByID(t *testing.T, canvas *folio8.CanvasProjection, id string) folio8.CanvasComponent {
+func canvasComponentByID(t *testing.T, canvas *designer.CanvasProjection, id string) designer.CanvasComponent {
 	t.Helper()
 	for _, component := range canvas.Components {
 		if component.ID == id {
@@ -716,15 +709,15 @@ func canvasComponentByID(t *testing.T, canvas *folio8.CanvasProjection, id strin
 		}
 	}
 	t.Fatalf("component %q is absent from wasm canvas", id)
-	return folio8.CanvasComponent{}
+	return designer.CanvasComponent{}
 }
 
 func TestEngineNoOpDoesNotChangeHistoryRevisionOrRedo(t *testing.T) {
-	input, err := os.ReadFile("../testdata/template/golden/worked-example.json")
+	input, err := os.ReadFile("../../testdata/template/golden/worked-example.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine()
+	engine := NewEngine(testClock())
 	if _, err := engine.Load(input); err != nil {
 		t.Fatal(err)
 	}
@@ -751,11 +744,11 @@ func TestEngineNoOpDoesNotChangeHistoryRevisionOrRedo(t *testing.T) {
 }
 
 func TestEngineDuplicateIsACommittedGoCommand(t *testing.T) {
-	input, err := os.ReadFile("../testdata/template/golden/worked-example.json")
+	input, err := os.ReadFile("../../testdata/template/golden/worked-example.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine()
+	engine := NewEngine(testClock())
 	before, err := engine.Load(input)
 	if err != nil {
 		t.Fatal(err)
@@ -797,7 +790,7 @@ const fontChainEngineDocJSON = `{
 
 func fontChainEngine(t *testing.T) *Engine {
 	t.Helper()
-	engine := NewEngine()
+	engine := NewEngine(testClock())
 	if _, err := engine.Load([]byte(fontChainEngineDocJSON)); err != nil {
 		t.Fatal(err)
 	}
@@ -1016,7 +1009,7 @@ func TestEngineProjectsTheChainsThemselvesNotOnlyTheirNames(t *testing.T) {
 	}
 	// Story 8.3: an entry is a projected object. Both of these are named
 	// faces, so both carry an empty AssetKey.
-	if !reflect.DeepEqual(chains[0].Entries, []folio8.CanvasFontChainEntry{{Face: "Noto Sans Thai"}, {Face: "Noto Sans"}}) {
+	if !reflect.DeepEqual(chains[0].Entries, []designer.CanvasFontChainEntry{{Face: "Noto Sans Thai"}, {Face: "Noto Sans"}}) {
 		t.Fatalf("projected body chain = %#v, want the reordered entries", chains[0].Entries)
 	}
 }
@@ -1075,7 +1068,7 @@ func TestEngineFontChainMoveIsFollowedByTheFolio8Bytes(t *testing.T) {
 // command into the component decoder is refused, and so is one going the other
 // way — routing correctly by accident is not the property.
 func TestEngineApplyRefusesADuplicateKeyOnEitherRoutingBranch(t *testing.T) {
-	input, err := os.ReadFile("../testdata/template/golden/worked-example.json")
+	input, err := os.ReadFile("../../testdata/template/golden/worked-example.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1107,7 +1100,7 @@ func TestEngineApplyRefusesADuplicateKeyOnEitherRoutingBranch(t *testing.T) {
 		},
 	} {
 		t.Run(probe.name, func(t *testing.T) {
-			engine := NewEngine()
+			engine := NewEngine(testClock())
 			before, err := engine.Load(input)
 			if err != nil {
 				t.Fatal(err)
@@ -1116,7 +1109,7 @@ func TestEngineApplyRefusesADuplicateKeyOnEitherRoutingBranch(t *testing.T) {
 			if err == nil {
 				t.Fatal("duplicate-key bytes were accepted through the wasm engine")
 			}
-			var failure *folio8.ComponentCommandError
+			var failure *designer.ComponentCommandError
 			switch {
 			case probe.component:
 				// The component door: a ComponentCommandError, which the host
@@ -1148,11 +1141,11 @@ func TestEngineApplyRefusesADuplicateKeyOnEitherRoutingBranch(t *testing.T) {
 }
 
 func TestEngineGroupMovePreviewAtomicHistoryAndRevisionFence(t *testing.T) {
-	input, err := os.ReadFile("../testdata/template/golden/worked-example.json")
+	input, err := os.ReadFile("../../testdata/template/golden/worked-example.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine()
+	engine := NewEngine(testClock())
 	if _, err := engine.Load(input); err != nil {
 		t.Fatal(err)
 	}
@@ -1224,11 +1217,11 @@ func TestEngineGroupMovePreviewAtomicHistoryAndRevisionFence(t *testing.T) {
 }
 
 func TestEngineFreshTableDuplicateHistoryPreservesIndependentColumnIDs(t *testing.T) {
-	input, err := os.ReadFile("../testdata/template/golden/worked-example.json")
+	input, err := os.ReadFile("../../testdata/template/golden/worked-example.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine()
+	engine := NewEngine(testClock())
 	loaded, err := engine.Load(input)
 	if err != nil {
 		t.Fatal(err)
@@ -1268,7 +1261,7 @@ func TestEngineFreshTableDuplicateHistoryPreservesIndependentColumnIDs(t *testin
 		t.Fatalf("duplicate column = %#v, err=%v", copy, err)
 	}
 	canonical, _, _ := engine.Serialize()
-	reloaded := NewEngine()
+	reloaded := NewEngine(testClock())
 	if _, err := reloaded.Load(canonical); err != nil {
 		t.Fatalf("duplicated table did not reload: %v", err)
 	}
@@ -1303,11 +1296,11 @@ func TestEngineFreshTableDuplicateHistoryPreservesIndependentColumnIDs(t *testin
 }
 
 func TestEngineColumnAuthoringSplitBindingClearAndReopenHistory(t *testing.T) {
-	input, err := os.ReadFile("../testdata/template/golden/worked-example.json")
+	input, err := os.ReadFile("../../testdata/template/golden/worked-example.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine()
+	engine := NewEngine(testClock())
 	loaded, err := engine.Load(input)
 	if err != nil {
 		t.Fatal(err)
@@ -1426,7 +1419,7 @@ func TestEngineColumnAuthoringSplitBindingClearAndReopenHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reopened := NewEngine()
+	reopened := NewEngine(testClock())
 	if _, err := reopened.Load(configuredBytes); err != nil {
 		t.Fatal(err)
 	}
@@ -1442,11 +1435,11 @@ func TestEngineColumnAuthoringSplitBindingClearAndReopenHistory(t *testing.T) {
 
 func columnAuthoringEngine(t *testing.T) (*Engine, string, string) {
 	t.Helper()
-	input, err := os.ReadFile("../testdata/template/golden/worked-example.json")
+	input, err := os.ReadFile("../../testdata/template/golden/worked-example.json")
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine()
+	engine := NewEngine(testClock())
 	loaded, err := engine.Load(input)
 	if err != nil {
 		t.Fatal(err)

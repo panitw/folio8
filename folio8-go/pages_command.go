@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 	"github.com/panitw/folio8/folio8-go/internal/geom"
 	"github.com/panitw/folio8/folio8-go/internal/template"
 )
@@ -66,11 +67,11 @@ func installContentPages(t *Template, pages []template.ContentPage) {
 }
 
 // projectPageEdit projects t after an edit, restoring shape on failure.
-func projectPageEdit(t *Template, previous pageShape) (CanvasProjection, error) {
-	projection, err := Canvas(t)
+func projectPageEdit(t *Template, previous pageShape) (designer.CanvasProjection, error) {
+	projection, err := canvas(t)
 	if err != nil {
 		previous.restore(t)
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	return projection, nil
 }
@@ -110,21 +111,21 @@ func contentOnlyPage(bandName, id string) error {
 
 // addPage inserts one empty page with Page Break on: {kind, version, after?}.
 // With `after` it goes directly after that page; without it, at the end.
-func addPage(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func addPage(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	_, hasAfter := raw["after"]
 	want := 2
 	if hasAfter {
 		want = 3
 	}
 	if err := componentFields(raw, want); err != nil {
-		return CanvasProjection{}, componentFailure("", pagesPath, "addPage takes exactly kind, version and, optionally, after")
+		return designer.CanvasProjection{}, componentFailure("", pagesPath, "addPage takes exactly kind, version and, optionally, after")
 	}
 	count := t.doc.PageCount()
 	insert := count
 	if hasAfter {
 		after, err := pageIndexField(raw, "after", count)
 		if err != nil {
-			return CanvasProjection{}, err
+			return designer.CanvasProjection{}, err
 		}
 		insert = after + 1
 	}
@@ -140,20 +141,20 @@ func addPage(t *Template, raw map[string]json.RawMessage) (CanvasProjection, err
 // deletePage removes one page and every element on it: {kind, version, page}.
 // The document always keeps at least one page. A page's section break goes
 // with it; deleting down to one page returns the one-page shape.
-func deletePage(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func deletePage(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	if err := componentFields(raw, 3); err != nil {
-		return CanvasProjection{}, componentFailure("", pagesPath, "deletePage takes exactly kind, version and page")
+		return designer.CanvasProjection{}, componentFailure("", pagesPath, "deletePage takes exactly kind, version and page")
 	}
 	count := t.doc.PageCount()
 	if count == 1 {
 		if _, err := pageIndexField(raw, "page", count); err != nil {
-			return CanvasProjection{}, err
+			return designer.CanvasProjection{}, err
 		}
-		return CanvasProjection{}, componentFailure("", t.doc.PageField(0), "this is the document's only page — a document always keeps at least one page")
+		return designer.CanvasProjection{}, componentFailure("", t.doc.PageField(0), "this is the document's only page — a document always keeps at least one page")
 	}
 	page, err := pageIndexField(raw, "page", count)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	previous := savePageShape(t)
 	pages := contentPagesForEdit(t)
@@ -164,34 +165,34 @@ func deletePage(t *Template, raw map[string]json.RawMessage) (CanvasProjection, 
 
 // setPageBreak sets one later page's Page Break: {kind, version, page,
 // pageBreak}. Page 1's does not apply, so it is refused.
-func setPageBreak(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func setPageBreak(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	if err := componentFields(raw, 4); err != nil {
-		return CanvasProjection{}, componentFailure("", pagesPath, "setPageBreak takes exactly kind, version, page and pageBreak")
+		return designer.CanvasProjection{}, componentFailure("", pagesPath, "setPageBreak takes exactly kind, version, page and pageBreak")
 	}
 	count := t.doc.PageCount()
 	page, err := pageIndexField(raw, "page", count)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	path := t.doc.PageField(page) + ".pageBreak"
 	if page == 0 {
-		return CanvasProjection{}, componentFailure("", path, "Page Break does not apply to page 1 — the first page always starts the document")
+		return designer.CanvasProjection{}, componentFailure("", path, "Page Break does not apply to page 1 — the first page always starts the document")
 	}
 	// json.Unmarshal leaves a bool untouched for null, so null is refused
 	// here rather than read as false.
 	if value, ok := raw["pageBreak"]; ok && string(bytes.TrimSpace(value)) == "null" {
-		return CanvasProjection{}, componentFailure("", path, "pageBreak must be a boolean")
+		return designer.CanvasProjection{}, componentFailure("", path, "pageBreak must be a boolean")
 	}
 	value, err := commandBool(raw, "pageBreak")
 	if err != nil {
-		return CanvasProjection{}, componentFailure("", path, err.Error())
+		return designer.CanvasProjection{}, componentFailure("", path, err.Error())
 	}
 	previous := t.doc.Pages[page].PageBreak
 	t.doc.Pages[page].PageBreak = value
-	projection, err := Canvas(t)
+	projection, err := canvas(t)
 	if err != nil {
 		t.doc.Pages[page].PageBreak = previous
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	return projection, nil
 }

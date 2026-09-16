@@ -29,7 +29,7 @@ func elementsByID(tpl *Template) map[string]struct {
 
 func TestDeleteComponentsRemovesAGroupAcrossBands(t *testing.T) {
 	tpl := componentTemplate(t)
-	projection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"deleteComponents","version":1,"ids":["e5","e1","e2"]}`))
+	projection, err := applyComponentCommand(tpl, []byte(`{"kind":"deleteComponents","version":1,"ids":["e5","e1","e2"]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +60,7 @@ func TestMultiComponentCommandsRefuseBadIDsWithoutMutation(t *testing.T) {
 		t.Run(command, func(t *testing.T) {
 			tpl := componentTemplate(t)
 			before := canonicalBytes(t, tpl)
-			if _, err := ApplyComponentCommand(tpl, []byte(command)); err == nil {
+			if _, err := applyComponentCommand(tpl, []byte(command)); err == nil {
 				t.Fatal("command accepted")
 			}
 			if !bytes.Equal(before, canonicalBytes(t, tpl)) {
@@ -76,7 +76,7 @@ func TestDuplicateComponentsCopiesAGroupFromOneCounter(t *testing.T) {
 	if tpl.doc.NextID != 6 {
 		t.Fatalf("precondition: nextId=%d", tpl.doc.NextID)
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"duplicateComponents","version":1,"ids":["e1","e2","e5"],"snap":false}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"duplicateComponents","version":1,"ids":["e1","e2","e5"],"snap":false}`)); err != nil {
 		t.Fatal(err)
 	}
 	after := elementsByID(tpl)
@@ -116,10 +116,10 @@ func TestDuplicateComponentsOfOneMatchesDuplicateComponent(t *testing.T) {
 	for _, snap := range []string{"true", "false"} {
 		for _, id := range []string{"e1", "e2", "e5"} {
 			single, group := componentTemplate(t), componentTemplate(t)
-			if _, err := ApplyComponentCommand(single, []byte(fmt.Sprintf(`{"kind":"duplicateComponent","version":1,"id":%q,"snap":%s}`, id, snap))); err != nil {
+			if _, err := applyComponentCommand(single, []byte(fmt.Sprintf(`{"kind":"duplicateComponent","version":1,"id":%q,"snap":%s}`, id, snap))); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := ApplyComponentCommand(group, []byte(fmt.Sprintf(`{"kind":"duplicateComponents","version":1,"ids":[%q],"snap":%s}`, id, snap))); err != nil {
+			if _, err := applyComponentCommand(group, []byte(fmt.Sprintf(`{"kind":"duplicateComponents","version":1,"ids":[%q],"snap":%s}`, id, snap))); err != nil {
 				t.Fatal(err)
 			}
 			if !bytes.Equal(canonicalBytes(t, single), canonicalBytes(t, group)) {
@@ -134,7 +134,7 @@ func TestDuplicateComponentsFallsBackToTheSourcePositionWhenTheOffsetDoesNotFit(
 	// Footer band is 30pt tall; e5 at y=8 is 10pt tall. Move it flush with the
 	// bottom so a +6pt copy would leave the band.
 	tpl.doc.Bands.PageFooter.Elements[0].Y = 20000
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"duplicateComponents","version":1,"ids":["e5"],"snap":false}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"duplicateComponents","version":1,"ids":["e5"],"snap":false}`)); err != nil {
 		t.Fatal(err)
 	}
 	copied := elementsByID(tpl)["e6"]
@@ -148,11 +148,11 @@ func TestDuplicateComponentsClearsTheKeepTogetherTag(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	before, err := Canvas(tpl)
+	before, err := canvas(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
-	projection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"duplicateComponents","version":1,"ids":["e2"],"snap":false}`))
+	projection, err := applyComponentCommand(tpl, []byte(`{"kind":"duplicateComponents","version":1,"ids":["e2"],"snap":false}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,14 +173,14 @@ func TestDuplicateComponentsPreflightsEveryIDWithoutMutation(t *testing.T) {
 	tpl.doc.NextID = maxID - 3
 	before := canonicalBytes(t, tpl)
 	command := []byte(`{"kind":"duplicateComponents","version":1,"ids":["e1","e2"],"snap":false}`)
-	if _, err := ApplyComponentCommand(tpl, command); err == nil {
+	if _, err := applyComponentCommand(tpl, command); err == nil {
 		t.Fatal("accepted too few ids for the whole group")
 	}
 	if !bytes.Equal(before, canonicalBytes(t, tpl)) {
 		t.Fatal("refusal mutated the template")
 	}
 	tpl.doc.NextID = maxID - 4
-	if _, err := ApplyComponentCommand(tpl, command); err != nil {
+	if _, err := applyComponentCommand(tpl, command); err != nil {
 		t.Fatal(err)
 	}
 	if tpl.doc.NextID != maxID {

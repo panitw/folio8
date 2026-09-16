@@ -1055,7 +1055,7 @@ func TestComponentAssetImportCommandReproducesTheFixtureInput(t *testing.T) {
 	}
 
 	command := setAssetCommand("e1", "image/png", png1x1Gray())
-	if _, err := ApplyComponentCommand(tpl, command); err != nil {
+	if _, err := applyComponentCommand(tpl, command); err != nil {
 		t.Fatalf("ApplyComponentCommand(setComponentAsset): %v", err)
 	}
 

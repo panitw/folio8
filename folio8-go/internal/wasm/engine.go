@@ -1,6 +1,10 @@
-// Package wasm is the imperative browser shell around the pure folio8 core.
-// It intentionally owns mutable browser-session state here, never under
-// internal/, and exposes only bytes plus a deliberately small UI projection.
+// Package wasm is the designer's session engine around the pure folio8 core.
+// It owns mutable browser-session state and exposes only bytes plus a
+// deliberately small UI projection. It is internal: the designer's js/wasm
+// shell, wasm/cmd/engine, is its one caller, and it is not public API.
+//
+// It reads no clock. The render-elapsed number comes from the clock the shell
+// passes to NewEngine, because `time` is a forbidden import under internal/.
 package wasm
 
 import (
@@ -9,21 +13,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	// STORY 13.3 — `time` IS LEGAL HERE AND NOWHERE NEAR HERE.
-	//
-	// AD-1's determinism boundary is a DIRECTORY boundary, and the forbidden-import
-	// rule (lint/internal/rules/forbiddenimports.go) is enforced over two
-	// populations: a recursive walk of `folio8-go/internal/`, and a FLAT scan of
-	// `folio8-go/`'s own package directory. `folio8-go/wasm/` is in neither, and it
-	// is the imperative browser shell this file's own header calls it — the one
-	// place that may hold mutable session state and read a clock.
-	//
-	// Nothing measured here reaches a rendered byte: the elapsed number is
-	// projected to the browser's evidence rail and never to `folio8.Render`.
-	"time"
 
 	folio8 "github.com/panitw/folio8/folio8-go"
 	"github.com/panitw/folio8/folio8-go/fonts"
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 )
 
 const historyLimit = 100
@@ -33,17 +26,17 @@ var ErrNoRedo = errors.New("folio8 wasm: no redo history")
 
 // Snapshot is a paint-safe projection, not a .folio schema mirror.
 type Snapshot struct {
-	DocumentState string                   `json:"documentState"`
-	Revision      uint64                   `json:"revision"`
-	ByteLength    int                      `json:"byteLength"`
-	CanUndo       bool                     `json:"canUndo"`
-	CanRedo       bool                     `json:"canRedo"`
-	Canvas        *folio8.CanvasProjection `json:"canvas,omitempty"`
+	DocumentState string                     `json:"documentState"`
+	Revision      uint64                     `json:"revision"`
+	ByteLength    int                        `json:"byteLength"`
+	CanUndo       bool                       `json:"canUndo"`
+	CanRedo       bool                       `json:"canRedo"`
+	Canvas        *designer.CanvasProjection `json:"canvas,omitempty"`
 }
 
 type TableColumnsResult struct {
-	Revision uint64                        `json:"revision"`
-	Table    folio8.TableColumnsProjection `json:"table"`
+	Revision uint64                          `json:"revision"`
+	Table    designer.TableColumnsProjection `json:"table"`
 }
 
 // RenderResult is a deliberately opaque production-render projection. It is
@@ -106,7 +99,7 @@ func (e *Engine) StandInData() ([]byte, error) {
 	if e.template == nil {
 		return nil, fmt.Errorf("folio8 wasm: no document is loaded")
 	}
-	return folio8.StandInData(e.template)
+	return designer.StandInData(e.template)
 }
 
 // TableColumns exposes one revision-correlated selected-table projection.
@@ -115,7 +108,7 @@ func (e *Engine) TableColumns(tableID string) (TableColumnsResult, error) {
 	if e.template == nil {
 		return TableColumnsResult{}, fmt.Errorf("folio8 wasm: no document is loaded")
 	}
-	table, err := folio8.TableColumns(e.template, tableID)
+	table, err := designer.TableColumns(e.template, tableID)
 	if err != nil {
 		return TableColumnsResult{}, err
 	}
@@ -137,7 +130,7 @@ func (e *Engine) GroupMovePreview(command []byte) (GroupMoveResult, error) {
 	if err := e.checkMoveRevision(command); err != nil {
 		return GroupMoveResult{}, err
 	}
-	move, err := folio8.PreviewComponentMove(e.template, command, fonts.Shipped())
+	move, err := designer.PreviewComponentMove(e.template, command, fonts.Shipped())
 	if err != nil {
 		return GroupMoveResult{}, err
 	}
@@ -168,20 +161,30 @@ func (e *Engine) PreviewIdentity(data, params []byte) (string, uint64, error) {
 	if len(data) == 0 || len(params) == 0 {
 		return "", 0, fmt.Errorf("folio8 wasm: identity inputs must be non-empty")
 	}
-	return folio8.PreviewIdentity(e.bytes, folio8.Data(data), folio8.Params(params), fonts.Shipped()), e.revision, nil
+	return designer.PreviewIdentity(e.bytes, folio8.Data(data), folio8.Params(params), fonts.Shipped()), e.revision, nil
 }
 
 // Engine owns one live template and its canonical bytes for one worker.
 type Engine struct {
+	clock    func() int64
 	template *folio8.Template
 	bytes    []byte
 	revision uint64
-	canvas   *folio8.CanvasProjection
+	canvas   *designer.CanvasProjection
 	undo     [][]byte
 	redo     [][]byte
 }
 
-func NewEngine() *Engine { return &Engine{} }
+// NewEngine returns an empty engine. clock reports nanoseconds on any fixed
+// origin and is read only to bracket Render; the difference of two readings,
+// truncated to whole milliseconds, is RenderResult.ElapsedMs. Nothing it returns reaches a rendered byte.
+//
+// STORY 13.3 — the clock comes from the caller. AD-1's determinism boundary is
+// a directory boundary: the forbidden-import rule
+// (lint/internal/rules/forbiddenimports.go) bans `time` everywhere under
+// folio8-go/internal/, this package included. wasm/cmd/engine, the imperative
+// js/wasm shell outside internal/, is the one place that reads a real clock.
+func NewEngine(clock func() int64) *Engine { return &Engine{clock: clock} }
 
 // Initialize and Load parse through the public engine boundary before storing
 // a canonical copy. A caller's byte slice is never retained or aliased.
@@ -197,7 +200,7 @@ func (e *Engine) load(input []byte) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
-	projection, err := folio8.CanvasWithTextPaint(tpl, fonts.Shipped())
+	projection, err := designer.CanvasWithTextPaint(tpl, fonts.Shipped())
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -252,9 +255,9 @@ func (e *Engine) Render(template, data, params []byte) ([]byte, RenderResult, er
 	// near the worker round trip — a number that included postMessage and byte
 	// transfer would satisfy the word "elapsed" while describing the browser's
 	// transport rather than the engine's work.
-	started := time.Now()
+	started := e.clock()
 	result, err := folio8.Render(tpl, folio8.Data(data), folio8.Params(params), fonts.Shipped())
-	elapsed := time.Since(started).Milliseconds()
+	elapsed := (e.clock() - started) / 1_000_000
 	if err != nil {
 		return nil, RenderResult{}, err
 	}
@@ -270,12 +273,12 @@ func (e *Engine) Render(template, data, params []byte) ([]byte, RenderResult, er
 // AssetBytes is Story 5.13's per-key paintable-bytes query (D-5.13.2's
 // "Producer" clause). It is read-only: it never advances revision or
 // touches undo/redo history, and it never reproduces asset lookup/decoding
-// rules here — folio8.AssetBytes owns those.
+// rules here — folio8's unexported assetBytes, reached through designer.AssetBytes, owns those.
 func (e *Engine) AssetBytes(key string) ([]byte, Snapshot, error) {
 	if e.template == nil {
 		return nil, Snapshot{}, fmt.Errorf("folio8 wasm: no document is loaded")
 	}
-	raw, _, err := folio8.AssetBytes(e.template, key)
+	raw, _, err := designer.AssetBytes(e.template, key)
 	if err != nil {
 		return nil, Snapshot{}, err
 	}
@@ -315,11 +318,11 @@ func (e *Engine) Apply(command []byte) (Snapshot, error) {
 	if err := json.Unmarshal(command, &commandKind); err != nil {
 		return Snapshot{}, fmt.Errorf("folio8 wasm: command is malformed")
 	}
-	var projection folio8.CanvasProjection
+	var projection designer.CanvasProjection
 	if commandKind.Kind == "pageSetup" {
-		projection, err = folio8.ApplyPageSetupCommand(candidate, command)
+		projection, err = designer.ApplyPageSetupCommand(candidate, command)
 	} else {
-		projection, err = folio8.ApplyComponentCommand(candidate, command, fonts.Shipped())
+		projection, err = designer.ApplyComponentCommand(candidate, command, fonts.Shipped())
 	}
 	if err != nil {
 		return Snapshot{}, err
@@ -343,7 +346,7 @@ func (e *Engine) Apply(command []byte) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
-	projection, err = folio8.CanvasWithTextPaint(installed, fonts.Shipped())
+	projection, err = designer.CanvasWithTextPaint(installed, fonts.Shipped())
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -382,7 +385,7 @@ func (e *Engine) restore(canonical []byte) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
-	projection, err := folio8.CanvasWithTextPaint(tpl, fonts.Shipped())
+	projection, err := designer.CanvasWithTextPaint(tpl, fonts.Shipped())
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -390,7 +393,7 @@ func (e *Engine) restore(canonical []byte) (Snapshot, error) {
 	return e.Snapshot(), nil
 }
 
-func (e *Engine) install(tpl *folio8.Template, canonical []byte, projection folio8.CanvasProjection) {
+func (e *Engine) install(tpl *folio8.Template, canonical []byte, projection designer.CanvasProjection) {
 	e.template = tpl
 	e.bytes = append(e.bytes[:0], canonical...)
 	e.canvas = &projection

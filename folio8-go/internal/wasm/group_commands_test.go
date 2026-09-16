@@ -8,7 +8,7 @@ import (
 )
 
 func TestEngineGroupDeleteAndDuplicateAreOneHistoryStep(t *testing.T) {
-	input, err := os.ReadFile("../testdata/template/golden/worked-example.json")
+	input, err := os.ReadFile("../../testdata/template/golden/worked-example.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -21,7 +21,7 @@ func TestEngineGroupDeleteAndDuplicateAreOneHistoryStep(t *testing.T) {
 		{"duplicateComponents", `{"kind":"duplicateComponents","version":1,"ids":["e1","e2","e5"],"snap":true}`, 3},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			engine := NewEngine()
+			engine := NewEngine(testClock())
 			before, err := engine.Load(input)
 			if err != nil {
 				t.Fatal(err)

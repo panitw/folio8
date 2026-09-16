@@ -16,6 +16,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 	"github.com/panitw/folio8/folio8-go/internal/expr"
 )
 
@@ -64,7 +65,7 @@ func standInTemplate(t *testing.T, elements string) *Template {
 
 func standInBytes(t *testing.T, tpl *Template) []byte {
 	t.Helper()
-	out, err := StandInData(tpl)
+	out, err := standInData(tpl)
 	if err != nil {
 		t.Fatalf("StandInData: %v", err)
 	}
@@ -305,7 +306,7 @@ func TestStandInSharedContextsIntersect(t *testing.T) {
 		elements := standInTextElement("e1", `Raw {{invoice.total}} formatted {{formatNumber(invoice.total, "0.00")}}`) +
 			`, {"id": "e2", "type": "rect", "x": 0, "y": 40, "width": 100, "height": 10, "visibleIf": "invoice.total"}`
 		tpl := standInTemplate(t, elements)
-		_, err := StandInData(tpl)
+		_, err := standInData(tpl)
 		if err == nil {
 			t.Fatal("StandInData produced a document for a path whose contexts share no legal value — it must refuse, never mangle")
 		}
@@ -348,7 +349,7 @@ func TestStandInGeneratorReadsNoClock(t *testing.T) {
 	// TestStandInCommentStrippingIsAParseNotASearch for the two cases a
 	// search gets wrong in OPPOSITE directions.
 	source := standInSourceWithoutComments(t, "stand_in_data.go")
-	if !strings.Contains(source, "const StandInInstant") {
+	if !strings.Contains(source, "func standInData(") {
 		t.Fatal("positive control: the scanned file is not the generator, or the strip removed its declarations")
 	}
 	for _, forbidden := range []string{`"time"`, "time.Now", "math/rand", "os.Getenv", "rand.", "Unix()"} {
@@ -381,7 +382,7 @@ func TestStandInExcludesParamsAndReservedTokens(t *testing.T) {
 // rather than silently losing one of the two bindings.
 func TestStandInRefusesLeafAndBranchOnTheSamePath(t *testing.T) {
 	elements := standInTextElement("e1", `{{customer}} and {{customer.name}}`)
-	_, err := StandInData(standInTemplate(t, elements))
+	_, err := standInData(standInTemplate(t, elements))
 	if err == nil {
 		t.Fatal("StandInData produced a document where one path is both a value and an object")
 	}
@@ -452,8 +453,8 @@ func TestStandInTypedOperandsTakeTheirOperatorsValue(t *testing.T) {
 		t.Fatalf("formatNumber stand-in = %s, want {\"invoice\":{\"total\":0}}", number)
 	}
 	date := standInBytes(t, standInTemplate(t, standInTextElement("e1", `{{formatDate(invoice.issued, "yyyy-MM-dd")}}`)))
-	if string(date) != `{"invoice":{"issued":"`+StandInInstant+`"}}` {
-		t.Fatalf("formatDate stand-in = %s, want the fixed instant %s", date, StandInInstant)
+	if string(date) != `{"invoice":{"issued":"`+designer.StandInInstant+`"}}` {
+		t.Fatalf("formatDate stand-in = %s, want the fixed instant %s", date, designer.StandInInstant)
 	}
 }
 
@@ -653,14 +654,14 @@ func TestStandInSetHasOneBitPerValue(t *testing.T) {
 func TestStandInRefusesBeyondItsDeclaredBounds(t *testing.T) {
 	t.Run("path count", func(t *testing.T) {
 		var builder strings.Builder
-		for index := 0; index <= MaxStandInDataPaths; index++ {
+		for index := 0; index <= designer.MaxStandInDataPaths; index++ {
 			fmt.Fprintf(&builder, "{{p%d}} ", index)
 		}
-		_, err := StandInData(standInTemplate(t, standInTextElement("e1", builder.String())))
+		_, err := standInData(standInTemplate(t, standInTextElement("e1", builder.String())))
 		if err == nil {
-			t.Fatalf("StandInData accepted more than %d paths", MaxStandInDataPaths)
+			t.Fatalf("StandInData accepted more than %d paths", designer.MaxStandInDataPaths)
 		}
-		if !strings.Contains(err.Error(), fmt.Sprintf("more than %d data paths", MaxStandInDataPaths)) {
+		if !strings.Contains(err.Error(), fmt.Sprintf("more than %d data paths", designer.MaxStandInDataPaths)) {
 			t.Fatalf("the refusal does not name the path limit: %v", err)
 		}
 	})
@@ -674,14 +675,14 @@ func TestStandInRefusesBeyondItsDeclaredBounds(t *testing.T) {
 		for index := 0; index < names; index++ {
 			fmt.Fprintf(&builder, "{{%s%d}} ", strings.Repeat("a", width), index)
 		}
-		if names > MaxStandInDataPaths {
+		if names > designer.MaxStandInDataPaths {
 			t.Fatalf("presence precondition: %d paths would trip the path limit first", names)
 		}
-		_, err := StandInData(standInTemplate(t, standInTextElement("e1", builder.String())))
+		_, err := standInData(standInTemplate(t, standInTextElement("e1", builder.String())))
 		if err == nil {
-			t.Fatalf("StandInData accepted a document beyond %d bytes", MaxStandInDataBytes)
+			t.Fatalf("StandInData accepted a document beyond %d bytes", designer.MaxStandInDataBytes)
 		}
-		if !strings.Contains(err.Error(), fmt.Sprintf("exceeds the %d-byte limit", MaxStandInDataBytes)) {
+		if !strings.Contains(err.Error(), fmt.Sprintf("exceeds the %d-byte limit", designer.MaxStandInDataBytes)) {
 			t.Fatalf("the refusal does not name the byte limit: %v", err)
 		}
 	})

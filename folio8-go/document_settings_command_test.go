@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 	"github.com/panitw/folio8/folio8-go/internal/template"
 )
 
@@ -97,13 +98,13 @@ func documentSettingsPair(t *testing.T, tpl *Template) (string, string) {
 // once: the command was refused, the document is byte-identical afterwards, and
 // the refusal is a *ComponentCommandError — an unlocated one reaches the author
 // as pageSetupDiagnostic's fixed sentence with the field never named.
-func documentSettingsRefusal(t *testing.T, tpl *Template, command string) *ComponentCommandError {
+func documentSettingsRefusal(t *testing.T, tpl *Template, command string) *designer.ComponentCommandError {
 	t.Helper()
 	before, err := SerializeTemplate(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, applyErr := ApplyComponentCommand(tpl, []byte(command))
+	_, applyErr := applyComponentCommand(tpl, []byte(command))
 	if applyErr == nil {
 		t.Fatalf("command unexpectedly succeeded: %s", command)
 	}
@@ -114,7 +115,7 @@ func documentSettingsRefusal(t *testing.T, tpl *Template, command string) *Compo
 	if !bytes.Equal(before, after) {
 		t.Fatalf("a refused document-settings command mutated the document:\n%s\nbefore: %s\nafter:  %s", command, before, after)
 	}
-	var failure *ComponentCommandError
+	var failure *designer.ComponentCommandError
 	if !errors.As(applyErr, &failure) {
 		t.Fatalf("refusal for %s is %T (%v), want *ComponentCommandError", command, applyErr, applyErr)
 	}
@@ -127,7 +128,7 @@ func documentSettingsRefusal(t *testing.T, tpl *Template, command string) *Compo
 // asserted unchanged in the same breath.
 func TestSetDocumentLocaleWritesTheLocaleTheAuthorSet(t *testing.T) {
 	tpl := documentSettingsTemplate(t, documentSettingsDocument("en", "+07:00"))
-	projection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"setDocumentLocale","version":1,"locale":"th"}`))
+	projection, err := applyComponentCommand(tpl, []byte(`{"kind":"setDocumentLocale","version":1,"locale":"th"}`))
 	if err != nil {
 		t.Fatalf("a locale in AD-12's closed set was refused: %v", err)
 	}
@@ -162,7 +163,7 @@ func TestSetDocumentLocaleAcceptsEveryTagInTheClosedSet(t *testing.T) {
 	for _, tag := range template.LocaleTags {
 		t.Run(tag, func(t *testing.T) {
 			tpl := documentSettingsTemplate(t, documentSettingsDocument("en", "+07:00"))
-			if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"setDocumentLocale","version":1,"locale":"`+tag+`"}`)); err != nil {
+			if _, err := applyComponentCommand(tpl, []byte(`{"kind":"setDocumentLocale","version":1,"locale":"`+tag+`"}`)); err != nil {
 				t.Fatalf("locale %q is in template.LocaleTags and the command refused it: %v", tag, err)
 			}
 			locale, offset := documentSettingsPair(t, tpl)
@@ -249,7 +250,7 @@ func TestSetDocumentLocaleIsRefusedByTheDoorsExistingGates(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, applyErr := ApplyComponentCommand(tpl, []byte(probe.command))
+			_, applyErr := applyComponentCommand(tpl, []byte(probe.command))
 			if applyErr == nil {
 				t.Fatalf("the door accepted %s", probe.command)
 			}
@@ -260,7 +261,7 @@ func TestSetDocumentLocaleIsRefusedByTheDoorsExistingGates(t *testing.T) {
 			if !bytes.Equal(before, after) {
 				t.Fatal("a command the door refused still mutated the document")
 			}
-			var failure *ComponentCommandError
+			var failure *designer.ComponentCommandError
 			located := errors.As(applyErr, &failure)
 			if located != probe.located {
 				t.Fatalf("refusal for %s is located=%v (%T: %v), want located=%v", probe.command, located, applyErr, applyErr, probe.located)
@@ -282,7 +283,7 @@ func TestSetDocumentLocaleResentUnchangedLeavesTheBytesIdentical(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"setDocumentLocale","version":1,"locale":"th"}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"setDocumentLocale","version":1,"locale":"th"}`)); err != nil {
 		t.Fatalf("re-sending the locale already in force was refused: %v", err)
 	}
 	after, err := SerializeTemplate(tpl)
@@ -332,7 +333,7 @@ func TestCanvasProjectsTheDocumentsLocaleAndOffset(t *testing.T) {
 		{"ja", "-05:30"},
 	} {
 		t.Run(probe.locale, func(t *testing.T) {
-			projection, err := Canvas(documentSettingsTemplate(t, documentSettingsDocument(probe.locale, probe.offset)))
+			projection, err := canvas(documentSettingsTemplate(t, documentSettingsDocument(probe.locale, probe.offset)))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -351,7 +352,7 @@ func TestCanvasProjectsTheDocumentsLocaleAndOffset(t *testing.T) {
 // the assertion the rotation this suite exists to catch cannot survive.
 func TestSetDocumentUTCOffsetWritesTheOffsetTheAuthorSet(t *testing.T) {
 	tpl := documentSettingsTemplate(t, documentSettingsDocument("th", "+00:00"))
-	projection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"setDocumentUTCOffset","version":1,"utcOffset":"+07:00"}`))
+	projection, err := applyComponentCommand(tpl, []byte(`{"kind":"setDocumentUTCOffset","version":1,"utcOffset":"+07:00"}`))
 	if err != nil {
 		t.Fatalf("a legal ±HH:MM offset was refused: %v", err)
 	}
@@ -470,7 +471,7 @@ func TestSetDocumentUTCOffsetAgreesWithTheLoader(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, applyErr := ApplyComponentCommand(tpl, []byte(`{"kind":"setDocumentUTCOffset","version":1,"utcOffset":"`+probe.value+`"}`))
+			_, applyErr := applyComponentCommand(tpl, []byte(`{"kind":"setDocumentUTCOffset","version":1,"utcOffset":"`+probe.value+`"}`))
 			if (applyErr == nil) != want {
 				t.Fatalf("the command %s %q and template.IsUTCOffset %s it — the two doors have drifted (D-12.C)",
 					map[bool]string{true: "ACCEPTED", false: "REFUSED"}[applyErr == nil], probe.value,
@@ -488,7 +489,7 @@ func TestSetDocumentUTCOffsetAgreesWithTheLoader(t *testing.T) {
 			if !bytes.Equal(before, after) {
 				t.Fatalf("a refused offset command mutated the document:\nbefore: %s\nafter:  %s", before, after)
 			}
-			var failure *ComponentCommandError
+			var failure *designer.ComponentCommandError
 			if !errors.As(applyErr, &failure) {
 				t.Fatalf("refusal for %q is %T (%v), want *ComponentCommandError", probe.value, applyErr, applyErr)
 			}
@@ -557,7 +558,7 @@ func TestSetDocumentUTCOffsetIsRefusedByTheDoorsExistingGates(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, applyErr := ApplyComponentCommand(tpl, []byte(probe.command))
+			_, applyErr := applyComponentCommand(tpl, []byte(probe.command))
 			if applyErr == nil {
 				t.Fatalf("the door accepted %s", probe.command)
 			}
@@ -568,7 +569,7 @@ func TestSetDocumentUTCOffsetIsRefusedByTheDoorsExistingGates(t *testing.T) {
 			if !bytes.Equal(before, after) {
 				t.Fatal("a command the door refused still mutated the document")
 			}
-			var failure *ComponentCommandError
+			var failure *designer.ComponentCommandError
 			located := errors.As(applyErr, &failure)
 			if located != probe.located {
 				t.Fatalf("refusal for %s is located=%v (%T: %v), want located=%v", probe.command, located, applyErr, applyErr, probe.located)
@@ -588,7 +589,7 @@ func TestSetDocumentUTCOffsetResentUnchangedLeavesTheBytesIdentical(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"setDocumentUTCOffset","version":1,"utcOffset":"+07:00"}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"setDocumentUTCOffset","version":1,"utcOffset":"+07:00"}`)); err != nil {
 		t.Fatalf("re-sending the offset already in force was refused: %v", err)
 	}
 	after, err := SerializeTemplate(tpl)
@@ -607,13 +608,13 @@ func TestSetDocumentUTCOffsetResentUnchangedLeavesTheBytesIdentical(t *testing.T
 // sibling's field passes "a byte moved" and fails here.
 func TestTheTwoArmsWriteTheirOwnFieldAndOnlyTheirOwn(t *testing.T) {
 	tpl := documentSettingsTemplate(t, documentSettingsDocument("en", "+00:00"))
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"setDocumentLocale","version":1,"locale":"ja"}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"setDocumentLocale","version":1,"locale":"ja"}`)); err != nil {
 		t.Fatalf("setDocumentLocale ja was refused: %v", err)
 	}
 	if locale, offset := documentSettingsPair(t, tpl); locale != `"ja"` || offset != `"+00:00"` {
 		t.Fatalf("after the locale command the document reads locale=%s utcOffset=%s, want \"ja\" and the untouched \"+00:00\"", locale, offset)
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"setDocumentUTCOffset","version":1,"utcOffset":"+09:00"}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"setDocumentUTCOffset","version":1,"utcOffset":"+09:00"}`)); err != nil {
 		t.Fatalf("setDocumentUTCOffset +09:00 was refused: %v", err)
 	}
 	if locale, offset := documentSettingsPair(t, tpl); locale != `"ja"` || offset != `"+09:00"` {
@@ -622,7 +623,7 @@ func TestTheTwoArmsWriteTheirOwnFieldAndOnlyTheirOwn(t *testing.T) {
 	// AND A REFUSED SECOND COMMAND LEAVES THE FIRST ONE'S WRITE STANDING: the
 	// two are independent commands, not one transaction, and an arm that rolled
 	// its sibling back would be writing a field it does not name.
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"setDocumentUTCOffset","version":1,"utcOffset":"+99:99"}`)); err == nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"setDocumentUTCOffset","version":1,"utcOffset":"+99:99"}`)); err == nil {
 		t.Fatal("the command accepted +99:99 (D-12.C)")
 	}
 	if locale, offset := documentSettingsPair(t, tpl); locale != `"ja"` || offset != `"+09:00"` {

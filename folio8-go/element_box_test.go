@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 	"github.com/panitw/folio8/folio8-go/internal/geom"
 	"github.com/panitw/folio8/folio8-go/internal/layout"
 	"github.com/panitw/folio8/folio8-go/internal/pagemodel"
@@ -361,11 +362,11 @@ func TestAPlacedLineAndRectArriveVisible(t *testing.T) {
 	} {
 		t.Run(tc.kind, func(t *testing.T) {
 			tpl := componentTemplate(t)
-			before, err := Canvas(tpl)
+			before, err := canvas(tpl)
 			if err != nil {
 				t.Fatal(err)
 			}
-			after, err := ApplyComponentCommand(tpl, []byte(`{"kind":"dropComponent","version":1,"type":"`+tc.kind+`","x":72,"y":180,"snap":false}`))
+			after, err := applyComponentCommand(tpl, []byte(`{"kind":"dropComponent","version":1,"type":"`+tc.kind+`","x":72,"y":180,"snap":false}`))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -549,13 +550,13 @@ const negativeBorderTableTemplateJSON = `{
 // CanvasComponent's, so a change to WHICH per-component fields are emitted
 // is exactly its blind spot. A green wire test proves nothing about the two
 // tests below; the fields are therefore asserted explicitly.
-func canvasComponentOf(t *testing.T, doc, id string) CanvasComponent {
+func canvasComponentOf(t *testing.T, doc, id string) designer.CanvasComponent {
 	t.Helper()
 	tpl, err := ParseTemplate([]byte(doc))
 	if err != nil {
 		t.Fatalf("ParseTemplate: %v", err)
 	}
-	projection, err := Canvas(tpl)
+	projection, err := canvas(tpl)
 	if err != nil {
 		t.Fatalf("Canvas: %v", err)
 	}
@@ -565,7 +566,7 @@ func canvasComponentOf(t *testing.T, doc, id string) CanvasComponent {
 		}
 	}
 	t.Fatalf("component %q is absent from the projection", id)
-	return CanvasComponent{}
+	return designer.CanvasComponent{}
 }
 
 // TestABorderPaintingNoInkProjectsNoBorderFields is E9-5's proof.
@@ -637,7 +638,7 @@ func TestTheProjectionRefusesEveryColourRenderRefuses(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%s %q: ParseTemplate: %v", arm.name, bad, err)
 			}
-			if _, err := Canvas(tpl); err == nil {
+			if _, err := canvas(tpl); err == nil {
 				t.Errorf("%s = %q projected without error — the designer would paint what Render refuses", arm.name, bad)
 			}
 			// Render's own answer on the SAME document, so "both sides

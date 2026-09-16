@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 	"github.com/panitw/folio8/folio8-go/internal/geom"
 	"github.com/panitw/folio8/folio8-go/internal/template"
 )
@@ -18,8 +19,8 @@ func newProportionalTable(t *testing.T) (*Template, string) {
 	tpl.doc.Bands.Content.Elements = nil
 	tpl.doc.Bands.PageHeader.Elements = nil
 	tpl.doc.Bands.PageFooter.Elements = nil
-	before, _ := Canvas(tpl)
-	after, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"table","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
+	before, _ := canvas(tpl)
+	after, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"table","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -28,7 +29,7 @@ func newProportionalTable(t *testing.T) (*Template, string) {
 
 func TestProportionalCommandsStructureTotalAndAtomicRefusals(t *testing.T) {
 	tpl, id := newProportionalTable(t)
-	view, err := TableColumns(tpl, id)
+	view, err := tableColumns(tpl, id)
 	if err != nil || view.Sizing != "proportion" || len(view.Columns) != 1 || view.Columns[0].Proportion != "1" || view.TotalWidth != projectedBands(t, tpl)["content"].Width {
 		t.Fatalf("starter: %+v %v", view, err)
 	}
@@ -36,7 +37,7 @@ func TestProportionalCommandsStructureTotalAndAtomicRefusals(t *testing.T) {
 	for n := 1; n < 3; n++ {
 		mustApplyToTable(t, tpl, fmt.Sprintf(`{"kind":"addTableColumn","version":1,"id":%q,"index":%d}`, id, n))
 	}
-	view, _ = TableColumns(tpl, id)
+	view, _ = tableColumns(tpl, id)
 	for i, w := range []int64{166667, 166667, 166666} {
 		if view.Columns[i].Width != w || view.Columns[i].Proportion != "1" {
 			t.Fatalf("rounding: %+v", view)
@@ -46,11 +47,11 @@ func TestProportionalCommandsStructureTotalAndAtomicRefusals(t *testing.T) {
 	mustApplyToTable(t, tpl, fmt.Sprintf(`{"kind":"updateTableColumn","version":1,"id":%q,"columnId":%q,"field":"proportion","value":"2"}`, id, middle))
 	assertWidths := func(want []int64) {
 		t.Helper()
-		view, err = TableColumns(tpl, id)
+		view, err = tableColumns(tpl, id)
 		if err != nil {
 			t.Fatal(err)
 		}
-		canvas, err := Canvas(tpl)
+		canvas, err := canvas(tpl)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -77,11 +78,11 @@ func TestProportionalCommandsStructureTotalAndAtomicRefusals(t *testing.T) {
 			if tc.field == "total" {
 				command = fmt.Sprintf(`{"kind":"setTableWidth","version":1,"id":%q,"value":%s}`, id, tc.value)
 			}
-			if _, err := ApplyComponentCommand(tpl, []byte(command)); err == nil || !strings.Contains(err.Error(), "folio8:") && !strings.Contains(err.Error(), "template:") {
+			if _, err := applyComponentCommand(tpl, []byte(command)); err == nil || !strings.Contains(err.Error(), "folio8:") && !strings.Contains(err.Error(), "template:") {
 				t.Fatalf("missing located refusal: %v", err)
 			}
-			_, refusal := ApplyComponentCommand(tpl, []byte(command))
-			var componentErr *ComponentCommandError
+			_, refusal := applyComponentCommand(tpl, []byte(command))
+			var componentErr *designer.ComponentCommandError
 			var renderErr *RenderError
 			located := errors.As(refusal, &componentErr) && componentErr.ElementID != "" || errors.As(refusal, &renderErr) && renderErr.Diagnostic.ElementID != ""
 			if !located {
@@ -94,14 +95,14 @@ func TestProportionalCommandsStructureTotalAndAtomicRefusals(t *testing.T) {
 	}
 	// Removing a column keeps the other weights and total, including emptiness.
 	mustApplyToTable(t, tpl, fmt.Sprintf(`{"kind":"removeTableColumn","version":1,"id":%q,"columnId":%q}`, id, view.Columns[2].ID))
-	view, _ = TableColumns(tpl, id)
+	view, _ = tableColumns(tpl, id)
 	if view.TotalWidth != 400000 || view.Columns[0].Proportion != "1" || view.Columns[1].Proportion != "2" {
 		t.Fatalf("remove: %+v", view)
 	}
 	for _, col := range view.Columns {
 		mustApplyToTable(t, tpl, fmt.Sprintf(`{"kind":"removeTableColumn","version":1,"id":%q,"columnId":%q}`, id, col.ID))
 	}
-	view, _ = TableColumns(tpl, id)
+	view, _ = tableColumns(tpl, id)
 	if view.TotalWidth != 400000 || len(view.Columns) != 0 {
 		t.Fatalf("empty: %+v", view)
 	}
@@ -110,7 +111,7 @@ func TestProportionalCommandsStructureTotalAndAtomicRefusals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	view, err = TableColumns(tpl, id)
+	view, err = tableColumns(tpl, id)
 	if err != nil || view.TotalWidth != 400000 || len(view.Columns) != 0 || !bytes.Equal(empty, canonicalBytes(t, tpl)) {
 		t.Fatalf("reopen empty table lost total: %+v %v", view, err)
 	}
@@ -121,7 +122,7 @@ func TestProportionalCommandsStructureTotalAndAtomicRefusals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	again, err := TableColumns(reloaded, id)
+	again, err := tableColumns(reloaded, id)
 	if err != nil || !reflect.DeepEqual(view, again) {
 		t.Fatalf("reopen: %+v %v", again, err)
 	}
@@ -135,7 +136,7 @@ func TestProportionalStructuralRefusalsAreLocatedAndAtomic(t *testing.T) {
 				for n := 1; n < 4; n++ {
 					mustApplyToTable(t, tpl, fmt.Sprintf(`{"kind":"addTableColumn","version":1,"id":%q,"index":%d}`, id, n))
 				}
-				view, _ := TableColumns(tpl, id)
+				view, _ := tableColumns(tpl, id)
 				for _, column := range view.Columns[2:] {
 					mustApplyToTable(t, tpl, fmt.Sprintf(`{"kind":"updateTableColumn","version":1,"id":%q,"columnId":%q,"field":"proportion","value":"3"}`, id, column.ID))
 				}
@@ -145,7 +146,7 @@ func TestProportionalStructuralRefusalsAreLocatedAndAtomic(t *testing.T) {
 				total = "0.001"
 			}
 			mustApplyToTable(t, tpl, fmt.Sprintf(`{"kind":"setTableWidth","version":1,"id":%q,"value":%q}`, id, total))
-			view, _ := TableColumns(tpl, id)
+			view, _ := tableColumns(tpl, id)
 			command := fmt.Sprintf(`{"kind":"removeTableColumn","version":1,"id":%q,"columnId":%q}`, id, view.Columns[0].ID)
 			wantID := view.Columns[0].ID
 			switch kind {
@@ -158,7 +159,7 @@ func TestProportionalStructuralRefusalsAreLocatedAndAtomic(t *testing.T) {
 				command = fmt.Sprintf(`{"kind":"addTableColumn","version":1,"id":%q,"index":1}`, id)
 			}
 			before, nextID := canonicalBytes(t, tpl), tpl.doc.NextID
-			_, err := ApplyComponentCommand(tpl, []byte(command))
+			_, err := applyComponentCommand(tpl, []byte(command))
 			var failure *RenderError
 			if !errors.As(err, &failure) || failure.Diagnostic.ElementID != wantID || failure.Diagnostic.DataPath != "column.proportion" || !strings.Contains(err.Error(), "zero width") {
 				t.Fatalf("lost located allocation refusal: %+v / %v", failure, err)

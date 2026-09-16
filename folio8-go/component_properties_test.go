@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 	"github.com/panitw/folio8/folio8-go/internal/template"
 )
 
@@ -17,7 +18,7 @@ func TestUpdateComponentPropertiesIsClosedCanonicalAndAtomic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	projection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"x":{"op":"set","value":12.125},"fontSize":{"op":"set","value":10},"visibleIf":{"op":"set","value":"customer.active"}}}`))
+	projection, err := applyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"x":{"op":"set","value":12.125},"fontSize":{"op":"set","value":10},"visibleIf":{"op":"set","value":"customer.active"}}}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +39,7 @@ func TestUpdateComponentPropertiesIsClosedCanonicalAndAtomic(t *testing.T) {
 
 func TestCreatedTextAdoptsADeclaredFontChainSoItCanRender(t *testing.T) {
 	tpl := componentTemplate(t)
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"text","band":"content","x":40,"y":40,"width":200,"height":24,"snap":false}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"text","band":"content","x":40,"y":40,"width":200,"height":24,"snap":false}`)); err != nil {
 		t.Fatal(err)
 	}
 	after, err := SerializeTemplate(tpl)
@@ -62,7 +63,7 @@ func TestCreatedTextLeavesFontFamilyAbsentWhenNoChainIsDeclared(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"text","band":"content","x":40,"y":40,"width":200,"height":24,"snap":false}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"text","band":"content","x":40,"y":40,"width":200,"height":24,"snap":false}`)); err != nil {
 		t.Fatal(err)
 	}
 	after, err := SerializeTemplate(tpl)
@@ -80,14 +81,14 @@ func TestUpdateComponentPropertiesRejectsTableGeometryAndRollsBackBatch(t *testi
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e2"],"changes":{"width":{"op":"set","value":72}}}`)); err == nil || !strings.Contains(err.Error(), "not editable") {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e2"],"changes":{"width":{"op":"set","value":72}}}`)); err == nil || !strings.Contains(err.Error(), "not editable") {
 		t.Fatalf("table width error = %v", err)
 	}
 	afterTable, _ := SerializeTemplate(tpl)
 	if !bytes.Equal(before, afterTable) {
 		t.Fatal("rejected table width changed canonical bytes")
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1","missing"],"changes":{"x":{"op":"set","value":12}}}`)); err == nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1","missing"],"changes":{"x":{"op":"set","value":12}}}`)); err == nil {
 		t.Fatal("bad multi-target unexpectedly succeeded")
 	}
 	afterBatch, _ := SerializeTemplate(tpl)
@@ -98,17 +99,17 @@ func TestUpdateComponentPropertiesRejectsTableGeometryAndRollsBackBatch(t *testi
 
 func TestUpdateComponentPropertiesRejectsStylePlaceholderAndClearIsAbsent(t *testing.T) {
 	tpl := componentTemplate(t)
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"background":{"op":"set","value":"{{customer.color}}"}}}`)); err == nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"background":{"op":"set","value":"{{customer.color}}"}}}`)); err == nil {
 		t.Fatal("style placeholder unexpectedly succeeded")
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"fontSize":{"op":"clear"}}}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"fontSize":{"op":"clear"}}}`)); err != nil {
 		t.Fatal(err)
 	}
 	after, _ := SerializeTemplate(tpl)
 	if strings.Contains(string(after), `"fontSize": 12`) {
 		t.Fatalf("clear did not serialize absent: %s", after)
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"visibleIf":{"op":"null"}}}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"visibleIf":{"op":"null"}}}`)); err != nil {
 		t.Fatal(err)
 	}
 	afterNull, _ := SerializeTemplate(tpl)
@@ -130,7 +131,7 @@ func TestUpdateComponentPropertiesValidatesColourFontAndNullWithoutMutation(t *t
 		`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"fontFamily":{"op":"null"}}}`,
 		`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"bold":{"op":"null"}}}`,
 	} {
-		if _, err := ApplyComponentCommand(tpl, []byte(command)); err == nil {
+		if _, err := applyComponentCommand(tpl, []byte(command)); err == nil {
 			t.Fatalf("invalid property command succeeded: %s", command)
 		}
 		after, err := SerializeTemplate(tpl)
@@ -138,14 +139,14 @@ func TestUpdateComponentPropertiesValidatesColourFontAndNullWithoutMutation(t *t
 			t.Fatalf("invalid command mutated bytes: %v\n%s", err, after)
 		}
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"background":{"op":"set","value":"#aBc123"},"fontFamily":{"op":"set","value":"body"}}}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"background":{"op":"set","value":"#aBc123"},"fontFamily":{"op":"set","value":"body"}}}`)); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestComponentPropertyProjectionIsBoundedAndTypeCoherent(t *testing.T) {
 	tpl := componentTemplate(t)
-	projection, err := Canvas(tpl)
+	projection, err := canvas(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,12 +166,12 @@ func TestComponentPropertyProjectionIsBoundedAndTypeCoherent(t *testing.T) {
 	element.Style.Value.Italic = template.Presence[bool]{Set: true, Value: true}
 	element.Style.Value.Align = template.Presence[string]{Set: true, Value: "center"}
 	element.Style.Value.Valign = template.Presence[string]{Set: true, Value: "middle"}
-	leakyProjection, err := Canvas(leaky)
+	leakyProjection, err := canvas(leaky)
 	if err != nil {
 		t.Fatalf("the leak probe was refused a projection: %v", err)
 	}
 	probed := 0
-	for _, component := range append(append([]CanvasComponent{}, projection.Components...), leakyProjection.Components...) {
+	for _, component := range append(append([]designer.CanvasComponent{}, projection.Components...), leakyProjection.Components...) {
 		if component.Type != "text" && component.Type != "table" {
 			probed++
 			if component.FontFamily != nil || component.FontSize != nil || component.Bold != nil || component.Italic != nil || component.Align != nil || component.Valign != nil || component.LineSpacing != nil {
@@ -189,7 +190,7 @@ func TestComponentPropertyProjectionIsBoundedAndTypeCoherent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Canvas(bad); err == nil {
+	if _, err := canvas(bad); err == nil {
 		t.Fatal("over-bound fontFamily reached projection")
 	}
 }
@@ -227,7 +228,7 @@ func TestStyleAlignPropertyValidatesAgainstItsConsumersSet(t *testing.T) {
 	tpl := componentTemplate(t)
 	for _, align := range []string{"left", "center", "right", "justify"} {
 		cmd := []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"align":{"op":"set","value":"` + align + `"}}}`)
-		if _, err := ApplyComponentCommand(tpl, cmd); err != nil {
+		if _, err := applyComponentCommand(tpl, cmd); err != nil {
 			t.Errorf("style.align %q must be accepted: %v", align, err)
 		}
 	}
@@ -240,7 +241,7 @@ func TestStyleAlignPropertyValidatesAgainstItsConsumersSet(t *testing.T) {
 	}
 	for _, align := range []string{"middle", "top", "flush", "JUSTIFY", ""} {
 		cmd := []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"align":{"op":"set","value":"` + align + `"}}}`)
-		_, err := ApplyComponentCommand(tpl, cmd)
+		_, err := applyComponentCommand(tpl, cmd)
 		if err == nil {
 			t.Errorf("style.align %q must be refused — this arm used to accept any string at all", align)
 			continue
@@ -271,7 +272,7 @@ func TestStyleAlignPropertyValidatesAgainstItsConsumersSet(t *testing.T) {
 	tpl = componentTemplate(t)
 	for _, align := range []string{"left", "center", "right"} {
 		cmd := []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e2"],"changes":{"align":{"op":"set","value":"` + align + `"}}}`)
-		if _, err := ApplyComponentCommand(tpl, cmd); err != nil {
+		if _, err := applyComponentCommand(tpl, cmd); err != nil {
 			t.Errorf("a table's style.align %q must be accepted: %v", align, err)
 		}
 	}
@@ -280,7 +281,7 @@ func TestStyleAlignPropertyValidatesAgainstItsConsumersSet(t *testing.T) {
 		t.Fatal(err)
 	}
 	cmd := []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e2"],"changes":{"align":{"op":"set","value":"justify"}}}`)
-	if _, err := ApplyComponentCommand(tpl, cmd); err == nil {
+	if _, err := applyComponentCommand(tpl, cmd); err == nil {
 		t.Fatal("a TABLE's style.align must refuse \"justify\" — the loader refuses it, and this path is required to validate against the same single source (closedsets.go's IsStyleAlign doc comment)")
 	} else {
 		if !strings.Contains(err.Error(), "left, center, right") {
@@ -322,7 +323,7 @@ func TestLineSpacingPropertyCommandDecodesThroughTheOneLoaderValidator(t *testin
 	}{{"1.5", 1500}, {"2", 2000}, {"0.001", 1}, {"1000", 1000000}} {
 		tpl := componentTemplate(t)
 		cmd := []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"lineSpacing":{"op":"set","value":` + accepted.literal + `}}}`)
-		if _, err := ApplyComponentCommand(tpl, cmd); err != nil {
+		if _, err := applyComponentCommand(tpl, cmd); err != nil {
 			t.Fatalf("lineSpacing %s must be accepted: %v", accepted.literal, err)
 		}
 		style := styleOfElement(t, tpl, "e1")
@@ -331,7 +332,7 @@ func TestLineSpacingPropertyCommandDecodesThroughTheOneLoaderValidator(t *testin
 		}
 		// And it comes back out on the projection, in the same unit the
 		// document carries — the field an inspector control reads back.
-		projection, err := Canvas(tpl)
+		projection, err := canvas(tpl)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -366,11 +367,11 @@ func TestLineSpacingPropertyCommandDecodesThroughTheOneLoaderValidator(t *testin
 			t.Fatal(err)
 		}
 		cmd := []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"lineSpacing":{"op":"set","value":` + refused.literal + `}}}`)
-		_, err = ApplyComponentCommand(tpl, cmd)
+		_, err = applyComponentCommand(tpl, cmd)
 		if err == nil {
 			t.Fatalf("lineSpacing %s must be refused", refused.literal)
 		}
-		var located *ComponentCommandError
+		var located *designer.ComponentCommandError
 		if !errors.As(err, &located) {
 			t.Fatalf("lineSpacing %s was refused with an unlocated error (%T): %v", refused.literal, err, err)
 		}
@@ -391,16 +392,16 @@ func TestLineSpacingPropertyCommandDecodesThroughTheOneLoaderValidator(t *testin
 
 	// Clear returns the element to the leading the declared chain rules.
 	tpl := componentTemplate(t)
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"lineSpacing":{"op":"set","value":1.5}}}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"lineSpacing":{"op":"set","value":1.5}}}`)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"lineSpacing":{"op":"clear"}}}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"lineSpacing":{"op":"clear"}}}`)); err != nil {
 		t.Fatal(err)
 	}
 	if styleOfElement(t, tpl, "e1").LineSpacing.Set {
 		t.Fatal("clear left lineSpacing committed")
 	}
-	projection, err := Canvas(tpl)
+	projection, err := canvas(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -425,7 +426,7 @@ func styleOfElement(t *testing.T, tpl *Template, id string) template.Style {
 	return template.Style{}
 }
 
-func componentOfProjection(t *testing.T, projection CanvasProjection, id string) CanvasComponent {
+func componentOfProjection(t *testing.T, projection designer.CanvasProjection, id string) designer.CanvasComponent {
 	t.Helper()
 	for _, component := range projection.Components {
 		if component.ID == id {
@@ -433,7 +434,7 @@ func componentOfProjection(t *testing.T, projection CanvasProjection, id string)
 		}
 	}
 	t.Fatalf("component %s is not in the projection", id)
-	return CanvasComponent{}
+	return designer.CanvasComponent{}
 }
 
 // TestMultiParagraphValueCommitsAndReProjectsAsSeveralCanvasLines is AC1's
@@ -460,7 +461,7 @@ func TestMultiParagraphValueCommitsAndReProjectsAsSeveralCanvasLines(t *testing.
 	cmd := []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"value":{"op":"set","value":` + string(encoded) + `}}}`)
 	// ACCEPTED — not merely "the canvas survived". This is the assertion the
 	// story exists for: before the split, this command failed.
-	projection, err := ApplyComponentCommand(tpl, cmd)
+	projection, err := applyComponentCommand(tpl, cmd)
 	if err != nil {
 		t.Fatalf("a six-paragraph clause was rejected by the property command: %v", err)
 	}
@@ -471,7 +472,7 @@ func TestMultiParagraphValueCommitsAndReProjectsAsSeveralCanvasLines(t *testing.
 		t.Fatal("the projection did not carry the committed clause back to the panel")
 	}
 
-	painted, err := CanvasWithTextPaint(tpl, testFontSet())
+	painted, err := canvasWithTextPaint(tpl, testFontSet())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -512,11 +513,11 @@ func TestMultiParagraphValueCommitsAndReProjectsAsSeveralCanvasLines(t *testing.
 	lf := bodyTextDocument(t, "placeholder", `{"fontFamily":"body","fontSize":12}`)
 	crlf.doc.Bands.Content.Elements[0].Value.Value = "One.\r\nTwo.\r\nThree."
 	lf.doc.Bands.Content.Elements[0].Value.Value = "One.\nTwo.\nThree."
-	crlfPaint, err := CanvasWithTextPaint(crlf, testFontSet())
+	crlfPaint, err := canvasWithTextPaint(crlf, testFontSet())
 	if err != nil {
 		t.Fatal(err)
 	}
-	lfPaint, err := CanvasWithTextPaint(lf, testFontSet())
+	lfPaint, err := canvasWithTextPaint(lf, testFontSet())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -536,11 +537,11 @@ func TestMultiParagraphValueCommitsAndReProjectsAsSeveralCanvasLines(t *testing.
 // the clause that moved.
 func TestUpdateComponentPropertiesBandBoundsFollowTheColumnLift(t *testing.T) {
 	tpl := componentTemplate(t)
-	before, err := Canvas(tpl)
+	before, err := canvas(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
-	createdProjection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"rect","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
+	createdProjection, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"rect","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -548,7 +549,7 @@ func TestUpdateComponentPropertiesBandBoundsFollowTheColumnLift(t *testing.T) {
 	// The content band is 679.89pt of window on this fixture's A4 page, so
 	// 2400pt is a placement on the fourth sheet — a schedule's later rows, or
 	// a signature block at the end of a long statement.
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["`+created.ID+`"],"changes":{"y":{"op":"set","value":2400}}}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["`+created.ID+`"],"changes":{"y":{"op":"set","value":2400}}}`)); err != nil {
 		t.Fatalf("a content y three windows down was refused by the property panel: %v", err)
 	}
 	if roundTripped := reloadedComponent(t, tpl, created.ID); roundTripped.Y != 2400000 {
@@ -556,12 +557,12 @@ func TestUpdateComponentPropertiesBandBoundsFollowTheColumnLift(t *testing.T) {
 	}
 	// The horizontal bound is untouched: the column is unbounded vertically,
 	// never horizontally.
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["`+created.ID+`"],"changes":{"x":{"op":"set","value":2400}}}`)); err == nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["`+created.ID+`"],"changes":{"x":{"op":"set","value":2400}}}`)); err == nil {
 		t.Fatal("a content x past the band width was accepted by the property panel")
 	}
 	// And a repeating band still caps, in the same words. A page header is
 	// exactly one page tall because that is what repeating means.
-	headerProjection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"rect","band":"pageHeader","x":0,"y":0,"width":72,"height":24,"snap":false}`))
+	headerProjection, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"rect","band":"pageHeader","x":0,"y":0,"width":72,"height":24,"snap":false}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -570,8 +571,8 @@ func TestUpdateComponentPropertiesBandBoundsFollowTheColumnLift(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = ApplyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["`+inHeader.ID+`"],"changes":{"y":{"op":"set","value":600}}}`))
-	var failure *ComponentCommandError
+	_, err = applyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["`+inHeader.ID+`"],"changes":{"y":{"op":"set","value":600}}}`))
+	var failure *designer.ComponentCommandError
 	if !errors.As(err, &failure) {
 		t.Fatalf("a pageHeader y past the band = %v, want a component command failure", err)
 	}
@@ -623,7 +624,7 @@ func TestAPropertyCommandCannotStampATableDocumentAt2_0(t *testing.T) {
 	if !bytes.Contains(before, []byte(`"version": "1.0"`)) {
 		t.Fatalf("fixture precondition: worked-example.json must start at 1.0, got:\n%s", before)
 	}
-	if _, err := ApplyComponentCommand(tableTpl, command("e2", "justify")); err == nil {
+	if _, err := applyComponentCommand(tableTpl, command("e2", "justify")); err == nil {
 		t.Fatal("the property command must refuse justify on a table — otherwise the designer's own engine authors a 2.0 document whose value nothing draws and which the loader then refuses to reopen (AC1)")
 	} else {
 		t.Logf("refused: %v", err)
@@ -646,7 +647,7 @@ func TestAPropertyCommandCannotStampATableDocumentAt2_0(t *testing.T) {
 	// document to 2.0 — which is the honest cost of FR47 and is not what
 	// this story removes.
 	textTpl := componentTemplate(t)
-	if _, err := ApplyComponentCommand(textTpl, command("e1", "justify")); err != nil {
+	if _, err := applyComponentCommand(textTpl, command("e1", "justify")); err != nil {
 		t.Fatalf("justify on a TEXT element must still be accepted: %v", err)
 	}
 	textBytes, err := SerializeTemplate(textTpl)
@@ -716,7 +717,7 @@ func subjectIDForKind(t *testing.T, tpl *Template, kind string) string {
 	t.Helper()
 	const fixture = "testdata/template/golden/worked-example.json"
 	borrowed := map[string]string{"text": "e1", "table": "e2"}[kind]
-	before, err := Canvas(tpl)
+	before, err := canvas(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -732,7 +733,7 @@ func subjectIDForKind(t *testing.T, tpl *Template, kind string) string {
 		}
 		t.Fatalf("%s no longer holds %s at all — this test would assert nothing about a %s", fixture, borrowed, kind)
 	}
-	projection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"`+kind+`","band":"content","x":12,"y":12,"width":72,"height":24,"snap":false}`))
+	projection, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"`+kind+`","band":"content","x":12,"y":12,"width":72,"height":24,"snap":false}`))
 	if err != nil {
 		t.Fatalf("create %s: %v", kind, err)
 	}
@@ -761,7 +762,7 @@ func TestPaddingPropertyCommandsAreGrantedOnATableAlone(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, cmdErr := ApplyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["`+id+`"],"changes":{"`+key+`":{"op":"set","value":5}}}`))
+			_, cmdErr := applyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["`+id+`"],"changes":{"`+key+`":{"op":"set","value":5}}}`))
 			after, err := SerializeTemplate(tpl)
 			if err != nil {
 				t.Fatal(err)
@@ -797,7 +798,7 @@ func TestPaddingPropertyCommandsAreGrantedOnATableAlone(t *testing.T) {
 			if cmdErr == nil {
 				t.Fatalf("%s on a %s was ACCEPTED; the command layer must refuse padding off a table (D-12.4.1)", key, kind)
 			}
-			var located *ComponentCommandError
+			var located *designer.ComponentCommandError
 			if !errors.As(cmdErr, &located) {
 				t.Fatalf("%s on a %s: error is %T, want *ComponentCommandError", key, kind, cmdErr)
 			}
@@ -842,7 +843,7 @@ func TestPaddingGuardLeavesTheBoxKeysAndAnAlreadyLoadedPaddingAlone(t *testing.T
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["`+id+`"],"changes":{"`+box.key+`":`+box.change+`}}`)); err != nil {
+			if _, err := applyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["`+id+`"],"changes":{"`+box.key+`":`+box.change+`}}`)); err != nil {
 				t.Fatalf("%s on a %s must remain editable on ALL FIVE kinds: %v", box.key, kind, err)
 			}
 			after, err := SerializeTemplate(tpl)
@@ -871,11 +872,11 @@ func TestPaddingGuardLeavesTheBoxKeysAndAnAlreadyLoadedPaddingAlone(t *testing.T
 	if !bytes.Contains(roundTripped, []byte(`"top": 4`)) || !bytes.Contains(roundTripped, []byte(`"left": 2`)) {
 		t.Fatalf("the round trip dropped the authored padding:\n%s", roundTripped)
 	}
-	projection, err := Canvas(tpl)
+	projection, err := canvas(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var projected *CanvasComponent
+	var projected *designer.CanvasComponent
 	for i := range projection.Components {
 		if projection.Components[i].ID == "e1" {
 			projected = &projection.Components[i]
@@ -887,7 +888,7 @@ func TestPaddingGuardLeavesTheBoxKeysAndAnAlreadyLoadedPaddingAlone(t *testing.T
 	if projected.PaddingTop == nil || *projected.PaddingTop != 4000 {
 		t.Errorf("paddingTop projection = %v, want 4000 millipoints", projected.PaddingTop)
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"x":{"op":"set","value":20}}}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"x":{"op":"set","value":20}}}`)); err != nil {
 		t.Fatalf("an UNRELATED command on a padded text element must still be accepted: %v", err)
 	}
 	afterUnrelated, err := SerializeTemplate(tpl)
@@ -923,11 +924,11 @@ func TestPaddingCommandOpsFollowTheSameTableOnlyGrant(t *testing.T) {
 		tpl := componentTemplate(t)
 		id := subjectIDForKind(t, tpl, "text")
 		before := serializedBytes(t, tpl)
-		_, cmdErr := ApplyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["`+id+`"],"changes":{"paddingTop":`+op+`}}`))
+		_, cmdErr := applyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["`+id+`"],"changes":{"paddingTop":`+op+`}}`))
 		if cmdErr == nil {
 			t.Fatalf("paddingTop %s on a text was ACCEPTED; every op is refused off a table (D-12.4.1)", op)
 		}
-		var located *ComponentCommandError
+		var located *designer.ComponentCommandError
 		if !errors.As(cmdErr, &located) {
 			t.Fatalf("paddingTop %s on a text: error is %T, want *ComponentCommandError", op, cmdErr)
 		}
@@ -944,11 +945,11 @@ func TestPaddingCommandOpsFollowTheSameTableOnlyGrant(t *testing.T) {
 
 	nullTpl := componentTemplate(t)
 	nullID := subjectIDForKind(t, nullTpl, "table")
-	_, nullErr := ApplyComponentCommand(nullTpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["`+nullID+`"],"changes":{"paddingLeft":{"op":"null"}}}`))
+	_, nullErr := applyComponentCommand(nullTpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["`+nullID+`"],"changes":{"paddingLeft":{"op":"null"}}}`))
 	if nullErr == nil {
 		t.Fatal("paddingLeft null on a table unexpectedly succeeded")
 	}
-	var nullLocated *ComponentCommandError
+	var nullLocated *designer.ComponentCommandError
 	if !errors.As(nullErr, &nullLocated) {
 		t.Fatalf("paddingLeft null on a table: error is %T, want *ComponentCommandError", nullErr)
 	}
@@ -962,7 +963,7 @@ func TestPaddingCommandOpsFollowTheSameTableOnlyGrant(t *testing.T) {
 	if len(authored) != 2 {
 		t.Fatalf("the fixture no longer authors exactly two padding edges on %s: %v — the pruning assertion below would be vacuous", clearID, authored)
 	}
-	if _, err := ApplyComponentCommand(clearTpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["`+clearID+`"],"changes":{"paddingLeft":{"op":"clear"},"paddingRight":{"op":"clear"}}}`)); err != nil {
+	if _, err := applyComponentCommand(clearTpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["`+clearID+`"],"changes":{"paddingLeft":{"op":"clear"},"paddingRight":{"op":"clear"}}}`)); err != nil {
 		t.Fatalf("clearing padding on a table must be accepted: %v", err)
 	}
 	if remaining := serializedPaddingEdges(t, serializedBytes(t, clearTpl), clearID); len(remaining) != 0 {
@@ -980,11 +981,11 @@ func TestPaddingRefusalAcrossAMixedSelectionIsTransactional(t *testing.T) {
 	tableID := subjectIDForKind(t, tpl, "table")
 	textID := subjectIDForKind(t, tpl, "text")
 	before := serializedBytes(t, tpl)
-	_, cmdErr := ApplyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["`+tableID+`","`+textID+`"],"changes":{"paddingTop":{"op":"set","value":5}}}`))
+	_, cmdErr := applyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["`+tableID+`","`+textID+`"],"changes":{"paddingTop":{"op":"set","value":5}}}`))
 	if cmdErr == nil {
 		t.Fatal("a selection holding a text was ACCEPTED for a padding command")
 	}
-	var located *ComponentCommandError
+	var located *designer.ComponentCommandError
 	if !errors.As(cmdErr, &located) {
 		t.Fatalf("mixed selection: error is %T, want *ComponentCommandError", cmdErr)
 	}

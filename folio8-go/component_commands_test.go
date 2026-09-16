@@ -17,6 +17,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 	"github.com/panitw/folio8/folio8-go/internal/fontset"
 	"github.com/panitw/folio8/folio8-go/internal/geom"
 	"github.com/panitw/folio8/folio8-go/internal/template"
@@ -41,7 +42,7 @@ func TestBindTableCollectionPreservesEverythingElse(t *testing.T) {
 				}
 				before, _ := SerializeTemplate(tpl)
 				keys, _ := json.Marshal(segments)
-				projection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"bindTableCollection","version":1,"id":"e8","segments":`+string(keys)+`}`))
+				projection, err := applyComponentCommand(tpl, []byte(`{"kind":"bindTableCollection","version":1,"id":"e8","segments":`+string(keys)+`}`))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -54,7 +55,7 @@ func TestBindTableCollectionPreservesEverythingElse(t *testing.T) {
 				if !bytes.Equal(after, want) {
 					t.Fatalf("collection pick changed other document bytes: %s", after)
 				}
-				if _, err := TableColumns(tpl, "e8"); err != nil {
+				if _, err := tableColumns(tpl, "e8"); err != nil {
 					t.Fatalf("collection with derived/absent footer sources became uneditable: %v", err)
 				}
 				configured, _ := ParseTemplate(source)
@@ -62,7 +63,7 @@ func TestBindTableCollectionPreservesEverythingElse(t *testing.T) {
 				if alias == "absent" {
 					aliasValue = ""
 				}
-				if _, err := ApplyComponentCommand(configured, tableCollectionEditCommand("configureTableBinding", "e8", collection, aliasValue)); err != nil {
+				if _, err := applyComponentCommand(configured, tableCollectionEditCommand("configureTableBinding", "e8", collection, aliasValue)); err != nil {
 					t.Fatalf("Configure columns rejected picker-admitted collection %q: %v", collection, err)
 				}
 				configuredBytes, _ := SerializeTemplate(configured)
@@ -103,10 +104,10 @@ func TestBindTableCollectionRefusalsAreTransactional(t *testing.T) {
 				command += `,"segments":` + tc.segments
 			}
 			command += `}`
-			if _, err := ApplyComponentCommand(tpl, []byte(command)); err == nil {
+			if _, err := applyComponentCommand(tpl, []byte(command)); err == nil {
 				t.Fatalf("unsupported collection succeeded: %s", command)
 			} else if tc.segments != "" {
-				var failure *ComponentCommandError
+				var failure *designer.ComponentCommandError
 				if !errors.As(err, &failure) || failure.ElementID != tc.id || (tc.id == "e8" && failure.DataPath != "table.collection") {
 					t.Fatalf("collection refusal was not located at its table and field: %v", err)
 				}
@@ -120,7 +121,7 @@ func TestBindTableCollectionRefusalsAreTransactional(t *testing.T) {
 	for _, extra := range []string{`,"alias":"new"`, `,"collection":"other[]"`, `,"columnId":"e9"`} {
 		tpl, _ := ParseTemplate(input)
 		before, _ := SerializeTemplate(tpl)
-		if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"bindTableCollection","version":1,"id":"e8","segments":["items"]`+extra+`}`)); err == nil {
+		if _, err := applyComponentCommand(tpl, []byte(`{"kind":"bindTableCollection","version":1,"id":"e8","segments":["items"]`+extra+`}`)); err == nil {
 			t.Fatalf("extra collection command field succeeded: %s", extra)
 		}
 		after, _ := SerializeTemplate(tpl)
@@ -160,7 +161,7 @@ func TestTableCollectionCommandsPreserveRelativeFooterSources(t *testing.T) {
 						t.Fatal(err)
 					}
 					before, _ := SerializeTemplate(tpl)
-					if _, err := ApplyComponentCommand(tpl, tableCollectionEditCommand(kind, "e1", collection, alias)); err != nil {
+					if _, err := applyComponentCommand(tpl, tableCollectionEditCommand(kind, "e1", collection, alias)); err != nil {
 						t.Fatal(err)
 					}
 					after, _ := SerializeTemplate(tpl)
@@ -169,7 +170,7 @@ func TestTableCollectionCommandsPreserveRelativeFooterSources(t *testing.T) {
 					if !bytes.Equal(after, want) {
 						t.Fatalf("collection change modified more than collection/footer prefixes: %s", after)
 					}
-					view, err := TableColumns(tpl, "e1")
+					view, err := tableColumns(tpl, "e1")
 					if err != nil || view.Columns[0].Footer != "sum" || view.Columns[1].Footer != "avg" || view.Columns[2].FooterOf != "" || view.Columns[3].FooterOf != "" || view.Columns[4].FooterOf != "" {
 						t.Fatalf("footer sources lost their explicit/derived/absent forms: %#v, %v", view, err)
 					}
@@ -206,17 +207,17 @@ func TestTableCollectionFooterSourceBoundIsTransactional(t *testing.T) {
 				}
 				before, _ := SerializeTemplate(tpl)
 				collection := strings.Repeat("a", tc.rootLength) + "[]"
-				_, err = ApplyComponentCommand(tpl, tableCollectionEditCommand(kind, "e1", collection, "txn"))
+				_, err = applyComponentCommand(tpl, tableCollectionEditCommand(kind, "e1", collection, "txn"))
 				if tc.accept {
 					if err != nil {
 						t.Fatal(err)
 					}
-					view, err := TableColumns(tpl, "e1")
+					view, err := tableColumns(tpl, "e1")
 					if err != nil || len(view.Columns[0].FooterOf) != 256 {
 						t.Fatalf("exact source bound did not stay editable: %#v, %v", view, err)
 					}
 				} else {
-					var failure *ComponentCommandError
+					var failure *designer.ComponentCommandError
 					if !errors.As(err, &failure) || failure.ElementID != "e1" || failure.DataPath != "column.footerOf" {
 						t.Fatalf("over-limit source lacks a located refusal: %v", err)
 					}
@@ -243,7 +244,7 @@ func componentTemplate(t *testing.T) *Template {
 	return tpl
 }
 
-func newProjectedComponent(t *testing.T, before, after CanvasProjection) CanvasComponent {
+func newProjectedComponent(t *testing.T, before, after designer.CanvasProjection) designer.CanvasComponent {
 	t.Helper()
 	known := map[string]bool{}
 	for _, component := range before.Components {
@@ -255,7 +256,7 @@ func newProjectedComponent(t *testing.T, before, after CanvasProjection) CanvasC
 		}
 	}
 	t.Fatal("command projection did not add a component")
-	return CanvasComponent{}
+	return designer.CanvasComponent{}
 }
 
 func pointLiteral(value int64) string {
@@ -269,11 +270,11 @@ func pointLiteral(value int64) string {
 func TestComponentCommandsCreateAllClosedKindsAndKeepOrder(t *testing.T) {
 	tpl := componentTemplate(t)
 	for _, kind := range []string{"text", "image", "table", "line", "rect"} {
-		before, err := Canvas(tpl)
+		before, err := canvas(tpl)
 		if err != nil {
 			t.Fatal(err)
 		}
-		projection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"`+kind+`","band":"content","x":12,"y":12,"width":72,"height":24,"snap":false}`))
+		projection, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"`+kind+`","band":"content","x":12,"y":12,"width":72,"height":24,"snap":false}`))
 		if err != nil {
 			t.Fatalf("create %s: %v", kind, err)
 		}
@@ -285,7 +286,7 @@ func TestComponentCommandsCreateAllClosedKindsAndKeepOrder(t *testing.T) {
 			t.Fatalf("table projection must be derived and non-resizable: %#v", component)
 		}
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"widget","band":"content","x":12,"y":12,"width":72,"height":24,"snap":false}`)); err == nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"widget","band":"content","x":12,"y":12,"width":72,"height":24,"snap":false}`)); err == nil {
 		t.Fatal("sixth component kind unexpectedly succeeded")
 	}
 }
@@ -296,14 +297,14 @@ func TestComponentCommandsSnapContainAndFailureAreTransactional(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	beforeProjection, err := Canvas(tpl)
+	beforeProjection, err := canvas(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"text","band":"content","x":3,"y":3,"width":72,"height":24,"snap":true}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"text","band":"content","x":3,"y":3,"width":72,"height":24,"snap":true}`)); err != nil {
 		t.Fatal(err)
 	}
-	projection, err := Canvas(tpl)
+	projection, err := canvas(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -318,7 +319,7 @@ func TestComponentCommandsSnapContainAndFailureAreTransactional(t *testing.T) {
 	if bytes.Equal(before, afterCreate) {
 		t.Fatal("successful component command did not change canonical bytes")
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"moveComponent","version":1,"id":"`+created.ID+`","x":999999,"y":0,"snap":false}`)); err == nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"moveComponent","version":1,"id":"`+created.ID+`","x":999999,"y":0,"snap":false}`)); err == nil {
 		t.Fatal("out-of-band move unexpectedly succeeded")
 	}
 	afterFailure, err := SerializeTemplate(tpl)
@@ -333,7 +334,7 @@ func TestBindComponentScalarOwnsRootExpressionAndPaintProjection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	projection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"bindComponentScalar","version":1,"id":"e1","segments":["customer","name"]}`))
+	projection, err := applyComponentCommand(tpl, []byte(`{"kind":"bindComponentScalar","version":1,"id":"e1","segments":["customer","name"]}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -351,7 +352,7 @@ func TestBindComponentScalarOwnsRootExpressionAndPaintProjection(t *testing.T) {
 		[]byte(`{"kind":"bindComponentScalar","version":1,"id":"e2","segments":["customer","name"]}`),
 		[]byte(`{"kind":"bindComponentScalar","version":1,"id":"e1","segments":["not-valid"]}`),
 	} {
-		if _, err := ApplyComponentCommand(tpl, command); err == nil {
+		if _, err := applyComponentCommand(tpl, command); err == nil {
 			t.Fatalf("invalid scalar bind unexpectedly succeeded: %s", command)
 		}
 		after, err := SerializeTemplate(tpl)
@@ -363,8 +364,8 @@ func TestBindComponentScalarOwnsRootExpressionAndPaintProjection(t *testing.T) {
 
 func TestPlacedImageStartsEmptyAndSurvivesTheRoundTripAndRender(t *testing.T) {
 	tpl := componentTemplate(t)
-	before, _ := Canvas(tpl)
-	placed, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"image","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
+	before, _ := canvas(tpl)
+	placed, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"image","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -488,7 +489,7 @@ func TestBindComponentScalarPreservesDecodedSegmentsAndRejectsTypedBindings(t *t
 	// This is legal command grammar even though a picker would withhold an
 	// observed collection. D-6.2.1 keeps sample runtime kind out of command
 	// legality; AD-14 reports any incompatible runtime value later.
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"bindComponentScalar","version":1,"id":"e1","segments":["items"]}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"bindComponentScalar","version":1,"id":"e1","segments":["items"]}`)); err != nil {
 		t.Fatalf("sample-independent collection-shaped path was rejected: %v", err)
 	}
 	collectionCanonical, err := SerializeTemplate(tpl)
@@ -507,7 +508,7 @@ func TestBindComponentScalarPreservesDecodedSegmentsAndRejectsTypedBindings(t *t
 		[]byte(`{"kind":"bindComponentScalar","version":1,"id":"e1","segments":["params","name"]}`),
 		[]byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"value":{"op":"set","value":"{{customer.name}}"}}}`),
 	} {
-		if _, err := ApplyComponentCommand(tpl, command); err == nil {
+		if _, err := applyComponentCommand(tpl, command); err == nil {
 			t.Fatalf("ambiguous or typed binding unexpectedly succeeded: %s", command)
 		}
 		after, err := SerializeTemplate(tpl)
@@ -515,7 +516,7 @@ func TestBindComponentScalarPreservesDecodedSegmentsAndRejectsTypedBindings(t *t
 			t.Fatalf("rejected command changed canonical bytes: %s, err=%v", command, err)
 		}
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"value":{"op":"set","value":"literal text"}}}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"value":{"op":"set","value":"literal text"}}}`)); err != nil {
 		t.Fatalf("literal text edit was rejected: %v", err)
 	}
 	after, err := SerializeTemplate(tpl)
@@ -524,7 +525,7 @@ func TestBindComponentScalarPreservesDecodedSegmentsAndRejectsTypedBindings(t *t
 	}
 }
 
-func componentByID(t *testing.T, projection CanvasProjection, id string) CanvasComponent {
+func componentByID(t *testing.T, projection designer.CanvasProjection, id string) designer.CanvasComponent {
 	t.Helper()
 	for _, component := range projection.Components {
 		if component.ID == id {
@@ -532,22 +533,22 @@ func componentByID(t *testing.T, projection CanvasProjection, id string) CanvasC
 		}
 	}
 	t.Fatalf("component %q is absent from projection", id)
-	return CanvasComponent{}
+	return designer.CanvasComponent{}
 }
 
 func TestComponentCommandsRejectTableResizeAndPreserveTableGeometry(t *testing.T) {
 	tpl := componentTemplate(t)
-	beforeProjection, err := Canvas(tpl)
+	beforeProjection, err := canvas(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
-	projection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"table","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
+	projection, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"table","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	table := newProjectedComponent(t, beforeProjection, projection)
 	before, _ := SerializeTemplate(tpl)
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"resizeComponent","version":1,"id":"`+table.ID+`","width":72,"height":24,"snap":false}`)); err == nil || !strings.Contains(err.Error(), "derived geometry") {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"resizeComponent","version":1,"id":"`+table.ID+`","width":72,"height":24,"snap":false}`)); err == nil || !strings.Contains(err.Error(), "derived geometry") {
 		t.Fatalf("table resize error = %v", err)
 	}
 	after, _ := SerializeTemplate(tpl)
@@ -560,11 +561,11 @@ func TestComponentCommandsRejectTableResizeAndPreserveTableGeometry(t *testing.T
 // New proportional behavior is exercised by table_proportions_test.go.
 func removeStarterColumn(t *testing.T, tpl *Template, id string) {
 	t.Helper()
-	view, err := TableColumns(tpl, id)
+	view, err := tableColumns(tpl, id)
 	if err != nil || len(view.Columns) != 1 {
 		t.Fatalf("starter column = %#v, err=%v", view, err)
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"removeTableColumn","version":1,"id":"`+id+`","columnId":"`+view.Columns[0].ID+`"}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"removeTableColumn","version":1,"id":"`+id+`","columnId":"`+view.Columns[0].ID+`"}`)); err != nil {
 		t.Fatal(err)
 	}
 	_, _, _, element, _ := findComponent(tpl, id)
@@ -574,20 +575,20 @@ func removeStarterColumn(t *testing.T, tpl *Template, id string) {
 
 func TestTableColumnCommandsAreClosedCanonicalAndDerived(t *testing.T) {
 	tpl := componentTemplate(t)
-	before, err := Canvas(tpl)
+	before, err := canvas(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
-	projection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"table","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
+	projection, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"table","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	table := newProjectedComponent(t, before, projection)
 	removeStarterColumn(t, tpl, table.ID)
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"addTableColumn","version":1,"id":"`+table.ID+`","index":0}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"addTableColumn","version":1,"id":"`+table.ID+`","index":0}`)); err != nil {
 		t.Fatal(err)
 	}
-	view, err := TableColumns(tpl, table.ID)
+	view, err := tableColumns(tpl, table.ID)
 	if err != nil || len(view.Columns) != 1 || view.Columns[0].Width != 72000 || view.Columns[0].Align != "left" || !view.Columns[0].RowFieldEditable {
 		t.Fatalf("column projection = %#v, err=%v", view, err)
 	}
@@ -598,22 +599,22 @@ func TestTableColumnCommandsAreClosedCanonicalAndDerived(t *testing.T) {
 		[]byte(`{"kind":"updateTableColumn","version":1,"id":"` + table.ID + `","columnId":"` + column.ID + `","field":"align","value":"right"}`),
 		[]byte(`{"kind":"addTableColumn","version":1,"id":"` + table.ID + `","index":1}`),
 	} {
-		if _, err := ApplyComponentCommand(tpl, command); err != nil {
+		if _, err := applyComponentCommand(tpl, command); err != nil {
 			t.Fatalf("apply %s: %v", command, err)
 		}
 	}
-	view, err = TableColumns(tpl, table.ID)
+	view, err = tableColumns(tpl, table.ID)
 	if err != nil || len(view.Columns) != 2 || view.Columns[0].Header != "Amount" || view.Columns[0].Width != 96000 || view.Columns[0].Align != "right" {
 		t.Fatalf("edited projection = %#v, err=%v", view, err)
 	}
-	canvas, err := Canvas(tpl)
+	canvas, err := canvas(tpl)
 	if err != nil || componentByID(t, canvas, table.ID).Width != 168000 {
 		t.Fatalf("derived table width = %#v, err=%v", canvas, err)
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"moveTableColumn","version":1,"id":"`+table.ID+`","columnId":"`+view.Columns[1].ID+`","toIndex":0}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"moveTableColumn","version":1,"id":"`+table.ID+`","columnId":"`+view.Columns[1].ID+`","toIndex":0}`)); err != nil {
 		t.Fatal(err)
 	}
-	view, _ = TableColumns(tpl, table.ID)
+	view, _ = tableColumns(tpl, table.ID)
 	if view.Columns[0].ID == column.ID {
 		t.Fatal("move did not preserve engine ordered columns")
 	}
@@ -625,17 +626,17 @@ func TestTableColumnCommandsAreClosedCanonicalAndDerived(t *testing.T) {
 
 func TestTableColumnRejectionsDoNotMutate(t *testing.T) {
 	tpl := componentTemplate(t)
-	before, _ := Canvas(tpl)
-	projection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"table","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
+	before, _ := canvas(tpl)
+	projection, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"table","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	table := newProjectedComponent(t, before, projection)
 	removeStarterColumn(t, tpl, table.ID)
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"addTableColumn","version":1,"id":"`+table.ID+`","index":0}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"addTableColumn","version":1,"id":"`+table.ID+`","index":0}`)); err != nil {
 		t.Fatal(err)
 	}
-	view, _ := TableColumns(tpl, table.ID)
+	view, _ := tableColumns(tpl, table.ID)
 	canonical, _ := SerializeTemplate(tpl)
 	for _, command := range [][]byte{
 		[]byte(`{"kind":"updateTableColumn","version":1,"id":"` + table.ID + `","columnId":"` + view.Columns[0].ID + `","field":"width","value":0}`),
@@ -643,7 +644,7 @@ func TestTableColumnRejectionsDoNotMutate(t *testing.T) {
 		[]byte(`{"kind":"removeTableColumn","version":1,"id":"` + table.ID + `","columnId":"missing"}`),
 		[]byte(`{"kind":"addTableColumn","version":1,"id":"` + table.ID + `","index":3}`),
 	} {
-		if _, err := ApplyComponentCommand(tpl, command); err == nil {
+		if _, err := applyComponentCommand(tpl, command); err == nil {
 			t.Fatalf("invalid command succeeded: %s", command)
 		}
 		after, _ := SerializeTemplate(tpl)
@@ -655,58 +656,58 @@ func TestTableColumnRejectionsDoNotMutate(t *testing.T) {
 
 func TestTableColumnCommandsAreTransactionalAtThePublicSeam(t *testing.T) {
 	tpl := componentTemplate(t)
-	before, _ := Canvas(tpl)
-	projection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"table","band":"content","x":500,"y":0,"width":72,"height":24,"snap":false}`))
+	before, _ := canvas(tpl)
+	projection, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"table","band":"content","x":500,"y":0,"width":72,"height":24,"snap":false}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	table := newProjectedComponent(t, before, projection)
 	removeStarterColumn(t, tpl, table.ID)
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"moveComponent","version":1,"id":"`+table.ID+`","x":500,"y":0,"snap":false}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"moveComponent","version":1,"id":"`+table.ID+`","x":500,"y":0,"snap":false}`)); err != nil {
 		t.Fatal(err)
 	}
 	canonical, _ := SerializeTemplate(tpl)
 	// addTableColumn reaches containment only after adding the candidate column;
 	// direct callers must still retain their original canonical template.
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"addTableColumn","version":1,"id":"`+table.ID+`","index":0}`)); err == nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"addTableColumn","version":1,"id":"`+table.ID+`","index":0}`)); err == nil {
 		t.Fatal("out-of-band add unexpectedly succeeded")
 	}
 	after, _ := SerializeTemplate(tpl)
 	if !bytes.Equal(canonical, after) {
 		t.Fatal("rejected add mutated the public caller template")
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"addTableColumn","version":1,"id":"`+table.ID+`","index":0}`)); err == nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"addTableColumn","version":1,"id":"`+table.ID+`","index":0}`)); err == nil {
 		t.Fatal("a rejected candidate consumed an id or changed later command behavior")
 	}
 }
 
 func TestTableColumnProjectionCapRejectsThe129thCommandWithoutMutation(t *testing.T) {
 	tpl := componentTemplate(t)
-	before, _ := Canvas(tpl)
-	projection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"table","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
+	before, _ := canvas(tpl)
+	projection, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"table","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	table := newProjectedComponent(t, before, projection)
 	removeStarterColumn(t, tpl, table.ID)
 	for index := 0; index < maxTableColumns; index++ {
-		if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"addTableColumn","version":1,"id":"`+table.ID+`","index":`+strconv.Itoa(index)+`}`)); err != nil {
+		if _, err := applyComponentCommand(tpl, []byte(`{"kind":"addTableColumn","version":1,"id":"`+table.ID+`","index":`+strconv.Itoa(index)+`}`)); err != nil {
 			t.Fatalf("add %d: %v", index+1, err)
 		}
-		view, err := TableColumns(tpl, table.ID)
+		view, err := tableColumns(tpl, table.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateTableColumn","version":1,"id":"`+table.ID+`","columnId":"`+view.Columns[index].ID+`","field":"width","value":0.001}`)); err != nil {
+		if _, err := applyComponentCommand(tpl, []byte(`{"kind":"updateTableColumn","version":1,"id":"`+table.ID+`","columnId":"`+view.Columns[index].ID+`","field":"width","value":0.001}`)); err != nil {
 			t.Fatalf("shrink %d: %v", index+1, err)
 		}
 	}
-	view, err := TableColumns(tpl, table.ID)
+	view, err := tableColumns(tpl, table.ID)
 	if err != nil || len(view.Columns) != maxTableColumns {
 		t.Fatalf("128-column projection = %#v, err=%v", view, err)
 	}
 	canonical, _ := SerializeTemplate(tpl)
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"addTableColumn","version":1,"id":"`+table.ID+`","index":128}`)); err == nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"addTableColumn","version":1,"id":"`+table.ID+`","index":128}`)); err == nil {
 		t.Fatal("129th editor-unprojectable column unexpectedly succeeded")
 	}
 	after, _ := SerializeTemplate(tpl)
@@ -717,17 +718,17 @@ func TestTableColumnProjectionCapRejectsThe129thCommandWithoutMutation(t *testin
 
 func TestTableDataBindingAndFooterCommandsAreCanonicalAndTransactional(t *testing.T) {
 	tpl := componentTemplate(t)
-	before, _ := Canvas(tpl)
-	projection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"table","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
+	before, _ := canvas(tpl)
+	projection, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"table","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	table := newProjectedComponent(t, before, projection)
 	removeStarterColumn(t, tpl, table.ID)
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"addTableColumn","version":1,"id":"`+table.ID+`","index":0}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"addTableColumn","version":1,"id":"`+table.ID+`","index":0}`)); err != nil {
 		t.Fatal(err)
 	}
-	view, err := TableColumns(tpl, table.ID)
+	view, err := tableColumns(tpl, table.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -737,11 +738,11 @@ func TestTableDataBindingAndFooterCommandsAreCanonicalAndTransactional(t *testin
 		[]byte(`{"kind":"updateTableColumnBinding","version":1,"id":"` + table.ID + `","columnId":"` + column.ID + `","field":"amount"}`),
 		[]byte(`{"kind":"updateTableColumnFooter","version":1,"id":"` + table.ID + `","columnId":"` + column.ID + `","footer":"sum","footerOf":"","footerFormat":""}`),
 	} {
-		if _, err := ApplyComponentCommand(tpl, command); err != nil {
+		if _, err := applyComponentCommand(tpl, command); err != nil {
 			t.Fatalf("apply %s: %v", command, err)
 		}
 	}
-	view, err = TableColumns(tpl, table.ID)
+	view, err = tableColumns(tpl, table.ID)
 	if err != nil || view.Collection != "transactions[]" || view.Alias != "transaction" || view.Columns[0].Binding != "{{transaction.amount}}" || view.Columns[0].Footer != "sum" {
 		t.Fatalf("data projection = %#v, err=%v", view, err)
 	}
@@ -760,7 +761,7 @@ func TestTableDataBindingAndFooterCommandsAreCanonicalAndTransactional(t *testin
 		[]byte(`{"kind":"updateTableColumnBinding","version":1,"id":"` + table.ID + `","columnId":"` + column.ID + `","field":"bare row"}`),
 		[]byte(`{"kind":"updateTableColumnFooter","version":1,"id":"` + table.ID + `","columnId":"` + column.ID + `","footer":"count","footerOf":"transactions.amount","footerFormat":""}`),
 	} {
-		if _, err := ApplyComponentCommand(tpl, rejected); err == nil {
+		if _, err := applyComponentCommand(tpl, rejected); err == nil {
 			t.Fatalf("rejected command succeeded: %s", rejected)
 		}
 		after, _ := SerializeTemplate(tpl)
@@ -772,23 +773,23 @@ func TestTableDataBindingAndFooterCommandsAreCanonicalAndTransactional(t *testin
 
 func TestTableAliasMigrationReservedRootsAndStrictEnvelope(t *testing.T) {
 	tpl := componentTemplate(t)
-	before, _ := Canvas(tpl)
-	projection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"table","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
+	before, _ := canvas(tpl)
+	projection, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"table","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	table := newProjectedComponent(t, before, projection)
 	removeStarterColumn(t, tpl, table.ID)
 	for index := 0; index < 3; index++ {
-		if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"addTableColumn","version":1,"id":"`+table.ID+`","index":`+strconv.Itoa(index)+`}`)); err != nil {
+		if _, err := applyComponentCommand(tpl, []byte(`{"kind":"addTableColumn","version":1,"id":"`+table.ID+`","index":`+strconv.Itoa(index)+`}`)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	view, _ := TableColumns(tpl, table.ID)
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"configureTableBinding","version":1,"id":"`+table.ID+`","collection":"transactions[]","alias":"transaction"}`)); err != nil {
+	view, _ := tableColumns(tpl, table.ID)
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"configureTableBinding","version":1,"id":"`+table.ID+`","collection":"transactions[]","alias":"transaction"}`)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateTableColumnBinding","version":1,"id":"`+table.ID+`","columnId":"`+view.Columns[0].ID+`","field":"params.value"}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"updateTableColumnBinding","version":1,"id":"`+table.ID+`","columnId":"`+view.Columns[0].ID+`","field":"params.value"}`)); err != nil {
 		t.Fatal(err)
 	}
 	// A formatNumber row expression is a legal persisted source and must migrate
@@ -799,16 +800,16 @@ func TestTableAliasMigrationReservedRootsAndStrictEnvelope(t *testing.T) {
 	}
 	tableElement.Table.Value.Columns[1].Bind = `{{formatNumber(transaction.amount, "#,##0.00")}}`
 	tableElement.Table.Value.Columns[2].Bind = `{{params.value}}`
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"configureTableBinding","version":1,"id":"`+table.ID+`","collection":"transactions[]","alias":"item"}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"configureTableBinding","version":1,"id":"`+table.ID+`","collection":"transactions[]","alias":"item"}`)); err != nil {
 		t.Fatal(err)
 	}
-	view, err = TableColumns(tpl, table.ID)
+	view, err = tableColumns(tpl, table.ID)
 	if err != nil || view.Alias != "item" || view.Columns[0].Binding != "{{item.params.value}}" || view.Columns[1].Binding != `{{formatNumber(item.amount, "#,##0.00")}}` || view.Columns[2].Binding != "{{params.value}}" {
 		t.Fatalf("migrated projection = %#v, err=%v", view, err)
 	}
 	canonical, _ := SerializeTemplate(tpl)
 	for _, alias := range []string{"params", "page", "pages"} {
-		if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"configureTableBinding","version":1,"id":"`+table.ID+`","collection":"transactions[]","alias":"`+alias+`"}`)); err == nil {
+		if _, err := applyComponentCommand(tpl, []byte(`{"kind":"configureTableBinding","version":1,"id":"`+table.ID+`","collection":"transactions[]","alias":"`+alias+`"}`)); err == nil {
 			t.Fatalf("reserved alias %q succeeded", alias)
 		}
 		after, _ := SerializeTemplate(tpl)
@@ -816,7 +817,7 @@ func TestTableAliasMigrationReservedRootsAndStrictEnvelope(t *testing.T) {
 			t.Fatalf("reserved alias %q mutated bytes", alias)
 		}
 	}
-	if _, err := ApplyComponentCommand(tpl, append([]byte(`{"kind":"configureTableBinding","version":1,"id":"`+table.ID+`","collection":"transactions[]","alias":"sale"}`), []byte(` {}`)...)); err == nil {
+	if _, err := applyComponentCommand(tpl, append([]byte(`{"kind":"configureTableBinding","version":1,"id":"`+table.ID+`","collection":"transactions[]","alias":"sale"}`), []byte(` {}`)...)); err == nil {
 		t.Fatal("concatenated command succeeded")
 	}
 	if _, err := ParseTemplate(canonical); err != nil {
@@ -826,7 +827,7 @@ func TestTableAliasMigrationReservedRootsAndStrictEnvelope(t *testing.T) {
 
 func TestDropComponentUsesGoHalfOpenBandHitTesting(t *testing.T) {
 	tpl := componentTemplate(t)
-	canvas, err := Canvas(tpl)
+	initial, err := canvas(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -834,13 +835,13 @@ func TestDropComponentUsesGoHalfOpenBandHitTesting(t *testing.T) {
 		band string
 		y    int64
 	}{
-		{"pageHeader", canvas.Bands[0].Y},
-		{"content", canvas.Bands[1].Y},
-		{"pageFooter", canvas.Bands[2].Y},
+		{"pageHeader", initial.Bands[0].Y},
+		{"content", initial.Bands[1].Y},
+		{"pageFooter", initial.Bands[2].Y},
 	} {
-		before, _ := Canvas(tpl)
+		before, _ := canvas(tpl)
 		command := []byte(`{"kind":"dropComponent","version":1,"type":"text","x":36,"y":` + pointLiteral(want.y) + `,"snap":false}`)
-		after, err := ApplyComponentCommand(tpl, command)
+		after, err := applyComponentCommand(tpl, command)
 		if err != nil {
 			t.Fatalf("drop %s: %v", want.band, err)
 		}
@@ -849,7 +850,7 @@ func TestDropComponentUsesGoHalfOpenBandHitTesting(t *testing.T) {
 		}
 	}
 	before, _ := SerializeTemplate(tpl)
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"dropComponent","version":1,"type":"text","x":35.999,"y":36,"snap":false}`)); err == nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"dropComponent","version":1,"type":"text","x":35.999,"y":36,"snap":false}`)); err == nil {
 		t.Fatal("drop on the left page edge unexpectedly succeeded")
 	}
 	after, _ := SerializeTemplate(tpl)
@@ -889,10 +890,10 @@ func TestImageDropsFitAtTheirOriginInHeaderAndFooter(t *testing.T) {
 			} {
 				t.Run(fmt.Sprintf("%s/snap=%t/%s", bandName, snap, tc.name), func(t *testing.T) {
 					tpl := imageDropTemplate(t, 197000, 61000)
-					before, _ := Canvas(tpl)
+					before, _ := canvas(tpl)
 					band := projectedBands(t, tpl)[bandName]
 					command := fmt.Sprintf(`{"kind":"dropComponent","version":1,"type":"image","x":%s,"y":%s,"snap":%t}`, pointLiteral(band.X+tc.x), pointLiteral(band.Y+tc.y), snap)
-					after, err := ApplyComponentCommand(tpl, []byte(command))
+					after, err := applyComponentCommand(tpl, []byte(command))
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -911,9 +912,9 @@ func TestImageDropsFitAtTheirOriginInHeaderAndFooter(t *testing.T) {
 			}
 			t.Run(fmt.Sprintf("%s/snap=%t/grid boundary", bandName, snap), func(t *testing.T) {
 				tpl := imageDropTemplate(t, 96000, 48000)
-				before, _ := Canvas(tpl)
+				before, _ := canvas(tpl)
 				band := projectedBands(t, tpl)[bandName]
-				after, err := ApplyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"dropComponent","version":1,"type":"image","x":%s,"y":%s,"snap":%t}`, pointLiteral(band.X+95999), pointLiteral(band.Y+47999), snap)))
+				after, err := applyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"dropComponent","version":1,"type":"image","x":%s,"y":%s,"snap":%t}`, pointLiteral(band.X+95999), pointLiteral(band.Y+47999), snap)))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -937,8 +938,8 @@ func TestImageDropsResizeToUndersizedBands(t *testing.T) {
 				t.Run(fmt.Sprintf("%s/snap=%t/%dx%d", bandName, snap, size.width, size.height), func(t *testing.T) {
 					tpl := imageDropTemplate(t, size.width, size.height)
 					band := projectedBands(t, tpl)[bandName]
-					before, _ := Canvas(tpl)
-					after, err := ApplyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"dropComponent","version":1,"type":"image","x":%s,"y":%s,"snap":%t}`, pointLiteral(band.X), pointLiteral(band.Y), snap)))
+					before, _ := canvas(tpl)
+					after, err := applyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"dropComponent","version":1,"type":"image","x":%s,"y":%s,"snap":%t}`, pointLiteral(band.X), pointLiteral(band.Y), snap)))
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -969,8 +970,8 @@ func TestImageDropKeepsContentAndHalfOpenHitTesting(t *testing.T) {
 				{content.Y + content.Height - 1, "content"},
 				{content.Y + content.Height, "pageFooter"},
 			} {
-				before, _ := Canvas(tpl)
-				after, err := ApplyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"dropComponent","version":1,"type":"image","x":%s,"y":%s,"snap":%t}`, pointLiteral(content.X), pointLiteral(tc.y), snap)))
+				before, _ := canvas(tpl)
+				after, err := applyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"dropComponent","version":1,"type":"image","x":%s,"y":%s,"snap":%t}`, pointLiteral(content.X), pointLiteral(tc.y), snap)))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -988,7 +989,7 @@ func TestImageDropKeepsContentAndHalfOpenHitTesting(t *testing.T) {
 				{header.X + header.Width, header.Y}, {footer.X, footer.Y + footer.Height},
 			} {
 				before, _ := SerializeTemplate(tpl)
-				_, err := ApplyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"dropComponent","version":1,"type":"image","x":%s,"y":%s,"snap":%t}`, pointLiteral(point[0]), pointLiteral(point[1]), snap)))
+				_, err := applyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"dropComponent","version":1,"type":"image","x":%s,"y":%s,"snap":%t}`, pointLiteral(point[0]), pointLiteral(point[1]), snap)))
 				if err == nil {
 					t.Fatalf("drop at (%d,%d) unexpectedly succeeded", point[0], point[1])
 				}
@@ -1005,8 +1006,8 @@ func TestImagePaletteFitKeepsExplicitGeometryStrict(t *testing.T) {
 		for _, snap := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/snap=%t", bandName, snap), func(t *testing.T) {
 				tpl := imageDropTemplate(t, 197000, 61000)
-				before, _ := Canvas(tpl)
-				created, err := ApplyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"createComponent","version":1,"type":"image","band":%q,"x":0,"y":0,"width":96,"height":48,"snap":false}`, bandName)))
+				before, _ := canvas(tpl)
+				created, err := applyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"createComponent","version":1,"type":"image","band":%q,"x":0,"y":0,"width":96,"height":48,"snap":false}`, bandName)))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -1020,7 +1021,7 @@ func TestImagePaletteFitKeepsExplicitGeometryStrict(t *testing.T) {
 					fmt.Sprintf(`{"kind":"dropComponent","version":1,"type":"rect","x":%s,"y":%s,"snap":%t}`, pointLiteral(band.X), pointLiteral(band.Y+band.Height-1), snap),
 				} {
 					canonical, _ := SerializeTemplate(tpl)
-					if _, err := ApplyComponentCommand(tpl, []byte(command)); err == nil {
+					if _, err := applyComponentCommand(tpl, []byte(command)); err == nil {
 						t.Fatalf("out-of-bounds command unexpectedly succeeded: %s", command)
 					}
 					if after, _ := SerializeTemplate(tpl); !bytes.Equal(canonical, after) {
@@ -1034,15 +1035,15 @@ func TestImagePaletteFitKeepsExplicitGeometryStrict(t *testing.T) {
 
 func TestSetComponentBoundsMovesOriginAndSizeInOneCommand(t *testing.T) {
 	tpl := componentTemplate(t)
-	before, _ := Canvas(tpl)
-	createdProjection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"rect","band":"content","x":36,"y":36,"width":72,"height":24,"snap":false}`))
+	before, _ := canvas(tpl)
+	createdProjection, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"rect","band":"content","x":36,"y":36,"width":72,"height":24,"snap":false}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	created := newProjectedComponent(t, before, createdProjection)
 	// A north-west drag: the origin and the size move together, which is the
 	// whole reason this command exists next to move and resize.
-	bounded, err := ApplyComponentCommand(tpl, []byte(`{"kind":"setComponentBounds","version":1,"id":"`+created.ID+`","x":24.005,"y":12.006,"width":84.007,"height":48.008,"snap":false}`))
+	bounded, err := applyComponentCommand(tpl, []byte(`{"kind":"setComponentBounds","version":1,"id":"`+created.ID+`","x":24.005,"y":12.006,"width":84.007,"height":48.008,"snap":false}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1055,7 +1056,7 @@ func TestSetComponentBoundsMovesOriginAndSizeInOneCommand(t *testing.T) {
 	// all, so the clause Story 7.5 lifted had zero coverage here on either
 	// side of the change. 2400pt is roughly three and a half windows down a
 	// content band 679.89pt tall.
-	tall, err := ApplyComponentCommand(tpl, []byte(`{"kind":"setComponentBounds","version":1,"id":"`+created.ID+`","x":0,"y":2400,"width":72,"height":24,"snap":false}`))
+	tall, err := applyComponentCommand(tpl, []byte(`{"kind":"setComponentBounds","version":1,"id":"`+created.ID+`","x":0,"y":2400,"width":72,"height":24,"snap":false}`))
 	if err != nil {
 		t.Fatalf("bounds three windows below the band foot were refused: %v", err)
 	}
@@ -1073,7 +1074,7 @@ func TestSetComponentBoundsMovesOriginAndSizeInOneCommand(t *testing.T) {
 		"past band width": `{"kind":"setComponentBounds","version":1,"id":"` + created.ID + `","x":0,"y":0,"width":100000,"height":24,"snap":false}`,
 		"unknown id":      `{"kind":"setComponentBounds","version":1,"id":"nope","x":0,"y":0,"width":72,"height":24,"snap":false}`,
 	} {
-		if _, err := ApplyComponentCommand(tpl, []byte(command)); err == nil {
+		if _, err := applyComponentCommand(tpl, []byte(command)); err == nil {
 			t.Fatalf("%s unexpectedly succeeded", name)
 		}
 		if after, _ := SerializeTemplate(tpl); !bytes.Equal(canonical, after) {
@@ -1084,13 +1085,13 @@ func TestSetComponentBoundsMovesOriginAndSizeInOneCommand(t *testing.T) {
 
 func TestSnapDoesNotPushAnEdgeDragOutOfItsBand(t *testing.T) {
 	tpl := componentTemplate(t)
-	before, _ := Canvas(tpl)
-	createdProjection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"rect","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
+	before, _ := canvas(tpl)
+	createdProjection, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"rect","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	created := newProjectedComponent(t, before, createdProjection)
-	var band CanvasBand
+	var band designer.CanvasBand
 	for _, candidate := range createdProjection.Bands {
 		if candidate.Name == "content" {
 			band = candidate
@@ -1103,12 +1104,12 @@ func TestSnapDoesNotPushAnEdgeDragOutOfItsBand(t *testing.T) {
 	// round this away from the band, and rounding alone must not turn a legal
 	// drag into a refusal the designer shows as a bounce back.
 	edgeX, edgeY := band.Width-created.Width, band.Height-created.Height
-	moved, err := ApplyComponentCommand(tpl, []byte(`{"kind":"moveComponent","version":1,"id":"`+created.ID+`","x":`+literal(edgeX)+`,"y":`+literal(edgeY)+`,"snap":true}`))
+	moved, err := applyComponentCommand(tpl, []byte(`{"kind":"moveComponent","version":1,"id":"`+created.ID+`","x":`+literal(edgeX)+`,"y":`+literal(edgeY)+`,"snap":true}`))
 	if err != nil {
 		t.Fatalf("edge move with snapping was refused: %v", err)
 	}
 	component := newProjectedComponent(t, before, moved)
-	if component.X%GridIncrement != 0 || component.Y%GridIncrement != 0 {
+	if component.X%designer.GridIncrement != 0 || component.Y%designer.GridIncrement != 0 {
 		t.Fatalf("pulled-back origin = (%d,%d), want grid multiples", component.X, component.Y)
 	}
 	// THE X HALF ONLY, since Story 7.5. The pull-back is a rescue of the
@@ -1118,11 +1119,11 @@ func TestSnapDoesNotPushAnEdgeDragOutOfItsBand(t *testing.T) {
 	if component.X+component.Width > band.Width {
 		t.Fatalf("pulled-back geometry (%d,%d,%d,%d) leaves band width %d", component.X, component.Y, component.Width, component.Height, band.Width)
 	}
-	if edgeX-component.X >= GridIncrement {
+	if edgeX-component.X >= designer.GridIncrement {
 		t.Fatalf("pull-back moved x %d further than one grid step from %d", component.X, edgeX)
 	}
 	// Same for a bounds drag that lands its far edges exactly on the band.
-	bounded, err := ApplyComponentCommand(tpl, []byte(`{"kind":"setComponentBounds","version":1,"id":"`+created.ID+`","x":`+literal(edgeX)+`,"y":`+literal(edgeY)+`,"width":`+literal(created.Width)+`,"height":`+literal(created.Height)+`,"snap":true}`))
+	bounded, err := applyComponentCommand(tpl, []byte(`{"kind":"setComponentBounds","version":1,"id":"`+created.ID+`","x":`+literal(edgeX)+`,"y":`+literal(edgeY)+`,"width":`+literal(created.Width)+`,"height":`+literal(created.Height)+`,"snap":true}`))
 	if err != nil {
 		t.Fatalf("edge bounds with snapping was refused: %v", err)
 	}
@@ -1134,10 +1135,10 @@ func TestSnapDoesNotPushAnEdgeDragOutOfItsBand(t *testing.T) {
 	// caller asking for geometry a whole grid step outside is still refused.
 	canonical, _ := SerializeTemplate(tpl)
 	for name, command := range map[string]string{
-		"a grid step past the right edge": `{"kind":"moveComponent","version":1,"id":"` + created.ID + `","x":` + literal(edgeX+GridIncrement) + `,"y":0,"snap":true}`,
-		"far past the right edge":         `{"kind":"setComponentBounds","version":1,"id":"` + created.ID + `","x":` + literal(edgeX+100*GridIncrement) + `,"y":0,"width":72,"height":24,"snap":true}`,
+		"a grid step past the right edge": `{"kind":"moveComponent","version":1,"id":"` + created.ID + `","x":` + literal(edgeX+designer.GridIncrement) + `,"y":0,"snap":true}`,
+		"far past the right edge":         `{"kind":"setComponentBounds","version":1,"id":"` + created.ID + `","x":` + literal(edgeX+100*designer.GridIncrement) + `,"y":0,"width":72,"height":24,"snap":true}`,
 	} {
-		if _, err := ApplyComponentCommand(tpl, []byte(command)); err == nil {
+		if _, err := applyComponentCommand(tpl, []byte(command)); err == nil {
 			t.Fatalf("%s unexpectedly succeeded", name)
 		}
 		if after, _ := SerializeTemplate(tpl); !bytes.Equal(canonical, after) {
@@ -1152,12 +1153,12 @@ func TestSnapDoesNotPushAnEdgeDragOutOfItsBand(t *testing.T) {
 	// drag is accepted, still snaps to the grid, and is what the canonical
 	// bytes carry back on the next load.
 	far := band.Height*3 + 4321
-	dropped, err := ApplyComponentCommand(tpl, []byte(`{"kind":"moveComponent","version":1,"id":"`+created.ID+`","x":0,"y":`+literal(far)+`,"snap":true}`))
+	dropped, err := applyComponentCommand(tpl, []byte(`{"kind":"moveComponent","version":1,"id":"`+created.ID+`","x":0,"y":`+literal(far)+`,"snap":true}`))
 	if err != nil {
 		t.Fatalf("a content drag three windows below the band was refused: %v", err)
 	}
 	component = newProjectedComponent(t, before, dropped)
-	if component.Y%GridIncrement != 0 {
+	if component.Y%designer.GridIncrement != 0 {
 		t.Fatalf("snapped y = %d, want a grid multiple", component.Y)
 	}
 	if component.Y <= band.Height {
@@ -1173,7 +1174,7 @@ func TestSnapDoesNotPushAnEdgeDragOutOfItsBand(t *testing.T) {
 // named component as the fresh projection sees it — a full round trip through
 // the canonical form, which is the only way to show that a placement PERSISTS
 // rather than merely being accepted by one command.
-func reloadedComponent(t *testing.T, tpl *Template, id string) CanvasComponent {
+func reloadedComponent(t *testing.T, tpl *Template, id string) designer.CanvasComponent {
 	t.Helper()
 	canonical, err := SerializeTemplate(tpl)
 	if err != nil {
@@ -1183,7 +1184,7 @@ func reloadedComponent(t *testing.T, tpl *Template, id string) CanvasComponent {
 	if err != nil {
 		t.Fatalf("canonical bytes did not load back: %v", err)
 	}
-	projection, err := Canvas(reloaded)
+	projection, err := canvas(reloaded)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1193,18 +1194,18 @@ func reloadedComponent(t *testing.T, tpl *Template, id string) CanvasComponent {
 		}
 	}
 	t.Fatalf("component %q is absent from the reloaded projection", id)
-	return CanvasComponent{}
+	return designer.CanvasComponent{}
 }
 
 func TestComponentMoveResizeDeleteAreExactAndMonotonic(t *testing.T) {
 	tpl := componentTemplate(t)
-	before, _ := Canvas(tpl)
-	createdProjection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"rect","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
+	before, _ := canvas(tpl)
+	createdProjection, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"rect","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	created := newProjectedComponent(t, before, createdProjection)
-	moved, err := ApplyComponentCommand(tpl, []byte(`{"kind":"moveComponent","version":1,"id":"`+created.ID+`","x":1.001,"y":2.002,"snap":false}`))
+	moved, err := applyComponentCommand(tpl, []byte(`{"kind":"moveComponent","version":1,"id":"`+created.ID+`","x":1.001,"y":2.002,"snap":false}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1212,7 +1213,7 @@ func TestComponentMoveResizeDeleteAreExactAndMonotonic(t *testing.T) {
 	if component.X != 1001 || component.Y != 2002 {
 		t.Fatalf("move units = (%d,%d), want (1001,2002)", component.X, component.Y)
 	}
-	resized, err := ApplyComponentCommand(tpl, []byte(`{"kind":"resizeComponent","version":1,"id":"`+created.ID+`","width":73.003,"height":25.004,"snap":false}`))
+	resized, err := applyComponentCommand(tpl, []byte(`{"kind":"resizeComponent","version":1,"id":"`+created.ID+`","width":73.003,"height":25.004,"snap":false}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1220,11 +1221,11 @@ func TestComponentMoveResizeDeleteAreExactAndMonotonic(t *testing.T) {
 	if component.Width != 73003 || component.Height != 25004 {
 		t.Fatalf("resize units = (%d,%d), want (73003,25004)", component.Width, component.Height)
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"deleteComponent","version":1,"id":"`+created.ID+`"}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"deleteComponent","version":1,"id":"`+created.ID+`"}`)); err != nil {
 		t.Fatal(err)
 	}
-	beforeNext, _ := Canvas(tpl)
-	next, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"line","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
+	beforeNext, _ := canvas(tpl)
+	next, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"line","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1236,13 +1237,13 @@ func TestComponentMoveResizeDeleteAreExactAndMonotonic(t *testing.T) {
 // projectedBands is the three CanvasBands of a template, by name, so a test
 // can probe containComponent with the same rectangles the command path hands
 // it rather than with numbers it invented.
-func projectedBands(t *testing.T, tpl *Template) map[string]CanvasBand {
+func projectedBands(t *testing.T, tpl *Template) map[string]designer.CanvasBand {
 	t.Helper()
-	projection, err := Canvas(tpl)
+	projection, err := canvas(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
-	bands := make(map[string]CanvasBand, len(projection.Bands))
+	bands := make(map[string]designer.CanvasBand, len(projection.Bands))
 	for _, band := range projection.Bands {
 		bands[band.Name] = band
 	}
@@ -1338,11 +1339,11 @@ func TestBandContainmentRefusalsCarryTheirExactMessages(t *testing.T) {
 // band messages — nothing asserted it before.
 func TestJavaScriptSafeGeometryBoundRefusalsCarryTheirExactMessages(t *testing.T) {
 	tpl := componentTemplate(t)
-	before, err := Canvas(tpl)
+	before, err := canvas(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
-	createdProjection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"rect","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
+	createdProjection, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"rect","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1350,7 +1351,7 @@ func TestJavaScriptSafeGeometryBoundRefusalsCarryTheirExactMessages(t *testing.T
 	// One millipoint past Number.MAX_SAFE_INTEGER, as the command's own
 	// three-decimal point literal.
 	const past = "9007199254740.992"
-	_, err = ApplyComponentCommand(tpl, []byte(`{"kind":"moveComponent","version":1,"id":"`+created.ID+`","x":0,"y":`+past+`,"snap":false}`))
+	_, err = applyComponentCommand(tpl, []byte(`{"kind":"moveComponent","version":1,"id":"`+created.ID+`","x":0,"y":`+past+`,"snap":false}`))
 	if want := "folio8: component.y: y exceeds the JavaScript-safe geometry bound"; err == nil || err.Error() != want {
 		t.Fatalf("move past the JavaScript-safe bound = %v, want exactly %q", err, want)
 	}
@@ -1362,8 +1363,8 @@ func TestJavaScriptSafeGeometryBoundRefusalsCarryTheirExactMessages(t *testing.T
 	if len(stranded.doc.Bands.Content.Elements) == 0 {
 		t.Fatal("fixture has no content element to strand")
 	}
-	stranded.doc.Bands.Content.Elements[0].X = geom.Length(MaxCanvasMillipoints) + 1
-	_, err = Canvas(stranded)
+	stranded.doc.Bands.Content.Elements[0].X = geom.Length(designer.MaxCanvasMillipoints) + 1
+	_, err = canvas(stranded)
 	if want := "folio8: component exceeds the JavaScript-safe geometry bound"; err == nil || err.Error() != want {
 		t.Fatalf("projection of an unrepresentable coordinate = %v, want exactly %q", err, want)
 	}
@@ -1396,13 +1397,13 @@ func TestTheColumnLiftIsExercisedAtTheCommandSurface(t *testing.T) {
 	tpl := componentTemplate(t)
 	bands := projectedBands(t, tpl)
 	content, header, footer := bands["content"], bands["pageHeader"], bands["pageFooter"]
-	before, err := Canvas(tpl)
+	before, err := canvas(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
 	refusedAs := func(name string, err error, wantMessage string) {
 		t.Helper()
-		var failure *ComponentCommandError
+		var failure *designer.ComponentCommandError
 		if !errors.As(err, &failure) {
 			t.Fatalf("%s = %v, want a component command failure", name, err)
 		}
@@ -1417,7 +1418,7 @@ func TestTheColumnLiftIsExercisedAtTheCommandSurface(t *testing.T) {
 	// MATRIX ROW 1 NAMES createComponent, and nothing created a tall content
 	// component: the largest content y anywhere else in these tests is 40pt.
 	tall := content.Height*4 + 4321
-	createdProjection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"rect","band":"content","x":0,"y":`+pointLiteral(tall)+`,"width":72,"height":24,"snap":false}`))
+	createdProjection, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"rect","band":"content","x":0,"y":`+pointLiteral(tall)+`,"width":72,"height":24,"snap":false}`))
 	if err != nil {
 		t.Fatalf("createComponent four windows below the content top was refused: %v", err)
 	}
@@ -1432,10 +1433,10 @@ func TestTheColumnLiftIsExercisedAtTheCommandSurface(t *testing.T) {
 	// THE COMMAND-SURFACE MESSAGES, by full-string equality, for the two
 	// bands the property-panel test does not reach. The column is unbounded
 	// vertically and never horizontally, so content still refuses on x.
-	_, err = ApplyComponentCommand(tpl, []byte(`{"kind":"moveComponent","version":1,"id":"`+created.ID+`","x":`+pointLiteral(content.Width+1000)+`,"y":0,"snap":false}`))
+	_, err = applyComponentCommand(tpl, []byte(`{"kind":"moveComponent","version":1,"id":"`+created.ID+`","x":`+pointLiteral(content.Width+1000)+`,"y":0,"snap":false}`))
 	refusedAs("a content x past the band width", err, "folio8: component geometry must stay within content")
 
-	footerProjection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"rect","band":"pageFooter","x":0,"y":0,"width":72,"height":24,"snap":false}`))
+	footerProjection, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"rect","band":"pageFooter","x":0,"y":0,"width":72,"height":24,"snap":false}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1444,7 +1445,7 @@ func TestTheColumnLiftIsExercisedAtTheCommandSurface(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = ApplyComponentCommand(tpl, []byte(`{"kind":"moveComponent","version":1,"id":"`+inFooter.ID+`","x":0,"y":`+pointLiteral(footer.Height+1000)+`,"snap":false}`))
+	_, err = applyComponentCommand(tpl, []byte(`{"kind":"moveComponent","version":1,"id":"`+inFooter.ID+`","x":0,"y":`+pointLiteral(footer.Height+1000)+`,"snap":false}`))
 	refusedAs("a pageFooter y past the band height", err, "folio8: component geometry must stay within pageFooter")
 	if after, _ := SerializeTemplate(tpl); !bytes.Equal(canonical, after) {
 		t.Fatal("a refused pageFooter move changed the canonical bytes")
@@ -1457,16 +1458,16 @@ func TestTheColumnLiftIsExercisedAtTheCommandSurface(t *testing.T) {
 	// keeps the grid position the author dropped it at; with the
 	// unconditional containEdge it is pulled back inside page one instead.
 	dropPageY := content.Y + content.Height - 1000
-	beforeDrop, err := Canvas(tpl)
+	beforeDrop, err := canvas(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
-	droppedProjection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"dropComponent","version":1,"type":"rect","x":`+pointLiteral(content.X)+`,"y":`+pointLiteral(dropPageY)+`,"snap":true}`))
+	droppedProjection, err := applyComponentCommand(tpl, []byte(`{"kind":"dropComponent","version":1,"type":"rect","x":`+pointLiteral(content.X)+`,"y":`+pointLiteral(dropPageY)+`,"snap":true}`))
 	if err != nil {
 		t.Fatalf("a snapped drop at the foot of the content band was refused: %v", err)
 	}
 	dropped := newProjectedComponent(t, beforeDrop, droppedProjection)
-	if dropped.Y%GridIncrement != 0 {
+	if dropped.Y%designer.GridIncrement != 0 {
 		t.Fatalf("dropped y = %d, want a grid multiple", dropped.Y)
 	}
 	if dropped.Y+dropped.Height <= content.Height {
@@ -1480,14 +1481,14 @@ func TestTheColumnLiftIsExercisedAtTheCommandSurface(t *testing.T) {
 	// with no height at all — the positivity guard at the top of the command
 	// ran long before.
 	boundsY := content.Height*3 + 500
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"setComponentBounds","version":1,"id":"`+created.ID+`","x":0.5,"y":`+pointLiteral(boundsY)+`,"width":72.5,"height":24.5,"snap":true}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"setComponentBounds","version":1,"id":"`+created.ID+`","x":0.5,"y":`+pointLiteral(boundsY)+`,"width":72.5,"height":24.5,"snap":true}`)); err != nil {
 		t.Fatalf("a snapped bounds drag three windows down was refused: %v", err)
 	}
 	bounded := reloadedComponent(t, tpl, created.ID)
 	if bounded.Height <= 0 {
 		t.Fatalf("snapped bounds committed height = %d; the pull-back collapsed the component", bounded.Height)
 	}
-	if bounded.Height%GridIncrement != 0 || bounded.Y%GridIncrement != 0 {
+	if bounded.Height%designer.GridIncrement != 0 || bounded.Y%designer.GridIncrement != 0 {
 		t.Fatalf("snapped bounds (y %d, height %d) are not grid multiples", bounded.Y, bounded.Height)
 	}
 	if bounded.Y <= content.Height {
@@ -1499,27 +1500,27 @@ func TestTheColumnLiftIsExercisedAtTheCommandSurface(t *testing.T) {
 	// far edge is off the grid snaps PAST the band foot, and the pull-back is
 	// what rescues it — a containEdgeY that returned its input unchanged in
 	// every band would make this command a refusal instead.
-	beforeHeader, err := Canvas(tpl)
+	beforeHeader, err := canvas(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
-	headerProjection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"rect","band":"pageHeader","x":0,"y":0,"width":72,"height":25,"snap":false}`))
+	headerProjection, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"rect","band":"pageHeader","x":0,"y":0,"width":72,"height":25,"snap":false}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	inHeader := newProjectedComponent(t, beforeHeader, headerProjection)
 	headerEdgeY := header.Height - inHeader.Height
-	if headerEdgeY%GridIncrement == 0 {
+	if headerEdgeY%designer.GridIncrement == 0 {
 		t.Fatalf("this test needs an off-grid edge to say anything; edgeY %d is already a grid multiple", headerEdgeY)
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"moveComponent","version":1,"id":"`+inHeader.ID+`","x":0,"y":`+pointLiteral(headerEdgeY)+`,"snap":true}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"moveComponent","version":1,"id":"`+inHeader.ID+`","x":0,"y":`+pointLiteral(headerEdgeY)+`,"snap":true}`)); err != nil {
 		t.Fatalf("an edge move inside the pageHeader was refused; the pull-back did not rescue the grid's rounding: %v", err)
 	}
 	movedInHeader := reloadedComponent(t, tpl, inHeader.ID)
 	if movedInHeader.Y+movedInHeader.Height > header.Height {
 		t.Fatalf("pageHeader component (y %d + height %d) left its band height %d; containEdgeY did not clamp", movedInHeader.Y, movedInHeader.Height, header.Height)
 	}
-	if headerEdgeY-movedInHeader.Y >= GridIncrement {
+	if headerEdgeY-movedInHeader.Y >= designer.GridIncrement {
 		t.Fatalf("pageHeader pull-back moved y to %d, more than one grid step from the edge %d", movedInHeader.Y, headerEdgeY)
 	}
 }
@@ -1551,11 +1552,11 @@ func TestDuplicateDoesNotCopyTheKeepTogetherTag(t *testing.T) {
 	if !ok || !original.KeepTogether.Set || original.KeepTogether.Null || original.KeepTogether.Value != "signature" {
 		t.Fatalf("precondition: %s must carry a keepTogether tag for this test to say anything: %#v", tagged, original.KeepTogether)
 	}
-	before, err := Canvas(tpl)
+	before, err := canvas(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
-	projection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"duplicateComponent","version":1,"id":"`+tagged+`","snap":false}`))
+	projection, err := applyComponentCommand(tpl, []byte(`{"kind":"duplicateComponent","version":1,"id":"`+tagged+`","snap":false}`))
 	if err != nil {
 		t.Fatalf("duplicateComponent: %v", err)
 	}
@@ -1679,13 +1680,13 @@ func fontChainTemplate(t *testing.T) *Template {
 // afterwards — every matrix row's "document unmutated" clause, asserted rather
 // than assumed, because a partially applied rename is exactly the failure the
 // one-transaction shape exists to prevent.
-func fontChainRefusal(t *testing.T, tpl *Template, command string) *ComponentCommandError {
+func fontChainRefusal(t *testing.T, tpl *Template, command string) *designer.ComponentCommandError {
 	t.Helper()
 	before, err := SerializeTemplate(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, applyErr := ApplyComponentCommand(tpl, []byte(command))
+	_, applyErr := applyComponentCommand(tpl, []byte(command))
 	if applyErr == nil {
 		t.Fatalf("command unexpectedly succeeded: %s", command)
 	}
@@ -1696,7 +1697,7 @@ func fontChainRefusal(t *testing.T, tpl *Template, command string) *ComponentCom
 	if !bytes.Equal(before, after) {
 		t.Fatalf("a refused font chain command mutated the document: %s", command)
 	}
-	var failure *ComponentCommandError
+	var failure *designer.ComponentCommandError
 	if !errors.As(applyErr, &failure) {
 		t.Fatalf("refusal for %s is %T (%v), want *ComponentCommandError", command, applyErr, applyErr)
 	}
@@ -1706,9 +1707,9 @@ func fontChainRefusal(t *testing.T, tpl *Template, command string) *ComponentCom
 	return failure
 }
 
-func fontChainAccepted(t *testing.T, tpl *Template, command string) CanvasProjection {
+func fontChainAccepted(t *testing.T, tpl *Template, command string) designer.CanvasProjection {
 	t.Helper()
-	projection, err := ApplyComponentCommand(tpl, []byte(command))
+	projection, err := applyComponentCommand(tpl, []byte(command))
 	if err != nil {
 		t.Fatalf("%s: %v", command, err)
 	}
@@ -1775,7 +1776,7 @@ func TestFontChainAddDeclaresAChainAndProjectsIt(t *testing.T) {
 	// is the discriminant the designer reads, and asserting the whole
 	// struct (rather than only Face) is what keeps a family or style
 	// leaking onto a non-embedded entry visible here.
-	if !reflect.DeepEqual(projection.FontChains[1].Entries, []CanvasFontChainEntry{{Face: "Noto Sans"}, {Face: "Noto Sans Thai"}}) {
+	if !reflect.DeepEqual(projection.FontChains[1].Entries, []designer.CanvasFontChainEntry{{Face: "Noto Sans"}, {Face: "Noto Sans Thai"}}) {
 		t.Fatalf("projected caption entries = %#v", projection.FontChains[1].Entries)
 	}
 }
@@ -1983,7 +1984,7 @@ func TestFontChainRenameMovesTheDefaultANewTextElementAdopts(t *testing.T) {
 	if got := defaultFontFamily(tpl); got != "heading" {
 		t.Fatalf("default family after the rename = %q, want the new sorted-first chain", got)
 	}
-	before, err := Canvas(tpl)
+	before, err := canvas(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2012,14 +2013,14 @@ func TestEmptyFontChainIsInvisibleToTheProjectionAndRefusedByTheProperty(t *test
 	if _, declared := tpl.doc.Fonts["unused"]; !declared {
 		t.Fatal("the loader dropped the empty chain; this story does not narrow decodeFonts")
 	}
-	projection, err := Canvas(tpl)
+	projection, err := canvas(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(projection.FontFamilies, []string{"body", "heading"}) {
 		t.Fatalf("an empty chain reached the projection: %#v", projection.FontFamilies)
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e2"],"changes":{"fontFamily":{"op":"set","value":"unused"}}}`)); err == nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e2"],"changes":{"fontFamily":{"op":"set","value":"unused"}}}`)); err == nil {
 		t.Fatal("the property command accepted an empty chain")
 	}
 	// Still deletable: an empty chain a .folio in the wild carries must not
@@ -2913,11 +2914,11 @@ func TestApplyComponentCommandRefusesDuplicateKeysAtEveryLevel(t *testing.T) {
 				t.Fatal(err)
 			}
 			victim := elementValue(t, tpl, "pageFooter", "e5")
-			_, err = ApplyComponentCommand(tpl, []byte(probe.command))
+			_, err = applyComponentCommand(tpl, []byte(probe.command))
 			if err == nil {
 				t.Fatal("duplicate-key bytes were accepted; a command that names one thing changed another")
 			}
-			var failure *ComponentCommandError
+			var failure *designer.ComponentCommandError
 			if !errors.As(err, &failure) {
 				// A bare fmt.Errorf surfaces at the host as ENGINE_REJECTED
 				// with no location at all, which is what every other refusal on
@@ -2955,7 +2956,7 @@ func TestApplyComponentCommandRefusesDuplicateKeysAtEveryLevel(t *testing.T) {
 // everything. A duplicate key inside a STRING VALUE is not a duplicate key.
 func TestApplyComponentCommandStillAcceptsUnambiguousBytes(t *testing.T) {
 	tpl := componentTemplate(t)
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e5"],"changes":{"value":{"op":"set","value":"a\",\"value\":\"b"}}}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e5"],"changes":{"value":{"op":"set","value":"a\",\"value\":\"b"}}}`)); err != nil {
 		t.Fatalf("a value whose TEXT looks like a repeated key was refused: %v", err)
 	}
 	if got, want := elementValue(t, tpl, "pageFooter", "e5"), `a","value":"b`; got != want {
@@ -2963,7 +2964,7 @@ func TestApplyComponentCommandStillAcceptsUnambiguousBytes(t *testing.T) {
 	}
 	// Repeated keys in SIBLING objects are not duplicates either: `op` appears
 	// once per operation object, and every multi-field command relies on it.
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e5"],"changes":{"value":{"op":"set","value":"x"},"align":{"op":"set","value":"center"}}}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e5"],"changes":{"value":{"op":"set","value":"x"},"align":{"op":"set","value":"center"}}}`)); err != nil {
 		t.Fatalf("sibling objects sharing a key name were refused: %v", err)
 	}
 }
@@ -2975,8 +2976,8 @@ func TestApplyComponentCommandStillAcceptsUnambiguousBytes(t *testing.T) {
 // TestDuplicateKeyRefusalArrivesAtTheHostAsComponentInvalid below.
 func TestDuplicateKeyRefusalCarriesNoElementID(t *testing.T) {
 	tpl := componentTemplate(t)
-	_, err := ApplyComponentCommand(tpl, []byte(`{"kind":"deleteComponent","version":1,"id":"e1","id":"e5"}`))
-	var failure *ComponentCommandError
+	_, err := applyComponentCommand(tpl, []byte(`{"kind":"deleteComponent","version":1,"id":"e1","id":"e5"}`))
+	var failure *designer.ComponentCommandError
 	if !errors.As(err, &failure) {
 		t.Fatalf("want a ComponentCommandError, got %v", err)
 	}
@@ -2993,7 +2994,7 @@ func TestDuplicateKeyRefusalCarriesNoElementID(t *testing.T) {
 // the branch, because `return response{` is the whole file's idiom and an
 // unanchored match would read some other branch and compare it to this record —
 // a green test asserting the wrong thing.
-var componentInvalidHostBranch = regexp.MustCompile(`(?s)var componentErr \*folio8\.ComponentCommandError\s*\n\s*if errors\.As\(err, &componentErr\) \{(.*?)\n\t\}`)
+var componentInvalidHostBranch = regexp.MustCompile(`(?s)var componentErr \*designer\.ComponentCommandError\s*\n\s*if errors\.As\(err, &componentErr\) \{(.*?)\n\t\}`)
 
 // pageSetupHostFallback reads the OTHER door's mapping: the host's prefix test
 // and the code it answers with. Anchored on the prefix literal the page-setup
@@ -3022,8 +3023,8 @@ var pageSetupHostFallback = regexp.MustCompile(`(?s)strings\.HasPrefix\(message,
 // the panel is now being told an id the duplicate has made untrustworthy.
 func TestDuplicateKeyRefusalArrivesAtTheHostAsComponentInvalid(t *testing.T) {
 	tpl := componentTemplate(t)
-	_, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"value":{"op":"set","value":"FIRST"}},"ids":["e5"],"changes":{"value":{"op":"set","value":"SECOND"}}}`))
-	var failure *ComponentCommandError
+	_, err := applyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"value":{"op":"set","value":"FIRST"}},"ids":["e5"],"changes":{"value":{"op":"set","value":"SECOND"}}}`))
+	var failure *designer.ComponentCommandError
 	if !errors.As(err, &failure) {
 		t.Fatalf("want a ComponentCommandError, got %v", err)
 	}
@@ -3040,7 +3041,7 @@ func TestDuplicateKeyRefusalArrivesAtTheHostAsComponentInvalid(t *testing.T) {
 	}
 	branch := componentInvalidHostBranch.FindStringSubmatch(string(source))
 	if branch == nil {
-		t.Fatal("wasm/cmd/engine/main.go no longer maps a *folio8.ComponentCommandError where this test can read it; if the host was restructured, re-derive this extraction rather than deleting the check")
+		t.Fatal("wasm/cmd/engine/main.go no longer maps a *designer.ComponentCommandError where this test can read it; if the host was restructured, re-derive this extraction rather than deleting the check")
 	}
 	// Whitespace-insensitive: gofmt aligns these struct fields, so pinning the
 	// exact column spacing would redden this test the day an unrelated field
@@ -3069,7 +3070,7 @@ func TestDuplicateKeyRefusalArrivesAtTheHostAsComponentInvalid(t *testing.T) {
 	// registered diagnostic code, and a ComponentCommandError is not a
 	// *RenderError — but if the two were ever reordered around a shared
 	// interface, this refusal would surface as something else entirely.
-	componentAt := strings.Index(string(source), "var componentErr *folio8.ComponentCommandError")
+	componentAt := strings.Index(string(source), "var componentErr *designer.ComponentCommandError")
 	renderAt := strings.Index(string(source), "var renderErr *folio8.RenderError")
 	if componentAt < 0 || renderAt < 0 {
 		t.Fatal("wasm/cmd/engine/main.go no longer declares both error branches where this test can find them; re-derive this extraction rather than deleting the check")
@@ -3112,7 +3113,7 @@ func TestDuplicateKeyScanStaysSynchronisedPastItsDepthBound(t *testing.T) {
 	// The whole command still refuses, because the ordinary decode rejects the
 	// depth — the scan hands the question on rather than answering it.
 	tpl := componentTemplate(t)
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"deleteComponent","version":1,"id":`+deep+`}`)); err == nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"deleteComponent","version":1,"id":`+deep+`}`)); err == nil {
 		t.Fatal("bytes nested past encoding/json's own limit were accepted")
 	}
 }
@@ -3157,8 +3158,8 @@ func TestComponentPropertyNullReportsTheCauseAndTheField(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			_, err = ApplyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"`+probe.field+`":{"op":"set","value":null}}}`))
-			var failure *ComponentCommandError
+			_, err = applyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"`+probe.field+`":{"op":"set","value":null}}}`))
+			var failure *designer.ComponentCommandError
 			if !errors.As(err, &failure) {
 				t.Fatalf("want a located ComponentCommandError, got %v", err)
 			}
@@ -3186,8 +3187,8 @@ func TestComponentPropertyNullReportsTheCauseAndTheField(t *testing.T) {
 	// overflow. Fixing a message must not delete the detector, and this door
 	// shares parseMillipoints with page setup.
 	tpl := componentTemplate(t)
-	_, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"width":{"op":"set","value":99999999999999999999}}}`))
-	var overflow *ComponentCommandError
+	_, err := applyComponentCommand(tpl, []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"width":{"op":"set","value":99999999999999999999}}}`))
+	var overflow *designer.ComponentCommandError
 	if !errors.As(err, &overflow) {
 		t.Fatalf("want a located ComponentCommandError, got %v", err)
 	}
@@ -3236,7 +3237,7 @@ func TestRouteCWidenedAFieldsShapeAndNoDoorsVERDICT(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, applyErr := ApplyComponentCommand(tpl, []byte(command)); applyErr == nil {
+		if _, applyErr := applyComponentCommand(tpl, []byte(command)); applyErr == nil {
 			t.Errorf("an arity violation was accepted after route C: %s", command)
 		}
 		after, err := SerializeTemplate(tpl)
@@ -3485,7 +3486,7 @@ func TestARepeatedKeyInsideAChainEntryIsRefusedAtTheDoor(t *testing.T) {
 		{`{"kind":"embedFontFamily","version":1,"name":"c","family":"F","style":"Regular","licence":"OFL-1.1","licenceText":"t","copyright":"c","source":"s","mediaType":"font/ttf","data":"AA==","tail":[{"face":"A","italic":"B","italic":"C"}]}`, "$.tail[0]"},
 	} {
 		tpl := fontChainTemplate(t)
-		_, err := ApplyComponentCommand(tpl, []byte(probe.command))
+		_, err := applyComponentCommand(tpl, []byte(probe.command))
 		if err == nil {
 			t.Fatalf("a repeated key inside a chain entry was accepted, last-wins and silently: %s", probe.command)
 		}
@@ -3640,19 +3641,19 @@ func TestLineBoundsSnapLengthAndPositionWithoutSnappingThickness(t *testing.T) {
 			for _, snap := range []bool{true, false} {
 				t.Run(fmt.Sprintf("snap=%t", snap), func(t *testing.T) {
 					tpl := componentTemplate(t)
-					before, _ := Canvas(tpl)
-					createdProjection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"line","band":"content","x":6,"y":12,"width":72,"height":1,"snap":false}`))
+					before, _ := canvas(tpl)
+					createdProjection, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"line","band":"content","x":6,"y":12,"width":72,"height":1,"snap":false}`))
 					if err != nil {
 						t.Fatal(err)
 					}
 					created := newProjectedComponent(t, before, createdProjection)
 					// The inspector remains the author of Thickness, including
 					// fractional values that are smaller than a grid interval.
-					_, err = ApplyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"updateComponentProperties","version":1,"ids":[%q],"changes":{"width":{"op":"set","value":%s},"height":{"op":"set","value":%s}}}`, created.ID, tc.width, tc.height)))
+					_, err = applyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"updateComponentProperties","version":1,"ids":[%q],"changes":{"width":{"op":"set","value":%s},"height":{"op":"set","value":%s}}}`, created.ID, tc.width, tc.height)))
 					if err != nil {
 						t.Fatal(err)
 					}
-					bounded, err := ApplyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"setComponentBounds","version":1,"id":%q,"x":7.3,"y":11.2,"width":%s,"height":%s,"snap":%t}`, created.ID, tc.proposedWidth, tc.proposedHeight, snap)))
+					bounded, err := applyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"setComponentBounds","version":1,"id":%q,"x":7.3,"y":11.2,"width":%s,"height":%s,"snap":%t}`, created.ID, tc.proposedWidth, tc.proposedHeight, snap)))
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -3678,13 +3679,13 @@ func TestLineBoundsSnapAtBandEdgePreservesThickness(t *testing.T) {
 		vertical := tc.vertical
 		t.Run(fmt.Sprintf("vertical=%t/short=%t", vertical, tc.short), func(t *testing.T) {
 			tpl := componentTemplate(t)
-			before, _ := Canvas(tpl)
-			createdProjection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"line","band":"pageHeader","x":0,"y":0,"width":12,"height":1,"snap":false}`))
+			before, _ := canvas(tpl)
+			createdProjection, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"line","band":"pageHeader","x":0,"y":0,"width":12,"height":1,"snap":false}`))
 			if err != nil {
 				t.Fatal(err)
 			}
 			created := newProjectedComponent(t, before, createdProjection)
-			var band CanvasBand
+			var band designer.CanvasBand
 			for _, candidate := range before.Bands {
 				if candidate.Name == "pageHeader" {
 					band = candidate
@@ -3698,19 +3699,19 @@ func TestLineBoundsSnapAtBandEdgePreservesThickness(t *testing.T) {
 				// The snapped origin leaves less space than the thickness.
 				// Containment rounds length to zero, exercising the precise
 				// axis fallback after containment, not only before it.
-				w = band.Width%GridIncrement + 1250
+				w = band.Width%designer.GridIncrement + 1250
 				h = w
 				if vertical {
-					h = band.Height%GridIncrement + 1251
+					h = band.Height%designer.GridIncrement + 1251
 					w = h - 1
 				}
 			}
-			_, err = ApplyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"updateComponentProperties","version":1,"ids":[%q],"changes":{"width":{"op":"set","value":%s},"height":{"op":"set","value":%s}}}`, created.ID, pointLiteral(w), pointLiteral(h))))
+			_, err = applyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"updateComponentProperties","version":1,"ids":[%q],"changes":{"width":{"op":"set","value":%s},"height":{"op":"set","value":%s}}}`, created.ID, pointLiteral(w), pointLiteral(h))))
 			if err != nil {
 				t.Fatal(err)
 			}
 			x, y := band.Width-w, band.Height-h
-			bounded, err := ApplyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"setComponentBounds","version":1,"id":%q,"x":%s,"y":%s,"width":%s,"height":%s,"snap":true}`, created.ID, pointLiteral(x), pointLiteral(y), pointLiteral(w), pointLiteral(h))))
+			bounded, err := applyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"setComponentBounds","version":1,"id":%q,"x":%s,"y":%s,"width":%s,"height":%s,"snap":true}`, created.ID, pointLiteral(x), pointLiteral(y), pointLiteral(w), pointLiteral(h))))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -3738,7 +3739,7 @@ func TestTablePlacementUsesFullBandWidthAndPreservesVerticalIntent(t *testing.T)
 						tpl.doc.Page.Orientation = "landscape"
 						tpl.doc.Page.Margin = template.Margin{Top: 21000, Right: 27123, Bottom: 31000, Left: 43111}
 					}
-					before, err := Canvas(tpl)
+					before, err := canvas(tpl)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -3753,7 +3754,7 @@ func TestTablePlacementUsesFullBandWidthAndPreservesVerticalIntent(t *testing.T)
 						command = fmt.Sprintf(`{"kind":"createComponent","version":1,"type":"table","band":"content","x":%s,"y":%s,"width":72,"height":37,"snap":%t}`, pointLiteral(content.Width-1), pointLiteral(y), snap)
 					}
 					nextID := tpl.doc.NextID
-					after, err := ApplyComponentCommand(tpl, []byte(command))
+					after, err := applyComponentCommand(tpl, []byte(command))
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -3770,7 +3771,7 @@ func TestTablePlacementUsesFullBandWidthAndPreservesVerticalIntent(t *testing.T)
 							t.Fatal("creation changed an existing authored component")
 						}
 					}
-					columns, err := TableColumns(tpl, table.ID)
+					columns, err := tableColumns(tpl, table.ID)
 					if err != nil || len(columns.Columns) != 1 {
 						t.Fatalf("starter column projection = %#v, err=%v", columns, err)
 					}
@@ -3797,7 +3798,7 @@ func TestTablePlacementUsesFullBandWidthAndPreservesVerticalIntent(t *testing.T)
 					if err != nil || !bytes.Equal(canonical, again) {
 						t.Fatalf("table creation did not round-trip canonically: %v", err)
 					}
-					reloadedCanvas, err := Canvas(reloaded)
+					reloadedCanvas, err := canvas(reloaded)
 					if err != nil || !reflect.DeepEqual(table, componentByID(t, reloadedCanvas, table.ID)) {
 						t.Fatalf("table geometry or column ID changed on reload: %v", err)
 					}
@@ -3811,12 +3812,12 @@ func TestTableDropSnappingUsesActualHeaderHeight(t *testing.T) {
 	for _, bandName := range []string{"pageHeader", "pageFooter"} {
 		t.Run(bandName, func(t *testing.T) {
 			tpl := imageDropTemplate(t, 197123, 64000)
-			before, _ := Canvas(tpl)
+			before, _ := canvas(tpl)
 			band := projectedBands(t, tpl)[bandName]
 			// 39pt + the real 24pt header fits. Snapping to 42pt would not,
 			// so the existing edge rule must pull it back to 36pt.
 			command := fmt.Sprintf(`{"kind":"dropComponent","version":1,"type":"table","x":%s,"y":%s,"snap":true}`, pointLiteral(band.X+band.Width-1), pointLiteral(band.Y+39000))
-			after, err := ApplyComponentCommand(tpl, []byte(command))
+			after, err := applyComponentCommand(tpl, []byte(command))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -3848,7 +3849,7 @@ func TestTableCreationRejectionsPreserveBytesAndBothIDs(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := ApplyComponentCommand(tpl, []byte(tc.command)); err == nil {
+			if _, err := applyComponentCommand(tpl, []byte(tc.command)); err == nil {
 				t.Fatal("invalid creation succeeded")
 			}
 			after, err := SerializeTemplate(tpl)
@@ -3860,7 +3861,7 @@ func TestTableCreationRejectionsPreserveBytesAndBothIDs(t *testing.T) {
 	// The last pair of usable IDs succeeds and leaves a valid nextId.
 	tpl := componentTemplate(t)
 	tpl.doc.NextID = maxID - 2
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"table","band":"content","x":12,"y":12,"width":72,"height":24,"snap":false}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"table","band":"content","x":12,"y":12,"width":72,"height":24,"snap":false}`)); err != nil {
 		t.Fatal(err)
 	}
 	canonical, err := SerializeTemplate(tpl)
@@ -3876,13 +3877,13 @@ func TestTableDuplicateAllocatesIndependentColumnsAndReloads(t *testing.T) {
 	for _, count := range []int{1, 3} {
 		t.Run(fmt.Sprintf("%d columns", count), func(t *testing.T) {
 			tpl := componentTemplate(t)
-			before, _ := Canvas(tpl)
-			created, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"table","band":"content","x":40,"y":20,"width":72,"height":24,"snap":false}`))
+			before, _ := canvas(tpl)
+			created, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"table","band":"content","x":40,"y":20,"width":72,"height":24,"snap":false}`))
 			if err != nil {
 				t.Fatal(err)
 			}
 			source := newProjectedComponent(t, before, created)
-			columns, err := TableColumns(tpl, source.ID)
+			columns, err := tableColumns(tpl, source.ID)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -3892,18 +3893,18 @@ func TestTableDuplicateAllocatesIndependentColumnsAndReloads(t *testing.T) {
 					mustApplyToTable(t, tpl, fmt.Sprintf(`{"kind":"addTableColumn","version":1,"id":%q,"index":%d}`, source.ID, index))
 				}
 			}
-			columns, err = TableColumns(tpl, source.ID)
+			columns, err = tableColumns(tpl, source.ID)
 			if err != nil {
 				t.Fatal(err)
 			}
-			before, _ = Canvas(tpl)
+			before, _ = canvas(tpl)
 			nextID := tpl.doc.NextID
-			duplicated, err := ApplyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"duplicateComponent","version":1,"id":%q,"snap":true}`, source.ID)))
+			duplicated, err := applyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"duplicateComponent","version":1,"id":%q,"snap":true}`, source.ID)))
 			if err != nil {
 				t.Fatal(err)
 			}
 			duplicate := newProjectedComponent(t, before, duplicated)
-			copied, err := TableColumns(tpl, duplicate.ID)
+			copied, err := tableColumns(tpl, duplicate.ID)
 			if err != nil || len(copied.Columns) != count || duplicate.ID != "e"+strconv.FormatInt(nextID, 36) || tpl.doc.NextID != nextID+int64(count)+1 {
 				t.Fatalf("duplicate IDs/columns = %#v, nextId=%d, err=%v", copied, tpl.doc.NextID, err)
 			}
@@ -3916,7 +3917,7 @@ func TestTableDuplicateAllocatesIndependentColumnsAndReloads(t *testing.T) {
 					t.Fatalf("column %d changed properties while duplicating", index)
 				}
 			}
-			unchanged, err := TableColumns(tpl, source.ID)
+			unchanged, err := tableColumns(tpl, source.ID)
 			if err != nil || !reflect.DeepEqual(columns, unchanged) {
 				t.Fatalf("duplicate changed the source's column storage: %v", err)
 			}
@@ -3927,12 +3928,12 @@ func TestTableDuplicateAllocatesIndependentColumnsAndReloads(t *testing.T) {
 			}
 			// Editing either table leaves the other table's columns alone.
 			mustApplyToTable(t, tpl, fmt.Sprintf(`{"kind":"updateTableColumn","version":1,"id":%q,"columnId":%q,"field":"header","value":"Copy header"}`, duplicate.ID, copied.Columns[0].ID))
-			unchanged, err = TableColumns(tpl, source.ID)
+			unchanged, err = tableColumns(tpl, source.ID)
 			if err != nil || !reflect.DeepEqual(columns, unchanged) {
 				t.Fatalf("editing the duplicate changed the source: %v", err)
 			}
 			mustApplyToTable(t, tpl, fmt.Sprintf(`{"kind":"updateTableColumn","version":1,"id":%q,"columnId":%q,"field":"proportion","value":3}`, source.ID, columns.Columns[0].ID))
-			edited, err := TableColumns(tpl, duplicate.ID)
+			edited, err := tableColumns(tpl, duplicate.ID)
 			if err != nil || edited.Columns[0].Header != "Copy header" || edited.Columns[0].Width != copied.Columns[0].Width {
 				t.Fatalf("source edit changed the duplicate: %#v, err=%v", edited, err)
 			}
@@ -3946,13 +3947,13 @@ func TestTableDuplicateAllocatesIndependentColumnsAndReloads(t *testing.T) {
 func TestTableDuplicatePreflightsEveryColumnIDWithoutMutation(t *testing.T) {
 	const maxID = int64(1<<63 - 1)
 	tpl := componentTemplate(t)
-	before, _ := Canvas(tpl)
-	created, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"table","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
+	before, _ := canvas(tpl)
+	created, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"table","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
 	if err != nil {
 		t.Fatal(err)
 	}
 	source := newProjectedComponent(t, before, created)
-	columns, _ := TableColumns(tpl, source.ID)
+	columns, _ := tableColumns(tpl, source.ID)
 	mustApplyToTable(t, tpl, fmt.Sprintf(`{"kind":"updateTableColumn","version":1,"id":%q,"columnId":%q,"field":"proportion","value":2}`, source.ID, columns.Columns[0].ID))
 	mustApplyToTable(t, tpl, fmt.Sprintf(`{"kind":"addTableColumn","version":1,"id":%q,"index":1}`, source.ID))
 	command := []byte(fmt.Sprintf(`{"kind":"duplicateComponent","version":1,"id":%q,"snap":false}`, source.ID))
@@ -3960,7 +3961,7 @@ func TestTableDuplicatePreflightsEveryColumnIDWithoutMutation(t *testing.T) {
 	tpl.doc.NextID = maxID - 2
 	canonical := canonicalBytes(t, tpl)
 	for attempt := 0; attempt < 2; attempt++ {
-		if _, err := ApplyComponentCommand(tpl, command); err == nil {
+		if _, err := applyComponentCommand(tpl, command); err == nil {
 			t.Fatal("duplicate accepted too few IDs for all its columns")
 		}
 		if !bytes.Equal(canonical, canonicalBytes(t, tpl)) {
@@ -3968,7 +3969,7 @@ func TestTableDuplicatePreflightsEveryColumnIDWithoutMutation(t *testing.T) {
 		}
 	}
 	tpl.doc.NextID = maxID - 3
-	if _, err := ApplyComponentCommand(tpl, command); err != nil {
+	if _, err := applyComponentCommand(tpl, command); err != nil {
 		t.Fatal(err)
 	}
 	if tpl.doc.NextID != maxID {
@@ -3986,13 +3987,13 @@ func TestTableCreationUsesDefaultFontAndRendersPopulatedItems(t *testing.T) {
 			tpl.doc.Bands.PageHeader.Elements = nil
 			tpl.doc.Bands.Content.Elements = nil
 			tpl.doc.Bands.PageFooter.Elements = nil
-			before, _ := Canvas(tpl)
+			before, _ := canvas(tpl)
 			command := `{"kind":"createComponent","version":1,"type":"table","band":"content","x":50,"y":24,"width":72,"height":24,"snap":false}`
 			if door == "dropComponent" {
 				content := projectedBands(t, tpl)["content"]
 				command = fmt.Sprintf(`{"kind":"dropComponent","version":1,"type":"table","x":%s,"y":%s,"snap":false}`, pointLiteral(content.X+50000), pointLiteral(content.Y+24000))
 			}
-			created, err := ApplyComponentCommand(tpl, []byte(command))
+			created, err := applyComponentCommand(tpl, []byte(command))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -4000,7 +4001,7 @@ func TestTableCreationUsesDefaultFontAndRendersPopulatedItems(t *testing.T) {
 			if table.FontFamily == nil || *table.FontFamily != defaultFontFamily(tpl) {
 				t.Fatalf("table did not inherit the declared default font: %#v", table.FontFamily)
 			}
-			columns, err := TableColumns(tpl, table.ID)
+			columns, err := tableColumns(tpl, table.ID)
 			if err != nil || columns.Columns[0].Header != "" || columns.Columns[0].Binding != "" {
 				t.Fatalf("font default invented column content: %#v, err=%v", columns, err)
 			}
@@ -4028,11 +4029,11 @@ func tableColumnAuthoringFixture(t *testing.T, widths []geom.Length, spare geom.
 		total += width
 	}
 	tpl := imageDropTemplate(t, total+spare, 20000)
-	before, err := Canvas(tpl)
+	before, err := canvas(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
-	created, err := ApplyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"table","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
+	created, err := applyComponentCommand(tpl, []byte(`{"kind":"createComponent","version":1,"type":"table","band":"content","x":0,"y":0,"width":72,"height":24,"snap":false}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -4082,11 +4083,11 @@ func TestAddTableColumnFitsWithoutChangingOtherColumnProperties(t *testing.T) {
 			_, _, _, original, _ := findComponent(tpl, id)
 			beforeColumns := append([]template.Column(nil), original.Table.Value.Columns...)
 			nextID := tpl.doc.NextID
-			canvas, err := ApplyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"addTableColumn","version":1,"id":%q,"index":%d}`, id, tc.index)))
+			canvas, err := applyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"addTableColumn","version":1,"id":%q,"index":%d}`, id, tc.index)))
 			if err != nil {
 				t.Fatal(err)
 			}
-			view, err := TableColumns(tpl, id)
+			view, err := tableColumns(tpl, id)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -4132,7 +4133,7 @@ func TestAddTableColumnFitsWithoutChangingOtherColumnProperties(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			again, err := TableColumns(reloaded, id)
+			again, err := tableColumns(reloaded, id)
 			if err != nil || !reflect.DeepEqual(view, again) {
 				t.Fatalf("reopen changed projection: %#v, err=%v", again, err)
 			}
@@ -4162,7 +4163,7 @@ func TestAddTableColumnSplitRefusalsAreAtomic(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := ApplyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"addTableColumn","version":1,"id":%q,"index":%d}`, id, index))); err == nil {
+			if _, err := applyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"addTableColumn","version":1,"id":%q,"index":%d}`, id, index))); err == nil {
 				t.Fatal("invalid add succeeded")
 			}
 			after, err := SerializeTemplate(tpl)
@@ -4175,20 +4176,20 @@ func TestAddTableColumnSplitRefusalsAreAtomic(t *testing.T) {
 
 func TestTableColumnBindingCanBeTypedAndClearedWithoutSample(t *testing.T) {
 	tpl, id := tableColumnAuthoringFixture(t, []geom.Length{100000}, 0)
-	view, _ := TableColumns(tpl, id)
+	view, _ := tableColumns(tpl, id)
 	columnID := view.Columns[0].ID
 	applyField := func(field string) error {
-		_, err := ApplyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"updateTableColumnBinding","version":1,"id":%q,"columnId":%q,"field":%s}`, id, columnID, field)))
+		_, err := applyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"updateTableColumnBinding","version":1,"id":%q,"columnId":%q,"field":%s}`, id, columnID, field)))
 		return err
 	}
 	for _, alias := range []string{"", "txn"} {
-		if _, err := ApplyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"configureTableBinding","version":1,"id":%q,"collection":"transactions[]","alias":%q}`, id, alias))); err != nil {
+		if _, err := applyComponentCommand(tpl, []byte(fmt.Sprintf(`{"kind":"configureTableBinding","version":1,"id":%q,"collection":"transactions[]","alias":%q}`, id, alias))); err != nil {
 			t.Fatal(err)
 		}
 		if err := applyField(`"customer.name"`); err != nil {
 			t.Fatal(err)
 		}
-		view, err := TableColumns(tpl, id)
+		view, err := tableColumns(tpl, id)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -4212,7 +4213,7 @@ func TestTableColumnBindingCanBeTypedAndClearedWithoutSample(t *testing.T) {
 		if err := applyField(`""`); err != nil {
 			t.Fatal(err)
 		}
-		view, _ = TableColumns(tpl, id)
+		view, _ = tableColumns(tpl, id)
 		if view.Columns[0].Binding != "" || view.Columns[0].RowField != "" || !view.Columns[0].RowFieldEditable {
 			t.Fatalf("clear projection = %#v", view.Columns[0])
 		}
@@ -4229,7 +4230,7 @@ func TestTableColumnBindingCanBeTypedAndClearedWithoutSample(t *testing.T) {
 
 func TestTableColumnBindingAndAliasRespectTheFullExpressionLimit(t *testing.T) {
 	tpl, id := tableColumnAuthoringFixture(t, []geom.Length{100000}, 0)
-	view, _ := TableColumns(tpl, id)
+	view, _ := tableColumns(tpl, id)
 	columnID := view.Columns[0].ID
 	longAlias := strings.Repeat("a", 64)
 	configure := func(alias string) []byte {
@@ -4239,17 +4240,17 @@ func TestTableColumnBindingAndAliasRespectTheFullExpressionLimit(t *testing.T) {
 		return []byte(fmt.Sprintf(`{"kind":"updateTableColumnBinding","version":1,"id":%q,"columnId":%q,"field":%q}`, id, columnID, strings.Repeat("f", length)))
 	}
 	for _, command := range [][]byte{configure(longAlias), bind(187)} {
-		if _, err := ApplyComponentCommand(tpl, command); err != nil {
+		if _, err := applyComponentCommand(tpl, command); err != nil {
 			t.Fatalf("exact-limit setup: %v", err)
 		}
 	}
-	view, err := TableColumns(tpl, id)
+	view, err := tableColumns(tpl, id)
 	if err != nil || len(view.Columns[0].Binding) != maxCanvasBindingString {
 		t.Fatalf("exact-limit projection = %#v, err=%v", view, err)
 	}
 	before, _ := SerializeTemplate(tpl)
 	for _, length := range []int{188, 192} {
-		if _, err := ApplyComponentCommand(tpl, bind(length)); err == nil {
+		if _, err := applyComponentCommand(tpl, bind(length)); err == nil {
 			t.Fatalf("%d-character field exceeded the full expression limit without refusal", length)
 		}
 		after, _ := SerializeTemplate(tpl)
@@ -4258,19 +4259,19 @@ func TestTableColumnBindingAndAliasRespectTheFullExpressionLimit(t *testing.T) {
 		}
 	}
 	for _, command := range [][]byte{configure(""), bind(192)} {
-		if _, err := ApplyComponentCommand(tpl, command); err != nil {
+		if _, err := applyComponentCommand(tpl, command); err != nil {
 			t.Fatal(err)
 		}
 	}
 	before, _ = SerializeTemplate(tpl)
-	if _, err := ApplyComponentCommand(tpl, configure(longAlias)); err == nil {
+	if _, err := applyComponentCommand(tpl, configure(longAlias)); err == nil {
 		t.Fatal("alias migration produced an unprojectable expression")
 	}
 	after, _ := SerializeTemplate(tpl)
 	if !bytes.Equal(before, after) {
 		t.Fatal("overlong alias migration mutated bytes")
 	}
-	if _, err := TableColumns(tpl, id); err != nil {
+	if _, err := tableColumns(tpl, id); err != nil {
 		t.Fatalf("refused alias change stranded projection: %v", err)
 	}
 }
@@ -4279,34 +4280,34 @@ func TestClearTableColumnBindingKeepsAggregateSourceValidation(t *testing.T) {
 	for _, aggregate := range []string{"sum", "avg"} {
 		t.Run(aggregate, func(t *testing.T) {
 			tpl, id := tableColumnAuthoringFixture(t, []geom.Length{100000}, 0)
-			view, _ := TableColumns(tpl, id)
+			view, _ := tableColumns(tpl, id)
 			columnID := view.Columns[0].ID
 			footerCommand := func(source string) []byte {
 				return []byte(fmt.Sprintf(`{"kind":"updateTableColumnFooter","version":1,"id":%q,"columnId":%q,"footer":%q,"footerOf":%q,"footerFormat":"0.00"}`, id, columnID, aggregate, source))
 			}
-			if _, err := ApplyComponentCommand(tpl, footerCommand("")); err != nil {
+			if _, err := applyComponentCommand(tpl, footerCommand("")); err != nil {
 				t.Fatal(err)
 			}
 			before, _ := SerializeTemplate(tpl)
 			clear := []byte(fmt.Sprintf(`{"kind":"updateTableColumnBinding","version":1,"id":%q,"columnId":%q,"field":""}`, id, columnID))
-			if _, err := ApplyComponentCommand(tpl, clear); err == nil {
+			if _, err := applyComponentCommand(tpl, clear); err == nil {
 				t.Fatal("clear removed an aggregate's derived source")
 			}
 			after, _ := SerializeTemplate(tpl)
 			if !bytes.Equal(before, after) {
 				t.Fatal("refused clear changed binding or aggregate")
 			}
-			view, err := TableColumns(tpl, id)
+			view, err := tableColumns(tpl, id)
 			if err != nil || view.Columns[0].Binding != "{{row.date}}" || view.Columns[0].Footer != aggregate || view.Columns[0].FooterOf != "" {
 				t.Fatalf("refused clear = %#v, err=%v", view, err)
 			}
-			if _, err := ApplyComponentCommand(tpl, footerCommand("items.date")); err != nil {
+			if _, err := applyComponentCommand(tpl, footerCommand("items.date")); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := ApplyComponentCommand(tpl, clear); err != nil {
+			if _, err := applyComponentCommand(tpl, clear); err != nil {
 				t.Fatalf("clear with explicit source: %v", err)
 			}
-			view, err = TableColumns(tpl, id)
+			view, err = tableColumns(tpl, id)
 			if err != nil || view.Columns[0].Binding != "" || view.Columns[0].Footer != aggregate || view.Columns[0].FooterOf != "items.date" || view.Columns[0].FooterFormat != "0.00" {
 				t.Fatalf("clear changed explicit aggregate: %#v, err=%v", view, err)
 			}

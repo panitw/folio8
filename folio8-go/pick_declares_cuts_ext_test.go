@@ -24,6 +24,7 @@ import (
 
 	folio8 "github.com/panitw/folio8/folio8-go"
 	"github.com/panitw/folio8/folio8-go/fonts"
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 )
 
 // pickBaseDocument is a document that declares ONE chain the picked family is
@@ -127,7 +128,7 @@ func canonicalChain(t *testing.T, entries []json.RawMessage) string {
 func applyAll(t *testing.T, tpl *folio8.Template, commands ...string) {
 	t.Helper()
 	for _, command := range commands {
-		if _, err := folio8.ApplyComponentCommand(tpl, []byte(command)); err != nil {
+		if _, err := designer.ApplyComponentCommand(tpl, []byte(command)); err != nil {
 			t.Fatalf("%s: %v", command, err)
 		}
 	}
@@ -233,7 +234,7 @@ func TestAPickOfAShippedFamilyDeclaresThatFamilysCutsInTheDocument(t *testing.T)
 	// back off the document rather than restated: whatever the pick declared as
 	// this family's bold cut is what a bolded run must be drawn in.
 	applyAll(t, tpl, `{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"bold":{"op":"set","value":true}}}`)
-	projection, err := folio8.CanvasWithTextPaint(tpl, fonts.Shipped())
+	projection, err := designer.CanvasWithTextPaint(tpl, fonts.Shipped())
 	if err != nil {
 		t.Fatalf("project the paint: %v", err)
 	}
@@ -297,7 +298,7 @@ func TestAPickOfNotoSansSCDeclaresNoCutAndThatIsORDINARY(t *testing.T) {
 	}
 
 	applyAll(t, tpl, `{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"bold":{"op":"set","value":true}}}`)
-	projection, err := folio8.CanvasWithTextPaint(tpl, fonts.Shipped())
+	projection, err := designer.CanvasWithTextPaint(tpl, fonts.Shipped())
 	if err != nil {
 		t.Fatalf("project the paint: %v", err)
 	}

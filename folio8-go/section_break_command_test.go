@@ -6,6 +6,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 )
 
 // spec-section-break CAP-1 / CAP-6, the designer story: the two commands and
@@ -29,7 +31,7 @@ func sectionBreakCommandDoc(t *testing.T, contentKeys string) *Template {
 
 // sectionBreakRefusal applies command and demands a located refusal that
 // leaves the document byte-identical.
-func sectionBreakRefusal(t *testing.T, tpl *Template, command string, apply func(*Template, []byte) (CanvasProjection, error)) *ComponentCommandError {
+func sectionBreakRefusal(t *testing.T, tpl *Template, command string, apply func(*Template, []byte) (designer.CanvasProjection, error)) *designer.ComponentCommandError {
 	t.Helper()
 	before, err := SerializeTemplate(tpl)
 	if err != nil {
@@ -46,24 +48,24 @@ func sectionBreakRefusal(t *testing.T, tpl *Template, command string, apply func
 	if !bytes.Equal(before, after) {
 		t.Fatalf("a refused command mutated the document: %s", command)
 	}
-	var failure *ComponentCommandError
+	var failure *designer.ComponentCommandError
 	if !errors.As(applyErr, &failure) {
 		t.Fatalf("refusal for %s is %T (%v), want a located *ComponentCommandError", command, applyErr, applyErr)
 	}
 	return failure
 }
 
-func componentApply(tpl *Template, command []byte) (CanvasProjection, error) {
-	return ApplyComponentCommand(tpl, command)
+func componentApply(tpl *Template, command []byte) (designer.CanvasProjection, error) {
+	return applyComponentCommand(tpl, command)
 }
 
-func pageSetupApply(tpl *Template, command []byte) (CanvasProjection, error) {
-	return ApplyPageSetupCommand(tpl, command)
+func pageSetupApply(tpl *Template, command []byte) (designer.CanvasProjection, error) {
+	return applyPageSetupCommand(tpl, command)
 }
 
 func TestSetSectionBreakPlacesSnapsAndProjects(t *testing.T) {
 	tpl := sectionBreakCommandDoc(t, "")
-	projection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"setSectionBreak","version":1,"offset":40,"snap":true}`))
+	projection, err := applyComponentCommand(tpl, []byte(`{"kind":"setSectionBreak","version":1,"offset":40,"snap":true}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +95,7 @@ func TestSetSectionBreakPlacesSnapsAndProjects(t *testing.T) {
 
 func TestSetSectionBreakTypedValueIsNotSnapped(t *testing.T) {
 	tpl := sectionBreakCommandDoc(t, sectionBreakAt75)
-	projection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"setSectionBreak","version":1,"offset":52.5,"snap":false}`))
+	projection, err := applyComponentCommand(tpl, []byte(`{"kind":"setSectionBreak","version":1,"offset":52.5,"snap":false}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,7 +133,7 @@ func TestSetSectionBreakRefusals(t *testing.T) {
 
 func TestRemoveSectionBreak(t *testing.T) {
 	tpl := sectionBreakCommandDoc(t, sectionBreakAt75)
-	projection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"removeSectionBreak","version":1}`))
+	projection, err := applyComponentCommand(tpl, []byte(`{"kind":"removeSectionBreak","version":1}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -187,12 +189,12 @@ func TestGeometryCommandsOnOneSideOfTheBreakAreAccepted(t *testing.T) {
 		`{"kind":"setTableHeaderHeight","version":1,"id":"e1","height":75}`,
 		string(moveIntent([]string{"e5"}, "e5", "0", "6", false)),
 	} {
-		if _, err := ApplyComponentCommand(sectionBreakCommandDoc(t, sectionBreakAt75), []byte(command)); err != nil {
+		if _, err := applyComponentCommand(sectionBreakCommandDoc(t, sectionBreakAt75), []byte(command)); err != nil {
 			t.Fatalf("%s: %v", command, err)
 		}
 	}
 	// And with no break at all, the formerly straddling edits pass.
-	if _, err := ApplyComponentCommand(sectionBreakCommandDoc(t, ""), []byte(`{"kind":"moveComponent","version":1,"id":"e5","x":0,"y":70,"snap":false}`)); err != nil {
+	if _, err := applyComponentCommand(sectionBreakCommandDoc(t, ""), []byte(`{"kind":"moveComponent","version":1,"id":"e5","x":0,"y":70,"snap":false}`)); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -202,7 +204,7 @@ func TestBandAndPageChangesRefuseToStrandTheSectionBreak(t *testing.T) {
 	if failure.DataPath != sectionBreakDataPath || !strings.Contains(failure.Message, "section break") {
 		t.Fatalf("band-height refusal = %+v, want one naming the section break", failure)
 	}
-	if _, err := ApplyComponentCommand(sectionBreakCommandDoc(t, sectionBreakAt75), []byte(`{"kind":"setBandHeight","version":1,"band":"pageFooter","height":30,"snap":false}`)); err != nil {
+	if _, err := applyComponentCommand(sectionBreakCommandDoc(t, sectionBreakAt75), []byte(`{"kind":"setBandHeight","version":1,"band":"pageFooter","height":30,"snap":false}`)); err != nil {
 		t.Fatalf("a footer that still leaves room above the break was refused: %v", err)
 	}
 	failure = sectionBreakRefusal(t, sectionBreakCommandDoc(t, sectionBreakAt75), `{"kind":"pageSetup","version":1,"preset":"custom","orientation":"portrait","width":200,"height":100,"margin":{"top":10,"right":10,"bottom":10,"left":10}}`, pageSetupApply)
@@ -215,14 +217,14 @@ func TestBandAndPageChangesRefuseToStrandTheSectionBreak(t *testing.T) {
 // `false`, projected only as `false`, and removed with the break.
 func TestSetSectionBreakAnchor(t *testing.T) {
 	tpl := sectionBreakCommandDoc(t, sectionBreakAt75)
-	anchored, err := Canvas(tpl)
+	anchored, err := canvas(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if anchored.SectionBreakAnchor != nil {
 		t.Fatalf("an anchored break must project no sectionBreakAnchor, got %v", *anchored.SectionBreakAnchor)
 	}
-	projection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"setSectionBreakAnchor","version":1,"anchor":false}`))
+	projection, err := applyComponentCommand(tpl, []byte(`{"kind":"setSectionBreakAnchor","version":1,"anchor":false}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -244,7 +246,7 @@ func TestSetSectionBreakAnchor(t *testing.T) {
 		t.Fatalf("the saved unanchored document does not reload: %v", err)
 	}
 
-	projection, err = ApplyComponentCommand(tpl, []byte(`{"kind":"setSectionBreakAnchor","version":1,"anchor":true}`))
+	projection, err = applyComponentCommand(tpl, []byte(`{"kind":"setSectionBreakAnchor","version":1,"anchor":true}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -274,7 +276,7 @@ func TestSetSectionBreakAnchor(t *testing.T) {
 
 func TestRemoveSectionBreakClearsTheAnchor(t *testing.T) {
 	tpl := sectionBreakCommandDoc(t, `, "sectionBreak": 75, "sectionBreakAnchor": false`)
-	projection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"removeSectionBreak","version":1}`))
+	projection, err := applyComponentCommand(tpl, []byte(`{"kind":"removeSectionBreak","version":1}`))
 	if err != nil {
 		t.Fatal(err)
 	}

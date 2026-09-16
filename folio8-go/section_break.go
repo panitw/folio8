@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 	"github.com/panitw/folio8/folio8-go/internal/geom"
 	"github.com/panitw/folio8/folio8-go/internal/layout"
 	"github.com/panitw/folio8/folio8-go/internal/template"
@@ -277,50 +278,50 @@ func sectionBreakCommandPage(t *Template, raw map[string]json.RawMessage, fields
 // snap, page?}. The engine snaps (the canvas drag passes true; a typed Y
 // passes false), and snapping happens before every check, so a refusal names
 // the offset that would actually have been written.
-func setSectionBreak(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func setSectionBreak(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	page, err := sectionBreakCommandPage(t, raw, 4, "sectionBreak", "setSectionBreak takes exactly kind, version, offset and snap, and optionally page")
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	path := sectionBreakPath(t, page, "sectionBreak")
 	proposed, err := lengthField(raw, "offset")
 	if err != nil {
-		return CanvasProjection{}, componentFailure("", path, err.Error())
+		return designer.CanvasProjection{}, componentFailure("", path, err.Error())
 	}
 	snap, err := commandBool(raw, "snap")
 	if err != nil {
-		return CanvasProjection{}, componentFailure("", path, err.Error())
+		return designer.CanvasProjection{}, componentFailure("", path, err.Error())
 	}
 	if snap {
-		snapped, valid := SnapToGrid(proposed)
+		snapped, valid := snapToGrid(proposed)
 		if !valid {
-			return CanvasProjection{}, componentFailure("", path, "the section break offset overflows grid snapping")
+			return designer.CanvasProjection{}, componentFailure("", path, "the section break offset overflows grid snapping")
 		}
 		proposed = snapped
 	}
 	if proposed <= 0 {
-		return CanvasProjection{}, componentFailure("", path, fmt.Sprintf("a section break at %spt is at or above the content band's top — it must lie inside the content band", template.FormatPoints(proposed)))
+		return designer.CanvasProjection{}, componentFailure("", path, fmt.Sprintf("a section break at %spt is at or above the content band's top — it must lie inside the content band", template.FormatPoints(proposed)))
 	}
 	g, err := canvasPageGeometry(t)
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	if height := layout.ContentHeight(g); proposed >= height {
-		return CanvasProjection{}, componentFailure("", path, fmt.Sprintf("a section break at %spt is at or below the bottom of the content band (a content height of %spt) — move it up", template.FormatPoints(proposed), template.FormatPoints(height)))
+		return designer.CanvasProjection{}, componentFailure("", path, fmt.Sprintf("a section break at %spt is at or below the bottom of the content band (a content height of %spt) — move it up", template.FormatPoints(proposed), template.FormatPoints(height)))
 	}
 	band := contentBandOf(t, page)
 	for _, el := range band.Elements {
 		if sectionBreakStraddles(el, proposed) {
 			top, bottom := sectionBreakDeclaredBox(el)
-			return CanvasProjection{}, componentFailure(string(el.ID), path, fmt.Sprintf("a section break at %spt would run through %s, which runs from %spt to %spt — every element must lie wholly above or wholly below the break", template.FormatPoints(proposed), el.ID, template.FormatPoints(top), template.FormatPoints(bottom)))
+			return designer.CanvasProjection{}, componentFailure(string(el.ID), path, fmt.Sprintf("a section break at %spt would run through %s, which runs from %spt to %spt — every element must lie wholly above or wholly below the break", template.FormatPoints(proposed), el.ID, template.FormatPoints(top), template.FormatPoints(bottom)))
 		}
 	}
 	previous := band.SectionBreak
 	band.SectionBreak = template.Presence[geom.Length]{Set: true, Value: proposed}
-	projection, err := Canvas(t)
+	projection, err := canvas(t)
 	if err != nil {
 		band.SectionBreak = previous
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	return projection, nil
 }
@@ -328,10 +329,10 @@ func setSectionBreak(t *Template, raw map[string]json.RawMessage) (CanvasProject
 // removeSectionBreak deletes a page's break: {kind, version, page?}. "No
 // break" is the key's absence, so it is cleared to the zero Presence, never to
 // null.
-func removeSectionBreak(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func removeSectionBreak(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	page, err := sectionBreakCommandPage(t, raw, 2, "sectionBreak", "removeSectionBreak takes exactly kind and version, and optionally page")
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	band := contentBandOf(t, page)
 	if !band.SectionBreak.Set {
@@ -339,16 +340,16 @@ func removeSectionBreak(t *Template, raw map[string]json.RawMessage) (CanvasProj
 		if t.doc.PageCount() > 1 {
 			message = fmt.Sprintf("page %d has no section break to remove", page+1)
 		}
-		return CanvasProjection{}, componentFailure("", sectionBreakPath(t, page, "sectionBreak"), message)
+		return designer.CanvasProjection{}, componentFailure("", sectionBreakPath(t, page, "sectionBreak"), message)
 	}
 	previous, previousAnchor := band.SectionBreak, band.SectionBreakAnchor
 	band.SectionBreak = template.Presence[geom.Length]{}
 	// The Anchor qualifies the break, so it goes with it (CAP-7).
 	band.SectionBreakAnchor = template.Presence[bool]{}
-	projection, err := Canvas(t)
+	projection, err := canvas(t)
 	if err != nil {
 		band.SectionBreak, band.SectionBreakAnchor = previous, previousAnchor
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	return projection, nil
 }
@@ -356,27 +357,27 @@ func removeSectionBreak(t *Template, raw map[string]json.RawMessage) (CanvasProj
 // setSectionBreakAnchor sets a page's break Anchor: {kind, version, anchor,
 // page?}. One command, so one undo entry (CAP-7). Anchored is the default and
 // the key's absence, so `true` clears the key and `false` writes it.
-func setSectionBreakAnchor(t *Template, raw map[string]json.RawMessage) (CanvasProjection, error) {
+func setSectionBreakAnchor(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
 	page, err := sectionBreakCommandPage(t, raw, 3, "sectionBreakAnchor", "setSectionBreakAnchor takes exactly kind, version and anchor, and optionally page")
 	if err != nil {
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	path := sectionBreakPath(t, page, "sectionBreakAnchor")
 	// json.Unmarshal leaves a bool untouched for null, so null is refused
 	// here rather than read as false.
 	if value, ok := raw["anchor"]; ok && string(bytes.TrimSpace(value)) == "null" {
-		return CanvasProjection{}, componentFailure("", path, "anchor must be a boolean")
+		return designer.CanvasProjection{}, componentFailure("", path, "anchor must be a boolean")
 	}
 	anchor, err := commandBool(raw, "anchor")
 	if err != nil {
-		return CanvasProjection{}, componentFailure("", path, err.Error())
+		return designer.CanvasProjection{}, componentFailure("", path, err.Error())
 	}
 	if _, ok := declaredSectionBreak(t, page); !ok {
 		message := "this document has no section break to anchor — add a Section Break first"
 		if t.doc.PageCount() > 1 {
 			message = fmt.Sprintf("page %d has no section break to anchor — add a Section Break first", page+1)
 		}
-		return CanvasProjection{}, componentFailure("", path, message)
+		return designer.CanvasProjection{}, componentFailure("", path, message)
 	}
 	band := contentBandOf(t, page)
 	previous := band.SectionBreakAnchor
@@ -385,10 +386,10 @@ func setSectionBreakAnchor(t *Template, raw map[string]json.RawMessage) (CanvasP
 	} else {
 		band.SectionBreakAnchor = template.Presence[bool]{Set: true, Value: false}
 	}
-	projection, err := Canvas(t)
+	projection, err := canvas(t)
 	if err != nil {
 		band.SectionBreakAnchor = previous
-		return CanvasProjection{}, err
+		return designer.CanvasProjection{}, err
 	}
 	return projection, nil
 }

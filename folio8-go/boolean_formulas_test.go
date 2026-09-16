@@ -4,10 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"github.com/panitw/folio8/folio8-go/internal/geom"
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/panitw/folio8/folio8-go/internal/geom"
 
 	"github.com/panitw/folio8/folio8-go/internal/bind"
 	"github.com/panitw/folio8/folio8-go/internal/expr"
@@ -99,7 +100,7 @@ func TestBooleanFormulaCommandErrorsKeepCauseAndAtomicity(t *testing.T) {
 	before, _ := SerializeTemplate(tpl)
 	for _, condition := range []string{"loanAmount >", "flag ? 1 : true", "false ? upper(1) : true"} {
 		raw, _ := json.Marshal(map[string]any{"kind": "updateComponentProperties", "version": 1, "ids": []string{"e1", "e2"}, "changes": map[string]any{"x": map[string]any{"op": "set", "value": 12}, "visibleIf": map[string]any{"op": "set", "value": condition}}})
-		_, err := ApplyComponentCommand(tpl, raw)
+		_, err := applyComponentCommand(tpl, raw)
 		var renderErr *RenderError
 		var located *expr.LocatedError
 		if !errors.As(err, &renderErr) || !errors.As(err, &located) || renderErr.Diagnostic.Code != DiagCodeExpressionInvalid || renderErr.Diagnostic.ElementID != "e1" || renderErr.Diagnostic.DataPath != "visibleIf" {
@@ -111,7 +112,7 @@ func TestBooleanFormulaCommandErrorsKeepCauseAndAtomicity(t *testing.T) {
 		}
 	}
 	raw := []byte(`{"kind":"updateComponentProperties","version":1,"ids":["e1"],"changes":{"visibleIf":{"op":"null"}}}`)
-	if _, err := ApplyComponentCommand(tpl, raw); err != nil {
+	if _, err := applyComponentCommand(tpl, raw); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -187,13 +188,13 @@ func TestBooleanFormulaReferencesPreviewAndFooterRestrictions(t *testing.T) {
 	for _, tc := range []struct{ formula, want string }{
 		{"true", "{}"}, {"false", "{}"}, {"null", "{}"}, {"amount>20000", `{"amount":0}`}, {"amount/divisor>1", `{"amount":0,"divisor":1}`}, {"amount!=true", `{"amount":true}`}, {"amount != null", `{"amount":""}`}, {"amount/params.divisor>1", `{"amount":0}`},
 	} {
-		got, err := StandInData(formulaTemplate(t, tc.formula))
+		got, err := standInData(formulaTemplate(t, tc.formula))
 		if err != nil || string(got) != tc.want {
 			t.Fatalf("preview %s = %s %v", tc.formula, got, err)
 		}
 	}
 	for _, formula := range []string{"amount/(divisor-divisor)>1", "flag ? amount>1 : upper(amount)!=null"} {
-		_, err := StandInData(formulaTemplate(t, formula))
+		_, err := standInData(formulaTemplate(t, formula))
 		if err == nil || !strings.Contains(err.Error(), "sample data") {
 			t.Fatalf("unsafe preview %s: %v", formula, err)
 		}
@@ -255,7 +256,7 @@ func TestBooleanFormulaTableBindingRoundTripAndRuntimeErrors(t *testing.T) {
 	}
 	// A non-migratable formula's row alias must refuse atomically.
 	before, _ := SerializeTemplate(loaded)
-	_, err = ApplyComponentCommand(loaded, []byte(`{"kind":"configureTableBinding","version":1,"id":"e1","collection":"items[]","alias":"record"}`))
+	_, err = applyComponentCommand(loaded, []byte(`{"kind":"configureTableBinding","version":1,"id":"e1","collection":"items[]","alias":"record"}`))
 	after, _ := SerializeTemplate(loaded)
 	if err == nil || !strings.Contains(err.Error(), "cannot migrate") || !bytes.Equal(before, after) {
 		t.Fatalf("alias formula refusal was not atomic: %v", err)
@@ -272,7 +273,7 @@ func TestBooleanFormulaReviewPreviewCandidatesAndLazyChecks(t *testing.T) {
 		if tc.value != "" {
 			tpl.doc.Bands.Content.Elements[0].Value.Value = tc.value
 		}
-		data, err := StandInData(tpl)
+		data, err := standInData(tpl)
 		if err != nil {
 			t.Fatalf("%s: %v", tc.condition, err)
 		}
@@ -295,7 +296,7 @@ func TestBooleanFormulaReviewPreviewCandidatesAndLazyChecks(t *testing.T) {
 		if tc.value != "" {
 			tpl.doc.Bands.Content.Elements[0].Value.Value = tc.value
 		}
-		_, err := StandInData(tpl)
+		_, err := standInData(tpl)
 		if err == nil || !strings.Contains(err.Error(), "element e1 "+tc.field) || !strings.Contains(err.Error(), "supply sample data") {
 			t.Fatalf("lost preview site: %v", err)
 		}

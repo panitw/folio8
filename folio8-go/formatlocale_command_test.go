@@ -28,6 +28,7 @@ import (
 
 	folio8 "github.com/panitw/folio8/folio8-go"
 	"github.com/panitw/folio8/folio8-go/fonts"
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 )
 
 // The instant, the pattern and the amount are formatlocale_test.go's own: the
@@ -85,7 +86,7 @@ func TestSetDocumentLocaleChangesWhatTheRendererDraws(t *testing.T) {
 		t.Fatalf("fixture precondition: the en document draws %q, want %q", before, formatLocaleCommandEnglish)
 	}
 
-	if _, err := folio8.ApplyComponentCommand(tpl, []byte(`{"kind":"setDocumentLocale","version":1,"locale":"th"}`)); err != nil {
+	if _, err := designer.ApplyComponentCommand(tpl, []byte(`{"kind":"setDocumentLocale","version":1,"locale":"th"}`)); err != nil {
 		t.Fatalf("setDocumentLocale th was refused: %v", err)
 	}
 
@@ -158,7 +159,7 @@ func TestSetDocumentUTCOffsetChangesWhatTheRendererDraws(t *testing.T) {
 		t.Fatalf("fixture precondition: the +00:00 document draws %q, want %q", before, formatOffsetCommandAtUTC)
 	}
 
-	if _, err := folio8.ApplyComponentCommand(tpl, []byte(`{"kind":"setDocumentUTCOffset","version":1,"utcOffset":"+07:00"}`)); err != nil {
+	if _, err := designer.ApplyComponentCommand(tpl, []byte(`{"kind":"setDocumentUTCOffset","version":1,"utcOffset":"+07:00"}`)); err != nil {
 		t.Fatalf("setDocumentUTCOffset +07:00 was refused: %v", err)
 	}
 

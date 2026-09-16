@@ -462,7 +462,7 @@ describe('a fetched face stays on this machine', () => {
     let revision = 1
     let undoDepth = 0
     let declaredChains = ['body']
-    // ONE COMMAND, ONE UNDO ENTRY — the engine's own rule (`wasm/engine.go`'s
+    // ONE COMMAND, ONE UNDO ENTRY — the engine's own rule (`folio8-go/internal/wasm/engine.go`'s
     // single `pushUndo` per applied command), modelled here so the depth this
     // test reads is a consequence of what the designer sent rather than a
     // property of the stub.

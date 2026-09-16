@@ -8,6 +8,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 	"github.com/panitw/folio8/folio8-go/internal/geom"
 )
 
@@ -78,13 +79,13 @@ func bandHeightTemplate(t *testing.T, doc []byte) *Template {
 // bandHeightRefusal asserts the two halves of every refusal row at once: the
 // command was refused, and the document is byte-identical afterwards (AC3, and
 // the "atomic" clause of the Boundaries section).
-func bandHeightRefusal(t *testing.T, tpl *Template, command string) *ComponentCommandError {
+func bandHeightRefusal(t *testing.T, tpl *Template, command string) *designer.ComponentCommandError {
 	t.Helper()
 	before, err := SerializeTemplate(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, applyErr := ApplyComponentCommand(tpl, []byte(command)); applyErr == nil {
+	if _, applyErr := applyComponentCommand(tpl, []byte(command)); applyErr == nil {
 		t.Fatalf("command unexpectedly succeeded: %s", command)
 	} else {
 		after, serErr := SerializeTemplate(tpl)
@@ -94,7 +95,7 @@ func bandHeightRefusal(t *testing.T, tpl *Template, command string) *ComponentCo
 		if !bytes.Equal(before, after) {
 			t.Fatalf("a refused band-height command mutated the document:\n%s\nbefore: %s\nafter:  %s", command, before, after)
 		}
-		var failure *ComponentCommandError
+		var failure *designer.ComponentCommandError
 		if !errors.As(applyErr, &failure) {
 			t.Fatalf("refusal for %s is %T (%v), want *ComponentCommandError — an unlocated refusal reaches the author as the fixed page-setup sentence", command, applyErr, applyErr)
 		}
@@ -129,7 +130,7 @@ func bandHeightKey(t *testing.T, canonical []byte, band string) (string, bool) {
 // could set before, set, projected, and serialized.
 func TestSetBandHeightWritesTheHeightTheAuthorSet(t *testing.T) {
 	tpl := bandHeightTemplate(t, bandHeightDocument("20", "30"))
-	projection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"setBandHeight","version":1,"band":"pageHeader","height":80,"snap":false}`))
+	projection, err := applyComponentCommand(tpl, []byte(`{"kind":"setBandHeight","version":1,"band":"pageHeader","height":80,"snap":false}`))
 	if err != nil {
 		t.Fatalf("a header height with nothing in the band was refused: %v", err)
 	}
@@ -169,7 +170,7 @@ func TestSetBandHeightAcceptsTheLowestOccupiedEdge(t *testing.T) {
 	// e1 occupies y=50 through y=80. A band exactly 80pt tall contains it:
 	// y + height == height is INSIDE, not outside.
 	tpl := bandHeightTemplate(t, bandHeightDocument("100", "30", bandHeightRect("e1", "50", "30")))
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"setBandHeight","version":1,"band":"pageHeader","height":80,"snap":false}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"setBandHeight","version":1,"band":"pageHeader","height":80,"snap":false}`)); err != nil {
 		t.Fatalf("shortening to exactly the lowest occupied edge was refused: %v", err)
 	}
 	canonical, err := SerializeTemplate(tpl)
@@ -221,7 +222,7 @@ func TestSetBandHeightRefusesToStrandAComponentThatIsNotTheFirst(t *testing.T) {
 	))
 	// Precondition, stated rather than assumed: the FIRST element really does
 	// fit the proposed height, so this test can only pass by looking past it.
-	if _, err := ApplyComponentCommand(bandHeightTemplate(t, bandHeightDocument("100", "30", bandHeightRect("e1", "0", "10"))), []byte(`{"kind":"setBandHeight","version":1,"band":"pageHeader","height":40,"snap":false}`)); err != nil {
+	if _, err := applyComponentCommand(bandHeightTemplate(t, bandHeightDocument("100", "30", bandHeightRect("e1", "0", "10"))), []byte(`{"kind":"setBandHeight","version":1,"band":"pageHeader","height":40,"snap":false}`)); err != nil {
 		t.Fatalf("fixture precondition: e1 alone must FIT a 40pt band, else the not-the-first case is not being measured: %v", err)
 	}
 	failure := bandHeightRefusal(t, tpl, `{"kind":"setBandHeight","version":1,"band":"pageHeader","height":40,"snap":false}`)
@@ -285,7 +286,7 @@ func TestSetBandHeightNamesTheBoundThePredicateAcceptsUpTo(t *testing.T) {
 	if bound != "369.889" {
 		t.Fatalf("the refusal names %q as the largest legal header height; the predicate accepts up to 369.889", bound)
 	}
-	if _, err := ApplyComponentCommand(bandHeightTemplate(t, bandHeightDocument("20", "400")), []byte(`{"kind":"setBandHeight","version":1,"band":"pageHeader","height":`+bound+`,"snap":false}`)); err != nil {
+	if _, err := applyComponentCommand(bandHeightTemplate(t, bandHeightDocument("20", "400")), []byte(`{"kind":"setBandHeight","version":1,"band":"pageHeader","height":`+bound+`,"snap":false}`)); err != nil {
 		t.Fatalf("the height the refusal named as legal was refused: %v", err)
 	}
 	// And one millipoint MORE is refused, so the named bound is the LARGEST
@@ -323,7 +324,7 @@ func TestSetBandHeightRefusesBandsThatExactlyFillTheColumn(t *testing.T) {
 	// One millipoint less IS accepted, which is what makes the row above a
 	// statement about strictness rather than about arithmetic being wrong.
 	fresh := bandHeightTemplate(t, bandHeightDocument("20", "400"))
-	if _, err := ApplyComponentCommand(fresh, []byte(`{"kind":"setBandHeight","version":1,"band":"pageHeader","height":369.889,"snap":false}`)); err != nil {
+	if _, err := applyComponentCommand(fresh, []byte(`{"kind":"setBandHeight","version":1,"band":"pageHeader","height":369.889,"snap":false}`)); err != nil {
 		t.Fatalf("one millipoint short of exactly filling the column was refused: %v", err)
 	}
 }
@@ -444,7 +445,7 @@ func TestSetBandHeightIsRefusedByTheDoorsExistingGates(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, applyErr := ApplyComponentCommand(tpl, []byte(probe.command)); applyErr == nil {
+			if _, applyErr := applyComponentCommand(tpl, []byte(probe.command)); applyErr == nil {
 				t.Fatalf("the door accepted %s", probe.command)
 			}
 			after, err := SerializeTemplate(tpl)
@@ -461,7 +462,7 @@ func TestSetBandHeightIsRefusedByTheDoorsExistingGates(t *testing.T) {
 // TestSetBandHeightResentUnchangedLeavesTheBytesIdentical is the row the
 // designer's difference test exists to make unnecessary, asserted on the Go
 // side anyway: re-sending the height already in force writes the same value, so
-// the canonical bytes do not move. wasm/engine.go's own short-circuit compares
+// the canonical bytes do not move. folio8-go/internal/wasm/engine.go's own short-circuit compares
 // exactly these bytes, which is what makes it "no history entry" there.
 func TestSetBandHeightResentUnchangedLeavesTheBytesIdentical(t *testing.T) {
 	tpl := bandHeightTemplate(t, bandHeightDocument("20", "30"))
@@ -469,7 +470,7 @@ func TestSetBandHeightResentUnchangedLeavesTheBytesIdentical(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"setBandHeight","version":1,"band":"pageHeader","height":20,"snap":false}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"setBandHeight","version":1,"band":"pageHeader","height":20,"snap":false}`)); err != nil {
 		t.Fatalf("re-sending the height already in force was refused: %v", err)
 	}
 	after, err := SerializeTemplate(tpl)
@@ -511,7 +512,7 @@ func TestUneditedDocumentSerializesByteIdentically(t *testing.T) {
 	// designer open it at all — the strand is a writer's refusal, not a
 	// loader's. If this ever fails, the panel's difference test (App.tsx) is
 	// protecting a document nobody can open.
-	if _, err := Canvas(tpl); err != nil {
+	if _, err := canvas(tpl); err != nil {
 		t.Fatalf("an already-stranded document lost its projection: %v", err)
 	}
 }
@@ -551,7 +552,7 @@ func TestCanvasRefusesBandsThatLeaveNoContentWindow(t *testing.T) {
 			// The loader accepts all five: parse_bands.go has no positivity
 			// check and no upper bound, which is why Canvas has to hold one.
 			tpl := bandHeightTemplate(t, bandHeightDocument(probe.header, probe.footer))
-			_, err := Canvas(tpl)
+			_, err := canvas(tpl)
 			if probe.sentence == "" {
 				if err != nil {
 					t.Fatalf("Canvas refused a projectable document: %v", err)
@@ -564,7 +565,7 @@ func TestCanvasRefusesBandsThatLeaveNoContentWindow(t *testing.T) {
 			if !strings.Contains(err.Error(), probe.sentence) {
 				t.Fatalf("Canvas refusal = %q, want %q — its own bare sentence, because the loader's audience is not the author's", err, probe.sentence)
 			}
-			var located *ComponentCommandError
+			var located *designer.ComponentCommandError
 			if errors.As(err, &located) {
 				t.Fatal("Canvas's refusal became located; the two audiences share a predicate, not a sentence")
 			}
@@ -603,7 +604,7 @@ func TestSetBandHeightNamesTheFieldForAnEmptiedBox(t *testing.T) {
 // swap: the footer's serialized literal moved, and the header's did not.
 func TestSetBandHeightWritesTheFooterHeightTheAuthorSet(t *testing.T) {
 	tpl := bandHeightTemplate(t, bandHeightDocument("20", "30"))
-	projection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"setBandHeight","version":1,"band":"pageFooter","height":80,"snap":false}`))
+	projection, err := applyComponentCommand(tpl, []byte(`{"kind":"setBandHeight","version":1,"band":"pageFooter","height":80,"snap":false}`))
 	if err != nil {
 		t.Fatalf("a footer height with nothing in the band was refused: %v", err)
 	}
@@ -634,7 +635,7 @@ func TestSetBandHeightWritesTheFooterHeightTheAuthorSet(t *testing.T) {
 // acceptance, in the footer.
 func TestSetBandHeightAcceptsTheLowestOccupiedEdgeOfTheFooter(t *testing.T) {
 	tpl := bandHeightTemplate(t, bandHeightFooterDocument("30", "100", bandHeightRect("e7", "50", "30")))
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"setBandHeight","version":1,"band":"pageFooter","height":80,"snap":false}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"setBandHeight","version":1,"band":"pageFooter","height":80,"snap":false}`)); err != nil {
 		t.Fatalf("shortening the footer to exactly its lowest occupied edge was refused: %v", err)
 	}
 	canonical, err := SerializeTemplate(tpl)
@@ -690,7 +691,7 @@ func TestSetBandHeightRefusesAFooterHeightThatLeavesNoContentWindow(t *testing.T
 	if bound := boundNamedIn(t, failure.Message); bound != "369.889" {
 		t.Fatalf("the footer refusal names %q as its ceiling, want 369.889", bound)
 	}
-	if _, err := ApplyComponentCommand(bandHeightTemplate(t, bandHeightDocument("400", "20")), []byte(`{"kind":"setBandHeight","version":1,"band":"pageFooter","height":369.889,"snap":false}`)); err != nil {
+	if _, err := applyComponentCommand(bandHeightTemplate(t, bandHeightDocument("400", "20")), []byte(`{"kind":"setBandHeight","version":1,"band":"pageFooter","height":369.889,"snap":false}`)); err != nil {
 		t.Fatalf("the footer height the refusal named as legal was refused: %v", err)
 	}
 }
@@ -721,12 +722,12 @@ func TestSetBandHeightRefusesToStrandAComponentThatIsNotTheFirstInTheFooter(t *t
 // reaches the file.
 func TestSetBandHeightSnapsToTheGridWhenAsked(t *testing.T) {
 	tpl := bandHeightTemplate(t, bandHeightDocument("20", "30"))
-	projection, err := ApplyComponentCommand(tpl, []byte(`{"kind":"setBandHeight","version":1,"band":"pageHeader","height":82,"snap":true}`))
+	projection, err := applyComponentCommand(tpl, []byte(`{"kind":"setBandHeight","version":1,"band":"pageHeader","height":82,"snap":true}`))
 	if err != nil {
 		t.Fatalf("a snapped header height was refused: %v", err)
 	}
 	if projection.Bands[0].Height != 84000 {
-		t.Fatalf("projected pageHeader height = %d, want 84000 — the nearest multiple of the %dmp grid to 82pt", projection.Bands[0].Height, GridIncrement)
+		t.Fatalf("projected pageHeader height = %d, want 84000 — the nearest multiple of the %dmp grid to 82pt", projection.Bands[0].Height, designer.GridIncrement)
 	}
 	canonical, err := SerializeTemplate(tpl)
 	if err != nil {
@@ -738,7 +739,7 @@ func TestSetBandHeightSnapsToTheGridWhenAsked(t *testing.T) {
 	// The FOOTER takes the same rounding, which is the half a rotation into the
 	// header would hide.
 	footerTpl := bandHeightTemplate(t, bandHeightDocument("20", "30"))
-	if _, err := ApplyComponentCommand(footerTpl, []byte(`{"kind":"setBandHeight","version":1,"band":"pageFooter","height":82,"snap":true}`)); err != nil {
+	if _, err := applyComponentCommand(footerTpl, []byte(`{"kind":"setBandHeight","version":1,"band":"pageFooter","height":82,"snap":true}`)); err != nil {
 		t.Fatalf("a snapped footer height was refused: %v", err)
 	}
 	footerCanonical, err := SerializeTemplate(footerTpl)
@@ -756,7 +757,7 @@ func TestSetBandHeightSnapsToTheGridWhenAsked(t *testing.T) {
 // writes did not move. An author who types 82 with snapping off still gets 82.
 func TestSetBandHeightLeavesAnUnsnappedHeightAlone(t *testing.T) {
 	tpl := bandHeightTemplate(t, bandHeightDocument("20", "30"))
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"setBandHeight","version":1,"band":"pageHeader","height":82,"snap":false}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"setBandHeight","version":1,"band":"pageHeader","height":82,"snap":false}`)); err != nil {
 		t.Fatalf("an unsnapped header height was refused: %v", err)
 	}
 	canonical, err := SerializeTemplate(tpl)
@@ -783,7 +784,7 @@ func TestSetBandHeightLeavesAnUnsnappedHeightAlone(t *testing.T) {
 func TestSetBandHeightSnapsBeforeItChecksAndNamesTheSnappedValue(t *testing.T) {
 	// The precondition, measured rather than assumed: unsnapped, this exact
 	// height is ACCEPTED.
-	if _, err := ApplyComponentCommand(bandHeightTemplate(t, bandHeightDocument("100", "30", bandHeightRect("e1", "50", "30"))), []byte(`{"kind":"setBandHeight","version":1,"band":"pageHeader","height":80,"snap":false}`)); err != nil {
+	if _, err := applyComponentCommand(bandHeightTemplate(t, bandHeightDocument("100", "30", bandHeightRect("e1", "50", "30"))), []byte(`{"kind":"setBandHeight","version":1,"band":"pageHeader","height":80,"snap":false}`)); err != nil {
 		t.Fatalf("fixture precondition: 80pt unsnapped must be accepted, else this test measures nothing: %v", err)
 	}
 	tpl := bandHeightTemplate(t, bandHeightDocument("100", "30", bandHeightRect("e1", "50", "30")))
@@ -847,8 +848,8 @@ func TestSetBandHeightNamesTheSnappedNegative(t *testing.T) {
 // MaxCanvasMillipoints (~9.007e15), three orders of magnitude short of that, so
 // no value that reaches SnapToGrid here can fail it.
 func TestSetBandHeightCannotOverflowGridSnapping(t *testing.T) {
-	for _, probe := range []geom.Length{geom.Length(MaxCanvasMillipoints), -geom.Length(MaxCanvasMillipoints), 0, 1, -1} {
-		if _, valid := SnapToGrid(probe); !valid {
+	for _, probe := range []geom.Length{geom.Length(designer.MaxCanvasMillipoints), -geom.Length(designer.MaxCanvasMillipoints), 0, 1, -1} {
+		if _, valid := snapToGrid(probe); !valid {
 			t.Fatalf("SnapToGrid(%d) is invalid, so setBandHeight's overflow arm is now REACHABLE and needs a matrix row of its own", probe)
 		}
 	}
@@ -880,7 +881,7 @@ func TestSetBandHeightCannotOverflowGridSnapping(t *testing.T) {
 // list — every element would "fit" every height — so the handler refuses
 // instead, and this test is the reason that branch cannot be reached today.
 func TestSetBandHeightSeesEveryBandItMaySet(t *testing.T) {
-	projection, err := Canvas(bandHeightTemplate(t, bandHeightDocument("20", "30")))
+	projection, err := canvas(bandHeightTemplate(t, bandHeightDocument("20", "30")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -908,14 +909,14 @@ func TestSetBandHeightIgnoresHorizontalOverflow(t *testing.T) {
 	tpl := bandHeightTemplate(t, bandHeightDocument("100", "30", wide))
 	// Precondition, measured rather than assumed: the element really is outside
 	// its band horizontally, so this test is about the axis it claims to be.
-	projection, err := Canvas(tpl)
+	projection, err := canvas(tpl)
 	if err != nil {
 		t.Fatalf("fixture precondition: the document must project: %v", err)
 	}
 	if containComponent(projection.Bands[0], 0, 0, 600_000, 10_000) == nil {
 		t.Fatalf("fixture precondition: a 600pt-wide rect must overflow a %dmp band", projection.Bands[0].Width)
 	}
-	if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"setBandHeight","version":1,"band":"pageHeader","height":80,"snap":false}`)); err != nil {
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"setBandHeight","version":1,"band":"pageHeader","height":80,"snap":false}`)); err != nil {
 		t.Fatalf("a horizontally overflowing element refused a band-height change it cannot be affected by: %v", err)
 	}
 	// And the VERTICAL cap is not weakened by scoping to it: the same element,

@@ -3,9 +3,11 @@ package folio8
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/panitw/folio8/folio8-go/internal/geom"
 	"strings"
 	"testing"
+
+	"github.com/panitw/folio8/folio8-go/internal/designer"
+	"github.com/panitw/folio8/folio8-go/internal/geom"
 
 	"github.com/panitw/folio8/folio8-go/internal/layout"
 	"github.com/panitw/folio8/folio8-go/internal/template"
@@ -33,7 +35,7 @@ func bodyTextDocument(t *testing.T, value string, style string) *Template {
 	return tpl
 }
 
-func paintOf(t *testing.T, projection CanvasProjection, id string) *CanvasTextPaint {
+func paintOf(t *testing.T, projection designer.CanvasProjection, id string) *designer.CanvasTextPaint {
 	t.Helper()
 	for _, component := range projection.Components {
 		if component.ID == id {
@@ -53,7 +55,7 @@ func TestCanvasBodyTextDegradesPastTheLineBoundInsteadOfAborting(t *testing.T) {
 	// document that reaches the bound (DW-25's own reachability note).
 	value := strings.TrimSuffix(strings.Repeat("clause\n", maxCanvasBodyTextLines+40), "\n")
 	tpl := bodyTextDocument(t, value, `{"fontFamily":"body","fontSize":12}`)
-	projection, err := CanvasWithTextPaint(tpl, testFontSet())
+	projection, err := canvasWithTextPaint(tpl, testFontSet())
 	if err != nil {
 		t.Fatalf("projection aborted instead of degrading: %v", err)
 	}
@@ -89,7 +91,7 @@ func TestCanvasTruncatedPaintIsDistinguishableFromAnEmptyOne(t *testing.T) {
 	tpl := bodyTextDocument(t, long, `{"fontFamily":"body","fontSize":12}`)
 	// e2 is emptied in place, so both dispositions come from ONE projection.
 	tpl.doc.Bands.Content.Elements[1].Value.Value = ""
-	projection, err := CanvasWithTextPaint(tpl, testFontSet())
+	projection, err := canvasWithTextPaint(tpl, testFontSet())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +175,7 @@ func TestCanvasBodyTextDegradesPastThePerLineFragmentGuard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	projection, err := CanvasWithTextPaint(tpl, testFontSet())
+	projection, err := canvasWithTextPaint(tpl, testFontSet())
 	if err != nil {
 		t.Fatalf("projection aborted instead of degrading: %v", err)
 	}
@@ -212,7 +214,7 @@ func TestCanvasBodyTextDegradesPastThePerLineFragmentGuard(t *testing.T) {
 // "within the browser's bounds" — the assertion passed and said nothing. A
 // caller must now state the line count it expects, which turns an empty paint
 // into a declared outcome instead of an accident wearing a pass's face.
-func assertWithinBrowserFragmentBounds(t *testing.T, paint *CanvasTextPaint, wantLines int) {
+func assertWithinBrowserFragmentBounds(t *testing.T, paint *designer.CanvasTextPaint, wantLines int) {
 	t.Helper()
 	if len(paint.Lines) != wantLines {
 		t.Fatalf("paint carries %d lines, want %d — this assertion is only meaningful over the line count its caller declared", len(paint.Lines), wantLines)
@@ -258,7 +260,7 @@ func TestPaginationIsIndependentOfCanvasPaintTruncation(t *testing.T) {
 	}
 
 	before := pages()
-	projection, err := CanvasWithTextPaint(tpl, testFontSet())
+	projection, err := canvasWithTextPaint(tpl, testFontSet())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -430,7 +432,7 @@ func TestCanvasIdentifierBoundsStillRefuseAtFiveHundredAndTwelve(t *testing.T) {
 		},
 	} {
 		t.Run(probe.name, func(t *testing.T) {
-			_, err := Canvas(probe.document(t))
+			_, err := canvas(probe.document(t))
 			if err == nil {
 				t.Fatalf("%s over 512 reached the projection; the identifier bound must still refuse", probe.name)
 			}
@@ -445,7 +447,7 @@ func TestCanvasIdentifierBoundsStillRefuseAtFiveHundredAndTwelve(t *testing.T) {
 	// Half one, the element VALUE: Canvas alone reaches it, and its failure
 	// is still an abort, so `err == nil` is the whole claim.
 	tpl := bodyTextDocument(t, strings.Repeat("y", maxCanvasPropertyString+1), `{"fontFamily":"body","fontSize":12}`)
-	if _, err := Canvas(tpl); err != nil {
+	if _, err := canvas(tpl); err != nil {
 		t.Fatalf("a 513-byte clause is still refused: %v", err)
 	}
 	// Half two, the FRAGMENT text — the site DW-25 never named. It needs its
@@ -459,7 +461,7 @@ func TestCanvasIdentifierBoundsStillRefuseAtFiveHundredAndTwelve(t *testing.T) {
 	// 513 unbroken bytes is ONE fragment by construction — a run of 'y' has
 	// no break opportunity inside it — so this fixture puts the fragment
 	// site, and only the fragment site, under the bound.
-	projection, err := CanvasWithTextPaint(tpl, testFontSet())
+	projection, err := canvasWithTextPaint(tpl, testFontSet())
 	if err != nil {
 		t.Fatalf("CanvasWithTextPaint on a 513-byte clause: %v", err)
 	}
@@ -489,7 +491,7 @@ func TestCanvasIdentifierBoundsStillRefuseAtFiveHundredAndTwelve(t *testing.T) {
 		Bind:    "rows[]",
 		Columns: []template.Column{{ID: "e9", Label: long, Width: 80000, Bind: long}},
 	}}
-	clipped, err := Canvas(table)
+	clipped, err := canvas(table)
 	if err != nil {
 		t.Fatalf("an over-bound column label or bind was REFUSED; both must clip, because the document that carries them loads and prints: %v", err)
 	}
@@ -514,7 +516,7 @@ func TestCanvasIdentifierBoundsStillRefuseAtFiveHundredAndTwelve(t *testing.T) {
 // — and both `go test ./...` and `npm test` would stay green while the
 // product stopped working. Nothing else in Go asserts the MARSHALLED form.
 func TestCanvasTextPaintAlwaysMarshalsBothBooleanDispositions(t *testing.T) {
-	encoded, err := json.Marshal(CanvasTextPaint{})
+	encoded, err := json.Marshal(designer.CanvasTextPaint{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -525,7 +527,7 @@ func TestCanvasTextPaintAlwaysMarshalsBothBooleanDispositions(t *testing.T) {
 	}
 	// And on a REAL, untruncated projection, which is the case an omitempty
 	// tag would actually silence.
-	projection, err := CanvasWithTextPaint(bodyTextDocument(t, "clause", `{"fontFamily":"body","fontSize":12}`), testFontSet())
+	projection, err := canvasWithTextPaint(bodyTextDocument(t, "clause", `{"fontFamily":"body","fontSize":12}`), testFontSet())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -561,10 +563,10 @@ func TestCanvasTextPaintAlwaysMarshalsBothBooleanDispositions(t *testing.T) {
 // whitespace-free run so nothing downstream can spend packLines time on it.
 func TestCanvasBodyTextPastTheChannelCeilingIsStillRefused(t *testing.T) {
 	atTheCeiling := strings.Repeat("x", maxCanvasBodyText)
-	if _, err := Canvas(bodyTextDocument(t, atTheCeiling, `{"fontFamily":"body","fontSize":12}`)); err != nil {
+	if _, err := canvas(bodyTextDocument(t, atTheCeiling, `{"fontFamily":"body","fontSize":12}`)); err != nil {
 		t.Fatalf("a value of exactly %d bytes was refused: %v", maxCanvasBodyText, err)
 	}
-	if _, err := Canvas(bodyTextDocument(t, atTheCeiling+"x", `{"fontFamily":"body","fontSize":12}`)); err == nil {
+	if _, err := canvas(bodyTextDocument(t, atTheCeiling+"x", `{"fontFamily":"body","fontSize":12}`)); err == nil {
 		t.Fatalf("a value of %d bytes reached the projection; the channel backstop must refuse it", maxCanvasBodyText+1)
 	}
 }
@@ -581,7 +583,7 @@ func TestCanvasBodyTextAtTheLineBoundCarriesEveryLine(t *testing.T) {
 	// The last line is spelled differently so it can be identified.
 	value := strings.Repeat("clause\n", maxCanvasBodyTextLines-1) + "final"
 	tpl := bodyTextDocument(t, value, `{"fontFamily":"body","fontSize":12}`)
-	projection, err := CanvasWithTextPaint(tpl, testFontSet())
+	projection, err := canvasWithTextPaint(tpl, testFontSet())
 	if err != nil {
 		t.Fatalf("a document exactly at the line bound was refused a projection: %v", err)
 	}
@@ -630,10 +632,10 @@ func TestCanvasFontChainEntryCountIsBoundedOnALoadedDocument(t *testing.T) {
 		}
 		return tpl
 	}
-	if _, err := Canvas(chain(maxCanvasFontChainEntries)); err != nil {
+	if _, err := canvas(chain(maxCanvasFontChainEntries)); err != nil {
 		t.Fatalf("a chain at the bound was refused a projection: %v", err)
 	}
-	_, err := Canvas(chain(maxCanvasFontChainEntries + 1))
+	_, err := canvas(chain(maxCanvasFontChainEntries + 1))
 	if err == nil {
 		t.Fatal("a chain past the bound reached the projection; the browser would drop the whole snapshot and blank the canvas with no attributable error")
 	}

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 	"github.com/panitw/folio8/folio8-go/internal/geom"
 	"github.com/panitw/folio8/folio8-go/internal/pagemodel"
 )
@@ -462,7 +463,7 @@ func TestClearingARulesFieldUnderAnExplicitNullBlockIsANoOp(t *testing.T) {
 		t.Fatalf("presence precondition: the fixture does not hold rules: null:\n%s", before)
 	}
 	for _, field := range []string{"width", "color", "between"} {
-		if _, err := ApplyComponentCommand(tpl, []byte(`{"kind":"updateTableRules","version":1,"id":"e1","field":"`+field+`","op":"clear"}`)); err != nil {
+		if _, err := applyComponentCommand(tpl, []byte(`{"kind":"updateTableRules","version":1,"id":"e1","field":"`+field+`","op":"clear"}`)); err != nil {
 			t.Fatalf("clear %s: %v", field, err)
 		}
 		if after := canonicalBytes(t, tpl); !bytes.Equal(before, after) {
@@ -498,15 +499,15 @@ func TestTheCanvasProjectsTheEnginesPackedLabelLines(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fontless, err := Canvas(tpl)
+	fontless, err := canvas(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
-	painted, err := CanvasWithTextPaint(tpl, testShippedFontSet())
+	painted, err := canvasWithTextPaint(tpl, testShippedFontSet())
 	if err != nil {
 		t.Fatal(err)
 	}
-	for name, projection := range map[string]CanvasProjection{"Canvas": fontless, "CanvasWithTextPaint": painted} {
+	for name, projection := range map[string]designer.CanvasProjection{"Canvas": fontless, "CanvasWithTextPaint": painted} {
 		columns := projection.Components[0].Columns
 		if got := strings.Join(columns[0].LabelLines, "|"); got != "H0|DATE" {
 			t.Errorf("%s: column 0 labelLines = %q, want H0|DATE", name, got)
@@ -520,7 +521,7 @@ func TestTheCanvasProjectsTheEnginesPackedLabelLines(t *testing.T) {
 		t.Errorf("an over-wide label projects %#v; want the engine's wrapped lines, which rejoin to the label", wrapped)
 	}
 
-	view, err := TableColumns(tpl, "e1")
+	view, err := tableColumns(tpl, "e1")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -599,7 +600,7 @@ func TestACommandThatStrandsAFloorIsRefused(t *testing.T) {
 	}
 	tpl := load()
 	refusalLeavesTheDocumentAlone(t, tpl, `{"kind":"setBandHeight","version":1,"band":"pageHeader","height":30,"snap":false}`, bandHeightPath("pageHeader"))
-	if located, ok := applyToTable(t, tpl, `{"kind":"setBandHeight","version":1,"band":"pageFooter","height":30,"snap":false}`).(*ComponentCommandError); !ok || located.ElementID != "e1" {
+	if located, ok := applyToTable(t, tpl, `{"kind":"setBandHeight","version":1,"band":"pageFooter","height":30,"snap":false}`).(*designer.ComponentCommandError); !ok || located.ElementID != "e1" {
 		t.Errorf("a footer band that strands the floor: refusal %#v, want one naming table e1", located)
 	}
 	if err := applyToTable(t, tpl, `{"kind":"setBandHeight","version":1,"band":"pageHeader","height":15,"snap":false}`); err != nil {
@@ -613,8 +614,8 @@ func TestACommandThatStrandsAFloorIsRefused(t *testing.T) {
 	} {
 		tpl := load()
 		before := canonicalBytes(t, tpl)
-		_, err := ApplyPageSetupCommand(tpl, []byte(command))
-		located, ok := err.(*ComponentCommandError)
+		_, err := applyPageSetupCommand(tpl, []byte(command))
+		located, ok := err.(*designer.ComponentCommandError)
 		if !ok {
 			t.Errorf("%s: error is %T (%v), want a located *ComponentCommandError", name, err, err)
 			continue
@@ -626,7 +627,7 @@ func TestACommandThatStrandsAFloorIsRefused(t *testing.T) {
 			t.Errorf("%s: a refused page setup changed the canonical bytes", name)
 		}
 	}
-	if _, err := ApplyPageSetupCommand(load(), []byte(`{"kind":"pageSetup","version":1,"preset":"custom","orientation":"portrait","width":300,"height":400,"margin":{"top":10,"right":10,"bottom":10,"left":10}}`)); err != nil {
+	if _, err := applyPageSetupCommand(load(), []byte(`{"kind":"pageSetup","version":1,"preset":"custom","orientation":"portrait","width":300,"height":400,"margin":{"top":10,"right":10,"bottom":10,"left":10}}`)); err != nil {
 		t.Errorf("a page setup that keeps the window must be accepted: %v", err)
 	}
 }
@@ -784,7 +785,7 @@ func TestTheCanvasProjectsLongAndManyLabelLinesWhole(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	projection, err := Canvas(tpl)
+	projection, err := canvas(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}

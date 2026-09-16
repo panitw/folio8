@@ -8,10 +8,10 @@ import (
 	"slices"
 )
 
-// PreviewIdentity returns opaque evidence for the exact five inputs that can
+// previewIdentity returns opaque evidence for the exact five inputs that can
 // affect a production preview. It is deliberately an engine-side byte
 // protocol: callers compare the returned digest, but never recreate it.
-func PreviewIdentity(template []byte, data Data, params Params, fontSet FontSet) string {
+func previewIdentity(template []byte, data Data, params Params, fontSet FontSet) string {
 	h := sha256.New()
 	writePreviewField(h, "folio8-preview-identity/v1", nil)
 	writePreviewField(h, "template", template)

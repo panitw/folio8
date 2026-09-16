@@ -18,7 +18,7 @@ export const MAX_ENGINE_FONT_FAMILIES = 256
 // treatment the chain list already had.
 export const MAX_ENGINE_FONT_CHAIN_ENTRIES = 64
 // STORY 14.7b — HOW MANY UNDO ENTRIES THE ENGINE KEEPS, AND IT IS A MIRROR OF A
-// GO CONSTANT: the `historyLimit` declared in `wasm/engine.go`. It is tied to
+// GO CONSTANT: the `historyLimit` declared in `folio8-go/internal/wasm/engine.go`. It is tied to
 // that declaration in `engine-bounds-mirror.test.ts`, because it is spelled on
 // both sides of the channel with nothing but that test between them.
 //

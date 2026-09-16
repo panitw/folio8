@@ -6,6 +6,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/panitw/folio8/folio8-go/internal/designer"
 	"github.com/panitw/folio8/folio8-go/internal/template"
 )
 
@@ -130,7 +131,7 @@ func TestSetComponentAssetInstallsAndRepointsInOneTransaction(t *testing.T) {
 		t.Fatal(err)
 	}
 	newKey := sha256Hex(png1x1Gray())
-	if _, err := ApplyComponentCommand(tpl, setAssetCommand("e1", "image/png", png1x1Gray())); err != nil {
+	if _, err := applyComponentCommand(tpl, setAssetCommand("e1", "image/png", png1x1Gray())); err != nil {
 		t.Fatalf("setComponentAsset: %v", err)
 	}
 	if _, ok := tpl.doc.Assets[newKey]; !ok {
@@ -170,10 +171,10 @@ func TestSetComponentAssetDedupsIdenticalBytes(t *testing.T) {
 	}
 	shared := jpeg4x4Bytes()
 	sharedKey := sha256Hex(shared)
-	if _, err := ApplyComponentCommand(tpl, setAssetCommand("e1", "image/jpeg", shared)); err != nil {
+	if _, err := applyComponentCommand(tpl, setAssetCommand("e1", "image/jpeg", shared)); err != nil {
 		t.Fatalf("set e1: %v", err)
 	}
-	if _, err := ApplyComponentCommand(tpl, setAssetCommand("e2", "image/jpeg", shared)); err != nil {
+	if _, err := applyComponentCommand(tpl, setAssetCommand("e2", "image/jpeg", shared)); err != nil {
 		t.Fatalf("set e2: %v", err)
 	}
 	if len(tpl.doc.Assets) != 1 {
@@ -204,11 +205,11 @@ func TestSetComponentAssetRefusesUnrecognisedMediaTypeAtTheCommand(t *testing.T)
 		t.Fatal(err)
 	}
 	garbage := []byte("not any recognised format")
-	_, err = ApplyComponentCommand(tpl, setAssetCommand("e1", "image/webp", garbage))
+	_, err = applyComponentCommand(tpl, setAssetCommand("e1", "image/webp", garbage))
 	if err == nil {
 		t.Fatal("expected an unrecognised-media-type command to be refused")
 	}
-	var cerr *ComponentCommandError
+	var cerr *designer.ComponentCommandError
 	if !errors.As(err, &cerr) {
 		t.Fatalf("error %v is not a located ComponentCommandError", err)
 	}
@@ -238,7 +239,7 @@ func TestSetComponentAssetRefusesNonImageTarget(t *testing.T) {
 	}
 	// worked-example.json's first content element is a table (e1); reuse it
 	// as a definitely-non-image target.
-	if _, err := ApplyComponentCommand(tpl, setAssetCommand("e1", "image/png", png3x2RGB)); err == nil {
+	if _, err := applyComponentCommand(tpl, setAssetCommand("e1", "image/png", png3x2RGB)); err == nil {
 		t.Fatal("expected setComponentAsset to refuse a non-image target")
 	}
 	after, err := SerializeTemplate(tpl)
@@ -259,7 +260,7 @@ func TestSetComponentAssetRefusesOversizedPayload(t *testing.T) {
 		t.Fatal(err)
 	}
 	oversized := make([]byte, maxComponentAssetBytes+1)
-	if _, err := ApplyComponentCommand(tpl, setAssetCommand("e1", "image/png", oversized)); err == nil {
+	if _, err := applyComponentCommand(tpl, setAssetCommand("e1", "image/png", oversized)); err == nil {
 		t.Fatal("expected an oversized asset to be refused")
 	}
 }
@@ -277,14 +278,14 @@ func TestSetComponentAssetChoosingSamePictureIsIdempotentAtTheEngineLayer(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ApplyComponentCommand(tpl, setAssetCommand("e1", "image/png", png3x2RGB)); err != nil {
+	if _, err := applyComponentCommand(tpl, setAssetCommand("e1", "image/png", png3x2RGB)); err != nil {
 		t.Fatalf("re-choosing the same picture unexpectedly failed: %v", err)
 	}
 	before, err := SerializeTemplate(tpl)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := ApplyComponentCommand(tpl, setAssetCommand("e1", "image/png", png3x2RGB)); err != nil {
+	if _, err := applyComponentCommand(tpl, setAssetCommand("e1", "image/png", png3x2RGB)); err != nil {
 		t.Fatalf("re-choosing the same picture unexpectedly failed: %v", err)
 	}
 	after, err := SerializeTemplate(tpl)
@@ -307,7 +308,7 @@ func TestSetComponentAssetReplacingRepeatedlyLeavesExactlyOneAsset(t *testing.T)
 	pictures := [][]byte{png1x1Gray(), jpeg4x4Bytes(), png1x1Gray(), jpeg4x4Bytes()}
 	mediaTypes := []string{"image/png", "image/jpeg", "image/png", "image/jpeg"}
 	for i, picture := range pictures {
-		if _, err := ApplyComponentCommand(tpl, setAssetCommand("e1", mediaTypes[i], picture)); err != nil {
+		if _, err := applyComponentCommand(tpl, setAssetCommand("e1", mediaTypes[i], picture)); err != nil {
 			t.Fatalf("replace #%d: %v", i, err)
 		}
 	}
@@ -341,7 +342,7 @@ func TestSetComponentAssetNeverSweepsAnUnrelatedOrphan(t *testing.T) {
 	// version of this test could not: with only keyA/keyB, a sweep and
 	// a scoped collection are indistinguishable, since keyB was always
 	// referenced by e2 regardless of which policy runs.
-	if _, err := ApplyComponentCommand(tpl, setAssetCommand("e1", "image/jpeg", jpeg4x4Bytes())); err != nil {
+	if _, err := applyComponentCommand(tpl, setAssetCommand("e1", "image/jpeg", jpeg4x4Bytes())); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := tpl.doc.Assets[keyB]; !ok {

@@ -81,6 +81,7 @@ the table is right and the test is red.
 | `internal/diag` | 1 |
 | `internal/pagemodel` | 1 |
 | `internal/barcode` | 1 |
+| `internal/designer` | 1 |
 | `internal/template` | 2 |
 | `internal/expr` | 3 |
 | `internal/bind` | 4 |
@@ -88,6 +89,7 @@ the table is right and the test is red.
 | `internal/fontset` | 6 |
 | `internal/layout` | 7 |
 | `internal/pdf` | 8 |
+| `internal/wasm` | 9 |
 | `internal/` — the scan root itself; not a stage, and may import no first-party package | -1 |
 <!-- stage-rank-table:end -->
 
