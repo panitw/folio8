@@ -15,6 +15,9 @@
 #     SMALLER, not blocked. The comment above the key carries the ruling that moved it.
 #   - deferred-to-epic-<N>: Terminal HERE, open THERE. The work is still owed, by a later epic.
 #     Neither value is 'done' and neither is 'backlog' -- both would erase the routing.
+#   - deprecated: Terminal. The story will not be built as written; its intent is carried by work
+#     OUTSIDE the epic structure (a spec's stories.yaml). The comment above the key names where the
+#     intent went and what it inherited, so nothing the story owed evaporates with it.
 
 # Retrospective Status:
 #   - optional: Can be completed but not required
@@ -563,9 +566,18 @@ development_status:
   # is in Epic 8's section of epics.md, so Epic 15's own rows under-counted it by two. Recorded here
   # 2026-09-06 (lead's grounding refresh) as POINTERS -- the authoritative rows stay at lines ~284
   # and ~300 so no story has two status values. 8.4d is sequenced BEFORE 15.3 cuts the tag.
+  # ^ 2026-09-16: 15.3 is DEPRECATED (below), so that ordering now binds the tag story in
+  #   spec-client-libraries/stories.yaml instead. 8.4d AND 8.4k both still precede the tag.
   #   -> 8-4d-the-size-budget-is-a-number-something-checks   (row above, `moved-to-epic-15`)
   #   -> 8-4k-a-licence-exception-is-read-and-checked        (row above, `deferred-to-epic-15`)
-  15-3-folio-go-v0-1-0-is-cut: backlog
+  # 15.3 DEPRECATED 2026-09-16 by OWNER DECISION. Cutting the engine tag moves to
+  # _bmad-output/specs/spec-client-libraries/stories.yaml, where it is re-scoped: the tag is
+  # folio8-go/v1.0.0, not v0.1.0, and it is cut only AFTER the designer surface (canvas types,
+  # the wasm package) leaves the public API, so v1.0.0 freezes render + validate alone.
+  # INHERITED by that story, so none of 15.3's obligations evaporate: DW-4's re-measure of the
+  # surface census and re-affirmed trigger, the engineering-lead checkpoint DW-4 records as
+  # discharged by the tagging story, and the ordering that 8.4d and 8.4k precede the tag.
+  15-3-folio-go-v0-1-0-is-cut: deprecated
   epic-15-retrospective: optional
 
   # Epic 16 added 2026-09-02 by OWNER DECISION D-16.1; its rulings, measurements and

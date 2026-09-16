@@ -1,0 +1,125 @@
+- id: "1"
+  title: Move the designer surface out of folio8-go's public API
+  description: >-
+    Move the canvas/designer functions, types and constants of package folio8, and the whole folio8-go/wasm
+    package, behind internal/ so v1.0.0 freezes render and validate only. No render output may change.
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    MOVE: funcs Canvas, CanvasWithTextPaint, ApplyComponentCommand, ApplyPageSetupCommand, PreviewComponentMove,
+    TableColumns, SnapToGrid, PreviewIdentity, AssetBytes, StandInData; types AuthoredProperty, CanvasAuthoredProperties
+    and the other 14 Canvas* types, ComponentCommandError, ComponentMove, TableColumnProjection, TableColumnsProjection;
+    consts MaxCanvasMillipoints, GridIncrement, MaxStandInDataBytes, MaxStandInDataPaths, StandInInstant;
+    and all of package folio8-go/wasm. KEEP PUBLIC: LoadTemplate, ParseTemplate, Render, RenderTo, Validate,
+    ParameterReferences, SerializeTemplate (owner kept it); Template, Data, Params, FontSet, Result, Diagnostic,
+    Severity, RenderError; all DiagCode* and Severity* consts, Version, LocaleTableVersion, MaxParameterReferenceNameLength;
+    fonts.Shipped. Target is about 59 public items, down from 313 across folio8, fonts and wasm. The only
+    wasm consumer, wasm/cmd/engine, is inside the module and may import internal/. Respect the lint stage-rank
+    rules for any new internal package. RENDER-NEUTRAL: every golden-corpus hash must be identical before
+    and after, and the designer build, unit suite and e2e compile must still pass - rebuild the wasm with
+    npm run build:wasm. TestDocsGuideNamesEveryExportedIdentifier floors the census at 250 and WILL fail
+    once the surface shrinks; lower the floor to the new measured count rather than deleting the guard,
+    and remove the moved identifiers from docs/rendering-library.md (.md and .html). The spec checkpoint
+    reviews the final move list as a whole - that review is RELEASING.md precondition 2.
+
+- id: "2"
+  title: Cut folio8-go/v1.0.0
+  description: >-
+    Tag the engine at v1.0.0 once story 1 has shrunk the public surface and 8.4d and 8.4k have landed,
+    replacing deprecated backlog Story 15.3. Both bindings build against this tag.
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    IRREVERSIBLE. D-1.1.c fixes the public API at this tag, and the owner chose v1.0.0 over the v0.1.0
+    that RELEASING.md and D-1.1.c name: that commits to semver, so any later breaking change needs a /v2
+    import path. Reword both documents to v1.0.0. This story REPLACES Story 15-3-folio-go-v0-1-0-is-cut,
+    now deprecated in sprint-status.yaml, and INHERITS what it owed: DW-4's re-measure of the surface
+    census and re-affirmed trigger, the engineering-lead checkpoint DW-4 records as discharged by the
+    tagging story, and the ordering that 8-4d-the-size-budget-is-a-number-something-checks and 8-4k-a-licence-exception-is-read-and-checked
+    both land FIRST - check their status and stop if either is open. Preconditions, checked 2026-09-16:
+    #1 licence manifest READY (TestManifestUpToDate passes) - attach lint/MANIFEST.md as a release artifact;
+    #2 surface reviewed - satisfied by story 1's checkpoint; #3 call-graph walker HOLDS but RE-CHECK after
+    story 1, which relocates methods: TestFolio8MethodNamesAreInjective plus an independent scan. RELEASING.md
+    claims a pinned surface census that goes red when anything is added or removed - it does not exist.
+    ADD it, pinning the frozen list exactly, before tagging. fonts.Shipped() is frozen by this tag and
+    can never shrink afterwards; that is accepted (see ../spec-shipped-font-tiers/, deferred).
+
+- id: "3"
+  title: folio-js renders and validates in Node
+  description: >-
+    A promise-based Node API over the wasm engine covering CAP-1 and CAP-2: parseTemplate, loadTemplate,
+    render, renderTo, validate and parameterReferences, with diagnostics matching the Go Result.
+  invoke_dev_with: >-
+    folio8-go/wasm is the DESIGNER engine - a Load/Apply command loop - NOT a render entry point, so this
+    story includes a new render-oriented wasm entry in folio8-go. Build the js/wasm target and reuse Go's
+    wasm_exec.js shim, as the designer does; wasip1 was considered and declined. The API is promise-based
+    throughout, which keeps a large render offloadable to a worker thread later so it cannot block a Node
+    server's event loop. renderTo takes a Node Writable, mirroring Go's RenderTo(w io.Writer, ...). Warnings
+    arrive in result.diagnostics; an error throws carrying its Diagnostic - never both. See ./api-surface.md
+    for the full contract and the rules that hold across languages.
+
+- id: "4"
+  title: folio-js installs from npm with no build step
+  description: >-
+    Package folio-js so npm install plus the documented snippet produces a PDF (CAP-6) on a machine with
+    no Go, no C compiler and no network access after install.
+  invoke_dev_with: >-
+    Embed the FULL fonts.Shipped() set - all eleven faces, ~14 MB - so the face list is identical to the
+    engine's. Binding-side font tiering was available and explicitly declined; do not slim it. The .wasm
+    is one portable artifact across every Node platform. Node only: there is no browser or bundler entry
+    point in this spec, though the designer proves one is feasible.
+
+- id: "5"
+  title: folio-dotnet renders and validates, .NET Framework 4.6 through modern .NET
+  description: >-
+    The c-shared engine build and its C ABI, plus the netstandard2.0 managed surface over it, covering
+    CAP-3 and CAP-4 with diagnostics identical to Go's.
+  invoke_dev_with: >-
+    Build folio8-go with -buildmode=c-shared for BOTH win-x86 and win-x64; Go supports cgo on windows/386
+    and windows/amd64, and the 32-bit build needs a 32-bit mingw-w64 toolchain in CI. Bind with plain
+    DllImport over a C ABI: .NET Framework 4.6 predates Span<T>, System.Text.Json, NativeLibrary and DllImportResolver,
+    so none of those are available in the binding itself. One netstandard2.0 assembly serves net46 through
+    modern .NET. Data and Params take bytes or a string - do NOT take a serialiser dependency, since 4.6
+    has no System.Text.Json. A warning lands in RenderResult.Diagnostics; an error throws a FolioRenderException
+    carrying its Diagnostic. See ./api-surface.md.
+
+- id: "6"
+  title: folio-dotnet installs from NuGet and loads the right binary
+  description: >-
+    RID-based packaging with bitness-correct native resolution (CAP-7) and a named, actionable exception
+    when the native library cannot load (CAP-11).
+  invoke_dev_with: >-
+    Ship runtimes/win-x86/native/ and runtimes/win-x64/native/ and resolve by PROCESS BITNESS at load
+    time - .NET Framework 4.6 has no DllImportResolver, so RID layout plus probing is the only mechanism.
+    This must work unchanged from an AnyCPU project on 64-bit Windows, an AnyCPU project forced 32-bit,
+    and an explicitly x86 project: AnyCPU defaulting to a 64-bit process is exactly why both architectures
+    ship. On failure throw a folio8 exception naming the detected process bitness, the RID and filename
+    sought, and the likely cause (bitness mismatch, missing RID asset, P/Invoke blocked by a partial-trust
+    or locked-down host). There is no degraded mode. Embed the full ~14 MB font set, as folio-js does.
+
+- id: "7"
+  title: Prove byte-identity for both bindings in CI
+  description: >-
+    Run the golden corpus through folio-js and folio-dotnet on every supported runtime, framework and
+    architecture, failing on any hash that differs from the committed expected PDF (CAP-5).
+  invoke_dev_with: >-
+    This is the story that turns byte-identity from a claim into a tested property, and it is the acceptance
+    bar for the whole spec. Hold both bindings to the standard .github/workflows/matrix.yml already holds
+    the Go targets to: compare SHA-256 against the committed expected PDF, and treat a moved hash as a
+    defect until someone proves it was intended. Axes are Node LTS versions x host platforms for folio-js,
+    and net46 plus modern .NET x win-x86 and win-x64 for folio-dotnet. Diagnostics are part of the contract,
+    not just bytes: for every fixture the sequence of code, severity and message must equal what Go produces.
+
+- id: "8"
+  title: Document folio-js and folio-dotnet on the site
+  description: >-
+    A page per library covering installation, a complete first PDF, errors and warnings, and a full API
+    reference (CAP-8, CAP-9), each precached for offline reading like the existing three guides (CAP-10).
+  invoke_dev_with: >-
+    Author BOTH docs/<name>.md, the source of truth, and docs/<name>.html, the published page, and keep
+    them in agreement. Register each .html in folio8-designer/scripts/build-wasm.mjs so it precaches offline;
+    the pages must use SYSTEM FONTS ONLY, because the forbidden-font-hosts scan fails the build on a remote
+    font host. Each page spends a cache-asset slot against maximumCacheAssets = 90. Every item in ./api-surface.md
+    must appear in its language's reference section. The folio-dotnet page must state the .NET Framework
+    4.6 path explicitly, the supported target frameworks, that both win-x86 and win-x64 ship, and what
+    happens on an unsupported platform. The bar is that a developer who has never seen this repository
+    renders a correct PDF from the page alone.
