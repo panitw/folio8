@@ -43,6 +43,9 @@ import { documentationAssetUrls } from './generated/documentation-assets'
 
 // A glyph tool button's hover guide: its name, then its shortcut when it has one.
 const toolTip = (name: string, shortcut: string) => `${name} (${shortcut})`
+// On macOS Option+letter types another character (⌥P is "π"), so an Alt
+// shortcut matches the physical key as well as the typed one.
+const altLetter = (event: KeyboardEvent, letter: string) => event.code === `Key${letter.toUpperCase()}` || event.key.toLowerCase() === letter
 import { isHexColour, swatchColor } from './swatch-color'
 import { tableAltRowBackgroundCommand, tableHeaderHeightCommand, tableHeaderStyleCommand, tableMinHeightCommand, tableRulesCommand } from './table-style-command'
 import { initialPDFPreviewViewState, PDFPreviewViewer, samePDFPreviewViewState, type PDFPreviewViewState } from './preview/pdf-viewer'
@@ -3292,8 +3295,8 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
       }
       if (modeRef.current === 'design' && breakPage !== undefined && (event.key === 'ArrowUp' || event.key === 'ArrowDown') && canvasKeyAllowed(event)) { event.preventDefault(); nudgeSectionBreak(breakPage, event.shiftKey, event.key === 'ArrowDown'); return }
       if (modeRef.current === 'design' && selectedRef.current.length === 1 && ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) { event.preventDefault(); const step = event.shiftKey ? 10_000 : 1_000; if (event.key === 'ArrowLeft') nudgeSelection(-step, 0); if (event.key === 'ArrowRight') nudgeSelection(step, 0); if (event.key === 'ArrowUp') nudgeSelection(0, -step); if (event.key === 'ArrowDown') nudgeSelection(0, step); return }
-      if (event.altKey && event.key.toLowerCase() === 's' && modeRef.current === 'design') { event.preventDefault(); setSnapEnabled((value) => !value); return }
-      if (event.altKey && event.key.toLowerCase() === 'p' && engine && snapshotRef.current) {
+      if (event.altKey && altLetter(event, 's') && modeRef.current === 'design') { event.preventDefault(); setSnapEnabled((value) => !value); return }
+      if (event.altKey && altLetter(event, 'p') && engine && snapshotRef.current) {
         event.preventDefault()
         if (mode === 'preview') returnToDesign()
         else enterPreview()
@@ -3672,7 +3675,7 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
           the main region is what the author reads instead; a rail of empty
           wells beside it would suggest pages that were never produced. */}
       {mode === 'design'
-        ? <nav className="palette-rail" aria-label="Component palette"><p className="section-label">PALETTE</p>{paletteItems.map(([label, kind]) => <button className="palette-item" type="button" key={kind} onPointerDown={() => { setPlacing(kind); setHoverBand(undefined) }} onClick={() => { setPlacing(kind); setHoverBand(undefined) }} aria-pressed={placing === kind} aria-label={`Place ${label}`}><PaletteIcon kind={kind} />{label}<kbd>place</kbd></button>)}<button className="palette-item" type="button" onPointerDown={armSectionBreak} onClick={armSectionBreak} aria-pressed={placing === 'sectionBreak'} aria-label="Place Section Break" disabled={breakOnCurrentPage}><SectionBreakIcon />Section Break<kbd>place</kbd></button>{breakOnCurrentPage && <p className="honest-note">{pageCount === 1 ? 'This document already has its one Section Break.' : 'This page already has its Section Break.'}</p>}<p className="honest-note">Choose or drag a component, then choose a page band.</p></nav>
+        ? <nav className="palette-rail" aria-label="Component palette"><p className="section-label">PALETTE</p>{paletteItems.map(([label, kind]) => <button className="palette-item" type="button" key={kind} onPointerDown={() => { setPlacing(kind); setHoverBand(undefined) }} onClick={() => { setPlacing(kind); setHoverBand(undefined) }} aria-pressed={placing === kind} aria-label={`Place ${label}`}><PaletteIcon kind={kind} />{label}<kbd>place</kbd></button>)}<button className="palette-item" type="button" onPointerDown={armSectionBreak} onClick={armSectionBreak} aria-pressed={placing === 'sectionBreak'} aria-label="Place Section Break" disabled={breakOnCurrentPage}><SectionBreakIcon />Section Break<kbd>place</kbd></button>{breakOnCurrentPage && <p className="honest-note">{pageCount === 1 ? 'This document already has its one Section Break.' : 'This page already has its Section Break.'}</p>}<p className="honest-note">Choose or drag a component, then choose a page band.</p><a className="palette-docs-link" href={documentationAssetUrls.guide} target="_blank" rel="noopener noreferrer"><ToolIcon glyph="docs" /><span>Documentation</span><span className="palette-docs-arrow" aria-hidden="true">↗</span></a></nav>
         : preview && <PageRail bytes={preview.bytes} pages={previewPages} currentPage={previewViewState.page} onGoToPage={goToPreviewPage} />}
       {/* NO onClick HERE, DELIBERATELY (Story 17.2). The backdrop — the grey
           space around the page — used to clear the selection when the click

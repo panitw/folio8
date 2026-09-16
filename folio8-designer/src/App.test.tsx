@@ -1239,6 +1239,16 @@ describe('application shell', () => {
     expect(link).toHaveFocus()
   })
 
+  it('pins a labelled documentation link to the foot of the component palette', () => {
+    render(<App />)
+    const palette = screen.getByRole('navigation', { name: 'Component palette' })
+    const link = within(palette).getByRole('link', { name: 'Documentation' })
+    expect(link).toHaveAttribute('href', documentationAssetUrls.guide)
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+    expect(palette.lastElementChild).toBe(link)
+  })
+
   it('draws the canvas toolbar as glyphs whose hover guide names each shortcut', () => {
     render(<App />)
     const shortcuts = shortcutHintsFor()
@@ -1555,6 +1565,9 @@ describe('application shell', () => {
     // browser: Snap toggles its own pressed state, Alt+P swaps the whole main.
     ['Snap (Alt+S)', { key: 's', altKey: true }, () => { expect(screen.getByRole('button', { name: /^Snap/ })).toHaveAttribute('aria-pressed', 'false') }],
     ['Preview (Alt+P)', { key: 'p', altKey: true }, () => { expect(screen.queryByLabelText('Canvas region')).toBeNull() }],
+    // macOS: Option+S and Option+P type "ß" and "π"; the physical key still matches.
+    ['Snap (⌥S on macOS)', { key: 'ß', code: 'KeyS', altKey: true }, () => { expect(screen.getByRole('button', { name: /^Snap/ })).toHaveAttribute('aria-pressed', 'false') }],
+    ['Preview (⌥P on macOS)', { key: 'π', code: 'KeyP', altKey: true }, () => { expect(screen.queryByLabelText('Canvas region')).toBeNull() }],
     ['Delete', { key: 'Delete' }, (request: ReturnType<typeof modalTableRequest>) => { expect(sentCommands(request)).toEqual(['{"kind":"deleteComponent","version":1,"id":"e7"}']) }],
     ['Backspace', { key: 'Backspace' }, (request: ReturnType<typeof modalTableRequest>) => { expect(sentCommands(request)).toEqual(['{"kind":"deleteComponent","version":1,"id":"e7"}']) }],
   ])('sends %s to the document when no dialog is open, which is what makes the suppressed arm a measurement', async (_name, keyboard, verify) => {

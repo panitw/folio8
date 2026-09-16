@@ -102,9 +102,11 @@ button:focus-visible { outline: 2px solid var(--color-select); outline-offset: -
 .tool-icon { width: var(--icon-size); height: var(--icon-size); }
 .tool-button[data-tip]:hover::after, .tool-button[data-tip]:focus-visible::after, .tool-hint[data-tip]:hover::after { content: attr(data-tip); position: absolute; z-index: 40; top: calc(100% + var(--space-1)); left: 50%; transform: translateX(-50%); padding: 2px var(--space-2); border: var(--hairline) solid var(--color-line-strong); background: var(--color-panel); color: var(--color-ink-high); font: var(--type-body); white-space: nowrap; pointer-events: none; }
 .later-control { margin-left: auto; color: var(--color-ink); }
-.mode-switch { display: flex; border: var(--hairline) solid var(--color-edge); }
-.mode-switch button { min-height: var(--status-bar-height); padding: var(--space-1) var(--space-6); border: 0; background: transparent; color: var(--color-ink); font: var(--type-body); letter-spacing: var(--tracking-brand); }
-.mode-switch .mode-active { background: var(--color-active); color: var(--color-ink-high); font-weight: 500; }
+.mode-switch { display: flex; border: var(--hairline) solid var(--color-select-edge); }
+.mode-switch button { min-height: var(--status-bar-height); padding: var(--space-1) var(--space-6); border: 0; background: transparent; color: var(--color-ink); font: var(--type-body); letter-spacing: var(--tracking-brand); cursor: pointer; }
+.mode-switch button:not(.mode-active):hover { background: var(--color-select-tint); color: var(--color-select-bright); }
+.mode-switch .mode-active { background: var(--color-select); color: var(--color-ground); font-weight: 600; }
+.mode-switch button kbd { margin-left: var(--space-2); font: var(--type-mono); opacity: 0.8; }
 .mode-switch button:focus-visible, .pdf-preview-scroll:focus-visible { outline: 2px solid var(--color-select); outline-offset: -2px; }
 /* THE DOCUMENTATION LINK — the bar's last item, one `.tool-button` glyph drawn
    on an `<a>`. Its hover guide is anchored to the RIGHT edge rather than
@@ -115,7 +117,12 @@ button:focus-visible { outline: 2px solid var(--color-select); outline-offset: -
 .documentation-actions .tool-button:focus-visible { outline: 2px solid var(--color-select); outline-offset: 1px; }
 .documentation-actions .tool-button[data-tip]:hover::after, .documentation-actions .tool-button[data-tip]:focus-visible::after { left: auto; right: 0; transform: none; }
 .workbench { min-width: 0; min-height: 0; overflow: hidden; display: grid; grid-template-columns: var(--palette-width) minmax(0, 1fr) var(--panel-width); }
-.palette-rail { overflow: auto; padding: var(--space-5) var(--space-panel-x); background: var(--color-panel); border-right: var(--hairline) solid var(--color-line); }
+.palette-rail { overflow: auto; display: flex; flex-direction: column; padding: var(--space-5) var(--space-panel-x); background: var(--color-panel); border-right: var(--hairline) solid var(--color-line); }
+/* The documentation entry pinned to the foot of the palette: an accent-edged
+   row, so it is found without hunting for the bar's glyph. */
+.palette-docs-link { margin-top: auto; display: grid; grid-template-columns: var(--icon-size) 1fr auto; align-items: center; gap: var(--space-3); min-height: 32px; padding: var(--palette-item-padding-y) var(--space-5); border: var(--hairline) solid var(--color-select-edge); background: var(--color-select-tint); color: var(--color-select-bright); font: var(--type-body-em); font-weight: 500; text-decoration: none; }
+.palette-docs-link:hover { background: var(--color-select-fill); color: var(--color-select-on-fill); border-color: var(--color-select); }
+.palette-docs-link:focus-visible { outline: 2px solid var(--color-select); outline-offset: 1px; }
 /* STORY 13.6 — PREVIEW'S FIRST COLUMN IS THE PAGES RAIL, AND IT IS NARROWER.
    This is the declaration Story 13.3 deliberately left free (see its note
    further down this file): the rail lands on `.workbench`'s ONLY
