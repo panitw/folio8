@@ -1750,9 +1750,10 @@ func applyPropertyChanges(t *Template, element *template.Element, changes map[st
 	return nil
 }
 
+// validPropertyColor is the command door's colour check: the loader's own
+// predicate, so a value refused in a file is refused here too.
 func validPropertyColor(value string) bool {
-	_, ok := parseHexColor(value)
-	return ok
+	return template.IsHexColour(value)
 }
 
 func knownFontFamily(t *Template, value string) bool {
@@ -3516,9 +3517,9 @@ func updateTableRules(t *Template, raw map[string]json.RawMessage) (designer.Can
 // odd zero-based collection indexes. This story adds NO rendering rule: the
 // paint decision stays the six inline lines in collectBandTableRuns, untouched.
 //
-// THE COLOUR IS VALIDATED BY THE ENGINE'S OWN PREDICATE, parseHexColor via
-// validPropertyColor — the same one style.background and style.color are
-// validated by. The panel invents no second validation and shows this
+// THE COLOUR IS VALIDATED BY THE ENGINE'S OWN PREDICATE, template.IsHexColour via
+// validPropertyColor — the same one the loader refuses every colour field by
+// (and style.background and style.color with it). The panel invents no second validation and shows this
 // sentence.
 //
 // THE TABLE GATE IS ASKED BEFORE THE OP GRAMMAR (Finding P8), the same order
@@ -3759,12 +3760,9 @@ func updateTableHeaderStyle(t *Template, raw map[string]json.RawMessage) (design
 			}
 			style.Align = template.Presence[string]{Set: true, Value: text}
 		case "border.color":
-			// THE SAME validPropertyColor THE OTHER TWO COLOURS ASK, and this
-			// one has to be asked HERE rather than left to the loader: a border
-			// colour is the one border sub-key the file door CANNOT check
-			// (AD-1 forbids internal/template to import parseHexColor), so a
-			// malformed one loads and surfaces at RENDER. Refusing it at the
-			// command door is what keeps the author's own edit located.
+			// THE SAME validPropertyColor THE OTHER TWO COLOURS ASK, which is
+			// the loader's own predicate (template.IsHexColour): a colour the
+			// file door refuses is refused here, located at the author's edit.
 			if !validPropertyColor(text) {
 				return designer.CanvasProjection{}, componentFailure(id, path, "border.color must be a #RRGGBB colour")
 			}

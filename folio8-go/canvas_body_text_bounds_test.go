@@ -384,21 +384,28 @@ func TestCanvasIdentifierBoundsStillRefuseAtFiveHundredAndTwelve(t *testing.T) {
 		{
 			name: "color",
 			document: func(t *testing.T) *Template {
-				return bodyTextDocument(t, "short", fmt.Sprintf(`{"fontFamily":"body","fontSize":12,"color":%q}`, long))
+				// Written past the loader, which refuses a non-#RRGGBB colour.
+				tpl := bodyTextDocument(t, "short", `{"fontFamily":"body","fontSize":12}`)
+				tpl.doc.Bands.Content.Elements[0].Style.Value.Color = template.Presence[string]{Set: true, Value: long}
+				return tpl
 			},
 			message: "folio8: component color exceeds the projection bound",
 		},
 		{
 			name: "background",
 			document: func(t *testing.T) *Template {
-				return bodyTextDocument(t, "short", fmt.Sprintf(`{"fontFamily":"body","fontSize":12,"background":%q}`, long))
+				tpl := bodyTextDocument(t, "short", `{"fontFamily":"body","fontSize":12}`)
+				tpl.doc.Bands.Content.Elements[0].Style.Value.Background = template.Presence[string]{Set: true, Value: long}
+				return tpl
 			},
 			message: "folio8: component background exceeds the projection bound",
 		},
 		{
 			name: "border.color",
 			document: func(t *testing.T) *Template {
-				return bodyTextDocument(t, "short", fmt.Sprintf(`{"fontFamily":"body","fontSize":12,"border":{"width":1,"color":%q}}`, long))
+				tpl := bodyTextDocument(t, "short", `{"fontFamily":"body","fontSize":12,"border":{"width":1}}`)
+				tpl.doc.Bands.Content.Elements[0].Style.Value.Border.Value.Color = template.Presence[string]{Set: true, Value: long}
+				return tpl
 			},
 			message: "folio8: component borderColor exceeds the projection bound",
 		},

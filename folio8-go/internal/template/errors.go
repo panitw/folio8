@@ -18,7 +18,8 @@ import (
 // three footer-source conditions (D-1.4.2's TABLE_FOOTER_SOURCE_FORBIDDEN
 // parenthetical, plus D-1.4.1's TABLE_FOOTER_SOURCE_UNRESOLVED
 // out-of-collection arm swept in at Story 4.5 under D-000.67 part 2) and
-// Story 7.2's STYLE_LINE_SPACING_INVALID.
+// Story 7.2's line-spacing code, which D-7.8.2 retired before the v1.0.0
+// tag (that site now takes the general code).
 //
 // That left every OTHER load error uncoded, which folio8.ParseTemplate's
 // boundary (this package may never import the module root, AD-1) read
@@ -265,7 +266,8 @@ func newLoadError(field, elementID, value, reason string) error {
 // ones (one code, two sites, because the code names the CONDITION, not
 // the line) and the single TABLE_FOOTER_SOURCE_UNRESOLVED one (the
 // out-of-collection footerOf prefix check, swept in at Story 4.5 per
-// D-000.67 part 2) — plus Story 7.2's STYLE_LINE_SPACING_INVALID.
+// D-000.67 part 2). Story 7.2's line-spacing site was a fourth until
+// D-7.8.2 retired its code before the v1.0.0 tag.
 //
 // D-7.8.1 fixes when a new one is warranted: only when a NAMED CONSUMER
 // must BRANCH on the code to behave differently. Everything else takes

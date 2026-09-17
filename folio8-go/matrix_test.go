@@ -784,6 +784,23 @@ func requireMultiPageFlowPages(t *testing.T, target matrixTarget, raw []byte) {
 	})
 }
 
+// captureColourStrokesRender renders fixtures/colour-strokes/ in a FRESH
+// process.
+func captureColourStrokesRender(t *testing.T, target matrixTarget, binPath string) []byte {
+	t.Helper()
+	return runOnTarget(t, target, binPath, map[string]string{subprocessColourStrokesEnvVar: "1"})
+}
+
+// requireColourStrokesColours is the colour document's per-leg feature guard:
+// one page, every declared fill and ink set by an rg operator and every
+// declared stroke by an RG operator, and no colour operator setting black.
+func requireColourStrokesColours(t *testing.T, target matrixTarget, raw []byte) {
+	t.Helper()
+	colourStrokesAssertColours(t, raw, func(format string, args ...any) {
+		t.Fatalf("%s: colour-strokes leg: "+format, append([]any{target.name}, args...)...)
+	})
+}
+
 // captureSectionBreakStatementRender renders fixtures/section-break-statement/
 // in a FRESH process.
 func captureSectionBreakStatementRender(t *testing.T, target matrixTarget, binPath string) []byte {
@@ -2131,6 +2148,20 @@ var matrixDocuments = []matrixDocument{
 		requireFontFile2: true,
 		extraGuard:       requireMultiPageFlowPages,
 		wantPages:        4,
+	},
+	{
+		// SPEC-client-libraries story 3 (DW-147): the first cross-target
+		// artifact declaring text colour and coloured strokes — ink on text
+		// and in a table's cells and header, a partial-edge border, a stroked
+		// rect and line, table rules, alternating row fills and a filled
+		// background, every colour differing from #000000.
+		label:            "colour-strokes (text ink, coloured strokes, rules and fills)",
+		slug:             "colour-strokes",
+		capture:          captureColourStrokesRender,
+		fixtureRelPath:   []string{"fixtures", "colour-strokes", "expected.json"},
+		requireFontFile2: true,
+		extraGuard:       requireColourStrokesColours,
+		wantPages:        1,
 	},
 	{
 		// spec-barcode-qr-elements CAP-1: the first cross-target artifact

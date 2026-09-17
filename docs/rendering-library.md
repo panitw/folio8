@@ -428,12 +428,11 @@ and surface only when rendering.
 | Refused at load (`ParseTemplate`/`LoadTemplate`) | Reported at render (`Render`/`RenderTo`/`Validate`) |
 |---|---|
 | Malformed JSON or a MAJOR version above 4 — `TEMPLATE_MALFORMED` | An absent data or params path — `BINDING_PATH_ABSENT` (error) |
-| A field value outside its rules: unknown closed-set member, missing required field, duplicate id, bad table width allocation — `TEMPLATE_FIELD_INVALID`, located by `DataPath` | An expression that fails on this data (wrong kind, division by zero) — `EXPRESSION_INVALID` (error) |
+| A field value outside its rules: unknown closed-set member, missing required field, duplicate id, bad table width allocation, a colour that is not `#RRGGBB`, a `lineSpacing` outside its range — `TEMPLATE_FIELD_INVALID`, located by `DataPath` | An expression that fails on this data (wrong kind, division by zero) — `EXPRESSION_INVALID` (error) |
 | An invalid expression (syntax, unknown function, provably wrong kind) — `EXPRESSION_INVALID` | A line or image taller than the content window — `CONTENT_UNLAYOUTABLE` (error) |
-| A table `minHeight` taller than the content window — `TABLE_MIN_HEIGHT_UNPLACEABLE` | A malformed colour — `STYLE_COLOR_INVALID` (error) |
-| A section break out of range, duplicated, on a header/footer band, or `sectionBreakAnchor` without `sectionBreak` or not a boolean — `SECTION_BREAK_INVALID`; an element across the break — `SECTION_BREAK_STRADDLED` | Clipped text, missing glyphs, undeclared faces, suppressed table headers or footers, clipped rows — warnings |
-| An invalid `pages` array — `PAGES_INVALID` | Barcode/QR content that cannot be encoded or fitted — warnings |
-| A `lineSpacing` outside its range — `STYLE_LINE_SPACING_INVALID` | An `avg` over an empty collection — `AGGREGATE_EMPTY_AVERAGE` (warning) |
+| A table `minHeight` taller than the content window — `TABLE_MIN_HEIGHT_UNPLACEABLE` | Clipped text, missing glyphs, undeclared faces, suppressed table headers or footers, clipped rows — warnings |
+| A section break out of range, duplicated, on a header/footer band, or `sectionBreakAnchor` without `sectionBreak` or not a boolean — `SECTION_BREAK_INVALID`; an element across the break — `SECTION_BREAK_STRADDLED` | Barcode/QR content that cannot be encoded or fitted — warnings |
+| An invalid `pages` array — `PAGES_INVALID` | An `avg` over an empty collection — `AGGREGATE_EMPTY_AVERAGE` (warning) |
 
 `PAGES_INVALID` and `SECTION_BREAK_INVALID` locate the problem through `Diagnostic.DataPath` —
 `pages`, `pages[1]`, `pages[1].sectionBreak`, `bands.content.sectionBreakAnchor` — not through
@@ -910,7 +909,7 @@ Parses `b` as a `.folio` document and returns an opaque `*Template`. Beyond deco
 Errors are `*RenderError` values carrying a load code:
 
 - `DiagCodeTemplateMalformed` for bytes that are not a loadable document at all.
-- Otherwise the code the loader attached, by default `DiagCodeTemplateFieldInvalid`, or a specific code such as `DiagCodeStyleLineSpacingInvalid`, `DiagCodeTableFooterSourceForbidden`, `DiagCodeTableFooterSourceUnresolved`, `DiagCodeExpressionInvalid`, `DiagCodeTableMinHeightUnplaceable`, `DiagCodeSectionBreakInvalid`, `DiagCodeSectionBreakStraddled` or `DiagCodePagesInvalid`.
+- Otherwise the code the loader attached, by default `DiagCodeTemplateFieldInvalid`, or a specific code such as `DiagCodeTableFooterSourceForbidden`, `DiagCodeTableFooterSourceUnresolved`, `DiagCodeExpressionInvalid`, `DiagCodeTableMinHeightUnplaceable`, `DiagCodeSectionBreakInvalid`, `DiagCodeSectionBreakStraddled` or `DiagCodePagesInvalid`.
 
 For `DiagCodeSectionBreakInvalid` and `DiagCodePagesInvalid`, `Diagnostic.DataPath` carries the band or page field path, such as `pages` or `pages[1]`, because there is no element id.
 
@@ -961,7 +960,7 @@ Produces a PDF 1.7 document. It resolves every placeholder against `d` (report d
   - A nil or empty `p` means "no runtime values": `{{params.x}}` is then absent.
   - `f` must contain every face the document's font chains actually need. The engine never looks for fonts on the host.
 - **Returns.** On success, `Result.Bytes` is the complete PDF and `Result.Diagnostics` holds every Warning. A non-nil error means nothing was rendered; ignore `Result` in that case.
-- **Errors.** Located failures are `*RenderError` with a `SeverityError` diagnostic: for example `DiagCodeBindingPathAbsent`, `DiagCodeExpressionInvalid`, `DiagCodeContentUnlayoutable`, `DiagCodeStyleColorInvalid` or `DiagCodeDocumentDateInvalid`. Missing fonts and invalid input JSON may arrive as ordinary errors, so always keep a non-`RenderError` fallback.
+- **Errors.** Located failures are `*RenderError` with a `SeverityError` diagnostic: for example `DiagCodeBindingPathAbsent`, `DiagCodeExpressionInvalid`, `DiagCodeContentUnlayoutable` or `DiagCodeDocumentDateInvalid`. Missing fonts and invalid input JSON may arrive as ordinary errors, so always keep a non-`RenderError` fallback.
 - **Ownership.** `t`, `d`, `p` and `f` are not modified.
 
 #### `RenderTo`
@@ -1136,8 +1135,7 @@ Each constant is an untyped string constant whose value is the registry string. 
 | Go constant | String value | Disposition / when | Meaning |
 |---|---|---|---|
 | `DiagCodeTemplateMalformed` | `TEMPLATE_MALFORMED` | Load error | The bytes are not a loadable document: not a JSON object, an unreadable value, or an unsupported major version. |
-| `DiagCodeTemplateFieldInvalid` | `TEMPLATE_FIELD_INVALID` | Load error | A well-formed document has an unacceptable field value: outside its closed set, missing, of the wrong JSON kind, or a duplicate/misspelled id. Also static barcode/QR content that cannot be encoded. The message names the field, element and value. |
-| `DiagCodeStyleLineSpacingInvalid` | `STYLE_LINE_SPACING_INVALID` | Load error | `style.lineSpacing` or `headerStyle.lineSpacing` is outside [0.001, 1000] or has more than three decimal places. |
+| `DiagCodeTemplateFieldInvalid` | `TEMPLATE_FIELD_INVALID` | Load error | A well-formed document has an unacceptable field value: outside its closed set, missing, of the wrong JSON kind, or a duplicate/misspelled id. Also a colour that is not `#RRGGBB`, a `lineSpacing` outside [0.001, 1000] or with more than three decimal places, and static barcode/QR content that cannot be encoded. The message names the field, element and value. |
 | `DiagCodeTableFooterSourceForbidden` | `TABLE_FOOTER_SOURCE_FORBIDDEN` | Load error | `footerOf` paired with `footer: "count"`, or a footer companion field without a `footer`. |
 | `DiagCodeTableFooterSourceUnresolved` | `TABLE_FOOTER_SOURCE_UNRESOLVED` | Load error | A `sum`/`avg` footer omits `footerOf`, and its column bind is not a shape the source can be derived from. |
 | `DiagCodeTableMinHeightUnplaceable` | `TABLE_MIN_HEIGHT_UNPLACEABLE` | Load error | A table's `minHeight` is taller than the content window. |
@@ -1147,7 +1145,6 @@ Each constant is an untyped string constant whose value is the registry string. 
 | `DiagCodeExpressionInvalid` | `EXPRESSION_INVALID` | Load error (static check) and render error (evaluation) | An expression does not parse or check, or fails when evaluated. |
 | `DiagCodeBindingPathAbsent` | `BINDING_PATH_ABSENT` | Render error (`DataPath` = the path) | A data or `params` path an expression needs is absent from the supplied JSON. |
 | `DiagCodeContentUnlayoutable` | `CONTENT_UNLAYOUTABLE` | Render error | An ungrouped item (a text line or an image box) is taller than the content window. |
-| `DiagCodeStyleColorInvalid` | `STYLE_COLOR_INVALID` | Render error | A style colour consumed at render (`background`, `border.color` or their header equivalents) is not `#RRGGBB`. |
 | `DiagCodeDocumentDateInvalid` | `DOCUMENT_DATE_INVALID` | Render error (also `Validate`) | The reserved `documentDate` parameter is present but not a valid RFC 3339 timestamp. |
 | `DiagCodeTextClippedWidth` | `TEXT_CLIPPED_WIDTH` | Render warning | A text element's widest line exceeds its declared width and is clipped at the box edge. |
 | `DiagCodeTextMissingGlyph` | `TEXT_MISSING_GLYPH` | Render warning | No face in the element's declared chain covers a character. The character is omitted (no glyph, no advance); the message names the rune and the chain. |

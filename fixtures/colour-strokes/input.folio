@@ -1,0 +1,170 @@
+{
+  "assets": {},
+  "bands": {
+    "content": {
+      "elements": [
+        {
+          "height": 32,
+          "id": "e1",
+          "style": {
+            "background": "#FFF4D6",
+            "bold": true,
+            "border": {
+              "color": "#C81E1E",
+              "edges": [
+                "bottom",
+                "left"
+              ],
+              "width": 2
+            },
+            "color": "#1B2A4A",
+            "fontFamily": "body",
+            "fontSize": 20
+          },
+          "type": "text",
+          "value": "Colour and strokes",
+          "width": 523,
+          "x": 0,
+          "y": 0
+        },
+        {
+          "height": 16,
+          "id": "e2",
+          "style": {
+            "color": "#6A1B9A",
+            "fontFamily": "body",
+            "fontSize": 10
+          },
+          "type": "text",
+          "value": "Above: #1B2A4A ink on a #FFF4D6 fill, stroked #C81E1E on the bottom and left edges only. This line: #6A1B9A ink.",
+          "width": 523,
+          "x": 0,
+          "y": 44
+        },
+        {
+          "height": 60,
+          "id": "e3",
+          "style": {
+            "border": {
+              "color": "#2E7D32",
+              "width": 3
+            }
+          },
+          "type": "rect",
+          "width": 160,
+          "x": 0,
+          "y": 72
+        },
+        {
+          "height": 1,
+          "id": "e4",
+          "style": {
+            "border": {
+              "color": "#1565C0",
+              "edges": [
+                "top"
+              ],
+              "width": 2
+            }
+          },
+          "type": "line",
+          "width": 343,
+          "x": 180,
+          "y": 102
+        },
+        {
+          "altRowBackground": "#E3F2FD",
+          "as": "item",
+          "bind": "items[]",
+          "columns": [
+            {
+              "align": "left",
+              "bind": "{{item.name}}",
+              "id": "e6",
+              "label": "Item",
+              "proportion": 3
+            },
+            {
+              "align": "left",
+              "bind": "{{item.colour}}",
+              "id": "e7",
+              "label": "Colour",
+              "proportion": 2
+            },
+            {
+              "align": "right",
+              "bind": "{{item.qty}}",
+              "id": "e8",
+              "label": "Qty",
+              "proportion": 1
+            }
+          ],
+          "headerHeight": 20,
+          "headerStyle": {
+            "background": "#1B2A4A",
+            "bold": true,
+            "color": "#FFFFFF"
+          },
+          "id": "e5",
+          "rules": {
+            "between": [
+              "columns",
+              "rows"
+            ],
+            "color": "#8E24AA",
+            "width": 0.75
+          },
+          "style": {
+            "border": {
+              "color": "#00838F",
+              "width": 1
+            },
+            "color": "#37474F",
+            "fontFamily": "body",
+            "fontSize": 10,
+            "padding": {
+              "bottom": 2,
+              "left": 4,
+              "right": 4,
+              "top": 2
+            }
+          },
+          "type": "table",
+          "width": 523,
+          "x": 0,
+          "y": 150
+        }
+      ]
+    },
+    "pageFooter": {
+      "elements": [],
+      "height": 20
+    },
+    "pageHeader": {
+      "elements": [],
+      "height": 20
+    }
+  },
+  "fonts": {
+    "body": [
+      {
+        "bold": "Roboto Bold",
+        "face": "Roboto"
+      }
+    ]
+  },
+  "locale": "en",
+  "nextId": 9,
+  "page": {
+    "margin": {
+      "bottom": 36,
+      "left": 36,
+      "right": 36,
+      "top": 36
+    },
+    "orientation": "portrait",
+    "size": "A4"
+  },
+  "utcOffset": "+00:00",
+  "version": "3.1"
+}

@@ -451,25 +451,11 @@ func TestTableHeaderValignPlacement(t *testing.T) {
 	}
 }
 
-// TestTableHeaderStyleColorInvalid mints DiagCodeStyleColorInvalid's
-// use: a malformed hex reaching render is a located error, not a panic.
-func TestTableHeaderStyleColorInvalid(t *testing.T) {
+// TestAMalformedTableColourIsALoadError: a malformed table colour is a located
+// LOAD error, even on a table with no rows to draw.
+func TestAMalformedTableColourIsALoadError(t *testing.T) {
 	doc := tableHeaderDoc(`{"fontFamily": "latin", "background": "not-a-colour"}`, twoColumnsNoAlign)
-	tpl, err := ParseTemplate([]byte(doc))
-	if err != nil {
-		t.Fatalf("ParseTemplate: %v", err)
-	}
-	_, rerr := Render(tpl, Data(`{"items": []}`), nil, testShippedFontSet())
-	if rerr == nil {
-		t.Fatal("expected a render error for a malformed style.background colour")
-	}
-	var re *RenderError
-	if !errors.As(rerr, &re) {
-		t.Fatalf("expected a *RenderError, got %T: %v", rerr, rerr)
-	}
-	if re.Diagnostic.Code != DiagCodeStyleColorInvalid {
-		t.Errorf("Code = %q, want %q", re.Diagnostic.Code, DiagCodeStyleColorInvalid)
-	}
+	requireColourLoadError(t, doc, "e1", "style.background")
 }
 
 // TestTableHeaderNoFontFamilyIsLocatedError is R6's own negative half:

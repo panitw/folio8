@@ -258,35 +258,6 @@ const DiagCodeInternalUnhandledCaveat = string(diag.CodeInternalUnhandledCaveat)
 // permanent.
 const DiagCodeDocumentDateInvalid = string(diag.CodeDocumentDateInvalid)
 
-// DiagCodeStyleColorInvalid names Story 4.1's own new render-time
-// condition: a style colour string (style.background, style.border.color,
-// or their headerStyle equivalents) that is not `#RRGGBB` — unvalidated
-// at load, and unreachable before this story because no colour was ever
-// consumed on any render path (D1). A malformed colour aborts the
-// render with a *RenderError carrying this code, naming the element.
-//
-// Additive only (AD-14): once shipped, this string's meaning is
-// permanent.
-const DiagCodeStyleColorInvalid = string(diag.CodeStyleColorInvalid)
-
-// DiagCodeStyleLineSpacingInvalid names Story 7.2's own new LOAD-time
-// condition: a `style.lineSpacing` or `headerStyle.lineSpacing` outside
-// its declared domain — not a whole number of thousandths in
-// [1, 1000000], or carrying more than three decimal places. Loading
-// fails with a *RenderError carrying this code, naming the element and
-// the field.
-//
-// It is deliberately NOT DiagCodeTemplateMalformed: the WASM engine's
-// reportable-message rule replaces that one code's message with a
-// generic string, which would destroy the range and the element id
-// before the author saw them. The same value arriving through a
-// property command is refused by the same function, for the same
-// reason.
-//
-// Additive only (AD-14): once shipped, this string's meaning is
-// permanent.
-const DiagCodeStyleLineSpacingInvalid = string(diag.CodeStyleLineSpacingInvalid)
-
 // DiagCodeTemplateFieldInvalid names the GENERAL load-stage condition
 // (Story 7.8, D-7.8.1): a well-formed `.folio` document carries a field
 // value that is not acceptable — a closed-set member that is not in the

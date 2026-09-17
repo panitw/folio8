@@ -87,14 +87,14 @@ func buildTableFrame(el template.Element, tbl template.TableExt, hs resolvedHead
 
 	if hasRules {
 		rules := tbl.Rules.Value
-		// A rules colour is validated at RENDER, the precedent every other
-		// colour in the format follows (DiagCodeStyleColorInvalid).
+		// A rules colour is refused at LOAD when it is not #RRGGBB, like
+		// every other colour in the format, so this decode cannot fail
+		// for a loaded template: the error arm is an unreachable guard.
 		asBorder := template.Border{Width: rules.Width, Color: rules.Color}
 		colorHex := resolvedBorderColor(asBorder)
 		stroke, ok := parseHexColor(colorHex)
 		if !ok {
-			return nil, newRenderError(DiagCodeStyleColorInvalid, string(el.ID), "",
-				fmt.Errorf("folio8: Render: element %s: rules.color %q is not a #RRGGBB colour", el.ID, colorHex))
+			return nil, fmt.Errorf("folio8: Render: element %s: rules.color %q is not a #RRGGBB colour, which the loader refuses (unreachable)", el.ID, colorHex)
 		}
 		f.rule = pagemodel.Rect{HasStroke: true, Stroke: stroke, StrokeWidth: resolvedBorderWidth(asBorder)}
 		if rules.Between.Set && !rules.Between.Null {

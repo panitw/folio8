@@ -204,8 +204,9 @@ func TestWasmHostReportsTheTableJustifyRefusalIntact(t *testing.T) {
 // TEMPLATE_MALFORMED and for that code ALONE — so an UNCODED lineSpacing
 // load error would be destroyed here, before the author ever saw which
 // element or which range it was about, and every Go-side assertion would
-// still be green. Minting STYLE_LINE_SPACING_INVALID is what makes the AC
-// reachable; this is where that is observable.
+// still be green. The coded load error (TEMPLATE_FIELD_INVALID since
+// D-7.8.2 retired the field's own code) is what makes the AC reachable;
+// this is where that is observable.
 func TestWasmHostReportsTheLineSpacingRefusalIntact(t *testing.T) {
 	engine := wasm.NewEngine(elapsedClock())
 	doc := `{"assets":{},"bands":{"content":{"elements":[{"id":"e1","type":"text","x":0,"y":0,"width":200,"height":40,"value":"v","style":{"fontFamily":"body","fontSize":11,"lineSpacing":1000.001}}]},"pageFooter":{"elements":[],"height":20},"pageHeader":{"elements":[],"height":20}},"fonts":{"body":["Noto Sans"]},"locale":"en","nextId":2,"page":{"margin":{"bottom":36,"left":36,"right":36,"top":36},"orientation":"portrait","size":"A4"},"utcOffset":"+00:00","version":"1.0"}`
@@ -213,8 +214,8 @@ func TestWasmHostReportsTheLineSpacingRefusalIntact(t *testing.T) {
 	if got.OK {
 		t.Fatalf("an out-of-range lineSpacing must fail the load: %#v", got)
 	}
-	if got.DiagnosticCode != folio8.DiagCodeStyleLineSpacingInvalid {
-		t.Fatalf("code = %q, want %q", got.DiagnosticCode, folio8.DiagCodeStyleLineSpacingInvalid)
+	if got.DiagnosticCode != folio8.DiagCodeTemplateFieldInvalid {
+		t.Fatalf("code = %q, want %q", got.DiagnosticCode, folio8.DiagCodeTemplateFieldInvalid)
 	}
 	if got.Message == "The template could not be processed" {
 		t.Fatal("the message was replaced by the malformed-template placeholder — the author is told nothing about which element or which range")

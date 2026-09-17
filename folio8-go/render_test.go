@@ -880,6 +880,19 @@ func TestMain(m *testing.M) {
 		}
 		writeToStdoutOrDie(res.Bytes)
 	}
+	if os.Getenv(subprocessColourStrokesEnvVar) == "1" {
+		tpl, err := ParseTemplate([]byte(colourStrokesTemplateJSON))
+		if err != nil {
+			os.Stderr.WriteString(err.Error())
+			os.Exit(1)
+		}
+		res, err := Render(tpl, Data(colourStrokesDataJSON), nil, testShippedFontSet())
+		if err != nil {
+			os.Stderr.WriteString(err.Error())
+			os.Exit(1)
+		}
+		writeToStdoutOrDie(res.Bytes)
+	}
 	if os.Getenv(subprocessMultiPageFlowEnvVar) == "1" {
 		tpl, err := ParseTemplate([]byte(multiPageFlowTemplateJSON))
 		if err != nil {
@@ -1157,6 +1170,11 @@ const subprocessMultiPageStatementEnvVar = "FOLIO8_SUBPROCESS_RENDER_MULTIPAGEST
 // document with a section break on a later page and Page Break off — in a
 // fresh process, from the committed template const.
 const subprocessMultiPageFlowEnvVar = "FOLIO8_SUBPROCESS_RENDER_MULTIPAGEFLOW"
+
+// subprocessColourStrokesEnvVar renders fixtures/colour-strokes/ — the first
+// document declaring text colour and coloured strokes (DW-147) — in a fresh
+// process, from the committed template const.
+const subprocessColourStrokesEnvVar = "FOLIO8_SUBPROCESS_RENDER_COLOURSTROKES"
 
 // subprocessQRCodePaymentsEnvVar renders fixtures/qrcode-payments/ — the
 // first document carrying a qrcode — in a fresh process, from the committed

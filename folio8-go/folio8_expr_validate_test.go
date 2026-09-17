@@ -554,7 +554,8 @@ func TestParseTemplateRejectsVisibleIfOnTableColumn(t *testing.T) {
 // TestParseTemplateRejectsPlaceholderInStyleField is DECISION-1
 // (ruled): a "{{ }}" placeholder inside a style string field is a
 // located load error, naming the element and the field — NOT style-
-// field validation in general (hex colours remain unvalidated).
+// field validation in general (a colour's #RRGGBB shape is checked by the
+// loader itself, internal/template's IsHexColour).
 func TestParseTemplateRejectsPlaceholderInStyleField(t *testing.T) {
 	const tplJSON = `{
   "assets": {},
@@ -589,9 +590,10 @@ func TestParseTemplateRejectsPlaceholderInStyleField(t *testing.T) {
 }
 
 // TestParseTemplateAcceptsOrdinaryStyleValues is the companion negative
-// case: ordinary style values with no placeholder — including a plain
-// literal hex colour, which this check does NOT validate — must still
-// load clean.
+// case: ordinary style values with no placeholder must still load clean.
+// A colour must be #RRGGBB (checked by the loader since 2026-09-17), so
+// the one here is well-formed; everything else in the block is still
+// unvalidated beyond its own closed set.
 func TestParseTemplateAcceptsOrdinaryStyleValues(t *testing.T) {
 	const tplJSON = `{
   "assets": {},
@@ -599,7 +601,7 @@ func TestParseTemplateAcceptsOrdinaryStyleValues(t *testing.T) {
     "content": {
       "elements": [
         {"id": "e1", "type": "text", "x": 0, "y": 0, "width": 400, "height": 20, "value": "static text",
-          "style": {"fontFamily": "body", "fontSize": 14, "background": "not-a-real-colour-but-unvalidated", "align": "left"}}
+          "style": {"fontFamily": "body", "fontSize": 14, "background": "#ABCDEF", "align": "left"}}
       ]
     },
     "pageFooter": {"elements": [], "height": 20},
@@ -614,7 +616,7 @@ func TestParseTemplateAcceptsOrdinaryStyleValues(t *testing.T) {
 }
 `
 	if _, err := ParseTemplate([]byte(tplJSON)); err != nil {
-		t.Fatalf("style fields remain otherwise unvalidated; expected no error, got: %v", err)
+		t.Fatalf("ordinary style values must load; expected no error, got: %v", err)
 	}
 }
 

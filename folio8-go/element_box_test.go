@@ -14,6 +14,7 @@ import (
 	"github.com/panitw/folio8/folio8-go/internal/geom"
 	"github.com/panitw/folio8/folio8-go/internal/layout"
 	"github.com/panitw/folio8/folio8-go/internal/pagemodel"
+	"github.com/panitw/folio8/folio8-go/internal/template"
 )
 
 // boxTemplateJSON builds a three-band document whose content element e1
@@ -325,22 +326,8 @@ func TestAnElementBoxPaintsUnderItsOwnText(t *testing.T) {
 	}
 }
 
-func TestAMalformedElementColourIsALocatedRenderError(t *testing.T) {
-	tpl, err := ParseTemplate([]byte(boxTemplateJSON(`"background": "red", `)))
-	if err != nil {
-		t.Fatalf("ParseTemplate: %v", err)
-	}
-	_, _, _, _, err = buildPageModel(tpl, mustDecodeData(t, `{"customer":{"flag":false}}`), mustDecodeParams(t), testFontSet())
-	if err == nil {
-		t.Fatal("a non-#RRGGBB element background rendered without error")
-	}
-	var re *RenderError
-	if !errors.As(err, &re) {
-		t.Fatalf("error is %T (%v), want a located *RenderError naming the element and the field", err, err)
-	}
-	if re.Diagnostic.ElementID != "e1" || re.Diagnostic.Code != DiagCodeStyleColorInvalid {
-		t.Errorf("error = {element:%q code:%q}, want {e1 %s}", re.Diagnostic.ElementID, re.Diagnostic.Code, DiagCodeStyleColorInvalid)
-	}
+func TestAMalformedElementColourIsALocatedLoadError(t *testing.T) {
+	requireColourLoadError(t, boxTemplateJSON(`"background": "red", `), "e1", "style.background")
 }
 
 // Story 9.2: a placed line and a placed rect are visible without the
@@ -615,36 +602,41 @@ func TestABorderPaintingNoInkProjectsNoBorderFields(t *testing.T) {
 //
 // applyCanvasStyle bounded each colour string's LENGTH and never its SHAPE,
 // so "red", "", "rgba(1,2,3,.5)" and "var(--x)" projected verbatim and
-// reached the canvas's --text-ink while Render produced a located
-// STYLE_COLOR_INVALID for the same document: the designer painted what the
-// engine refuses to print.
+// reached the canvas's --text-ink while Render refused the same document:
+// the designer painted what the engine refuses to print.
 //
-// style.background's arm has the IDENTICAL hole and PREDATES Epic 10, which
-// copied the pattern faithfully — fixing the copy and leaving the original
-// is how a codebase acquires a fourth one-side-only guard, so all three
-// arms take the one helper.
+// Since colour is refused at LOAD (owner ruling, 2026-09-17) no such
+// document loads, so the file door is asserted first. The projection's own
+// refusal stays as defence in depth and is measured on a template whose
+// colour is written past the loader, together with Render's unreachable
+// guard on the same template, so "both sides agree" is still measured.
 //
 // It REFUSES rather than dropping the field: a silent drop trades a loud
 // divergence for a quiet one.
 func TestTheProjectionRefusesEveryColourRenderRefuses(t *testing.T) {
 	for _, bad := range []string{"red", "", "rgba(1,2,3,.5)", "var(--x)"} {
-		for _, arm := range []struct{ name, styleFields string }{
-			{"color", `"color": ` + quoteJSON(bad) + `, `},
-			{"background", `"background": ` + quoteJSON(bad) + `, `},
-			{"border.color", `"border": {"color": ` + quoteJSON(bad) + `}, `},
+		for _, arm := range []struct {
+			name, styleFields string
+			poke              func(st *template.Style)
+		}{
+			{"color", `"color": ` + quoteJSON(bad) + `, `, func(st *template.Style) { st.Color = template.Presence[string]{Set: true, Value: bad} }},
+			{"background", `"background": ` + quoteJSON(bad) + `, `, func(st *template.Style) { st.Background = template.Presence[string]{Set: true, Value: bad} }},
+			{"border.color", `"border": {"color": ` + quoteJSON(bad) + `}, `, func(st *template.Style) {
+				st.Border = template.Presence[template.Border]{Set: true, Value: template.Border{Color: template.Presence[string]{Set: true, Value: bad}}}
+			}},
 		} {
-			doc := boxTemplateJSON(arm.styleFields)
-			tpl, err := ParseTemplate([]byte(doc))
+			requireColourLoadError(t, boxTemplateJSON(arm.styleFields), "e1", "style."+arm.name)
+
+			tpl, err := ParseTemplate([]byte(boxTemplateJSON(``)))
 			if err != nil {
-				t.Fatalf("%s %q: ParseTemplate: %v", arm.name, bad, err)
+				t.Fatalf("ParseTemplate: %v", err)
 			}
+			arm.poke(&tpl.doc.Bands.Content.Elements[0].Style.Value)
 			if _, err := canvas(tpl); err == nil {
 				t.Errorf("%s = %q projected without error — the designer would paint what Render refuses", arm.name, bad)
 			}
-			// Render's own answer on the SAME document, so "both sides
-			// agree" is measured rather than assumed.
 			if _, _, _, _, err := buildPageModel(tpl, mustDecodeData(t, `{}`), mustDecodeParams(t), testFontSet()); err == nil {
-				t.Errorf("%s = %q rendered without error — this test's premise (Render refuses it) no longer holds", arm.name, bad)
+				t.Errorf("%s = %q rendered without error — Render's guard no longer refuses what the loader refuses", arm.name, bad)
 			}
 		}
 	}

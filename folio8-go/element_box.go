@@ -244,10 +244,10 @@ func declaredBox(el template.Element) (w, h geom.Length, ok bool) {
 
 // elementInk resolves a style block's `color` into page-model channels:
 // Story 10.1's text ink, the one style colour that paints glyphs rather
-// than a rectangle. It is validated at RENDER, through the module's one
-// hex parser, exactly as style.background and style.border.color already
-// are (buildCellRectWithBackgroundField) — the format checks a colour
-// string for a placeholder at load and for nothing else, by design.
+// than a rectangle. The loader has already refused any colour that is not
+// #RRGGBB (internal/template's IsHexColour, TEMPLATE_FIELD_INVALID), so
+// the decode below cannot fail for a loaded template; its error arm is an
+// unreachable guard and carries no public code.
 //
 // A style that is absent, null, or carries no `color` returns hasInk
 // false, and every producer then emits no colour operator at all: the
@@ -268,8 +268,7 @@ func styleInk(st template.Style, elementID, fieldPath string) (pagemodel.Color, 
 	}
 	c, ok := parseHexColor(st.Color.Value)
 	if !ok {
-		return pagemodel.Color{}, false, newRenderError(DiagCodeStyleColorInvalid, elementID, "",
-			fmt.Errorf("folio8: Render: element %s: %s %q is not a #RRGGBB colour", elementID, fieldPath, st.Color.Value))
+		return pagemodel.Color{}, false, fmt.Errorf("folio8: Render: element %s: %s %q is not a #RRGGBB colour, which the loader refuses (unreachable)", elementID, fieldPath, st.Color.Value)
 	}
 	return c, true, nil
 }

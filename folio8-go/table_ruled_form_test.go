@@ -2,7 +2,6 @@ package folio8
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -853,20 +852,10 @@ func TestTheFloorPushesARectSibling(t *testing.T) {
 	}
 }
 
-// REVIEW ITEM 18d: an invalid rules colour is a located render error.
-func TestAnInvalidRulesColourIsARenderError(t *testing.T) {
-	tpl, err := ParseTemplate([]byte(ruledTableDoc(`, "rules": {"between": ["columns"], "color": "red"}`, 3)))
-	if err != nil {
-		t.Fatalf("a rules colour is validated at render, not load: %v", err)
-	}
-	_, err = Render(tpl, Data(ruledRows(1)), nil, testShippedFontSet())
-	var renderErr *RenderError
-	if !errors.As(err, &renderErr) {
-		t.Fatalf("error is %T (%v), want *RenderError", err, err)
-	}
-	if renderErr.Diagnostic.Code != DiagCodeStyleColorInvalid || renderErr.Diagnostic.ElementID != "e1" {
-		t.Errorf("diagnostic %s on %q, want %s on e1", renderErr.Diagnostic.Code, renderErr.Diagnostic.ElementID, DiagCodeStyleColorInvalid)
-	}
+// REVIEW ITEM 18d: an invalid rules colour is a located error — at LOAD,
+// like every other colour in the format (owner ruling, 2026-09-17).
+func TestAnInvalidRulesColourIsALoadError(t *testing.T) {
+	requireColourLoadError(t, ruledTableDoc(`, "rules": {"between": ["columns"], "color": "red"}`, 3), "e1", "rules.color")
 }
 
 const ruledPNGAsset = `"assets": {

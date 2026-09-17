@@ -1685,16 +1685,15 @@ func canvasPropertyLength(name string, value geom.Length) (*int64, error) {
 
 // canvasPropertyColor is the projection's ONE reading of "this is a
 // colour the designer may paint": the existing length bound, plus the
-// module's one hex parser — the SAME parseHexColor that
-// buildCellRectWithBackgroundField and elementInk call on the render
-// path.
+// format's one colour predicate — the SAME template.IsHexColour the
+// loader refuses a malformed colour with.
 //
 // It exists because the projection admitted what Render refuses. The
 // three colour arms below bounded the string's LENGTH and never its
 // SHAPE, so `"red"`, `""`, `"rgba(1,2,3,.5)"` and `"var(--x)"` all
 // projected verbatim and reached the canvas's `--text-ink`, while the
-// same document's Render produced a located STYLE_COLOR_INVALID. The
-// designer painted what the engine would not print.
+// same document's Render refused the colour. The designer painted what
+// the engine would not print. (Colour is now refused at load as well.)
 //
 // It REFUSES rather than silently dropping the field: dropping would
 // trade a loud divergence for a quiet one, and the refusal keeps the
@@ -1708,7 +1707,7 @@ func canvasPropertyColor(name, value string) (*string, error) {
 	if len(value) > maxCanvasPropertyString {
 		return nil, fmt.Errorf("folio8: component %s exceeds the projection bound", name)
 	}
-	if _, ok := parseHexColor(value); !ok {
+	if !template.IsHexColour(value) {
 		return nil, fmt.Errorf("folio8: component %s %q is not a #RRGGBB colour", name, value)
 	}
 	return stringPointer(value), nil

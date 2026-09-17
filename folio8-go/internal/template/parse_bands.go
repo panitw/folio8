@@ -528,6 +528,9 @@ func decodeTableExt(ctx *parseCtx, id string, obj map[string]json.RawMessage) (T
 		if err != nil {
 			return TableExt{}, nil, newLoadError("altRowBackground", id, string(arbRaw), "must be a string: "+err.Error())
 		}
+		if !IsHexColour(s) {
+			return TableExt{}, nil, colourLoadError("altRowBackground", id, s)
+		}
 		t.AltRowBackground = present(s)
 	}
 
@@ -624,6 +627,9 @@ func decodeTableRules(elementID string, raw json.RawMessage) (TableRules, error)
 		s, err := decodeStringRaw(v)
 		if err != nil {
 			return TableRules{}, newLoadError(fieldPrefix+".color", elementID, string(v), "must be a string: "+err.Error())
+		}
+		if !IsHexColour(s) {
+			return TableRules{}, colourLoadError(fieldPrefix+".color", elementID, s)
 		}
 		r.Color = present(s)
 	}
@@ -933,6 +939,9 @@ func decodeStyle(elementID string, elementType ElementType, raw json.RawMessage,
 			if err != nil {
 				return Style{}, newLoadError(fieldPrefix+".background", elementID, string(r), "must be a string: "+err.Error())
 			}
+			if !IsHexColour(s) {
+				return Style{}, colourLoadError(fieldPrefix+".background", elementID, s)
+			}
 			st.Background = present(s)
 		}
 	}
@@ -944,6 +953,9 @@ func decodeStyle(elementID string, elementType ElementType, raw json.RawMessage,
 			s, err := decodeStringRaw(r)
 			if err != nil {
 				return Style{}, newLoadError(fieldPrefix+".color", elementID, string(r), "must be a string: "+err.Error())
+			}
+			if !IsHexColour(s) {
+				return Style{}, colourLoadError(fieldPrefix+".color", elementID, s)
 			}
 			st.Color = present(s)
 		}
@@ -989,15 +1001,13 @@ func decodeStyle(elementID string, elementType ElementType, raw json.RawMessage,
 		consumed["lineSpacing"] = true
 		v, err := DecodeLineSpacingRaw(r)
 		if err != nil {
-			// CODED, not plain. An uncoded LoadError becomes
-			// TEMPLATE_MALFORMED at folio8.ParseTemplate's boundary, and
-			// wasm/cmd/engine's reportableMessage replaces THAT code's
-			// message with "The template could not be processed" — so an
-			// uncoded lineSpacing refusal is destroyed before the author
-			// ever sees which element and which range it was about.
-			// Located at fieldPrefix, so a headerStyle value is located
-			// at headerStyle.lineSpacing rather than at its sibling.
-			return Style{}, newLoadErrorCoded(fieldPrefix+".lineSpacing", elementID, string(r), err.Error(), diag.CodeStyleLineSpacingInvalid)
+			// The general TEMPLATE_FIELD_INVALID, which newLoadError
+			// supplies (D-7.8.2 retired this field's own code before the
+			// v1.0.0 tag: no consumer branched on it). The message still
+			// names the element and the range. Located at fieldPrefix,
+			// so a headerStyle value is located at
+			// headerStyle.lineSpacing rather than at its sibling.
+			return Style{}, newLoadError(fieldPrefix+".lineSpacing", elementID, string(r), err.Error())
 		}
 		st.LineSpacing = present(v)
 	}
@@ -1071,6 +1081,9 @@ func decodeBorder(elementID string, raw json.RawMessage, fieldPrefix string) (Bo
 		if err != nil {
 			return Border{}, newLoadError(fieldPrefix+".color", elementID, string(r), "must be a string: "+err.Error())
 		}
+		if !IsHexColour(s) {
+			return Border{}, colourLoadError(fieldPrefix+".color", elementID, s)
+		}
 		b.Color = present(s)
 	}
 	if r, ok := obj["width"]; ok {
@@ -1093,10 +1106,8 @@ func decodeBorder(elementID string, raw json.RawMessage, fieldPrefix string) (Bo
 		// load-time refusal closes both paths at one authority instead
 		// of two render-time checks that can drift. It is legal here
 		// only because `border.width` is a geom.Length and this package
-		// already imports internal/geom — the same check on a COLOUR is
-		// structurally unavailable at load (parseHexColor lives in the
-		// module root, which AD-1 forbids this package to import; see
-		// linespacing.go's note).
+		// already imports internal/geom. A border COLOUR is refused at
+		// load too, through this package's own predicate (colour.go).
 		//
 		// ZERO IS VALID and stays accepted: it is the thinnest device
 		// line PDF can draw, not an absent border. Only a NEGATIVE

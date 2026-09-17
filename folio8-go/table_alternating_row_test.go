@@ -2,7 +2,6 @@ package folio8
 
 import (
 	"bytes"
-	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -150,31 +149,10 @@ func TestAlternatingRowChoiceDependsOnTemplateAndCollectionIndexOnly(t *testing.
 	}
 }
 
+// A malformed altRowBackground is refused at LOAD, located at the table and
+// the field, before any row is reached (owner ruling, 2026-09-17).
 func TestAlternatingRowBackgroundUsesExistingLocatedColourError(t *testing.T) {
-	tpl, err := ParseTemplate([]byte(alternatingTableDoc("#112233", "not-a-colour")))
-	if err != nil {
-		t.Fatalf("ParseTemplate: %v", err)
-	}
-	res, err := Render(tpl, Data(fiveAlternatingRowsData("R")), nil, testShippedFontSet())
-	if err == nil {
-		t.Fatal("expected malformed table.altRowBackground to fail when collection index 1 is reached")
-	}
-	if len(res.Bytes) != 0 {
-		t.Errorf("Render returned %d successful PDF bytes alongside the error, want none", len(res.Bytes))
-	}
-	var renderErr *RenderError
-	if !errors.As(err, &renderErr) {
-		t.Fatalf("errors.As(*RenderError) failed: %T: %v", err, err)
-	}
-	if renderErr.Diagnostic.Code != DiagCodeStyleColorInvalid {
-		t.Errorf("Code = %q, want %q", renderErr.Diagnostic.Code, DiagCodeStyleColorInvalid)
-	}
-	if renderErr.Diagnostic.ElementID != "e1" {
-		t.Errorf("ElementID = %q, want table element e1", renderErr.Diagnostic.ElementID)
-	}
-	if !strings.Contains(renderErr.Diagnostic.Message, "table.altRowBackground") {
-		t.Errorf("message does not name table.altRowBackground: %q", renderErr.Diagnostic.Message)
-	}
+	requireColourLoadError(t, alternatingTableDoc("#112233", "not-a-colour"), "e1", "altRowBackground")
 }
 
 func alternatingPaginatedFooterDoc() string {

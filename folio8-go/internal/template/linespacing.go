@@ -11,9 +11,9 @@ import (
 // D-7.2.3), and it lives in internal/template for a structural reason
 // rather than a tidy one: the module root imports this package, so this
 // package may never import the module root (AD-1). A load-time-validated
-// key therefore cannot copy `style.color`'s precedent, whose predicate
-// (parseHexColor / validPropertyColor) is a RENDER-time, root-package
-// one. internal/template is the only place BOTH the load path
+// key therefore needs its predicate here, not in the module root — the
+// precedent the colour predicate (colour.go) has since followed.
+// internal/template is the only place BOTH the load path
 // (parse_bands.go's decodeStyle) and the property-command path
 // (folio8-go/component_commands.go) can reach the same function — which
 // is what makes "a value refused in a file is refused in the inspector,

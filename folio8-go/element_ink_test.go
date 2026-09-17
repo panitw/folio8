@@ -4,7 +4,6 @@
 package folio8
 
 import (
-	"errors"
 	"strings"
 	"testing"
 
@@ -72,22 +71,8 @@ func TestANullColorIsNoColor(t *testing.T) {
 	}
 }
 
-func TestAMalformedColorIsALocatedRenderError(t *testing.T) {
-	tpl, err := ParseTemplate([]byte(inkTemplateJSON(`"color": "red", `)))
-	if err != nil {
-		t.Fatalf("ParseTemplate: %v", err)
-	}
-	_, _, _, _, err = buildPageModel(tpl, mustDecodeData(t, `{"customer":{"flag":false}}`), mustDecodeParams(t), testFontSet())
-	if err == nil {
-		t.Fatal("a non-#RRGGBB style.color rendered without error")
-	}
-	var re *RenderError
-	if !errors.As(err, &re) {
-		t.Fatalf("error is %T (%v), want a located *RenderError", err, err)
-	}
-	if re.Diagnostic.ElementID != "e1" || re.Diagnostic.Code != DiagCodeStyleColorInvalid {
-		t.Errorf("error = {element:%q code:%q}, want {e1 %s}", re.Diagnostic.ElementID, re.Diagnostic.Code, DiagCodeStyleColorInvalid)
-	}
+func TestAMalformedColorIsALocatedLoadError(t *testing.T) {
+	requireColourLoadError(t, inkTemplateJSON(`"color": "red", `), "e1", "style.color")
 }
 
 // style.color is a string-valued style field, so Story 3.5's fence
@@ -154,26 +139,14 @@ func TestATableCascadesItsInkToHeaderAndCells(t *testing.T) {
 	}
 }
 
-// TestAMalformedColorIsRefusedWhateverTheDataSays is E10-1's proof: the
-// colour check sat ~120 lines below the AC9 empty-text short-circuit and
-// the hidden-element skip, so `style.color: "red"` was a located error when
-// the element had a visible value and NO diagnostic at all in each of the
-// three cases below. The same broken template passed or failed on the data
-// it was handed.
-//
-// The fix is a HOIST — elementInk now sits beside fontChain, whose comment
-// exists to say that nothing may go below that line. The fontFamily control
-// runs beside each case here so "refused" is measured against the sibling
-// this defect is a repeat of, rather than against an expectation.
+// TestAMalformedColorIsRefusedWhateverTheDataSays is E10-1's proof,
+// carried to where the check now lives. The colour check once sat below
+// the AC9 empty-text short-circuit and the hidden-element skip, so
+// `style.color: "red"` passed or failed on the data a render was handed.
+// Since colour is refused at LOAD (owner ruling, 2026-09-17) no data is
+// consulted at all: each case below, which a render would skip, is
+// refused before a render can start, and its well-formed twin loads.
 func TestAMalformedColorIsRefusedWhateverTheDataSays(t *testing.T) {
-	// Each case is the SAME element with the same broken style block,
-	// differing only in what makes the render path skip it. The three are
-	// the three that were MEASURED to render clean.
-	//
-	// Note the empty case binds to "" rather than declaring `"value": ""`:
-	// a literally empty template value is dropped by a short-circuit ABOVE
-	// fontChain's line, which this repair does not move — the hoist is a
-	// move to fontChain's position, not past it.
 	cases := map[string]string{
 		"value binds to empty": `"value": "{{customer.blank}}"`,
 		"value binds to null":  `"value": "{{customer.absent}}"`,
@@ -197,40 +170,18 @@ func TestAMalformedColorIsRefusedWhateverTheDataSays(t *testing.T) {
 `
 	}
 	const data = `{"customer":{"flag":false,"blank":"","absent":null}}`
-	renderIt := func(t *testing.T, source string) error {
-		t.Helper()
-		tpl, err := ParseTemplate([]byte(source))
-		if err != nil {
-			t.Fatalf("ParseTemplate: %v", err)
-		}
-		_, _, _, _, err = buildPageModel(tpl, mustDecodeData(t, data), mustDecodeParams(t), testFontSet())
-		return err
-	}
 	for name, element := range cases {
 		t.Run(name, func(t *testing.T) {
-			err := renderIt(t, docFor(element, `"color": "red", "fontFamily": "body", "fontSize": 12`))
-			if err == nil {
-				t.Fatal("a non-#RRGGBB style.color rendered clean — the template's validity must not depend on the report it was handed")
-			}
-			var re *RenderError
-			if !errors.As(err, &re) {
-				t.Fatalf("error is %T (%v), want a located *RenderError", err, err)
-			}
-			if re.Diagnostic.ElementID != "e1" || re.Diagnostic.Code != DiagCodeStyleColorInvalid {
-				t.Errorf("error = {element:%q code:%q}, want {e1 %s}", re.Diagnostic.ElementID, re.Diagnostic.Code, DiagCodeStyleColorInvalid)
-			}
+			requireColourLoadError(t, docFor(element, `"color": "red", "fontFamily": "body", "fontSize": 12`), "e1", "style.color")
 
-			// THE CONTROL, on the same document in the same shape: an
-			// unresolvable fontFamily chain was hoisted for exactly this
-			// reason and already refuses here. style.color must match it.
-			if cerr := renderIt(t, docFor(element, `"fontFamily": "nosuchchain", "fontSize": 12`)); cerr == nil {
-				t.Fatal("the fontFamily control rendered clean — this test's premise no longer holds")
+			// The well-formed twin still loads and renders, so "refused"
+			// above is evidence about the colour rather than the fixture.
+			tpl, err := ParseTemplate([]byte(docFor(element, `"color": "#c81e1e", "fontFamily": "body", "fontSize": 12`)))
+			if err != nil {
+				t.Fatalf("the valid-colour twin failed to load: %v", err)
 			}
-
-			// And the well-formed twin still renders, so "refused" above is
-			// evidence about the colour rather than about the fixture.
-			if okErr := renderIt(t, docFor(element, `"color": "#c81e1e", "fontFamily": "body", "fontSize": 12`)); okErr != nil {
-				t.Fatalf("the valid-colour twin failed to render: %v", okErr)
+			if _, _, _, _, err := buildPageModel(tpl, mustDecodeData(t, data), mustDecodeParams(t), testFontSet()); err != nil {
+				t.Fatalf("the valid-colour twin failed to render: %v", err)
 			}
 		})
 	}
@@ -381,14 +332,15 @@ func TestANullHeaderColorFallsThroughToTheTableColour(t *testing.T) {
 	}
 }
 
-// TestAHeaderColourDiagnosticNamesTheArmItTook is E10-5b's proof. The error
-// site emitted the literal "headerStyle.color/style.color", which names both
-// fields and identifies neither: AD-14's callers match on the CODE, so
-// nothing was broken — but AD-14's other half is that a diagnostic LOCATES,
-// and the cascade already knew which arm it took.
+// TestAMalformedTableColourIsLocatedAtItsOwnBlock verifies the load error's
+// field path for a malformed table colour: a bad headerStyle.color is
+// located at headerStyle.color, and a bad style.color at style.color, never
+// at the sibling block. Colour is refused at load (owner ruling,
+// 2026-09-17), where each block is decoded under its own field prefix, so
+// this asserts that prefix — it no longer observes the render cascade.
 //
 // It asserts the LOCATED PATH, never the surrounding wording.
-func TestAHeaderColourDiagnosticNamesTheArmItTook(t *testing.T) {
+func TestAMalformedTableColourIsLocatedAtItsOwnBlock(t *testing.T) {
 	for _, tc := range []struct {
 		name, headerStyle, table, wantPath, wantAbsent string
 	}{
@@ -411,20 +363,14 @@ func TestAHeaderColourDiagnosticNamesTheArmItTook(t *testing.T) {
 			if tc.table == "bad-base" {
 				doc = strings.Replace(doc, `"color": "#c81e1e"`, `"color": "red"`, 1)
 			}
-			tpl, err := ParseTemplate([]byte(doc))
-			if err != nil {
-				t.Fatalf("ParseTemplate: %v", err)
-			}
-			_, _, _, _, err = buildPageModel(tpl, mustDecodeData(t, `{"rows":[{"a":"one"}]}`), mustDecodeParams(t), testFontSet())
-			if err == nil {
-				t.Fatal("a malformed cascaded header colour rendered without error")
-			}
+			requireColourLoadError(t, doc, "e1", tc.wantPath)
+			_, err := ParseTemplate([]byte(doc))
 			msg := err.Error()
 			if !strings.Contains(msg, tc.wantPath) {
 				t.Errorf("the diagnostic does not name %q: %s", tc.wantPath, msg)
 			}
 			if strings.Contains(msg, tc.wantAbsent) {
-				t.Errorf("the diagnostic still names the arm it did NOT take (%q): %s", tc.wantAbsent, msg)
+				t.Errorf("the load error names the sibling block (%q): %s", tc.wantAbsent, msg)
 			}
 		})
 	}

@@ -7006,7 +7006,7 @@ on**, and would validate the ink of an element that draws no glyphs.
 - **Owner:** **Story 15.3, at the release gate, with the OWNER named.** This is the **DW-68 shape**: it does
   not block the tag — **it blocks the tag being cut without the owner having seen the coverage statement.**
 - **Severity:** MEDIUM, and it is a **gating input to v0.1.0**.
-- **Status:** OPEN.
+- **Status:** **RESOLVED 2026-09-17 by SPEC-client-libraries story 3.** `fixtures/colour-strokes/` declares text `color`, a partial-edge `border.color`, stroked rect and line, table `rules.color`, `altRowBackground` and fills; registered in the four-target matrix; owner sign-off recorded in `fixtures/colour-strokes/signoff.json` (sha256 `3e88b304…`).
 
 **Re-measured, because this one reaches the tag:** `grep` over `fixtures/` and `folio-go/testdata/` returns
 **zero files declaring any colour at all** — not merely `style.color`, but `border.color` and Epic 9's

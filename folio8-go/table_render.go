@@ -579,9 +579,9 @@ func paddingEdges(p template.Padding) (top, right, bottom, left geom.Length) {
 }
 
 // parseHexColor decodes a `#RRGGBB` string into page-model channels
-// (AC5/D2). It is the ONLY hex parser in the module: no colour was ever
-// consumed on any render path before this story (D1), so this is also
-// the first place a malformed one can be discovered.
+// (AC5/D2). It is the ONLY hex DECODER in the module. Whether a string
+// is a colour at all is decided at load by internal/template's
+// IsHexColour, so a loaded template never hands this a malformed one.
 func parseHexColor(s string) (pagemodel.Color, bool) {
 	if len(s) != 7 || s[0] != '#' {
 		return pagemodel.Color{}, false
@@ -710,8 +710,8 @@ func buildCellRectWithBackgroundField(elementID string, x, y, w, h geom.Length, 
 	if hasBackground {
 		c, ok := parseHexColor(background)
 		if !ok {
-			return pagemodel.Rect{}, newRenderError(DiagCodeStyleColorInvalid, elementID, "",
-				fmt.Errorf("folio8: Render: element %s: %s %q is not a #RRGGBB colour", elementID, backgroundField, background))
+			// Unreachable for a loaded template: the loader refuses it.
+			return pagemodel.Rect{}, fmt.Errorf("folio8: Render: element %s: %s %q is not a #RRGGBB colour, which the loader refuses (unreachable)", elementID, backgroundField, background)
 		}
 		rect.HasFill = true
 		rect.Fill = c
@@ -722,8 +722,8 @@ func buildCellRectWithBackgroundField(elementID string, x, y, w, h geom.Length, 
 		colorHex := resolvedBorderColor(border)
 		c, ok := parseHexColor(colorHex)
 		if !ok {
-			return pagemodel.Rect{}, newRenderError(DiagCodeStyleColorInvalid, elementID, "",
-				fmt.Errorf("folio8: Render: element %s: style.border.color/headerStyle.border.color %q is not a #RRGGBB colour", elementID, colorHex))
+			// Unreachable for a loaded template: the loader refuses it.
+			return pagemodel.Rect{}, fmt.Errorf("folio8: Render: element %s: style.border.color/headerStyle.border.color %q is not a #RRGGBB colour, which the loader refuses (unreachable)", elementID, colorHex)
 		}
 		rect.HasStroke = true
 		rect.Stroke = c

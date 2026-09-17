@@ -106,16 +106,16 @@ func TestLoadErrorsCarryFieldValueAndTheGeneralCode(t *testing.T) {
 
 // TestTheOverridingConstructorStillWins is the other side of D-7.8.1's
 // ruling, and it is what stops "the constructor supplies the code" from
-// quietly meaning "there is only one code". The four conditions a named
+// quietly meaning "there is only one code". The conditions a named
 // consumer branches on keep theirs.
 func TestTheOverridingConstructorStillWins(t *testing.T) {
-	err := newLoadErrorCoded("style.lineSpacing", "e1", "1000.001", "out of range", diag.CodeStyleLineSpacingInvalid)
+	err := newLoadErrorCoded("columns[0].footerOf", "e1", "transactions.amount", "footerOf beside footer: count", diag.CodeTableFooterSourceForbidden)
 	le, ok := err.(*LoadError)
 	if !ok {
 		t.Fatalf("newLoadErrorCoded returned %T", err)
 	}
-	if le.Code != diag.CodeStyleLineSpacingInvalid {
-		t.Fatalf("Code = %q, want %q — the override must not be overwritten by the general code", le.Code, diag.CodeStyleLineSpacingInvalid)
+	if le.Code != diag.CodeTableFooterSourceForbidden {
+		t.Fatalf("Code = %q, want %q — the override must not be overwritten by the general code", le.Code, diag.CodeTableFooterSourceForbidden)
 	}
 }
 

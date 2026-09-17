@@ -277,7 +277,7 @@ func TestRenderTimeLeadingErrorsNameTheElement(t *testing.T) {
 // TestLineSpacingOutOfRangeIsALocatedCodedLoadError is the AC for the
 // load path: below the floor, above the ceiling, and more than three
 // decimal places are all refused, all located, and all carry
-// STYLE_LINE_SPACING_INVALID — never TEMPLATE_MALFORMED, whose message
+// TEMPLATE_FIELD_INVALID — never TEMPLATE_MALFORMED, whose message
 // the WASM host replaces wholesale.
 func TestLineSpacingOutOfRangeIsALocatedCodedLoadError(t *testing.T) {
 	for _, c := range []struct {
@@ -308,8 +308,8 @@ func TestLineSpacingOutOfRangeIsALocatedCodedLoadError(t *testing.T) {
 			if !errors.As(err, &re) {
 				t.Fatalf("error is not transported as *RenderError: %T %v", err, err)
 			}
-			if re.Diagnostic.Code != DiagCodeStyleLineSpacingInvalid {
-				t.Errorf("code = %q, want %q — an uncoded load error becomes TEMPLATE_MALFORMED and its message is destroyed before the author sees it", re.Diagnostic.Code, DiagCodeStyleLineSpacingInvalid)
+			if re.Diagnostic.Code != DiagCodeTemplateFieldInvalid {
+				t.Errorf("code = %q, want %q — an uncoded load error becomes TEMPLATE_MALFORMED and its message is destroyed before the author sees it", re.Diagnostic.Code, DiagCodeTemplateFieldInvalid)
 			}
 			if re.Diagnostic.Code == DiagCodeTemplateMalformed {
 				t.Error("the code must NOT be TEMPLATE_MALFORMED")

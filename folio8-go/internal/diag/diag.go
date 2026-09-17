@@ -162,16 +162,6 @@ const (
 	// before it ever reaches internal/pdf's date assembly. AC10.
 	CodeDocumentDateInvalid Code = "DOCUMENT_DATE_INVALID"
 
-	// CodeStyleColorInvalid names Story 4.1's own new condition: a
-	// style colour string reaching render that is not `#RRGGBB`
-	// (folio-format.md: "Colours are #RRGGBB") — unvalidated at load
-	// (folio8_expr_validate.go's own scope fence: "hex colours...
-	// remain entirely unvalidated"), and unreachable before this story
-	// because no colour was ever CONSUMED before it (D1: "no fill or
-	// stroke anywhere in the PDF writer"). Minted here, at the point
-	// the condition first ships (R7/D-000.65), rather than in advance.
-	CodeStyleColorInvalid Code = "STYLE_COLOR_INVALID"
-
 	// CodeTableHeaderRepeatSuppressed names Story 4.4's own new
 	// condition (FR26, DECISION-2 as ruled): a table's repeated header
 	// could not be honoured on one continuation page because the next
@@ -256,49 +246,13 @@ const (
 	// folio8.ParseTemplate's boundary, and wasm/cmd/engine's
 	// reportableMessage replaces THAT message, and only that one, with
 	// "The template could not be processed" — so an uncoded refusal here
-	// would never reach the author at all (CodeStyleLineSpacingInvalid's
-	// own grounds, unchanged).
+	// would never reach the author at all.
 	//
 	// DISTINCT FROM CodeContentUnlayoutable, which names an element
 	// measured too tall for its window at RENDER. This one is decidable
 	// from the document alone, with no data and no measurement, so it is
 	// answered at load where the author is still holding the file.
 	CodeTableMinHeightUnplaceable Code = "TABLE_MIN_HEIGHT_UNPLACEABLE"
-
-	// CodeStyleLineSpacingInvalid names Story 7.2's own new condition
-	// (D-7.2.5): a `style.lineSpacing` (or `headerStyle.lineSpacing`)
-	// whose value is OUTSIDE ITS DECLARED DOMAIN — not a whole number of
-	// thousandths in [1, 1000000], or carrying more than three decimal
-	// places. Raised from the ONE validation function
-	// (internal/template's DecodeLineSpacing) that both the load path
-	// and the property-command path call.
-	//
-	// MINTING IS WHAT MAKES THE STORY'S DIAGNOSTIC AC REACHABLE AT ALL,
-	// not registry hygiene. Every load-time style rejection is otherwise
-	// uncoded, becomes CodeTemplateMalformed at folio8.ParseTemplate's
-	// boundary, and wasm/cmd/engine's reportableMessage replaces
-	// TEMPLATE_MALFORMED's message — and only that one — with "The
-	// template could not be processed". So an uncoded lineSpacing error
-	// never reaches the author. That destruction rule exists because a
-	// malformed-template message quotes the offending document back; an
-	// engine-authored message naming an element id and a numeric range
-	// quotes nothing back, so the rule does not reach this case.
-	//
-	// SCOPE, against D-4.5.1's discriminator. This code names the
-	// FIELD'S VALUE being outside its declared domain, at LOAD. The two
-	// typographic failures Story 7.2 also guards — a resolved advance of
-	// zero, and int64 overflow at the scaling site — are different
-	// conditions at a different stage (render, where the font size
-	// finally exists) with a different remedy, and must NOT be folded in
-	// here to save a mint.
-	//
-	// The forward note this comment used to carry — "before a THIRD
-	// per-field style code is minted, someone must decide whether the
-	// general form is right" — was DECIDED at Story 7.8 (D-7.8.1). The
-	// answer is CodeTemplateFieldInvalid, below, and the rule it
-	// establishes is stated there so the next reader finds the answer
-	// where they would have found the question.
-	CodeStyleLineSpacingInvalid Code = "STYLE_LINE_SPACING_INVALID"
 
 	// CodeTemplateFieldInvalid names the GENERAL LOAD-STAGE condition: a
 	// well-formed template carries a field value that is not acceptable.
@@ -356,14 +310,15 @@ const (
 	// object, an unreadable value under an unknown key, a MAJOR the
 	// library cannot load.
 	//
-	// LOAD STAGE ONLY. It does not absorb render-stage conditions:
-	// CodeStyleLineSpacingInvalid's own scope note above already draws
-	// that line, and CodeStyleColorInvalid is a render error by Epic
-	// 10's own AC. Auditing those two against the rule above — does any
-	// consumer BRANCH on them? — is a named obligation triggered by the
-	// folio8-go/v0.1.0 tag (D-7.8.2), because AD-14 makes removing a code
-	// a breaking change and that is free exactly once. It is
-	// deliberately NOT this story's work.
+	// LOAD STAGE ONLY. It does not absorb render-stage conditions.
+	//
+	// D-7.8.2, DISCHARGED BEFORE THE v1.0.0 TAG (2026-09-17). The audit
+	// this comment used to schedule found that no consumer branches on
+	// the two per-field style codes Stories 4.1 and 7.2 minted, so both
+	// were retired while removing a code was still free (AD-14). An
+	// out-of-domain lineSpacing is this code at its one load site, and a
+	// colour that is not #RRGGBB is now refused at load under this code
+	// too, located at the colour field (owner ruling, 2026-09-17).
 	CodeTemplateFieldInvalid Code = "TEMPLATE_FIELD_INVALID"
 
 	// CodeBarcodeUnencodable names a barcode whose value, resolved from
@@ -449,12 +404,10 @@ var allCodes = []Code{
 	CodeTextStyleFaceUndeclared,
 	CodeInternalUnhandledCaveat,
 	CodeDocumentDateInvalid,
-	CodeStyleColorInvalid,
 	CodeTableHeaderRepeatSuppressed,
 	CodeTableFooterOrphanSuppressed,
 	CodeTableRowClippedHeight,
 	CodeTableMinHeightUnplaceable,
-	CodeStyleLineSpacingInvalid,
 	CodeTemplateFieldInvalid,
 	CodeBarcodeUnencodable,
 	CodeBarcodeModuleTooSmall,
@@ -496,12 +449,10 @@ var dispositions = map[Code]Disposition{
 	CodeTextStyleFaceUndeclared:        DispositionWarning,
 	CodeInternalUnhandledCaveat:        DispositionWarning,
 	CodeDocumentDateInvalid:            DispositionError,
-	CodeStyleColorInvalid:              DispositionError,
 	CodeTableHeaderRepeatSuppressed:    DispositionWarning,
 	CodeTableFooterOrphanSuppressed:    DispositionWarning,
 	CodeTableRowClippedHeight:          DispositionWarning,
 	CodeTableMinHeightUnplaceable:      DispositionError,
-	CodeStyleLineSpacingInvalid:        DispositionError,
 	CodeTemplateFieldInvalid:           DispositionError,
 	CodeBarcodeUnencodable:             DispositionWarning,
 	CodeBarcodeModuleTooSmall:          DispositionWarning,

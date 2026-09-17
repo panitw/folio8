@@ -41,12 +41,10 @@ var diagCodeBridgePins = []struct {
 	{"DiagCodeContentUnlayoutable", DiagCodeContentUnlayoutable, "CONTENT_UNLAYOUTABLE"},
 	{"DiagCodeInternalUnhandledCaveat", DiagCodeInternalUnhandledCaveat, "INTERNAL_UNHANDLED_CAVEAT"},
 	{"DiagCodeDocumentDateInvalid", DiagCodeDocumentDateInvalid, "DOCUMENT_DATE_INVALID"},
-	{"DiagCodeStyleColorInvalid", DiagCodeStyleColorInvalid, "STYLE_COLOR_INVALID"},
 	{"DiagCodeTableHeaderRepeatSuppressed", DiagCodeTableHeaderRepeatSuppressed, "TABLE_HEADER_REPEAT_SUPPRESSED"},
 	{"DiagCodeTableFooterOrphanSuppressed", DiagCodeTableFooterOrphanSuppressed, "TABLE_FOOTER_ORPHAN_SUPPRESSED"},
 	{"DiagCodeTableRowClippedHeight", DiagCodeTableRowClippedHeight, "TABLE_ROW_CLIPPED_HEIGHT"},
 	{"DiagCodeTableMinHeightUnplaceable", DiagCodeTableMinHeightUnplaceable, "TABLE_MIN_HEIGHT_UNPLACEABLE"},
-	{"DiagCodeStyleLineSpacingInvalid", DiagCodeStyleLineSpacingInvalid, "STYLE_LINE_SPACING_INVALID"},
 	{"DiagCodeTemplateFieldInvalid", DiagCodeTemplateFieldInvalid, "TEMPLATE_FIELD_INVALID"},
 	{"DiagCodeBarcodeUnencodable", DiagCodeBarcodeUnencodable, "BARCODE_UNENCODABLE"},
 	{"DiagCodeBarcodeModuleTooSmall", DiagCodeBarcodeModuleTooSmall, "BARCODE_MODULE_TOO_SMALL"},
@@ -130,7 +128,7 @@ func declaredDiagCodeConstants(t *testing.T) []string {
 //	DiagCodeTableFooterSourceForbidden   DiagCodeTemplateMalformed
 //	DiagCodeBindingPathAbsent            DiagCodeExpressionInvalid
 //	DiagCodeContentUnlayoutable          DiagCodeDocumentDateInvalid
-//	DiagCodeStyleColorInvalid
+//	and the render-time colour code D-7.8.2 later retired
 //
 // Seven, not the ruling's "ten": that figure was arithmetic over a
 // name-grep, and "not literally pinned" and "reddens nothing under

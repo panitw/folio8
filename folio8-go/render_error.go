@@ -90,8 +90,8 @@ func newRenderError(code, elementID, dataPath string, err error) *RenderError {
 //
 // A *template.LoadError always carries a Code now (Story 7.8, D-7.8.1):
 // diag.CodeTemplateFieldInvalid by default, supplied by newLoadError
-// itself, or one of the four overriding specific codes — the three
-// footer-source ones and STYLE_LINE_SPACING_INVALID. Whichever it is,
+// itself, or one of the three overriding specific codes — the
+// footer-source ones. Whichever it is,
 // it is kept. Until Story 7.8 the general population arrived UNCODED and
 // was bucketed under DiagCodeTemplateMalformed, whose message the WASM
 // host replaces wholesale — so every located field error was destroyed

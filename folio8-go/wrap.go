@@ -720,8 +720,8 @@ func verticalModel(chain []string, metrics []fontset.LineMetrics, fontSize geom.
 //     ScaleRound(400, 1, 1000) is 0 — so a small face at lineSpacing
 //     0.001 yields zero-height lines, which layout cannot draw and the
 //     canvas correctly refuses. It is a DISTINCT condition from the
-//     load-time range and carries its own error, never
-//     STYLE_LINE_SPACING_INVALID: raising the load-time minimum to
+//     load-time range and carries its own error, never the load-time
+//     range's refusal: raising the load-time minimum to
 //     prevent it would only move the blindness.
 //
 //     THE PASS-THROUGH BELOW IS LOAD-BEARING, NOT A CONVENIENCE. A ruled

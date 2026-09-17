@@ -39,12 +39,10 @@ var codePins = []struct {
 	{"CodeTextStyleFaceUndeclared", CodeTextStyleFaceUndeclared, "TEXT_STYLE_FACE_UNDECLARED"},
 	{"CodeInternalUnhandledCaveat", CodeInternalUnhandledCaveat, "INTERNAL_UNHANDLED_CAVEAT"},
 	{"CodeDocumentDateInvalid", CodeDocumentDateInvalid, "DOCUMENT_DATE_INVALID"},
-	{"CodeStyleColorInvalid", CodeStyleColorInvalid, "STYLE_COLOR_INVALID"},
 	{"CodeTableHeaderRepeatSuppressed", CodeTableHeaderRepeatSuppressed, "TABLE_HEADER_REPEAT_SUPPRESSED"},
 	{"CodeTableFooterOrphanSuppressed", CodeTableFooterOrphanSuppressed, "TABLE_FOOTER_ORPHAN_SUPPRESSED"},
 	{"CodeTableRowClippedHeight", CodeTableRowClippedHeight, "TABLE_ROW_CLIPPED_HEIGHT"},
 	{"CodeTableMinHeightUnplaceable", CodeTableMinHeightUnplaceable, "TABLE_MIN_HEIGHT_UNPLACEABLE"},
-	{"CodeStyleLineSpacingInvalid", CodeStyleLineSpacingInvalid, "STYLE_LINE_SPACING_INVALID"},
 	{"CodeTemplateFieldInvalid", CodeTemplateFieldInvalid, "TEMPLATE_FIELD_INVALID"},
 	{"CodeBarcodeUnencodable", CodeBarcodeUnencodable, "BARCODE_UNENCODABLE"},
 	{"CodeBarcodeModuleTooSmall", CodeBarcodeModuleTooSmall, "BARCODE_MODULE_TOO_SMALL"},
@@ -78,6 +76,13 @@ var codePins = []struct {
 // mutations this test was built against (change a string,
 // add-without-pin, add-with-pin, swap two strings) and their observed
 // results.
+//
+// ONE DATED EXCEPTION TO "ADDITIVE ONLY" (2026-09-17). D-7.8.2 retired
+// the render-time colour code and the line-spacing load code before the
+// folio8-go/v1.0.0 tag, the one moment AD-14 lets a code be removed
+// without a breaking change: no consumer branched on either. Their pins
+// were removed with their constants. After the tag this test's rule is
+// absolute again.
 func TestRegistryIsAdditiveOnly(t *testing.T) {
 	pinnedLiterals := make(map[Code]bool, len(codePins))
 	for _, p := range codePins {

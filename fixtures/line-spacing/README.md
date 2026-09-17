@@ -75,7 +75,7 @@ differ.
 - **A hash change here is a defect until proven otherwise** (AD-21/AD-22). Do not regenerate to make
   a test pass.
 - **This document produces no diagnostics at all.** Nothing overflows its box; `lineSpacing` never
-  warns — an out-of-range value is a *load* error carrying `STYLE_LINE_SPACING_INVALID`, so it never
+  warns — an out-of-range value is a *load* error carrying `TEMPLATE_FIELD_INVALID`, so it never
   reaches a render.
 - **Do not add this fixture to `baselineAcceptanceFixtures`.** That list is Story 2.5a's record of
   the five goldens *that story* re-recorded, and is hard-pinned to exactly five.

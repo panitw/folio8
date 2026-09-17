@@ -412,7 +412,10 @@ func TestDocsGuideNamesEveryExportedIdentifier(t *testing.T) {
 			}
 		}
 	}
-	if total < 60 {
+	// A floor under the census, so a scan of the wrong directory cannot
+	// pass. D-7.8.2 retired two DiagCode* constants before the v1.0.0
+	// tag (2026-09-17), taking the surface from 60 to 58.
+	if total < 58 {
 		t.Fatalf("census found only %d identifiers", total)
 	}
 }
