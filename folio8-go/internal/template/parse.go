@@ -714,7 +714,7 @@ func decodeFontChainEntry(raw json.RawMessage, field string, assets map[string]A
 // contradicts its declared licence. A document HAND-AUTHORED with a
 // contradictory pair still loads.
 //
-// THE SECOND DOOR IS DEFERRED PAST `folio8-go/v0.1.0`, AND NO MIGRATION IS OWED.
+// THE SECOND DOOR IS DEFERRED PAST `folio8-go/v1.0.0`, AND NO MIGRATION IS OWED.
 // Registered with its trigger; the deferral is a ruling, not an oversight, and
 // the reasoning is short enough to keep here so the next reader does not close
 // the gap as a tidy-up and thereby ship an unpriced narrowing:
@@ -738,10 +738,10 @@ func decodeFontChainEntry(raw json.RawMessage, field string, assets map[string]A
 // forever. ADDING A REFUSE-SIGNATURE AFTER THE TAG IS ITSELF THE NARROWING,
 // because a face that admits today as NO EVIDENCE becomes a CONTRADICTION
 // tomorrow. So: close this second door before any refuse-signature is added to
-// `internal/fontset/licencesignature.go` after `folio8-go/v0.1.0` is cut, or
+// `internal/fontset/licencesignature.go` after `folio8-go/v1.0.0` is cut, or
 // accept that the addition is itself the narrowing and price it then. Owner:
-// whoever adds that signature, or Story 15.3 if it elects to close it inside the
-// tag — which is a scope decision for the owner, not an engineering tidy-up.
+// whoever adds that signature. folio8-go/v1.0.0 shipped with this door still
+// open.
 //
 // AND THE ONE DOOR THAT DOES EXIST MUST STAY PROVABLY PRESENT: Story 16.1b's
 // test that a contradiction is refused at the command may not be deleted on the

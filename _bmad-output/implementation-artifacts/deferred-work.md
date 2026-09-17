@@ -178,6 +178,12 @@ all → **Fatal** on the vacuity path; moving the single declaration → **both*
 
 **Owner: none. There is nothing left to own.**
 
+**AMENDED 2026-09-17 (SPEC-client-libraries story 2) — publication discharged by the written
+procedure.** `RELEASING.md` item 1 now names the tag (`folio8-go/v1.0.0`) and its "The commands"
+section attaches `lint/MANIFEST.md` with `gh release create`. `TestManifestUpToDate` and
+`TestReleasingDocNamesTheGuardedManifest` both pass on the release tree; the latter now anchors on
+`folio8-go/v1.0.0`.
+
 ## Open
 
 ### DW-26 — `style.fontSize` has no range check at all, and it is the other operand of the one product that can overflow `geom.ScaleRound`
@@ -779,6 +785,24 @@ recorded in `folio-mvp-decision-log.md` as **cut `folio-go/v0.1.0` after Epic 6*
 "owner decision when Epic 4 is planned" trigger has fired and the release timing is no longer
 unowned. The entry remains open only for the intermediate engineering-lead checkpoint explicitly
 owed by D-000.78 before the post-Epic-6 tag; this boundary does not discharge that future checkpoint.
+
+**AMENDED 2026-09-17 (SPEC-client-libraries story 2) — DISCHARGED.** Story 15.3 was deprecated on
+2026-09-16 and its obligations passed to client-libraries story 2, which discharges them:
+
+- **Trigger re-affirmed, not assumed.** The owner replaced "after Epic 6" with `folio8-go/v1.0.0`,
+  cut after client-libraries stories 1 and 3 and before the bindings. `RELEASING.md` names what is
+  inside the release: Epics 1–14, 16 and 17, Epic 15's done stories, and stories 1–3.
+- **Surface re-measured.** 60 items, not the Epic 3 boundary's 40: package `folio8` has 7 funcs,
+  8 types, 32 consts (27 `DiagCode*`), 3 methods and 9 fields; package `fonts` has `Shipped`.
+  `TestPublicSurfaceMatchesTheFrozenV1Census` pins it both ways with a vacuity guard.
+- **The engineering-lead checkpoint** is discharged by client-libraries story 2's checkpoints; the
+  surface was reviewed as a whole at story 1's spec checkpoint, and the owner ruled the tag gate.
+- **`documentDate`** stays the one reserved `params` key, frozen at `v1.0.0`.
+- **Tag-gate rulings (owner):** DW-147 and D-7.8.2 gated the tag and are met; DW-68 ships the clip;
+  8.4d and 8.4k are released from the gate as designer-release and `lint` work (8.4d still owes its
+  size-budget ruling); DW-230 is released and stays OPEN against Story 15.2.
+
+The tag itself is cut by `RELEASING.md`'s procedure, on the owner's explicit go-ahead.
 
 ### DW-5 — Derivation validation of `columns[].footerOf` from `bind` — **RETIRED at Story 3.2**
 - **Deferred by:** Story 1.4 (ruling D-1.4.2, AC43/AC44)
@@ -1941,6 +1965,12 @@ reaches across the module boundary with `packages.Load` today — [[D-000.73]]'s
 type-checking rules of [[D-000.75]] — so when this trigger fires, a `go/types` walker is a **marginal
 cost on working infrastructure**, exactly as [[D-3.7.9]] anticipated: *"both guards that actually held
 this story live in `lint`, which type-checks the module; both that leaked are in-module AST scans."*
+
+**AMENDED 2026-09-17 (SPEC-client-libraries story 2) — DISCHARGED for `folio8-go/v1.0.0` by confirming
+the precondition.** On the release tree `TestFolio8MethodNamesAreInjective` passes, and an independent
+`go/ast` scan of package `folio8`'s non-test sources found **41 methods under 41 distinct names**, no
+collision. The `go/types` walker was not built; the pinned injectivity assertion remains the live
+trigger after the tag. Recorded as `RELEASING.md` item 3.
 
 ### DW-23 — `lint`'s gofmt break has been red since Story 5.10, and CI's permanently-red workflow hid it from two boundary gates
 - **Deferred by:** the second Epic 5 boundary gate (2026-08-29), which measured it rather than fixing it
@@ -4160,6 +4190,11 @@ right**, and it declined to dress it up as anything else.
 
 **What reopens it:** a real document losing content that way, as DW-50 came from a real case. One
 ruling would cover both halves of the question. **If anyone sees such a document, raise it now.**
+
+**RULED 2026-09-17 (owner, recorded by SPEC-client-libraries story 2) — v1.0.0 ships the clip.** An
+aggregate-only over-tall keep-together group keeps rendering clipped with `TABLE_ROW_CLIPPED_HEIGHT`
+at `folio8-go/v1.0.0`. Making it fatal narrows what renders, so after the tag it is a conscious `/v2`
+choice, not a fix. The entry stays on the register as that ruling; the render behaviour is unchanged.
 
 
 ---
@@ -7028,6 +7063,12 @@ stated?*
 declaring none of this hashes identically"* — is the **negative** invariant, and it holds. It is the
 **positive** coverage that is unowned, which is exactly why nothing caught this for two epics.
 
+**AMENDED 2026-09-17 (SPEC-client-libraries story 2) — the tag-gate question was put and answered.** The
+owner ruled that DW-147 gates `folio8-go/v1.0.0` (the "add a fixture" arm, not "ship with coverage
+stated"). The gate is met on the release tree: `fixtures/colour-strokes/` with its signed
+`signoff.json`, registered in the four-target matrix. Story 15.3's ownership passed to
+client-libraries stories 3 and 2 when 15.3 was deprecated.
+
 ### DW-148 — comments that describe a sibling's behaviour go stale silently; four instances this run
 
 - **Deferred by:** the **Epic 10 reconstruction** (finding 8, ruled at D-10.R.8, 2026-09-02) — raised under
@@ -9266,6 +9307,11 @@ outcome from a plausible wrong one* — and the second found this session by ask
 this assertion quantified over?** rather than by hunting a false zero (the first being D-11.1.7's
 shipped-slot metadata gap). That question is now a standing census axis.
 
+**AMENDED 2026-09-17 (SPEC-client-libraries story 2) — released from the tag gate by owner ruling.**
+DW-230 does not gate `folio8-go/v1.0.0`. It stays **OPEN** against Story 15.2. Its premise that 15.2 is
+"the last story that adds fixtures before the tag" no longer holds: client-libraries story 3 added
+`fixtures/colour-strokes/` before the tag, and 15.2 now runs after it.
+
 ---
 
 ### DW-162 UPDATE (2026-09-06) — the owner arrived, and it is Story 11.1
@@ -9331,6 +9377,12 @@ first: if the repeat is byte-stable, the cross-arm delta is a real measurement r
 difference of two drifting numbers — and if it is **not** stable, that is a finding in its own right,
 because something is supposed to have closed that input and evidently has not. Never quote a cross-arm
 delta without stating the same-arm repeat behind it.
+
+**AMENDED 2026-09-17 (SPEC-client-libraries story 2) — 8.4d no longer precedes the engine tag.** By owner
+ruling, Stories 8.4d (size budget) and 8.4k (licence exception) are released from the
+`folio8-go/v1.0.0` tag gate: they are designer-release and `lint` work, not Go-tag prerequisites. The
+tag does not discharge them. **8.4d still owes its size-budget ruling**, keyed as above; 8.4k stays
+`deferred-to-epic-15`.
 
 ---
 

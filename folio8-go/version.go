@@ -2,11 +2,12 @@ package folio8
 
 import "github.com/panitw/folio8/folio8-go/internal/expr"
 
-// Version is the folio8-go module version. It is recorded in the golden
-// fixture (fixtures/minimal-rect/expected.json) alongside the Go toolchain
-// version that produced it. A real release tag is folio8-go/v0.1.0
-// (directory-prefixed, per AD-22) — that is not this story's business.
-const Version = "0.0.0-dev"
+// Version is the folio8-go module version, matching the directory-prefixed
+// release tag folio8-go/v1.0.0 (AD-22). Each golden fixture's expected.json
+// records the version that produced it, which may be older than this one.
+// TestVersionAgreesWithReleasingDoc holds it equal to the release RELEASING.md
+// names.
+const Version = "1.0.0"
 
 // LocaleTableVersion is AC6/AD-22, surfaced here (Finding 9, Story
 // 3.4's QA review): internal/expr's locale table carries its own

@@ -61,7 +61,7 @@ if err := os.WriteFile("statement.pdf", res.Bytes, 0o644); err != nil {
 }
 ```
 
-Install with `go get github.com/panitw/folio8/folio8-go@main`. The
+Install with `go get github.com/panitw/folio8/folio8-go@v1.0.0`. The
 [rendering library guide](docs/rendering-library.md) walks through installation, a complete first
 PDF, errors and warnings, template features and the full API.
 
@@ -188,8 +188,9 @@ inspector and designer chrome (12–14), and the release blockers (15).
 [sprint-status.yaml](_bmad-output/implementation-artifacts/sprint-status.yaml)
 is the current record, including what is deliberately deferred and why.
 
-`folio8-go/v0.1.0` has not been cut. The public Go API is not frozen until it is —
-see [RELEASING.md](RELEASING.md).
+`folio8-go/v1.0.0` is the first release. Its public Go API — rendering, validation, the
+font input and the diagnostic types — is frozen under semver: a breaking change needs a
+`/v2` import path. See [RELEASING.md](RELEASING.md).
 
 ---
 

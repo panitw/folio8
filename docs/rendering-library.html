@@ -277,11 +277,11 @@
 <!-- body -->
   <section id="install">
     <h2>Install</h2>
-    <p>folio8 has no tagged release yet, so you install a commit of the <code>main</code> branch. From your application's directory:</p>
+    <p>Install the released module, <code>folio8-go/v1.0.0</code>. From your application's directory:</p>
     <div class="sample"><pre data-lang="shell"><span class="tk-fn">go</span> mod init example.com/folio8-demo
-<span class="tk-fn">go</span> get github.com/panitw/folio8/folio8-go@main
+<span class="tk-fn">go</span> get github.com/panitw/folio8/folio8-go@v1.0.0
 <span class="tk-fn">go</span> mod tidy</pre></div>
-    <p>On 2026-09-15 <code>@main</code> resolved to <code>github.com/panitw/folio8/folio8-go v0.0.0-20260914182357-563352e6f92a</code> (commit <code>563352e</code>), and this guide's programs and example templates were verified against that version from a fresh module. <code>go get</code> records the resolved pseudo-version in your <code>go.mod</code>, so your build stays pinned to that commit until you run <code>go get github.com/panitw/folio8/folio8-go@main</code> again to upgrade. The public API is not frozen before a release is tagged, so read the changes before you upgrade. If a module proxy still serves an older commit for <code>@main</code>, fetch with <code>GOPROXY=direct</code>.</p>
+    <p><code>go get</code> records <code>github.com/panitw/folio8/folio8-go v1.0.0</code> in your <code>go.mod</code>. The public API is frozen at <code>v1.0.0</code> under semver: later <code>v1</code> releases make no breaking API change, and a breaking change would need a new <code>/v2</code> import path. If you previously installed a pseudo-version from <code>@main</code>, read the GitHub release notes for <code>folio8-go/v1.0.0</code>, which list what changed.</p>
     <p>Import the module root as <code>folio8</code>. The shipped fonts are a separate, opt-in package:</p>
     <div class="sample"><pre data-lang="go"><span class="tk-kw">import</span> (
 	folio8 <span class="tk-str">"github.com/panitw/folio8/folio8-go"</span>
@@ -886,7 +886,7 @@ fontSet[<span class="tk-str">"Brand Sans"</span>] = brand <span class="tk-com">/
         <tr><td><code>github.com/panitw/folio8/folio8-go/fonts</code></td><td><code>fonts</code></td><td>The shipped font faces, as a ready-made <code>folio8.FontSet</code>. Opt-in: package <code>folio8</code> never imports it.</td></tr>
       </tbody>
     </table></div>
-    <p><strong>Stability.</strong> The module has no release tag yet: <code>folio8.Version</code> is <code>"0.0.0-dev"</code>. The rendering and validation entry points, the font input and the diagnostic types are the whole public surface. The canvas and authoring engine behind folio8 Designer is internal to the module and is not part of this API.</p>
+    <p><strong>Stability.</strong> The API is frozen at <code>folio8-go/v1.0.0</code>: <code>folio8.Version</code> is <code>"1.0.0"</code>. The rendering and validation entry points, the font input and the diagnostic types are the whole public surface. The canvas and authoring engine behind folio8 Designer is internal to the module and is not part of this API.</p>
     <p><strong>Concurrency.</strong> Nothing in these packages documents or tests concurrent use. Do not share a <code>*folio8.Template</code> across goroutines without your own locking.</p>
     <h3 id="rendering-and-validation">Rendering and validation</h3>
     <h4 id="parsetemplate"><code>ParseTemplate</code></h4>
@@ -1101,13 +1101,13 @@ _ = res</pre></div>
     </ul>
     <h4 id="localetableversion-and-version"><code>LocaleTableVersion</code> and <code>Version</code></h4>
     <div class="sample"><pre data-lang="go"><span class="tk-kw">const</span> <span class="tk-type">LocaleTableVersion</span> = expr.<span class="tk-type">LocaleTableVersion</span> <span class="tk-com">// currently 1 (untyped integer)</span>
-<span class="tk-kw">const</span> <span class="tk-type">Version</span> = <span class="tk-str">"0.0.0-dev"</span></pre></div>
-    <p><code>LocaleTableVersion</code> identifies the built-in locale formatting table; its current value is <code>1</code>. <code>Version</code> is the library version string. No release tag exists yet.</p>
+<span class="tk-kw">const</span> <span class="tk-type">Version</span> = <span class="tk-str">"1.0.0"</span></pre></div>
+    <p><code>LocaleTableVersion</code> identifies the built-in locale formatting table; its current value is <code>1</code>. <code>Version</code> is the library version string, <code>"1.0.0"</code> for the <code>folio8-go/v1.0.0</code> release.</p>
   </section>
 
   <section id="command-line-tool">
     <h2>Command-line tool</h2>
-    <p>The module also contains a <code>folio8</code> command with <code>validate</code> and <code>render</code> subcommands (<code>go run github.com/panitw/folio8/folio8-go/cmd/folio8@main render -data data.json -o out.pdf template.folio</code>). It is a thin wrapper over <code>Validate</code> and <code>Render</code>; its flags are described in the repository README.</p>
+    <p>The module also contains a <code>folio8</code> command with <code>validate</code> and <code>render</code> subcommands (<code>go run github.com/panitw/folio8/folio8-go/cmd/folio8@v1.0.0 render -data data.json -o out.pdf template.folio</code>). It is a thin wrapper over <code>Validate</code> and <code>Render</code>; its flags are described in the repository README.</p>
   </section>
 <!-- /body -->
 

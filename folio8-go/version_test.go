@@ -1,6 +1,9 @@
 package folio8
 
 import (
+	"os"
+	"path/filepath"
+	"regexp"
 	"testing"
 
 	"github.com/panitw/folio8/folio8-go/internal/expr"
@@ -20,5 +23,27 @@ func TestLocaleTableVersionSurfacedAtLibraryLevel(t *testing.T) {
 	}
 	if LocaleTableVersion < 1 {
 		t.Fatalf("LocaleTableVersion = %d, want >= 1", LocaleTableVersion)
+	}
+}
+
+// releasedVersionLine matches RELEASING.md's single "Released version" line,
+// capturing the version without the directory prefix and the leading v.
+var releasedVersionLine = regexp.MustCompile("(?m)^\\*\\*Released version:\\*\\* `folio8-go/v([0-9]+\\.[0-9]+\\.[0-9]+)`\\s*$")
+
+// TestVersionAgreesWithReleasingDoc holds the version stamp and the release
+// procedure together: folio8.Version must equal the release RELEASING.md names,
+// so a release commit cannot bump one and forget the other.
+func TestVersionAgreesWithReleasingDoc(t *testing.T) {
+	path := filepath.Join(repoRootFromTest(t), "RELEASING.md")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read the release procedure at %s: %v", path, err)
+	}
+	matches := releasedVersionLine.FindAllStringSubmatch(string(raw), -1)
+	if len(matches) != 1 {
+		t.Fatalf("%s must carry exactly one line of the form **Released version:** `folio8-go/vX.Y.Z`; found %d", path, len(matches))
+	}
+	if doc := matches[0][1]; doc != Version {
+		t.Fatalf("folio8.Version = %q, but RELEASING.md names folio8-go/v%s as released: bump both in the release commit", Version, doc)
 	}
 }

@@ -20,21 +20,18 @@ Contents: [Install](#install) · [Your first PDF](#your-first-pdf) ·
 
 ## Install
 
-folio8 has no tagged release yet, so you install a commit of the `main` branch. From your
-application's directory:
+Install the released module, `folio8-go/v1.0.0`. From your application's directory:
 
 ```sh
 go mod init example.com/folio8-demo
-go get github.com/panitw/folio8/folio8-go@main
+go get github.com/panitw/folio8/folio8-go@v1.0.0
 go mod tidy
 ```
 
-On 2026-09-15 `@main` resolved to `github.com/panitw/folio8/folio8-go v0.0.0-20260914182357-563352e6f92a`
-(commit `563352e`), and this guide's programs and example templates were verified against that
-version from a fresh module. `go get` records the resolved pseudo-version in your `go.mod`, so your
-build stays pinned to that commit until you run `go get github.com/panitw/folio8/folio8-go@main` again
-to upgrade. The public API is not frozen before a release is tagged, so read the changes before you
-upgrade. If a module proxy still serves an older commit for `@main`, fetch with `GOPROXY=direct`.
+`go get` records `github.com/panitw/folio8/folio8-go v1.0.0` in your `go.mod`. The public API is
+frozen at `v1.0.0` under semver: later `v1` releases make no breaking API change, and a breaking
+change would need a new `/v2` import path. If you previously installed a pseudo-version from `@main`, read the
+GitHub release notes for `folio8-go/v1.0.0`, which list what changed.
 
 Import the module root as `folio8`. The shipped fonts are a separate, opt-in package:
 
@@ -887,7 +884,7 @@ This section lists every exported identifier in the two packages of the `github.
 | `github.com/panitw/folio8/folio8-go` | `folio8` | Parsing, rendering, validation, diagnostics and template helpers. |
 | `github.com/panitw/folio8/folio8-go/fonts` | `fonts` | The shipped font faces, as a ready-made `folio8.FontSet`. Opt-in: package `folio8` never imports it. |
 
-**Stability.** The module has no release tag yet: `folio8.Version` is `"0.0.0-dev"`. The rendering and validation entry points, the font input and the diagnostic types are the whole public surface. The canvas and authoring engine behind folio8 Designer is internal to the module and is not part of this API.
+**Stability.** The API is frozen at `folio8-go/v1.0.0`: `folio8.Version` is `"1.0.0"`. The rendering and validation entry points, the font input and the diagnostic types are the whole public surface. The canvas and authoring engine behind folio8 Designer is internal to the module and is not part of this API.
 
 **Concurrency.** Nothing in these packages documents or tests concurrent use. Do not share a `*folio8.Template` across goroutines without your own locking.
 
@@ -1187,14 +1184,14 @@ Errors:
 
 ```go
 const LocaleTableVersion = expr.LocaleTableVersion // currently 1 (untyped integer)
-const Version = "0.0.0-dev"
+const Version = "1.0.0"
 ```
 
-`LocaleTableVersion` identifies the built-in locale formatting table; its current value is `1`. `Version` is the library version string. No release tag exists yet.
+`LocaleTableVersion` identifies the built-in locale formatting table; its current value is `1`. `Version` is the library version string, `"1.0.0"` for the `folio8-go/v1.0.0` release.
 
 ## Command-line tool
 
 The module also contains a `folio8` command with `validate` and `render` subcommands
-(`go run github.com/panitw/folio8/folio8-go/cmd/folio8@main render -data data.json -o out.pdf template.folio`).
+(`go run github.com/panitw/folio8/folio8-go/cmd/folio8@v1.0.0 render -data data.json -o out.pdf template.folio`).
 It is a thin wrapper over `Validate` and `Render`; its flags are described in the
 [repository README](../README.md#render-from-the-command-line).

@@ -107,7 +107,7 @@ test('the evidence rail occupies the inspector column, with the whole hash wrapp
   const facts = page.getByLabel('Render facts')
   await expect(facts.locator('.rail-fact')).toHaveCount(5)
   await expect(facts).toContainText('engine')
-  await expect(facts).toContainText('0.0.0-dev')
+  await expect(facts).toContainText('1.0.0')
   await expect(facts).toContainText('wasm · in browser')
   // ⚠ NON-ZERO, DELIBERATELY (review P6). `\d+ ms` matches `0 ms`, which is
   // also what the field reads when nothing measured it at all — and this is the

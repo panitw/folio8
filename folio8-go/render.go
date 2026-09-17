@@ -2328,7 +2328,7 @@ func resolveDocumentDate(params bind.Value) (*pdf.DocumentDate, error) {
 // documentDateParamKey is D-3.7.2's reserved top-level params key.
 // "reportDate" is deliberately NOT used: Story 6.3's AC already spends
 // it as the author's own worked example. This spelling is public
-// contract, frozen at folio8-go/v0.1.0 alongside the API signatures
+// contract, frozen at folio8-go/v1.0.0 alongside the API signatures
 // (AD-22) — the params namespace now has one reserved name in it.
 const documentDateParamKey = "documentDate"
 

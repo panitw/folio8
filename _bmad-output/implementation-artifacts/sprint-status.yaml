@@ -570,6 +570,10 @@ development_status:
   #   spec-client-libraries/stories.yaml instead. 8.4d AND 8.4k both still precede the tag.
   #   -> 8-4d-the-size-budget-is-a-number-something-checks   (row above, `moved-to-epic-15`)
   #   -> 8-4k-a-licence-exception-is-read-and-checked        (row above, `deferred-to-epic-15`)
+  # ^ 2026-09-17 (OWNER RULING, recorded by spec-client-libraries story 2): 8.4d and 8.4k are
+  #   RELEASED from the folio8-go/v1.0.0 tag gate -- designer-release and `lint` work, not Go-tag
+  #   prerequisites. The ordering lines above no longer bind the tag. 8.4d still owes its
+  #   size-budget ruling. Rows and statuses unchanged.
   # 15.3 DEPRECATED 2026-09-16 by OWNER DECISION. Cutting the engine tag moves to
   # _bmad-output/specs/spec-client-libraries/stories.yaml, where it is re-scoped: the tag is
   # folio8-go/v1.0.0, not v0.1.0, and it is cut only AFTER the designer surface (canvas types,

@@ -78,10 +78,12 @@ type funcCallInfo struct {
 //     regard to its receiver type. An AST-only scan cannot resolve a
 //     selector expression's static receiver type without go/types (the
 //     lead's own note: the COMPLETE version of this check is a lint
-//     rule over go/types, deferred with a real trigger — before the
-//     folio8-go/v0.1.0 tag, since that is when Validate's contract
-//     freezes publicly). Until then, a call `x.Foo()` is treated as
-//     reaching EVERY method named Foo declared anywhere in package
+//     rule over go/types, deferred with a real trigger — the
+//     folio8-go/v1.0.0 tag, where Validate's contract froze publicly
+//     and the name-injectivity precondition was re-confirmed instead).
+//     The name-based resolution remains in force after the tag: a call
+//     `x.Foo()` is treated as reaching EVERY method named Foo declared
+//     anywhere in package
 //     folio8 — "name-matching over-approximates, which is the safe
 //     direction: a spurious edge only makes the guard stricter"
 //     (D-3.7.9(a), verbatim). This closes the "method value" escape
@@ -359,8 +361,9 @@ func TestExactlyOneDocumentByteProducerAndBothEntryPointsRouteThroughIt(t *testi
 // receiver type, deliberately over-approximating; func-typed vars
 // become graph nodes too) — "under ANY name" is now true BY
 // CONSTRUCTION, not by claim. The one acknowledged residual is
-// go/types-precision receiver resolution, deferred to a lint rule
-// before the folio8-go/v0.1.0 tag (see buildFolio8CallGraph's comment);
+// go/types-precision receiver resolution, deferred to a lint rule; at
+// the folio8-go/v1.0.0 tag its precondition was re-confirmed instead
+// (see buildFolio8CallGraph's comment);
 // it can only produce SPURIOUS (over-approximating) edges, never miss
 // a real one, so it cannot make this guard pass when it should fail.
 func TestValidateNeverReachesRenderOrInternalPDF(t *testing.T) {

@@ -45,11 +45,11 @@ const (
 	// failure mode is safe ONLY because it happens before this story
 	// ever constructs a SeverityError value (Task 8 precedes Task 10,
 	// by construction, not diligence) and because nothing downstream
-	// can have pinned the previous integer values: folio8-go/version.go
-	// declares Version = "0.0.0-dev" and `git tag` names no
-	// folio8-go/v* tag yet (AD-22). Once folio8-go/v0.1.0 is cut,
-	// renumbering a public constant here becomes a breaking change
-	// requiring folio8-go/v2 — this is free now and never again.
+	// could have pinned the previous integer values: at the time
+	// folio8-go/version.go declared a development version and `git tag`
+	// named no folio8-go/v* tag (AD-22). Since folio8-go/v1.0.0,
+	// renumbering a public constant here is a breaking change
+	// requiring folio8-go/v2.
 	severityUnset Severity = iota
 
 	// SeverityWarning accompanies a successful render: the PDF bytes
