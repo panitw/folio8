@@ -1,0 +1,33 @@
+{
+  "name": "folio-js",
+  "version": "0.0.0",
+  "private": true,
+  "description": "folio8 for Node: render and validate .folio templates with the folio8 engine compiled to WebAssembly.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "wasm"
+  ],
+  "scripts": {
+    "build:wasm": "node scripts/build-wasm.mjs",
+    "build": "npm run build:wasm && tsc -p tsconfig.json",
+    "test": "vitest run",
+    "lint": "oxlint && tsc -p tsconfig.test.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "24.13.3",
+    "oxlint": "1.79.0",
+    "typescript": "5.9.3",
+    "vitest": "4.1.11"
+  }
+}

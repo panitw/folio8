@@ -354,6 +354,42 @@ jobs:
         working-directory: folio8-designer
         run: npm run test:e2e:compile
 
+  # folio-js (client-libraries story 4): the Node binding over
+  # folio8-go/wasm/cmd/render. `npm run build` compiles that wasm with the
+  # pinned Go toolchain, so setup-go is required, and the tests assert golden
+  # hashes and diagnostic parity against the Go engine.
+  folio-js:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24.16.0"
+          cache: npm
+          cache-dependency-path: folio-js/package-lock.json
+      - name: vet the render wasm entry under js/wasm
+        working-directory: folio8-go
+        env:
+          GOOS: js
+          GOARCH: wasm
+        run: go vet ./wasm/cmd/render
+      - name: npm ci (committed lockfile only)
+        working-directory: folio-js
+        run: npm ci
+      - name: build (render wasm + TypeScript)
+        working-directory: folio-js
+        run: npm run build
+      - name: lint (oxlint and a type check of src and tests)
+        working-directory: folio-js
+        run: npm run lint
+      - name: test (golden hashes and Go diagnostic parity)
+        working-directory: folio-js
+        run: npm test
+
   # DW-268. THE BROWSER SUITE, RUN.
   #
   # `npm run test:e2e` — 36 Playwright tests at the time this was written —

@@ -1,0 +1,5 @@
+node_modules/
+dist/
+# Built by scripts/build-wasm.mjs from folio8-go/wasm/cmd/render and the Go
+# toolchain's wasm_exec.js.
+wasm/
