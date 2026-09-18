@@ -70,7 +70,11 @@ beforeAll(() => {
   const packed = JSON.parse(run('npm', ['pack', '--ignore-scripts', '--json', '--pack-destination', workspace], packageRoot)) as { filename: string }[]
   tarball = join(workspace, packed[0]!.filename)
   entries = run('tar', ['-tzf', tarball], workspace)
-    .split('\n')
+    // SPLIT ON EITHER LINE ENDING. Windows' bundled bsdtar writes CRLF, so
+    // splitting on \n alone leaves a trailing \r on every entry and every
+    // name comparison below fails — which is exactly how both Windows legs
+    // of the folio-js matrix first went red.
+    .split(/\r?\n/)
     .filter(Boolean)
     .map((line) => line.replace(/^package\//, '').replace(/\/$/, ''))
 }, timeout)
@@ -109,7 +113,7 @@ describe('the packed tarball', () => {
   })
 
   it('is built from a tree that tracks no font or wasm bytes', () => {
-    const tracked = run('git', ['ls-files', 'folio-js'], repoRoot).split('\n').filter(Boolean)
+    const tracked = run('git', ['ls-files', 'folio-js'], repoRoot).split(/\r?\n/).filter(Boolean)
     expect(tracked.filter((path) => path.endsWith('.ttf') || path.endsWith('.wasm'))).toEqual([])
   })
 })
