@@ -525,23 +525,53 @@ jobs:
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
       # -buildmode=c-shared needs cgo, and cgo needs a mingw-w64 toolchain PER
-      # ARCHITECTURE. The runner image carries the 64-bit one; the 32-bit one
-      # is installed here rather than assumed, because win-x86 is the .NET
-      # Framework 4.6 floor and a missing i686 compiler would silently reduce
-      # this job to testing half of what it exists to test.
+      # ARCHITECTURE.
       #
-      # pacman failing is NOT fatal here on purpose: build-native.ps1 fails
-      # immediately afterwards, naming every path it looked in, which is a far
-      # more legible failure than a package-manager transcript.
-      - name: mingw-w64 toolchains (x86_64 and i686)
+      # The x86_64 one is NOT installed here: the runner image ships a
+      # standalone mingw-w64 at C:\mingw64 that involves MSYS2 not at all, and
+      # build-native.ps1 prefers it for exactly that reason. MSYS2 is needed
+      # only for the i686 toolchain, which has no standalone counterpart on
+      # the image and which win-x86 — the .NET Framework 4.6 floor — cannot do
+      # without.
+      #
+      # `-Syuu` FIRST, TWICE, then install. A plain `pacman -S` against a stale
+      # local database is how you get a partially upgraded toolchain: a
+      # gcc.exe newer than the runtime DLLs sitting beside it, which starts
+      # and then dies at load time with no stderr. MSYS2's own guidance is to
+      # run the full upgrade before installing anything, and to run it twice
+      # because the first pass can replace the msys2 runtime and stop.
+      #
+      # None of it is fatal on its own: build-native.ps1 PROVES each candidate
+      # compiler by compiling with it, and fails naming every compiler it
+      # tried and why each was rejected — a far more legible failure than a
+      # package-manager transcript.
+      - name: mingw-w64 i686 toolchain (MSYS2)
         shell: pwsh
         run: |
           $pacman = 'C:\msys64\usr\bin\pacman.exe'
           if (Test-Path $pacman) {
-            & $pacman -S --noconfirm --needed mingw-w64-x86_64-gcc mingw-w64-i686-gcc
-            if ($LASTEXITCODE -ne 0) { Write-Host "::warning::pacman exited $LASTEXITCODE; relying on whatever toolchains the image already has" }
+            foreach ($pass in 1, 2) {
+              & $pacman -Syuu --noconfirm
+              if ($LASTEXITCODE -ne 0) { Write-Host "::warning::pacman -Syuu pass $pass exited $LASTEXITCODE" }
+            }
+            & $pacman -S --noconfirm --needed mingw-w64-i686-gcc mingw-w64-x86_64-gcc
+            if ($LASTEXITCODE -ne 0) { Write-Host "::warning::pacman -S exited $LASTEXITCODE; build-native.ps1 will report which compilers actually work" }
           } else {
             Write-Host "::warning::no MSYS2 pacman on this image; relying on preinstalled toolchains"
+          }
+      # Cheap, unconditional inventory. When the build step fails, this is the
+      # first thing a reader wants and the last thing they can reconstruct
+      # afterwards.
+      - name: inventory the compilers on this image
+        shell: pwsh
+        run: |
+          foreach ($candidate in 'C:\mingw64\bin\gcc.exe', 'C:\msys64\mingw64\bin\gcc.exe', 'C:\msys64\mingw32\bin\gcc.exe') {
+            if (Test-Path $candidate) {
+              $version = (& $candidate --version 2>&1 | Select-Object -First 1)
+              Write-Host "$candidate  ->  $version"
+            } else {
+              Write-Host "$candidate  ->  ABSENT"
+            }
           }
       - name: build win-x64 and win-x86 DLLs (-buildmode=c-shared)
         shell: pwsh
