@@ -256,3 +256,10 @@ if ($failures.Count -gt 0) {
 
 Write-Host ''
 Write-Host "CONSUMER SUITE PASSED — $($legs.Count) process shapes rendered $Fixture to $expected, and both forced failure modes reported the folio8 load exception in both directions on both families."
+
+# EXIT 0 EXPLICITLY. The forced-failure legs above run a consumer that exits
+# NON-ZERO ON PURPOSE, and $LASTEXITCODE still holds that value here. The
+# shell that invokes this script exits with $LASTEXITCODE when the script
+# does not exit itself, so without this line a fully passing suite fails the
+# job — which is exactly what happened on this file's first CI run.
+exit 0
