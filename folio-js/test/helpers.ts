@@ -2,29 +2,31 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { shipped } from '../src/fonts.js'
+import type { FontSet } from '../src/types.js'
 
 export const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
-// folio8-go/fonts/fonts.go's Shipped(): face name to embedded file.
-const shippedFaces: Record<string, string> = {
-  'Noto Sans': 'notosans/NotoSans-Regular.ttf',
-  'Noto Sans Bold': 'notosans-bold/NotoSans-Bold.ttf',
-  'Noto Sans Italic': 'notosans-italic/NotoSans-Italic.ttf',
-  'Noto Sans Bold Italic': 'notosans-bolditalic/NotoSans-BoldItalic.ttf',
-  'Noto Sans Thai': 'notosansthai/NotoSansThai-Regular.ttf',
-  'Noto Sans Thai Bold': 'notosansthai-bold/NotoSansThai-Bold.ttf',
-  'Noto Sans SC': 'notosanssc/NotoSansSC-Regular.ttf',
-  Roboto: 'roboto/Roboto-Regular.ttf',
-  'Roboto Bold': 'roboto-bold/Roboto-Bold.ttf',
-  'Roboto Italic': 'roboto-italic/Roboto-Italic.ttf',
-  'Roboto Bold Italic': 'roboto-bolditalic/Roboto-BoldItalic.ttf',
+let fonts: FontSet | undefined
+
+/**
+ * Loads the package's own shipped set, so the synchronous accessor below can
+ * hand it to the many render call sites that are not in async position.
+ * test/setup.ts runs this before each test FILE's suites, in that file's own
+ * module registry — so once per file, not once per run.
+ */
+export async function loadShippedFonts(): Promise<FontSet> {
+  fonts = await shipped()
+  return fonts
 }
 
-let fonts: Map<string, Uint8Array> | undefined
-
-/** The same Map fonts.Shipped() would give a Go caller. */
-export function shippedFonts(): Map<string, Uint8Array> {
-  fonts ??= new Map(Object.entries(shippedFaces).map(([name, file]) => [name, new Uint8Array(readFileSync(join(repoRoot, 'folio8-go', 'fonts', file)))]))
+/**
+ * The shipped set — exactly what an installer gets from `folio-js/fonts`,
+ * read from the packaged files rather than rebuilt from the Go tree, so the
+ * suite exercises the same bytes and the same lookup installers do.
+ */
+export function shippedFonts(): FontSet {
+  if (!fonts) throw new Error('test/helpers: loadShippedFonts() has not run — is test/setup.ts still in vitest.config.ts?')
   return fonts
 }
 

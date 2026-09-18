@@ -2,7 +2,10 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "noEmit": true,
-    "rootDir": "."
+    "rootDir": ".",
+    // test/package.test.ts imports scripts/package-check.mjs's requiredFiles
+    // rather than restating it; the build scripts are plain ESM JavaScript.
+    "allowJs": true
   },
   "include": ["src", "test", "vitest.config.ts"]
 }

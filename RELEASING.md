@@ -4,8 +4,8 @@ This document is the procedure for cutting a folio8 release. It exists because
 **a release with no written procedure is not a release** — the same rule
 D-000.58 applies to gate procedures, one level up.
 
-It covers the Go engine module, `folio8-go`. The designer's own version and
-force-upgrade policy are at the end.
+It covers the Go engine module, `folio8-go`, and the npm package `folio-js`.
+The designer's own version and force-upgrade policy are at the end.
 
 **Released version:** `folio8-go/v1.0.0`
 
@@ -168,6 +168,80 @@ moved or deleted.** A bad release is fixed forward with a new patch version,
 adding a `retract` directive to `folio8-go/go.mod` for the bad one if needed. The tag is
 directory-prefixed (AD-22) because the module lives in `folio8-go/`; Go resolves
 `go get github.com/panitw/folio8/folio8-go@v1.0.0` from it.
+
+## Publishing `folio-js` to npm
+
+`folio-js` is a separate release line from `folio8-go`, published by hand.
+**`npm publish` is never run by a script, a lifecycle hook or a CI job**: no
+workflow in this repository holds an npm token, and none should. It is the
+owner's command, typed at the owner's terminal, on the owner's explicit
+go-ahead.
+
+### What the package promises
+
+The tarball is **self-contained**: a prebuilt `.wasm`, `wasm_exec.js`, the
+compiled `dist/`, all eleven `fonts.Shipped()` faces with their OFL text and
+notices, `README.md` and `LICENSE`. It declares **no dependencies** and **no
+install scripts**, so `npm install` on a machine with no Go, no C compiler and
+no network after the fetch produces a package that renders (CAP-6).
+
+`prepack` is what keeps that true. It rebuilds the wasm, re-copies the fonts
+from `folio8-go/fonts/` and recompiles `dist/`, then runs
+`scripts/package-check.mjs`, which refuses the pack — naming what is wrong —
+if anything the `files` allowlist promises is absent, or if a packaged face's
+bytes differ from the Go source. A publish therefore cannot ship an incomplete
+tarball, and cannot ship a font set that has drifted from the engine's.
+
+### Version and engine stamp
+
+`folio-js`'s `version` is its own; it is not tied to `folio8-go`'s. What ties
+them is `package.json`'s **`folio8EngineVersion`**, which records the engine
+version the packaged wasm was built from and must equal `src/version.ts`'s
+`version` — `test/package.test.ts` fails if they disagree. Bump both in the
+release commit when the package is rebuilt against a newer engine tag.
+
+Both bindings build against the **`folio8-go/v1.0.0` tag, never `main`**.
+
+### Before publishing
+
+1. `cd folio-js && npm ci && npm run build && npm run lint && npm test` is
+   green on the release commit. The suite packs the tarball, installs it into
+   a temp project **with the network refused and install scripts ignored**,
+   runs the README's own first-PDF snippet in a child process and compares the
+   PDF's SHA-256 with a corpus fixture's committed `expected.json`. That is
+   the substance of CAP-6 checked by machine, so nothing below re-checks the
+   package's *contents* by hand.
+2. `npm pack --dry-run` lists `dist/`, `wasm/`, eleven `.ttf` files with a
+   `LICENSE-OFL.txt` and a `NOTICE.md` beside each, `LICENSE` and `README.md`
+   — and no source, test or lockfile.
+3. `ci.yml` is green on that exact commit (its `folio-js` job runs the same
+   commands).
+
+### The commands
+
+Run from `folio-js/`, on `main`, with the release commit at `HEAD`.
+**Publishing to npm is irreversible for anyone who installs it; do not run
+this without the owner's explicit go-ahead.**
+
+```sh
+V=$(node -p "require('./package.json').version")   # the version being published; never typed twice
+npm whoami                            # the publishing account, confirmed before anything is sent
+npm pack                              # prepack rebuilds and re-checks; inspect the tarball if in doubt
+npm publish --dry-run                 # last look at exactly what would be sent
+
+# TAG FIRST, so a published version always maps back to a commit. The tag is
+# directory-prefixed (AD-22), like the engine's, because the package lives in
+# folio-js/. Push it before publishing: an unpublished tag is cheap to live
+# with, an unattributable npm version is not.
+git tag -a "folio-js/v$V" -m "folio-js v$V" && git push origin "folio-js/v$V"
+
+npm publish                           # the irreversible step (access comes from publishConfig)
+npm view "folio-js@$V" dist.tarball   # confirm the registry serves it
+```
+
+A published version is never unpublished or overwritten, and a pushed tag is
+never moved or deleted; a bad release is fixed forward with a new patch
+version, and `npm deprecate` marks the bad one.
 
 ## Choosing the designer version, and forcing an upgrade
 

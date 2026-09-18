@@ -386,7 +386,13 @@ jobs:
       - name: lint (oxlint and a type check of src and tests)
         working-directory: folio-js
         run: npm run lint
-      - name: test (golden hashes and Go diagnostic parity)
+      # Story 5's offline-install proof (CAP-6) lives in this suite, not in a
+      # step of its own: test/package.test.ts packs the tarball, installs it
+      # into a temp project with its own npm cache and --offline, and runs the
+      # README's first-PDF snippet against a corpus fixture. It needs nothing
+      # this job does not already have, and keeping it inside `npm test` means
+      # a developer runs the same proof locally with the same command.
+      - name: test (golden hashes, Go diagnostic parity, and the offline install)
         working-directory: folio-js
         run: npm test
 

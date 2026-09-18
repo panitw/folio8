@@ -1,28 +1,61 @@
 {
   "name": "folio-js",
-  "version": "0.0.0",
-  "private": true,
+  "version": "1.0.0",
   "description": "folio8 for Node: render and validate .folio templates with the folio8 engine compiled to WebAssembly.",
   "license": "MIT",
+  "author": "Panit Wechasil",
+  "homepage": "https://github.com/panitw/folio8/tree/main/folio-js#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/panitw/folio8.git",
+    "directory": "folio-js"
+  },
+  "bugs": {
+    "url": "https://github.com/panitw/folio8/issues"
+  },
+  "keywords": [
+    "pdf",
+    "report",
+    "reporting",
+    "template",
+    "folio8",
+    "deterministic",
+    "wasm"
+  ],
   "type": "module",
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
   "engines": {
     "node": ">=22.12"
   },
+  "folio8EngineVersion": "1.0.0",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    }
+    },
+    "./fonts": {
+      "types": "./dist/fonts.d.ts",
+      "default": "./dist/fonts.js"
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "dist",
-    "wasm"
+    "wasm",
+    "fonts",
+    "README.md",
+    "LICENSE"
   ],
   "scripts": {
     "build:wasm": "node scripts/build-wasm.mjs",
-    "build": "npm run build:wasm && tsc -p tsconfig.json",
+    "build:fonts": "node scripts/build-fonts.mjs",
+    "build": "npm run build:wasm && npm run build:fonts && tsc -p tsconfig.json",
     "test": "vitest run",
-    "lint": "oxlint && tsc -p tsconfig.test.json --noEmit"
+    "lint": "oxlint && tsc -p tsconfig.test.json --noEmit",
+    "prepack": "npm run build && node scripts/package-check.mjs"
   },
   "devDependencies": {
     "@types/node": "24.13.3",
