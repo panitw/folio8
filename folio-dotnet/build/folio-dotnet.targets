@@ -1,0 +1,68 @@
+<Project>
+
+  <!--
+    ============================================================
+    folio-dotnet: the .NET Framework delivery of the native library.
+    ============================================================
+
+    NuGet imports this file automatically, in every project that references
+    the folio-dotnet package, because it is `build/<package id>.targets`. The
+    consumer authors nothing.
+
+    WHY IT EXISTS. The package carries its two Windows natives in the RID
+    layout — runtimes/win-x86/native/ and runtimes/win-x64/native/ — which is
+    a MODERN .NET mechanism. A .NET Framework project's build does nothing
+    with runtimes/ at all: a 4.6 consumer would install the package, build,
+    and find no native library anywhere near its output. .NET Framework 4.6 is
+    the floor this library exists to reach, so "modern .NET is fine" is not an
+    answer.
+
+    WHAT IT DOES. It stages BOTH architectures beside the output, in
+    per-architecture subdirectories:
+
+        <OutDir>folio8-native/win-x64/folio8_native.dll
+        <OutDir>folio8-native/win-x86/folio8_native.dll
+
+    Both, not one — and that is the point. A .NET Framework project is AnyCPU
+    by default, which means the same build runs as a 64-bit process on 64-bit
+    Windows and as a 32-bit process under Prefer32Bit or on a 32-bit host.
+    Nothing at BUILD time knows which it will be. Folio8's
+    NativeLibraryLoader picks from IntPtr.Size at LOAD time, which does, and
+    it can only pick from what is there.
+
+    WHY IT IS SCOPED TO .NETFramework. On modern .NET the runtimes/ assets are
+    resolved by the host, and staging a second copy here would put ~26 MB of
+    duplicate DLLs in every publish for no gain.
+  -->
+
+  <PropertyGroup Condition="'$(TargetFrameworkIdentifier)' == '.NETFramework'">
+    <_FolioNativeRoot>$(MSBuildThisFileDirectory)../runtimes/</_FolioNativeRoot>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(TargetFrameworkIdentifier)' == '.NETFramework'">
+    <None Include="$(_FolioNativeRoot)win-x64/native/folio8_native.dll"
+          Condition="Exists('$(_FolioNativeRoot)win-x64/native/folio8_native.dll')">
+      <Link>folio8-native\win-x64\folio8_native.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Visible>false</Visible>
+    </None>
+    <None Include="$(_FolioNativeRoot)win-x86/native/folio8_native.dll"
+          Condition="Exists('$(_FolioNativeRoot)win-x86/native/folio8_native.dll')">
+      <Link>folio8-native\win-x86\folio8_native.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Visible>false</Visible>
+    </None>
+  </ItemGroup>
+
+  <!--
+    FAIL AT BUILD TIME, NAMING THE FIX, rather than at the first render with a
+    load failure. If the package's native assets are not where this file
+    expects them, the restore or the package is damaged, and that is worth
+    saying while the developer is still looking at a build log.
+  -->
+  <Target Name="FolioVerifyNativeAssets" BeforeTargets="Build" Condition="'$(TargetFrameworkIdentifier)' == '.NETFramework'">
+    <Error Condition="!Exists('$(_FolioNativeRoot)win-x64/native/folio8_native.dll') OR !Exists('$(_FolioNativeRoot)win-x86/native/folio8_native.dll')"
+           Text="folio-dotnet: the package's native libraries were not found under $(_FolioNativeRoot). Both runtimes/win-x64/native/folio8_native.dll and runtimes/win-x86/native/folio8_native.dll must be present — a .NET Framework project is AnyCPU by default and may run at either bitness, so folio-dotnet stages both and chooses at load time. Restore the folio-dotnet package again; if it is still absent the package is damaged." />
+  </Target>
+
+</Project>

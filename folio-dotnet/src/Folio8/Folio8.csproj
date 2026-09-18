@@ -14,7 +14,10 @@
     compiling these same sources against 4.6 reference assemblies.
 
     No PackageReference. Ever: a third-party runtime dependency on this
-    assembly is out of scope by decision, not by accident.
+    assembly is out of scope by decision, not by accident. That is also why
+    the package below declares no dependency group content of its own —
+    `dotnet add package folio-dotnet` brings exactly one assembly, two native
+    libraries and eleven font faces, and nothing else.
   -->
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
@@ -35,9 +38,266 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <EnableDefaultNoneItems>false</EnableDefaultNoneItems>
-    <!-- Packaging is story 7; this assembly is consumed by ProjectReference today. -->
-    <IsPackable>false</IsPackable>
-    <Description>folio8 for .NET: render and validate .folio templates with the folio8 engine as a native library.</Description>
   </PropertyGroup>
+
+  <!--
+    PACKAGE IDENTITY.
+
+    The id is `folio-dotnet` while the assembly stays `Folio8.dll`: the
+    package is how you install it, the assembly is what the call site names.
+    Version 1.0.0 is folio-dotnet's OWN release line, independent of the
+    engine's; what ties them together is FolioEngineVersion below.
+
+    Nothing here publishes. No script, target or workflow in this repository
+    pushes this package to a registry — RELEASING.md's NuGet section is the
+    only procedure, and it is typed by the owner, with the owner's own key.
+    PackagingTests greps every tracked script for that command and reddens if
+    one acquires it.
+  -->
+  <PropertyGroup>
+    <IsPackable>true</IsPackable>
+    <PackageId>folio-dotnet</PackageId>
+    <Version>1.0.0</Version>
+    <Authors>Panit Wechasil</Authors>
+    <Company>Panit Wechasil</Company>
+    <Product>folio8</Product>
+    <Copyright>Copyright (c) folio8 contributors</Copyright>
+    <Description>folio8 for .NET: render and validate .folio templates with the folio8 engine as a native library. Byte-identical to the Go engine, from .NET Framework 4.6 through modern .NET, on Windows x86 and x64. Ships both native architectures and the eleven shipped font faces.</Description>
+    <PackageTags>pdf;reporting;folio8;rendering;documents;invoice;statement</PackageTags>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageProjectUrl>https://github.com/panitw/folio8</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/panitw/folio8.git</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <!--
+      THE ENGINE VERSION THIS PACKAGE BINDS, recorded as assembly metadata —
+      folio-js's `folio8EngineVersion` in package.json, in the spelling .NET
+      has for the same job. It is NOT the package version and must not track
+      it: the two are separate release lines. PackagingTests asserts this
+      equals what the loaded native library reports AND what the Go engine
+      recorded into folio-js/test/data/go-parity.json, so the three cannot
+      drift apart silently.
+    -->
+    <FolioEngineVersion>1.0.0</FolioEngineVersion>
+    <!-- No symbol or source-link package: a native-backed binding's symbols
+         say nothing useful about the half that does the work. -->
+    <IncludeSymbols>false</IncludeSymbols>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <AssemblyMetadata Include="folio8EngineVersion" Value="$(FolioEngineVersion)" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <FolioRepoRoot>$(MSBuildThisFileDirectory)../../../</FolioRepoRoot>
+    <FolioGoFonts>$(FolioRepoRoot)folio8-go/fonts</FolioGoFonts>
+    <FolioNativeDir>$(MSBuildThisFileDirectory)../../build/native</FolioNativeDir>
+    <FolioParityJson>$(FolioRepoRoot)folio-js/test/data/go-parity.json</FolioParityJson>
+  </PropertyGroup>
+
+  <!--
+    THE ELEVEN FACES, EMBEDDED STRAIGHT FROM folio8-go/fonts/.
+
+    They are read from the engine's own tree at build time and never copied
+    into folio-dotnet/, let alone committed there: folio8-go/fonts/ is the one
+    source of truth (the engine embeds the same files), and a second tracked
+    14 MB copy could diverge silently. LogicalName is what Fonts.cs asks for,
+    so the resource names do not depend on RootNamespace — which is
+    deliberately empty here.
+
+    EMBEDDED, NOT SHIPPED BESIDE. It is the one asset that has to reach both
+    target families, and .NET Framework and modern .NET disagree about every
+    file-delivery mechanism NuGet has. A resource inside the assembly is just
+    there. Fonts.cs records the rest of the reasoning.
+  -->
+  <ItemGroup>
+    <FolioShippedFace Include="$(FolioGoFonts)/notosans/NotoSans-Regular.ttf"><FaceName>Noto Sans</FaceName></FolioShippedFace>
+    <FolioShippedFace Include="$(FolioGoFonts)/notosans-bold/NotoSans-Bold.ttf"><FaceName>Noto Sans Bold</FaceName></FolioShippedFace>
+    <FolioShippedFace Include="$(FolioGoFonts)/notosans-italic/NotoSans-Italic.ttf"><FaceName>Noto Sans Italic</FaceName></FolioShippedFace>
+    <FolioShippedFace Include="$(FolioGoFonts)/notosans-bolditalic/NotoSans-BoldItalic.ttf"><FaceName>Noto Sans Bold Italic</FaceName></FolioShippedFace>
+    <FolioShippedFace Include="$(FolioGoFonts)/notosansthai/NotoSansThai-Regular.ttf"><FaceName>Noto Sans Thai</FaceName></FolioShippedFace>
+    <FolioShippedFace Include="$(FolioGoFonts)/notosansthai-bold/NotoSansThai-Bold.ttf"><FaceName>Noto Sans Thai Bold</FaceName></FolioShippedFace>
+    <FolioShippedFace Include="$(FolioGoFonts)/notosanssc/NotoSansSC-Regular.ttf"><FaceName>Noto Sans SC</FaceName></FolioShippedFace>
+    <FolioShippedFace Include="$(FolioGoFonts)/roboto/Roboto-Regular.ttf"><FaceName>Roboto</FaceName></FolioShippedFace>
+    <FolioShippedFace Include="$(FolioGoFonts)/roboto-bold/Roboto-Bold.ttf"><FaceName>Roboto Bold</FaceName></FolioShippedFace>
+    <FolioShippedFace Include="$(FolioGoFonts)/roboto-italic/Roboto-Italic.ttf"><FaceName>Roboto Italic</FaceName></FolioShippedFace>
+    <FolioShippedFace Include="$(FolioGoFonts)/roboto-bolditalic/Roboto-BoldItalic.ttf"><FaceName>Roboto Bold Italic</FaceName></FolioShippedFace>
+
+    <EmbeddedResource Include="@(FolioShippedFace)">
+      <LogicalName>folio8.fonts.%(Filename)%(Extension)</LogicalName>
+      <Visible>false</Visible>
+    </EmbeddedResource>
+  </ItemGroup>
+
+  <!--
+    THE TWO WINDOWS NATIVES, in the RID layout modern .NET resolves natively.
+    build/build-native.{sh,ps1} produce them; they are never committed.
+  -->
+  <ItemGroup>
+    <FolioNative Include="$(FolioNativeDir)/win-x64/folio8_native.dll"><Rid>win-x64</Rid></FolioNative>
+    <FolioNative Include="$(FolioNativeDir)/win-x86/folio8_native.dll"><Rid>win-x86</Rid></FolioNative>
+
+    <None Include="@(FolioNative)" Pack="true" PackagePath="runtimes/%(Rid)/native/" Visible="false" />
+  </ItemGroup>
+
+  <!--
+    THE .NET FRAMEWORK DELIVERY. `runtimes/` is a modern-.NET mechanism: a
+    .NET Framework project's build does nothing with it, so a 4.6 consumer
+    would install this package and still have no native library beside its
+    exe. These targets, which NuGet imports automatically because the file is
+    named for the package id, stage BOTH architectures into
+    folio8-native/<rid>/ next to the output — and NativeLibraryLoader picks
+    the one that matches the process at load time. The consumer authors
+    nothing.
+  -->
+  <ItemGroup>
+    <None Include="../../build/folio-dotnet.targets" Pack="true" PackagePath="build/folio-dotnet.targets" Visible="false" />
+    <None Include="../../build/folio-dotnet.targets" Pack="true" PackagePath="buildTransitive/folio-dotnet.targets" Visible="false" />
+  </ItemGroup>
+
+  <!--
+    README and LICENCE travel in the package: a package installed from a
+    registry carries no repository around it. AD-26 — the licence census
+    pins folio-dotnet/LICENSE the way it pins folio-js/LICENSE.
+
+    The FACE licences and notices go in beside them, under
+    third-party-notices/, copied at build time from folio8-go/fonts/ like the
+    faces themselves. A directory holding a font binary ships its own terms;
+    here the binaries are inside the assembly, so the terms ship next to it.
+  -->
+  <ItemGroup>
+    <None Include="../../README.md" Pack="true" PackagePath="" Visible="false" />
+    <None Include="../../LICENSE" Pack="true" PackagePath="" Visible="false" />
+    <None Include="$(FolioGoFonts)/**/LICENSE-OFL.txt" Pack="true" PackagePath="third-party-notices/fonts/" Visible="false" />
+    <None Include="$(FolioGoFonts)/**/NOTICE.md" Pack="true" PackagePath="third-party-notices/fonts/" Visible="false" />
+  </ItemGroup>
+
+  <!--
+    PACKING CANNOT SHIP AN INCOMPLETE PACKAGE.
+
+    An inline task, run before the nuspec is generated, that refuses the pack
+    — naming exactly what is wrong — when a native is missing, a native is
+    built for the wrong architecture, a face is missing or has drifted from
+    the byte length the Go engine itself recorded, or the set is not the
+    eleven faces fonts.Shipped() returns. It reads the PE header of each DLL
+    rather than trusting the directory it came out of: a win-x86 folder
+    holding the x64 build is exactly the mistake that produces
+    BadImageFormatException on a customer's machine, and it is invisible to
+    every other check.
+  -->
+  <UsingTask TaskName="FolioPackageCheck" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)\Microsoft.Build.Tasks.Core.dll">
+    <ParameterGroup>
+      <Faces ParameterType="Microsoft.Build.Framework.ITaskItem[]" Required="true" />
+      <Natives ParameterType="Microsoft.Build.Framework.ITaskItem[]" Required="true" />
+      <ParityJson ParameterType="System.String" Required="true" />
+    </ParameterGroup>
+    <Task>
+      <Using Namespace="System" />
+      <Using Namespace="System.Collections.Generic" />
+      <Using Namespace="System.IO" />
+      <Using Namespace="System.Text.RegularExpressions" />
+      <Code Type="Fragment" Language="cs"><![CDATA[
+        if (!File.Exists(ParityJson))
+        {
+          Log.LogError("folio-dotnet pack: the fonts.Shipped() record is missing at " + ParityJson + ", so no face can be checked for drift.");
+          return false;
+        }
+        // SCOPED TO shippedFaces, AND ORDER-INDEPENDENT. A regexp over the
+        // whole file that also required "name" and "byteLength" to be adjacent
+        // and in that order would silently record ZERO faces after any
+        // reformat of go-parity.json — turning a gate into a rubber stamp, and
+        // one that reports "0 faces" rather than "the check broke".
+        string parity = File.ReadAllText(ParityJson);
+        int arrayAt = parity.IndexOf("\"shippedFaces\"", StringComparison.Ordinal);
+        arrayAt = arrayAt < 0 ? -1 : parity.IndexOf('[', arrayAt);
+        int arrayEnd = arrayAt < 0 ? -1 : parity.IndexOf(']', arrayAt);
+        if (arrayEnd < 0)
+        {
+          Log.LogError("folio-dotnet pack: " + ParityJson + " has no shippedFaces array, so no face can be checked for drift.");
+          return false;
+        }
+        var recorded = new Dictionary<string, long>(StringComparer.Ordinal);
+        foreach (Match entry in Regex.Matches(parity.Substring(arrayAt, arrayEnd - arrayAt + 1), "\\{[^{}]*\\}"))
+        {
+          Match name = Regex.Match(entry.Value, "\"name\"\\s*:\\s*\"([^\"]+)\"");
+          Match length = Regex.Match(entry.Value, "\"byteLength\"\\s*:\\s*(\\d+)");
+          if (!name.Success || !length.Success)
+          {
+            Log.LogError("folio-dotnet pack: a shippedFaces entry in " + ParityJson + " has no name or no byteLength: " + entry.Value);
+            continue;
+          }
+          recorded[name.Groups[1].Value] = long.Parse(length.Groups[1].Value);
+        }
+        if (recorded.Count != 11)
+        {
+          Log.LogError("folio-dotnet pack: " + ParityJson + " records " + recorded.Count + " shipped faces; fonts.Shipped() ships eleven. Refusing to pack a font set that cannot be checked.");
+        }
+        if (Faces.Length != 11)
+        {
+          Log.LogError("folio-dotnet pack: this project embeds " + Faces.Length + " faces; fonts.Shipped() ships eleven. The package must carry the engine's whole set.");
+        }
+        foreach (var face in Faces)
+        {
+          string name = face.GetMetadata("FaceName");
+          string path = face.GetMetadata("FullPath");
+          if (!File.Exists(path))
+          {
+            Log.LogError("folio-dotnet pack: the face '" + name + "' is missing from the engine's tree at " + path + ".");
+            continue;
+          }
+          long actual = new FileInfo(path).Length;
+          long want;
+          if (!recorded.TryGetValue(name, out want))
+          {
+            Log.LogError("folio-dotnet pack: the face '" + name + "' is not in " + ParityJson + "'s shippedFaces — fonts.Shipped() does not ship it.");
+            continue;
+          }
+          if (actual != want)
+          {
+            Log.LogError("folio-dotnet pack: the face '" + name + "' is " + actual + " bytes at " + path + ", but fonts.Shipped() records " + want + ". The embedded set has drifted from the engine's.");
+          }
+        }
+        foreach (var native in Natives)
+        {
+          string rid = native.GetMetadata("Rid");
+          string path = native.GetMetadata("FullPath");
+          if (!File.Exists(path))
+          {
+            Log.LogError("folio-dotnet pack: the " + rid + " native library is missing at " + path + ". Run folio-dotnet/build/build-native.sh win-x64 win-x86 (or build-native.ps1 on Windows) before packing; a package with one architecture makes BadImageFormatException the normal first experience.");
+            continue;
+          }
+          int machine = -1;
+          using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read))
+          using (var reader = new BinaryReader(stream))
+          {
+            if (stream.Length > 0x40)
+            {
+              stream.Position = 0x3C;
+              long headerAt = reader.ReadUInt32();
+              if (headerAt > 0 && headerAt + 6 <= stream.Length)
+              {
+                stream.Position = headerAt;
+                if (reader.ReadUInt32() == 0x00004550u) { machine = reader.ReadUInt16(); }
+              }
+            }
+          }
+          int wanted = rid == "win-x64" ? 0x8664 : 0x014C;
+          if (machine < 0)
+          {
+            Log.LogError("folio-dotnet pack: " + path + " is not a Windows PE file, so it cannot be the " + rid + " native library.");
+          }
+          else if (machine != wanted)
+          {
+            Log.LogError("folio-dotnet pack: " + path + " has PE machine 0x" + machine.ToString("X4") + ", but " + rid + " needs 0x" + wanted.ToString("X4") + ". The two architectures have been swapped or one was built twice.");
+          }
+        }
+      ]]></Code>
+    </Task>
+  </UsingTask>
+
+  <Target Name="FolioCheckPackageContents" BeforeTargets="GenerateNuspec">
+    <FolioPackageCheck Faces="@(FolioShippedFace)" Natives="@(FolioNative)" ParityJson="$(FolioParityJson)" />
+  </Target>
 
 </Project>

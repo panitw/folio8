@@ -172,7 +172,18 @@ TestResults/
 !/folio-dotnet/build/
 !/folio-dotnet/build/*.sh
 !/folio-dotnet/build/*.ps1
+# Story 7's MSBuild targets, SHIPPED INSIDE THE NUGET PACKAGE. It is authored
+# source like the two scripts beside it, not build output.
+!/folio-dotnet/build/*.targets
 # The native library and the cgo-generated header build-native.sh writes.
 # NEVER committed: the host library is a development aid and the Windows
 # DLLs are CI artifacts, both rebuilt from folio8-go/cshared on demand.
 /folio-dotnet/build/native/
+# Story 7's pack output and the consumer workspace run-consumers.ps1 builds
+# into: a .nupkg, six consumer builds and their copies. All rebuilt on demand
+# from the sources beside them, and a tracked .nupkg would be a second source
+# of truth for what the package contains.
+/artifacts/
+# And a .nupkg anywhere: the documented pack command can be pointed elsewhere,
+# and a 42 MB package is never something this repository should carry.
+*.nupkg

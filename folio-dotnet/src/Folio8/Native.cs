@@ -132,6 +132,13 @@ internal static class Native
             {
                 return;
             }
+            // BEFORE THE FIRST P/INVOKE, AND THAT ORDER IS THE WHOLE POINT.
+            // DllImport binds a module by name once; loading the
+            // bitness-correct file by full path here means the seven imports
+            // below bind to it rather than to whatever a bare name search
+            // would turn up — or to nothing at all.
+            NativeLibraryLoader.Ensure();
+
             int actual;
             try
             {

@@ -101,6 +101,15 @@ var pinnedCensus = []censusVerdict{
 	// beside the faces in that package are copied at build time from
 	// folio8-go/fonts/ (already pinned below) and are not tracked here.
 	{"folio-js/LICENSE", FamilyPermissive, "MIT"},
+	// SPEC-client-libraries story 7: the NuGet package redistributes the same
+	// MIT terms for the same reason — a package installed from a registry
+	// carries no repository around it. Byte-identical to the root LICENSE and
+	// to folio-js/LICENSE above, and pinned separately because AD-26 records
+	// verdicts about PATHS this repository redistributes, not about distinct
+	// texts. The font licences that ship beside the faces in that package are
+	// copied at pack time from folio8-go/fonts/ (already pinned below) and are
+	// not tracked here.
+	{"folio-dotnet/LICENSE", FamilyPermissive, "MIT"},
 	// STORY 8.5'S CATALOGUE, 21 NEW COMMITTED LICENCE TEXTS, PINNED ONE BY
 	// ONE. They are the first faces this repository has ever put through the
 	// fail-closed asset gate in bulk, and two of them —

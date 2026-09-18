@@ -663,6 +663,58 @@ jobs:
           --settings folio-dotnet/test/Folio8.Tests/x86.runsettings
           --logger "trx;LogFileName=folio-dotnet-x86.trx"
           --results-directory folio-dotnet/TestResults
+      # THE PACKAGE, PROVED FROM THE OUTSIDE (story 7). Everything above runs
+      # inside a test host that staged a native library by hand, so none of it
+      # can say whether `dotnet add package folio-dotnet` works — and CAP-7 is
+      # a claim about exactly that.
+      #
+      # The driver packs the package, fills a local feed, and installs it into
+      # two consumer projects that share ONE Program.cs and carry no load
+      # logic of their own: a net48 one built three ways (AnyCPU 64-bit,
+      # AnyCPU + Prefer32Bit, PlatformTarget=x86) and a modern-.NET one built
+      # three ways (RID-agnostic, self-contained win-x64, self-contained
+      # win-x86). Six process shapes across both target families; each renders
+      # a corpus fixture and its SHA-256 must equal the committed
+      # expected.json.
+      #
+      # It then FORCES two CAP-11 failure modes against copies of the built
+      # output — the architecture's native deleted, and the x64 asset replaced
+      # by the x86 file — and asserts the exception's TEXT names the bitness,
+      # the RID, the file name and the probed paths. The third mode, a host
+      # that blocks P/Invoke, cannot be produced in an ordinary console
+      # process and is covered in Folio8.Tests/LoaderTests.cs with the
+      # platform call injected.
+      #
+      # THIS IS THE ONLY EVIDENCE .NET FRAMEWORK CONSUMERS WORK AT ALL. No
+      # developer host in this project can run one.
+      #
+      # ITS OUTPUT IS AN ARTIFACT, on success and on failure alike. The trx
+      # files below are the evidence for the unit legs; without this the ONE
+      # job that says anything about .NET Framework consumers would leave a
+      # reader nothing but scrollback when it reds.
+      - name: pack, install into seven consumer shapes, render and force each failure mode (CAP-7, CAP-11)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force folio-dotnet/TestResults | Out-Null
+          ./folio-dotnet/test/consumers/run-consumers.ps1 2>&1 |
+            Tee-Object -FilePath folio-dotnet/TestResults/folio-dotnet-consumers.log
+          $code = $LASTEXITCODE
+          Get-ChildItem artifacts/nupkg -Filter '*.nupkg' -ErrorAction SilentlyContinue | ForEach-Object {
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            $zip = [IO.Compression.ZipFile]::OpenRead($_.FullName)
+            try { $zip.Entries | ForEach-Object { "{0,12}  {1}" -f $_.Length, $_.FullName } }
+            finally { $zip.Dispose() }
+          } | Out-File folio-dotnet/TestResults/folio-dotnet-package-contents.txt
+          exit $code
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: folio-dotnet-consumers
+          path: |
+            folio-dotnet/TestResults/folio-dotnet-consumers.log
+            folio-dotnet/TestResults/folio-dotnet-package-contents.txt
+          retention-days: 7
+          if-no-files-found: error
       # Always, not only on failure: a green run's trx is the evidence that
       # both legs actually ran, which is the claim this job exists to make.
       # if-no-files-found: error for the reason the designer job gives — a

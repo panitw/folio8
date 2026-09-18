@@ -243,6 +243,108 @@ A published version is never unpublished or overwritten, and a pushed tag is
 never moved or deleted; a bad release is fixed forward with a new patch
 version, and `npm deprecate` marks the bad one.
 
+## Publishing `folio-dotnet` to NuGet
+
+`folio-dotnet` is a separate release line from `folio8-go` and from
+`folio-js`, published by hand. **`dotnet nuget push` is never run by a script,
+an MSBuild target or a CI job**: no workflow in this repository holds a NuGet
+API key, and none should. It is the owner's command, typed at the owner's
+terminal, on the owner's explicit go-ahead. `PackagingTests` greps every
+tracked script, workflow, project file and build script for the literal
+`nuget push` — this document excepted, since it is where the command is
+written down — and reddens if one acquires it.
+
+### What the package promises
+
+`folio-dotnet.1.0.0.nupkg` is **self-contained**:
+
+```
+lib/netstandard2.0/Folio8.dll          the one managed assembly, faces embedded
+runtimes/win-x64/native/folio8_native.dll
+runtimes/win-x86/native/folio8_native.dll
+build/folio-dotnet.targets             the .NET Framework delivery
+buildTransitive/folio-dotnet.targets
+README.md, LICENSE
+third-party-notices/fonts/**           each face's OFL text and notice
+```
+
+It declares **no dependencies**, so `dotnet add package folio-dotnet` on a
+machine with no Go and no C compiler produces a project that renders — from
+.NET Framework 4.6 through modern .NET, in a 64-bit or a 32-bit process
+(CAP-7). The native asset is `folio8_native.dll`, **never** `folio8.dll`:
+NTFS is case-insensitive and the managed assembly is `Folio8.dll`, so the two
+names are one file.
+
+**The pack step is what keeps that true.** `Folio8.csproj` runs an inline
+`FolioPackageCheck` task before the nuspec is generated, and it refuses the
+pack — naming exactly what is wrong — if either native is missing, if a
+native's PE header says it was built for the other architecture, if a face is
+missing, if a face's byte length has drifted from the `shippedFaces` record
+the Go engine wrote into `folio-js/test/data/go-parity.json`, or if the set is
+not the eleven faces `fonts.Shipped()` returns. A publish therefore cannot
+ship a half package.
+
+### Version and engine stamp
+
+`folio-dotnet`'s `Version` is its own; it is not tied to `folio8-go`'s. What
+ties them is `Folio8.csproj`'s **`FolioEngineVersion`**, written into the
+assembly as the `folio8EngineVersion` metadata attribute — the .NET spelling
+of `folio-js`'s `package.json` field. `PackagingTests` fails if it disagrees
+with what the loaded native library reports or with `go-parity.json`. Bump it
+in the release commit when the package is rebuilt against a newer engine tag.
+
+**What the natives are actually built from is the working tree.**
+`build-native.{sh,ps1}` compile `folio8-go/cshared/cmd/folio8` out of this
+repository, not out of a fetched module version — so "built against
+`folio8-go/v1.0.0`" is a statement about the COMMIT the release is cut from,
+and it holds only because the release commit is the tagged one. Cut the
+package from the commit the engine tag points at, or from a descendant whose
+engine sources are unchanged; nothing in the build enforces it for you.
+
+### Before publishing
+
+1. The natives are built from the release commit, on Windows, with the pinned
+   toolchain: `folio-dotnet\build\build-native.ps1 win-x64 win-x86`.
+2. `dotnet test folio-dotnet/test/Folio8.Tests/Folio8.Tests.csproj -c Release`
+   is green, and so is the 32-bit leg. `ci.yml`'s `folio-dotnet` job runs both
+   plus the consumer suite — the pack, the install into all three process
+   shapes on both target families, the corpus hash, and each forced CAP-11
+   failure — so nothing below re-checks the package's *behaviour* by hand.
+3. `ci.yml` is green on that exact commit.
+
+### The commands
+
+Run from the repository root, on `main`, with the release commit at `HEAD`.
+**Publishing to NuGet is irreversible for anyone who installs it; do not run
+this without the owner's explicit go-ahead.**
+
+```sh
+# The version is READ from the project, never retyped: Folio8.csproj's
+# <Version> is the one place it is declared, and the consumer suite takes it
+# from the packed file name for the same reason.
+dotnet pack folio-dotnet/src/Folio8/Folio8.csproj -c Release -o ./artifacts/nupkg
+PKG=$(ls ./artifacts/nupkg/folio-dotnet.*.nupkg)
+V=$(basename "$PKG" .nupkg | sed 's/^folio-dotnet\.//')
+unzip -l "$PKG"                                  # last look at exactly what would be sent
+
+# TAG FIRST, so a published version always maps back to a commit. The tag is
+# directory-prefixed (AD-22), like the engine's and folio-js's, because the
+# package lives in folio-dotnet/. Push it before publishing: an unpublished
+# tag is cheap to live with, an unattributable NuGet version is not.
+git tag -a "folio-dotnet/v$V" -m "folio-dotnet v$V" && git push origin "folio-dotnet/v$V"
+
+# The irreversible step. The API key is the owner's. Put it in the shell's
+# environment for this one command — `read -rs NUGET_API_KEY` keeps it off the
+# screen and out of the shell history — and never into a file in this
+# repository.
+dotnet nuget push "$PKG" --source https://api.nuget.org/v3/index.json --api-key "$NUGET_API_KEY"
+```
+
+A published version is never unlisted-and-reused or overwritten, and a pushed
+tag is never moved or deleted; a bad release is fixed forward with a new patch
+version, and the bad one is **unlisted** on nuget.org.
+
+
 ## Choosing the designer version, and forcing an upgrade
 
 `folio8-designer/package.json`'s `version` is the number an open tab compares

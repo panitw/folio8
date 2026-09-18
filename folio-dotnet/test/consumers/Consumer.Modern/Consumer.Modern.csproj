@@ -1,0 +1,46 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    A MODERN .NET CONSUMER, compiling the SAME Program.cs against the SAME
+    lib/netstandard2.0/Folio8.dll the .NET Framework consumer uses. One
+    managed assembly, two target families — CAP-3's claim, exercised from the
+    outside by a project that installed the package.
+
+    RID-agnostic by default, so the natives arrive under runtimes/ and the
+    host is 64-bit. run-consumers.ps1 also publishes it with -r win-x86
+    and a self-contained flag for the 32-bit leg: setup-dotnet installs no 32-bit
+    modern runtime on the runner, and a self-contained publish brings its own
+    rather than needing one.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>Consumer</AssemblyName>
+    <RootNamespace></RootNamespace>
+    <LangVersion>7.3</LangVersion>
+    <Nullable>disable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../Program.cs" />
+  </ItemGroup>
+
+  <!--
+    THE VERSION IS NOT TYPED HERE. run-consumers.ps1 reads it off the .nupkg
+    `dotnet pack` just produced and passes it in, so Folio8.csproj's <Version>
+    is the single place it is declared and a bump needs one edit. Left unset,
+    this project must NOT quietly restore some other version.
+  -->
+  <Target Name="RequireFolioDotnetVersion" BeforeTargets="Restore;CollectPackageReferences"
+          Condition="'$(FolioDotnetVersion)' == ''">
+    <Error Text="folio-dotnet consumer: pass -p:FolioDotnetVersion=&lt;version&gt;. run-consumers.ps1 supplies it from the packed .nupkg; this project deliberately hard-codes no version." />
+  </Target>
+
+  <ItemGroup>
+    <PackageReference Include="folio-dotnet" Version="$(FolioDotnetVersion)" />
+  </ItemGroup>
+
+</Project>

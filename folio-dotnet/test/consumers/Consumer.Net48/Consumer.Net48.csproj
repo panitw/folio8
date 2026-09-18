@@ -1,0 +1,54 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    A .NET FRAMEWORK CONSUMER, AS A CUSTOMER WOULD WRITE ONE.
+
+    It has one PackageReference and no load logic, no RID, no targets file and
+    no post-build step of its own. That is the claim: `dotnet add package
+    folio-dotnet` and the README's snippet, nothing else (CAP-7).
+
+    net48 rather than net46 because .NET Framework 4.8 is what a Windows
+    runner has installed; the FLOOR is proved separately and by the compiler,
+    in test/Folio8.Net46Compile. Both consume lib/netstandard2.0 identically.
+
+    AnyCPU is deliberate and is not stated here: an unset PlatformTarget IS
+    AnyCPU, which is what a .NET Framework project defaults to and the reason
+    process-bitness resolution has to exist. run-consumers.ps1 builds this one
+    project three times — plain, with -p:Prefer32Bit=true, and with
+    -p:PlatformTarget=x86 — into three output directories, which is the whole
+    of the process-shape matrix.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>Consumer</AssemblyName>
+    <RootNamespace></RootNamespace>
+    <LangVersion>7.3</LangVersion>
+    <Nullable>disable</Nullable>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
+    <GenerateBindingRedirectsOutputType>true</GenerateBindingRedirectsOutputType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- THE SAME SOURCE the modern consumer compiles. One assembly serves
+         both families or it does not; two programs could not tell us. -->
+    <Compile Include="../Program.cs" />
+  </ItemGroup>
+
+  <!--
+    THE VERSION IS NOT TYPED HERE. run-consumers.ps1 reads it off the .nupkg
+    `dotnet pack` just produced and passes it in, so Folio8.csproj's <Version>
+    is the single place it is declared and a bump needs one edit. Left unset,
+    this project must NOT quietly restore some other version.
+  -->
+  <Target Name="RequireFolioDotnetVersion" BeforeTargets="Restore;CollectPackageReferences"
+          Condition="'$(FolioDotnetVersion)' == ''">
+    <Error Text="folio-dotnet consumer: pass -p:FolioDotnetVersion=&lt;version&gt;. run-consumers.ps1 supplies it from the packed .nupkg; this project deliberately hard-codes no version." />
+  </Target>
+
+  <ItemGroup>
+    <PackageReference Include="folio-dotnet" Version="$(FolioDotnetVersion)" />
+  </ItemGroup>
+
+</Project>
