@@ -7069,7 +7069,7 @@ stated"). The gate is met on the release tree: `fixtures/colour-strokes/` with i
 `signoff.json`, registered in the four-target matrix. Story 15.3's ownership passed to
 client-libraries stories 3 and 2 when 15.3 was deprecated.
 
-### DW-238 — the .NET test host crashed once while rendering the corpus on Linux, and nothing explains it
+### DW-396 — the .NET test host crashed once while rendering the corpus on Linux, and nothing explains it
 
 - **Deferred by:** SPEC-client-libraries story 9's CI (2026-09-18), on run 35367593971.
 - **Owner:** whoever next touches `folio-dotnet`'s test wiring or the c-shared engine.
