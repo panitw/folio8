@@ -7069,6 +7069,30 @@ stated"). The gate is met on the release tree: `fixtures/colour-strokes/` with i
 `signoff.json`, registered in the four-target matrix. Story 15.3's ownership passed to
 client-libraries stories 3 and 2 when 15.3 was deprecated.
 
+### DW-238 — the .NET test host crashed once while rendering the corpus on Linux, and nothing explains it
+
+- **Deferred by:** SPEC-client-libraries story 9's CI (2026-09-18), on run 35367593971.
+- **Owner:** whoever next touches `folio-dotnet`'s test wiring or the c-shared engine.
+- **Severity:** MEDIUM. It is a native crash, not an assertion failure, and it aborted a required job.
+- **Status:** OPEN.
+
+**What happened.** `folio-dotnet-host` (ubuntu-24.04, modern .NET against `libfolio8_native.so`)
+reported `The active test run was aborted. Reason: Test host process crashed` after nine tests had
+passed. The recorded nine are all corpus renders — `GoldenTests.RendersByteIdenticallyToTheGoldenCorpus`,
+`FontsTests.RendersTheGoldenCorpusWithTheShippedSetAlone` and their neighbours — which xunit runs in
+parallel collections, each call crossing the C ABI into the Go runtime. The same commit's Windows job
+passed, and the next commit's host job passed, so it does not reproduce on demand.
+
+**Why it is not dismissed as a flake.** The story-6 ABI is documented as safe to call from several
+threads (`folio8-go/cshared/README.md`), and `docs/folio-dotnet.md` now tells readers so. A crash under
+exactly that condition either falsifies the claim or exposes a defect in the test host's interaction
+with a Go c-shared library — and the corpus work of story 8 is what first made these tests render
+dozens of documents per run, so the exposure is new.
+
+**What would settle it:** run the suite in a loop on Linux with core dumps enabled and read the stack;
+or disable xunit's parallelism for the collections that render and see whether it recurs. If it is a
+genuine concurrency defect, the documented thread-safety claim must be narrowed in the same change.
+
 ### DW-148 — comments that describe a sibling's behaviour go stale silently; four instances this run
 
 - **Deferred by:** the **Epic 10 reconstruction** (finding 8, ruled at D-10.R.8, 2026-09-02) — raised under
