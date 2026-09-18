@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
@@ -23,8 +23,34 @@ let workspace: string
 let tarball: string
 let entries: string[]
 
+/**
+ * npm is the one command here that is not a real executable on Windows: it is
+ * npm.cmd, which execFileSync cannot spawn without a shell (and modern Node
+ * refuses outright, with EINVAL). git, tar and node ARE executables, and
+ * CreateProcess appends .exe for them, so only npm needs handling.
+ *
+ * Running npm-cli.js under this very Node avoids a shell — and so avoids
+ * quoting the temp paths these tests pass as arguments. Story 8 runs this
+ * suite on the Windows and macOS legs, which is what made it matter.
+ */
+function npmCli(): string {
+  const fromNpm = process.env['npm_execpath']
+  if (fromNpm && fromNpm.endsWith('.js') && existsSync(fromNpm)) return fromNpm
+  const nodeDir = dirname(process.execPath)
+  const candidates = [
+    // Windows, and any layout where npm sits beside node.
+    join(nodeDir, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    // POSIX prefix layout: <prefix>/bin/node with <prefix>/lib/node_modules.
+    join(nodeDir, '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+  ]
+  const found = candidates.find((path) => existsSync(path))
+  if (!found) throw new Error(`cannot locate npm-cli.js beside ${process.execPath}; looked in ${candidates.join(', ')}`)
+  return found
+}
+
 function run(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv = {}): string {
-  return execFileSync(command, args, { cwd, encoding: 'utf8', env: { ...process.env, ...env }, maxBuffer: 64 * 1024 * 1024 })
+  const [file, argv] = command === 'npm' ? [process.execPath, [npmCli(), ...args]] : [command, args]
+  return execFileSync(file, argv, { cwd, encoding: 'utf8', env: { ...process.env, ...env }, maxBuffer: 64 * 1024 * 1024 })
 }
 
 /** The first ```js block in README.md — the snippet the guide documents. */
@@ -197,4 +223,26 @@ describe('prepack refuses an incomplete package', () => {
     expect(stderr).not.toContain('"Noto Sans SC"')
     rmSync(drifted, { recursive: true, force: true })
   }, timeout)
+})
+
+// The advertised support range and the tested one must be the same range.
+// package.json's `engines.node` is what an installer's npm enforces; the
+// folio-js CI matrix's lowest Node is what the corpus is actually rendered on.
+// Nothing else ties the two together, so bumping one without the other would
+// quietly ship a floor no leg has ever exercised.
+describe('the declared Node floor', () => {
+  it('is the lowest Node the CI matrix renders the corpus on', () => {
+    const pkg = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')) as { engines: { node: string } }
+    const declared = /^>=\s*(\d+\.\d+)/.exec(pkg.engines.node)
+    expect(declared, `engines.node is "${pkg.engines.node}"; this check expects a ">=major.minor" floor`).not.toBeNull()
+
+    const workflow = readFileSync(join(repoRoot, '.github', 'workflows', 'ci.yml'), 'utf8')
+    const list = /^\s*node:\s*\[([^\]]*)\]/m.exec(workflow)
+    expect(list, 'no `node: [...]` matrix axis found in .github/workflows/ci.yml').not.toBeNull()
+    const versions = [...list![1]!.matchAll(/(\d+)\.(\d+)\.(\d+)/g)].map((m) => [Number(m[1]), Number(m[2]), Number(m[3])] as const)
+    expect(versions.length).toBeGreaterThan(1)
+    const floor = versions.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2])[0]!
+
+    expect(`${floor[0]}.${floor[1]}`, 'engines.node and the CI matrix floor have drifted apart').toBe(declared![1])
+  })
 })

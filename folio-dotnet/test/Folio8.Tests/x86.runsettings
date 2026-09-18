@@ -8,11 +8,12 @@
   suite would pass with the attribute removed. On x86 it corrupts the stack,
   and x86 is the .NET Framework 4.6 floor this library exists to reach.
 
-  net48 only, in practice: setup-dotnet installs no 32-bit modern .NET
-  runtime on a Windows runner, so there is no x86 host for the net10.0 target
-  to run in. .NET Framework's test host is the one that can be 32-bit on
-  demand, and it consumes the same netstandard2.0 assembly, so the ABI is
-  proved on x86 regardless.
+  BOTH TARGET FAMILIES USE THIS FILE (story 8). It was net48 only for a
+  while, because actions/setup-dotnet installs no 32-bit modern .NET runtime
+  and there was therefore no x86 host for net10.0 to run in. CAP-5's axes are
+  {net48, modern} x {64-bit, 32-bit} and a corner proved by inference is not
+  proved, so ci.yml now installs the x86 runtime explicitly and runs the
+  corpus through this file on both frameworks.
 -->
 <RunSettings>
   <RunConfiguration>

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
+using System.Text.Json;
 
 namespace Folio8Tests
 {
@@ -56,6 +57,138 @@ namespace Folio8Tests
         internal static string Text(params string[] parts)
         {
             return File.ReadAllText(Path_(parts));
+        }
+
+        /// <summary>
+        /// One renderable fixture as <c>folio8-go</c> recorded it into
+        /// <c>folio-js/test/data/go-corpus.json</c>. It carries NO hash by
+        /// design: <c>expected.json</c> stays the single source for every
+        /// digest, and <see cref="ExpectedSha256"/> is what reads it.
+        /// </summary>
+        internal sealed class CorpusFixture
+        {
+            internal string Slug;
+            internal bool Data;
+            internal bool Params;
+            internal Diagnostic[] Diagnostics;
+        }
+
+        /// <summary>The manifest, parsed once. Every accessor below reads this.</summary>
+        private sealed class CorpusManifest
+        {
+            internal string Version;
+            internal int Count;
+            internal CorpusFixture[] Fixtures;
+            internal KeyValuePair<string, string>[] Exclusions;
+        }
+
+        private static readonly Lazy<CorpusManifest> Manifest = new Lazy<CorpusManifest>(LoadCorpus);
+
+        /// <summary>
+        /// The corpus conformance manifest, derived from Go by
+        /// <c>folio8-go/wasm/cmd/render/corpus_test.go</c> and held equal to it
+        /// there. Both bindings drive their byte-identity suites from this one
+        /// file, so neither can quietly narrow its fixture list.
+        /// </summary>
+        internal static CorpusFixture[] Corpus
+        {
+            get { return Manifest.Value.Fixtures; }
+        }
+
+        /// <summary>The manifest's own record of how many fixtures it carries.</summary>
+        internal static int CorpusCount
+        {
+            get { return Manifest.Value.Count; }
+        }
+
+        /// <summary>The engine version the manifest was generated from.</summary>
+        internal static string CorpusVersion
+        {
+            get { return Manifest.Value.Version; }
+        }
+
+        /// <summary>Every excluded fixture, with the reason it is out.</summary>
+        internal static KeyValuePair<string, string>[] CorpusExclusions()
+        {
+            return Manifest.Value.Exclusions;
+        }
+
+        /// <summary>
+        /// Go writes exactly "warning" or "error". Anything else is a manifest
+        /// this binding does not understand, and quietly reading it as a
+        /// warning would turn an error-severity diagnostic into a passing test.
+        /// </summary>
+        private static Severity ParseSeverity(string value)
+        {
+            if (value == "warning")
+            {
+                return Severity.Warning;
+            }
+            if (value == "error")
+            {
+                return Severity.Error;
+            }
+            throw new InvalidOperationException(
+                "go-corpus.json: unrecognised diagnostic severity \"" + value + "\"; expected \"warning\" or \"error\"");
+        }
+
+        private static CorpusManifest LoadCorpus()
+        {
+            List<CorpusFixture> fixtures = new List<CorpusFixture>();
+            List<KeyValuePair<string, string>> excluded = new List<KeyValuePair<string, string>>();
+            string version;
+            int count;
+            using (JsonDocument document = JsonDocument.Parse(Text("folio-js", "test", "data", "go-corpus.json")))
+            {
+                version = document.RootElement.GetProperty("folio8Version").GetString();
+                count = document.RootElement.GetProperty("count").GetInt32();
+                foreach (JsonElement entry in document.RootElement.GetProperty("fixtures").EnumerateArray())
+                {
+                    List<Diagnostic> diagnostics = new List<Diagnostic>();
+                    foreach (JsonElement d in entry.GetProperty("diagnostics").EnumerateArray())
+                    {
+                        diagnostics.Add(new Diagnostic(
+                            ParseSeverity(d.GetProperty("severity").GetString()),
+                            d.GetProperty("code").GetString(),
+                            d.GetProperty("elementId").GetString(),
+                            d.GetProperty("dataPath").GetString(),
+                            d.GetProperty("message").GetString()));
+                    }
+                    fixtures.Add(new CorpusFixture
+                    {
+                        Slug = entry.GetProperty("slug").GetString(),
+                        Data = entry.GetProperty("data").GetBoolean(),
+                        Params = entry.GetProperty("params").GetBoolean(),
+                        Diagnostics = diagnostics.ToArray(),
+                    });
+                }
+                foreach (JsonElement entry in document.RootElement.GetProperty("excluded").EnumerateArray())
+                {
+                    excluded.Add(new KeyValuePair<string, string>(
+                        entry.GetProperty("slug").GetString(),
+                        entry.GetProperty("reason").GetString()));
+                }
+            }
+            return new CorpusManifest
+            {
+                Version = version,
+                Count = count,
+                Fixtures = fixtures.ToArray(),
+                Exclusions = excluded.ToArray(),
+            };
+        }
+
+        /// <summary>
+        /// The committed hash for a fixture, READ from its own
+        /// <c>expected.json</c> — never restated in this repository's .NET
+        /// sources.
+        /// </summary>
+        internal static string ExpectedSha256(string slug)
+        {
+            using (JsonDocument document = JsonDocument.Parse(Text("fixtures", slug, "expected.json")))
+            {
+                return document.RootElement.GetProperty("sha256").GetString();
+            }
         }
 
         internal static string Sha256(byte[] bytes)
