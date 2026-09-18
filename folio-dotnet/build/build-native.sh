@@ -9,10 +9,19 @@
 # Output layout, which Folio8.Tests.csproj and (in story 7) the NuGet RID
 # layout both read:
 #
-#   build/native/host/libfolio8.dylib      (macOS)   — a DEVELOPMENT AID
-#   build/native/host/libfolio8.so         (Linux)   — a DEVELOPMENT AID
-#   build/native/win-x64/folio8.dll
-#   build/native/win-x86/folio8.dll
+#   build/native/host/libfolio8_native.dylib   (macOS)   — a DEVELOPMENT AID
+#   build/native/host/libfolio8_native.so      (Linux)   — a DEVELOPMENT AID
+#   build/native/win-x64/folio8_native.dll
+#   build/native/win-x86/folio8_native.dll
+#
+# THE NAME IS `folio8_native`, NOT `folio8`, AND THAT IS LOAD-BEARING. The
+# managed assembly is Folio8.dll, Windows and macOS file systems are
+# case-insensitive, and `folio8.dll` IS `Folio8.dll` to both of them. Staged
+# into one directory — which is what a NuGet RID asset does on modern .NET,
+# and what the test project does — one silently overwrites the other, and
+# DllImport then loads a file with no folio8_ exports in it. Measured: every
+# managed test failed with EntryPointNotFoundException on Windows while the
+# DLL itself exported all eight symbols undecorated.
 #
 # The host library is never packaged and never shipped. It exists so the ABI
 # and the managed binding can be developed and tested off Windows, instead of
@@ -89,8 +98,8 @@ for target in "${targets[@]}"; do
   case "$target" in
     host)
       case "$(uname -s)" in
-        Darwin) unset GOOS GOARCH CC 2>/dev/null || true; build host libfolio8.dylib ;;
-        Linux)  unset GOOS GOARCH CC 2>/dev/null || true; build host libfolio8.so ;;
+        Darwin) unset GOOS GOARCH CC 2>/dev/null || true; build host libfolio8_native.dylib ;;
+        Linux)  unset GOOS GOARCH CC 2>/dev/null || true; build host libfolio8_native.so ;;
         *) echo "build-native.sh: unsupported host $(uname -s); use build-native.ps1 on Windows" >&2; exit 1 ;;
       esac
       ;;
@@ -99,14 +108,14 @@ for target in "${targets[@]}"; do
         echo "build-native.sh: win-x64 needs x86_64-w64-mingw32-gcc on PATH (apt-get install gcc-mingw-w64)" >&2
         exit 1
       }
-      GOOS=windows GOARCH=amd64 CC="$cc" build win-x64 folio8.dll
+      GOOS=windows GOARCH=amd64 CC="$cc" build win-x64 folio8_native.dll
       ;;
     win-x86)
       cc="$(find_cc i686-w64-mingw32-gcc /usr/bin/i686-w64-mingw32-gcc)" || {
         echo "build-native.sh: win-x86 needs i686-w64-mingw32-gcc on PATH (apt-get install gcc-mingw-w64)" >&2
         exit 1
       }
-      GOOS=windows GOARCH=386 CC="$cc" build win-x86 folio8.dll
+      GOOS=windows GOARCH=386 CC="$cc" build win-x86 folio8_native.dll
       ;;
   esac
 done

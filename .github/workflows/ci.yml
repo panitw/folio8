@@ -578,13 +578,45 @@ jobs:
         run: ./folio-dotnet/build/build-native.ps1 win-x64 win-x86
       # A build that "succeeded" without producing both artifacts is not a
       # pass. Asserted, not inferred from an exit code.
-      - name: both DLLs exist
+      #
+      # AND THE EXPORT TABLE IS DUMPED, unconditionally, for both
+      # architectures. A DLL that loads but has no reachable entry point is
+      # indistinguishable from one that was never built right, unless someone
+      # can read what it actually exports — and that question cost a full CI
+      # round trip once already. `dumpbin` is on the image; mingw's objdump
+      # sits beside whichever gcc build-native.ps1 chose, so both are tried.
+      - name: both DLLs exist, and export the folio8_ symbols
         shell: pwsh
         run: |
+          $objdumps = @('C:\mingw64\bin\objdump.exe', 'C:\msys64\mingw64\bin\objdump.exe', 'C:\msys64\mingw32\bin\objdump.exe')
+          $objdump = $objdumps | Where-Object { Test-Path $_ } | Select-Object -First 1
+          $dumpbin = Get-ChildItem -Recurse -ErrorAction SilentlyContinue -Filter dumpbin.exe 'C:\Program Files\Microsoft Visual Studio' |
+                     Select-Object -First 1 -ExpandProperty FullName
           foreach ($rid in @('win-x64', 'win-x86')) {
-            $dll = "folio-dotnet/build/native/$rid/folio8.dll"
+            $dll = "folio-dotnet/build/native/$rid/folio8_native.dll"
             if (-not (Test-Path $dll)) { throw "$dll was not produced" }
-            Write-Host "$rid ok: $((Get-Item $dll).Length) bytes"
+            Write-Host "=== $rid ok: $((Get-Item $dll).Length) bytes ==="
+            $symbols = @()
+            if ($objdump) {
+              Write-Host "--- $objdump -p ---"
+              # -notmatch '\.dll' drops objdump's own header lines, which name
+              # the file and would otherwise count as an export.
+              $symbols = & $objdump -p $dll 2>&1 | Select-String -Pattern 'folio8_' | Where-Object { $_ -notmatch '\.dll' }
+            } elseif ($dumpbin) {
+              Write-Host "--- $dumpbin /exports ---"
+              $symbols = & $dumpbin /exports $dll 2>&1 | Select-String -Pattern 'folio8_' | Where-Object { $_ -notmatch '\.dll' }
+            } else {
+              Write-Host "::warning::neither objdump nor dumpbin was found; the export table cannot be shown"
+            }
+            $symbols | ForEach-Object { Write-Host "  $_" }
+            # The count is the assertion. Eight exports, or this DLL cannot
+            # satisfy the binding no matter what the managed side does.
+            if ($objdump -or $dumpbin) {
+              $names = $symbols | ForEach-Object { $_.ToString() } | Select-String -Pattern 'folio8_[a-z_]+' -AllMatches |
+                       ForEach-Object { $_.Matches } | ForEach-Object { $_.Value } | Sort-Object -Unique
+              Write-Host "  distinct folio8_ exports: $($names.Count) -> $($names -join ', ')"
+              if ($names.Count -lt 8) { throw "$dll exports only $($names.Count) folio8_ symbols; expected 8" }
+            }
           }
       # THE FLOOR, CHECKED BY THE COMPILER. This project compiles the shipped
       # sources against .NET Framework 4.6 reference assemblies, so reaching
@@ -621,7 +653,9 @@ jobs:
         run: |
           $out = 'folio-dotnet/test/Folio8.Tests/bin/Release/net48'
           if (-not (Test-Path $out)) { throw "$out does not exist; the 64-bit test step should have built it" }
-          Copy-Item -Force 'folio-dotnet/build/native/win-x86/folio8.dll' (Join-Path $out 'folio8.dll')
+          Copy-Item -Force 'folio-dotnet/build/native/win-x86/folio8_native.dll' (Join-Path $out 'folio8_native.dll')
+          # What the 32-bit host will actually resolve, listed before it runs.
+          Get-ChildItem $out -Filter '*folio8*' | ForEach-Object { Write-Host "  $($_.Name)  $($_.Length) bytes" }
       - name: tests on net48, 32-bit (proves the Cdecl calling convention)
         run: >
           dotnet test folio-dotnet/test/Folio8.Tests/Folio8.Tests.csproj -c Release
@@ -667,8 +701,17 @@ jobs:
           dotnet-version: ${{ env.DOTNET_VERSION }}
       - name: build the host library (build-native.sh, the developer's own command)
         run: ./folio-dotnet/build/build-native.sh host
-      - name: the host library exists
-        run: test -f folio-dotnet/build/native/host/libfolio8.so
+      - name: the host library exists, and exports the folio8_ symbols
+        run: |
+          test -f folio-dotnet/build/native/host/libfolio8_native.so
+          # Same question the Windows job asks, asked here too — this is the
+          # leg where a missing export would be cheapest to notice.
+          # `|| true`: grep exits 1 on no matches, and under `bash -e` that
+          # would kill the step before the explicit, legible check below.
+          count=$(nm -D --defined-only folio-dotnet/build/native/host/libfolio8_native.so | grep -c ' T folio8_' || true)
+          echo "distinct folio8_ exports: $count"
+          nm -D --defined-only folio-dotnet/build/native/host/libfolio8_native.so | grep ' T folio8_'
+          test "$count" -eq 8
       # The 4.6 reference assemblies come from a NuGet package, so the floor
       # check runs here too — on Linux, with no .NET Framework installed.
       - name: .NET Framework 4.6 compile check

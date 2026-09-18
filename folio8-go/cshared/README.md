@@ -175,6 +175,27 @@ No clock, no locale, no environment, no network, no filesystem. `documentDate`
 arrives through `params` or it is absent; `SOURCE_DATE_EPOCH` is a CLI
 behaviour and is not honoured here.
 
+## The library's file name
+
+The built library is **`folio8_native`** — `folio8_native.dll` on Windows,
+`libfolio8_native.dylib` / `libfolio8_native.so` elsewhere — and **not**
+`folio8`. That is a requirement on every caller that ships it, not a
+preference.
+
+folio-dotnet's managed assembly is `Folio8.dll`. NTFS, like the default macOS
+file system, is **case-insensitive**: `folio8.dll` and `Folio8.dll` are one
+file. Staged into a single directory — which is exactly what a NuGet RID asset
+does on modern .NET, and what any test project does — one silently overwrites
+the other, and the loader then resolves a valid PE file containing none of the
+exports above.
+
+Measured, not theorised. The binding's first Windows CI run failed every
+managed test with `EntryPointNotFoundException` on the first call, while
+`objdump -p` showed both DLLs exporting all eight symbols, undecorated. The
+same sources passed on macOS, where the native file is `libfolio8*.dylib` and
+no collision was possible — so the platform that could catch it was the only
+one that could not.
+
 ## Building
 
 `folio-dotnet/build/build-native.sh` and `build-native.ps1` are the only

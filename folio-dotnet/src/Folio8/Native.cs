@@ -34,11 +34,29 @@ internal static class Native
 {
     /// <summary>
     /// The native library's base name. Probing resolves it to
-    /// <c>folio8.dll</c> on Windows and <c>libfolio8.dylib</c>/<c>.so</c>
-    /// on a development host. RID layout and bitness-aware loading are
-    /// story 7; this is deliberately the plain form.
+    /// <c>folio8_native.dll</c> on Windows and
+    /// <c>libfolio8_native.dylib</c>/<c>.so</c> elsewhere. RID layout and
+    /// bitness-aware loading are story 7; this is deliberately the plain form.
     /// </summary>
-    internal const string Library = "folio8";
+    /// <remarks>
+    /// <b><c>folio8_native</c>, not <c>folio8</c>, and the difference is
+    /// load-bearing.</b> This assembly is <c>Folio8.dll</c>, and NTFS — like
+    /// the default macOS file system — is case-insensitive, so a native
+    /// library called <c>folio8.dll</c> IS <c>Folio8.dll</c> as far as the
+    /// file system is concerned. Staged into one directory, which is exactly
+    /// what a NuGet RID asset does on modern .NET and what the test project
+    /// does, one silently overwrites the other — and <c>DllImport</c> then
+    /// loads a perfectly valid PE file that happens to contain no
+    /// <c>folio8_</c> exports at all.
+    /// <para>
+    /// Measured, not theorised: on Windows every managed test failed with
+    /// <see cref="EntryPointNotFoundException"/> on the first call while
+    /// <c>objdump -p</c> showed the DLL exporting all eight symbols,
+    /// undecorated. The same sources passed on macOS, where the native file
+    /// is <c>libfolio8.dylib</c> and no collision was possible.
+    /// </para>
+    /// </remarks>
+    internal const string Library = "folio8_native";
 
     /// <summary>
     /// The ABI shape this assembly was built against. Checked once, before
@@ -114,7 +132,24 @@ internal static class Native
             {
                 return;
             }
-            int actual = folio8_abi_version();
+            int actual;
+            try
+            {
+                actual = folio8_abi_version();
+            }
+            catch (EntryPointNotFoundException missing)
+            {
+                // The file loaded but has no folio8_ exports in it. That is
+                // almost never "this one symbol is missing" — it is the wrong
+                // file under the right name. Say so, and name what was
+                // actually loaded, because the platform's own message names
+                // only the symbol.
+                throw new InvalidOperationException(
+                    "folio8: a library named '" + Library + "' loaded, but it does not export folio8_abi_version — so it is not the folio8 engine. " +
+                    LoadedModuleDescription() +
+                    " Expected a c-shared build of folio8-go/cshared/cmd/folio8, which exports folio8_abi_version, folio8_version, folio8_parse, folio8_render, folio8_validate, folio8_parameter_references, folio8_free and folio8_allocation_count.",
+                    missing);
+            }
             if (actual != ExpectedAbiVersion)
             {
                 throw new InvalidOperationException(
@@ -123,6 +158,33 @@ internal static class Native
                     ". The managed and native halves of folio8 are from different builds; replace the one that is out of date.");
             }
             _abiChecked = true;
+        }
+    }
+
+    /// <summary>
+    /// Names the file actually loaded under <see cref="Library"/>, for the
+    /// entry-point-not-found message. Best effort and never fatal: this runs
+    /// only on a path that is already failing, and a host that forbids module
+    /// enumeration must not turn a clear diagnostic into a second exception.
+    /// </summary>
+    private static string LoadedModuleDescription()
+    {
+        try
+        {
+            System.Diagnostics.ProcessModuleCollection modules = System.Diagnostics.Process.GetCurrentProcess().Modules;
+            for (int i = 0; i < modules.Count; i++)
+            {
+                string name = modules[i].ModuleName;
+                if (name != null && name.IndexOf(Library, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return "The file loaded under that name is: " + modules[i].FileName + ".";
+                }
+            }
+            return "No loaded module matched that name, so it may have been unloaded already.";
+        }
+        catch (Exception)
+        {
+            return "The loaded module could not be identified in this host.";
         }
     }
 

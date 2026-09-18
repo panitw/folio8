@@ -57,20 +57,25 @@
   <!--
     The native library, staged beside the test assembly so plain DllImport
     probing finds it.
+
+    IT MUST NOT BE CALLED folio8.dll. This project also stages the managed
+    Folio8.dll here, and NTFS is case-insensitive, so the two names are one
+    file and whichever is copied last wins. NativeNamingTests keeps the two
+    apart; Native.cs records what that cost to find.
   -->
   <ItemGroup Condition="'$([MSBuild]::IsOSPlatform(`Windows`))' == 'true'">
-    <None Include="$(FolioNativeDir)/$(FolioNativeRid)/folio8.dll" Condition="Exists('$(FolioNativeDir)/$(FolioNativeRid)/folio8.dll')">
-      <Link>folio8.dll</Link>
+    <None Include="$(FolioNativeDir)/$(FolioNativeRid)/folio8_native.dll" Condition="Exists('$(FolioNativeDir)/$(FolioNativeRid)/folio8_native.dll')">
+      <Link>folio8_native.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
   <ItemGroup Condition="'$([MSBuild]::IsOSPlatform(`Windows`))' != 'true'">
-    <None Include="$(FolioNativeDir)/host/libfolio8.dylib" Condition="Exists('$(FolioNativeDir)/host/libfolio8.dylib')">
-      <Link>libfolio8.dylib</Link>
+    <None Include="$(FolioNativeDir)/host/libfolio8_native.dylib" Condition="Exists('$(FolioNativeDir)/host/libfolio8_native.dylib')">
+      <Link>libfolio8_native.dylib</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <None Include="$(FolioNativeDir)/host/libfolio8.so" Condition="Exists('$(FolioNativeDir)/host/libfolio8.so')">
-      <Link>libfolio8.so</Link>
+    <None Include="$(FolioNativeDir)/host/libfolio8_native.so" Condition="Exists('$(FolioNativeDir)/host/libfolio8_native.so')">
+      <Link>libfolio8_native.so</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
@@ -84,13 +89,13 @@
   -->
   <Target Name="FolioRequireNativeLibrary" BeforeTargets="Build">
     <PropertyGroup>
-      <_FolioWindowsNative>$(FolioNativeDir)/$(FolioNativeRid)/folio8.dll</_FolioWindowsNative>
+      <_FolioWindowsNative>$(FolioNativeDir)/$(FolioNativeRid)/folio8_native.dll</_FolioWindowsNative>
       <_FolioNativeFound Condition="'$([MSBuild]::IsOSPlatform(`Windows`))' == 'true'">$([System.IO.File]::Exists('$(_FolioWindowsNative)'))</_FolioNativeFound>
-      <_FolioNativeFound Condition="'$([MSBuild]::IsOSPlatform(`Windows`))' != 'true'">$([System.IO.File]::Exists('$(FolioNativeDir)/host/libfolio8.dylib'))</_FolioNativeFound>
-      <_FolioNativeFound Condition="'$([MSBuild]::IsOSPlatform(`Windows`))' != 'true' AND '$(_FolioNativeFound)' != 'true'">$([System.IO.File]::Exists('$(FolioNativeDir)/host/libfolio8.so'))</_FolioNativeFound>
+      <_FolioNativeFound Condition="'$([MSBuild]::IsOSPlatform(`Windows`))' != 'true'">$([System.IO.File]::Exists('$(FolioNativeDir)/host/libfolio8_native.dylib'))</_FolioNativeFound>
+      <_FolioNativeFound Condition="'$([MSBuild]::IsOSPlatform(`Windows`))' != 'true' AND '$(_FolioNativeFound)' != 'true'">$([System.IO.File]::Exists('$(FolioNativeDir)/host/libfolio8_native.so'))</_FolioNativeFound>
     </PropertyGroup>
     <Error Condition="'$(_FolioNativeFound)' != 'true' AND '$([MSBuild]::IsOSPlatform(`Windows`))' != 'true'"
-           Text="folio8: the native library is missing. Run folio-dotnet/build/build-native.sh first — it writes build/native/host/libfolio8.dylib (macOS) or libfolio8.so (Linux). Without it these tests can only report a DllNotFoundException." />
+           Text="folio8: the native library is missing. Run folio-dotnet/build/build-native.sh first — it writes build/native/host/libfolio8_native.dylib (macOS) or libfolio8_native.so (Linux). Without it these tests can only report a DllNotFoundException." />
     <Error Condition="'$(_FolioNativeFound)' != 'true' AND '$([MSBuild]::IsOSPlatform(`Windows`))' == 'true'"
            Text="folio8: the native library is missing at $(_FolioWindowsNative). Run folio-dotnet\build\build-native.ps1 $(FolioNativeRid) first. Without it these tests can only report a DllNotFoundException." />
   </Target>

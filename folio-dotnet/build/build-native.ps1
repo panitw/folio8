@@ -5,9 +5,15 @@
 .DESCRIPTION
   The Windows half of build-native.sh, with the same output layout:
 
-    build\native\win-x64\folio8.dll
-    build\native\win-x86\folio8.dll
-    build\native\host\folio8.dll     (the native architecture, a development aid)
+    build\native\win-x64\folio8_native.dll
+    build\native\win-x86\folio8_native.dll
+    build\native\host\folio8_native.dll   (the native architecture, a development aid)
+
+  THE NAME IS `folio8_native`, NOT `folio8`, AND THAT IS LOAD-BEARING. The
+  managed assembly is Folio8.dll and NTFS is case-insensitive, so `folio8.dll`
+  IS `Folio8.dll`: staged into one directory, one silently overwrites the
+  other and DllImport loads a file with no folio8_ exports in it. See
+  build-native.sh for the measurement.
 
   Windows targets need a mingw-w64 toolchain PER ARCHITECTURE. A GitHub
   windows-2022 runner carries two independent ones:
@@ -174,11 +180,11 @@ function Build-Target {
     param([string] $Target, [string] $Goarch, [string] $Cc)
     $dir = Join-Path $out $Target
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
-    $artifact = Join-Path $dir 'folio8.dll'
+    $artifact = Join-Path $dir 'folio8_native.dll'
     # A FAILED BUILD MUST NOT LEAVE THE PREVIOUS ARTIFACT IN PLACE: go build
     # writes nothing when it fails, and a stale DLL tested as if fresh is the
     # most expensive kind of green. The generated header goes with it.
-    Remove-Item -Force -ErrorAction SilentlyContinue $artifact, (Join-Path $dir 'folio8.h')
+    Remove-Item -Force -ErrorAction SilentlyContinue $artifact, (Join-Path $dir 'folio8_native.h')
     Write-Host "==> $Target`: $artifact"
 
     $ccDir = Split-Path -Parent $Cc
