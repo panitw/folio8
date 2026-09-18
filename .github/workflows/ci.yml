@@ -35,6 +35,15 @@ on:
 env:
   GO_VERSION: "1.26.0"
 
+  # folio-dotnet (client-libraries story 6). An EXACT version, like
+  # GO_VERSION and for the same reason: the SDK builds the netstandard2.0
+  # assembly both target frameworks consume, so a floating "10.0.x" would be a
+  # second uncontrolled input to a byte-identity claim — and a comment calling
+  # it pinned while it drifts is worse than no comment. This is the SDK
+  # present on the development host, so CI and a developer compile with the
+  # same one.
+  DOTNET_VERSION: "10.0.400"
+
   # D-000.74: the ONE test this repository is permitted to expect red, as a
   # SINGLE SCALAR and deliberately not a list. A second expected red requires
   # its own owner decision and its own accommodation; it may not be appended
@@ -487,4 +496,162 @@ jobs:
           # chain and this job should SAY so, even though it is already failing
           # for another reason. A missing report is not a tidy edge case; it is
           # the difference between a reproducible defect and a rumour.
+          if-no-files-found: error
+
+  # folio-dotnet (client-libraries story 6): the .NET binding over the
+  # c-shared build of the engine. THE ONLY WINDOWS JOB IN THIS REPOSITORY,
+  # and it has to be — .NET Framework 4.6 is Windows-only by definition, and
+  # the win-x86/win-x64 DLLs are the artifacts the whole binding rests on.
+  # Nothing here can be reproduced on the host CI above, which is exactly why
+  # the story treats a green run of this job as the only evidence that the
+  # Windows half works.
+  #
+  # Three claims, three steps, in dependency order: both DLLs build; the
+  # sources fit inside .NET Framework 4.6's API surface; and the same
+  # netstandard2.0 assembly renders and validates correctly on net48 AND on
+  # modern .NET, matching the committed golden hashes and the recorded Go
+  # diagnostics.
+  #
+  # No continue-on-error. Same reason as everywhere else in this file.
+  folio-dotnet:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      # -buildmode=c-shared needs cgo, and cgo needs a mingw-w64 toolchain PER
+      # ARCHITECTURE. The runner image carries the 64-bit one; the 32-bit one
+      # is installed here rather than assumed, because win-x86 is the .NET
+      # Framework 4.6 floor and a missing i686 compiler would silently reduce
+      # this job to testing half of what it exists to test.
+      #
+      # pacman failing is NOT fatal here on purpose: build-native.ps1 fails
+      # immediately afterwards, naming every path it looked in, which is a far
+      # more legible failure than a package-manager transcript.
+      - name: mingw-w64 toolchains (x86_64 and i686)
+        shell: pwsh
+        run: |
+          $pacman = 'C:\msys64\usr\bin\pacman.exe'
+          if (Test-Path $pacman) {
+            & $pacman -S --noconfirm --needed mingw-w64-x86_64-gcc mingw-w64-i686-gcc
+            if ($LASTEXITCODE -ne 0) { Write-Host "::warning::pacman exited $LASTEXITCODE; relying on whatever toolchains the image already has" }
+          } else {
+            Write-Host "::warning::no MSYS2 pacman on this image; relying on preinstalled toolchains"
+          }
+      - name: build win-x64 and win-x86 DLLs (-buildmode=c-shared)
+        shell: pwsh
+        run: ./folio-dotnet/build/build-native.ps1 win-x64 win-x86
+      # A build that "succeeded" without producing both artifacts is not a
+      # pass. Asserted, not inferred from an exit code.
+      - name: both DLLs exist
+        shell: pwsh
+        run: |
+          foreach ($rid in @('win-x64', 'win-x86')) {
+            $dll = "folio-dotnet/build/native/$rid/folio8.dll"
+            if (-not (Test-Path $dll)) { throw "$dll was not produced" }
+            Write-Host "$rid ok: $((Get-Item $dll).Length) bytes"
+          }
+      # THE FLOOR, CHECKED BY THE COMPILER. This project compiles the shipped
+      # sources against .NET Framework 4.6 reference assemblies, so reaching
+      # for an API 4.6 lacks reddens here instead of on a customer's machine.
+      - name: .NET Framework 4.6 compile check
+        run: dotnet build folio-dotnet/test/Folio8.Net46Compile/Folio8.Net46Compile.csproj -c Release
+      # net48 and modern .NET, from ONE netstandard2.0 assembly — the project
+      # multi-targets on Windows, so this single command covers both and the
+      # run summary names each. The win-x64 DLL is what the project stages by
+      # default.
+      - name: tests on net48 and modern .NET, 64-bit (golden hashes and Go diagnostic parity)
+        run: >
+          dotnet test folio-dotnet/test/Folio8.Tests/Folio8.Tests.csproj -c Release
+          --logger "trx;LogFileName=folio-dotnet-x64.trx"
+          --results-directory folio-dotnet/TestResults
+      # THE 32-BIT LEG, AND IT IS NOT CEREMONY. Everything above runs x64,
+      # which has ONE calling convention — so an x64-only suite passes with
+      # CallingConvention.Cdecl deleted from every DllImport. On x86, cdecl and
+      # the .NET default (stdcall) disagree about who cleans the stack, and x86
+      # IS the .NET Framework 4.6 floor this library exists to reach. Without
+      # this step the win-x86 DLL is only proved to EXIST.
+      #
+      # It swaps the staged DLL and re-runs with --no-build, rather than
+      # rebuilding into a second output tree: the test assembly is AnyCPU, so
+      # the same build runs in either host, and rebuilding would only re-stage
+      # the x64 library over the x86 one.
+      #
+      # net48 only: setup-dotnet installs no 32-bit modern .NET runtime, so
+      # there is no x86 host for the net10.0 target to run in. net48 consumes
+      # the same netstandard2.0 assembly, so the ABI is proved on x86 either
+      # way.
+      - name: stage the win-x86 DLL beside the net48 test assembly
+        shell: pwsh
+        run: |
+          $out = 'folio-dotnet/test/Folio8.Tests/bin/Release/net48'
+          if (-not (Test-Path $out)) { throw "$out does not exist; the 64-bit test step should have built it" }
+          Copy-Item -Force 'folio-dotnet/build/native/win-x86/folio8.dll' (Join-Path $out 'folio8.dll')
+      - name: tests on net48, 32-bit (proves the Cdecl calling convention)
+        run: >
+          dotnet test folio-dotnet/test/Folio8.Tests/Folio8.Tests.csproj -c Release
+          --no-build --framework net48
+          --settings folio-dotnet/test/Folio8.Tests/x86.runsettings
+          --logger "trx;LogFileName=folio-dotnet-x86.trx"
+          --results-directory folio-dotnet/TestResults
+      # Always, not only on failure: a green run's trx is the evidence that
+      # both legs actually ran, which is the claim this job exists to make.
+      # if-no-files-found: error for the reason the designer job gives — a
+      # missing report is a break in the evidence chain, not a tidy edge case.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: folio-dotnet-windows-trx
+          path: folio-dotnet/TestResults/*.trx
+          retention-days: 7
+          if-no-files-found: error
+
+  # THE HOST PATH, RUN. build-native.sh and everything it produces ran in NO
+  # workflow: renaming its output, or breaking the host leg of the script,
+  # would have left every developer's `./build/build-native.sh && dotnet test`
+  # broken with CI still green. That is the same gap DW-268 closed elsewhere
+  # in this file, and it is closed here before it can cost anything.
+  #
+  # It is also the cheap signal. The Windows job needs two mingw toolchains
+  # and two test hosts; this one needs a Go toolchain and an SDK, and it fails
+  # in a couple of minutes on anything that broke the binding itself rather
+  # than the Windows half of it.
+  #
+  # ubuntu, not macOS: the same script's Linux branch, on the runner class
+  # every other job in this file already uses.
+  folio-dotnet-host:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - name: build the host library (build-native.sh, the developer's own command)
+        run: ./folio-dotnet/build/build-native.sh host
+      - name: the host library exists
+        run: test -f folio-dotnet/build/native/host/libfolio8.so
+      # The 4.6 reference assemblies come from a NuGet package, so the floor
+      # check runs here too — on Linux, with no .NET Framework installed.
+      - name: .NET Framework 4.6 compile check
+        run: dotnet build folio-dotnet/test/Folio8.Net46Compile/Folio8.Net46Compile.csproj -c Release
+      - name: tests on the modern target (golden hashes and Go diagnostic parity)
+        run: >
+          dotnet test folio-dotnet/test/Folio8.Tests/Folio8.Tests.csproj -c Release
+          --logger "trx;LogFileName=folio-dotnet-host.trx"
+          --results-directory folio-dotnet/TestResults
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: folio-dotnet-host-trx
+          path: folio-dotnet/TestResults/*.trx
+          retention-days: 7
           if-no-files-found: error

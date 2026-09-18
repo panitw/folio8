@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Runs the test host 32-BIT, against the win-x86 DLL.
+
+  This is the leg that actually executes the calling-convention decision. cgo
+  exports are cdecl; .NET's DllImport default is stdcall on Windows. On x64
+  there is only one convention and the mismatch is invisible — so an x64-only
+  suite would pass with the attribute removed. On x86 it corrupts the stack,
+  and x86 is the .NET Framework 4.6 floor this library exists to reach.
+
+  net48 only, in practice: setup-dotnet installs no 32-bit modern .NET
+  runtime on a Windows runner, so there is no x86 host for the net10.0 target
+  to run in. .NET Framework's test host is the one that can be 32-bit on
+  demand, and it consumes the same netstandard2.0 assembly, so the ABI is
+  proved on x86 regardless.
+-->
+<RunSettings>
+  <RunConfiguration>
+    <TargetPlatform>x86</TargetPlatform>
+  </RunConfiguration>
+</RunSettings>

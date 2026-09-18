@@ -1,0 +1,98 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Two target frameworks, ONE managed assembly: net48 and a modern .NET both
+    consume the same netstandard2.0 build of Folio8, which is the claim CAP-3
+    makes and the reason this project multi-targets at all rather than testing
+    the modern target and asserting the old one works.
+
+    net48 is Windows-only by definition, so the second target appears only
+    there; on a developer's macOS or Linux host the modern target runs alone,
+    against the host library build-native.sh produces.
+  -->
+  <PropertyGroup>
+    <TargetFrameworks Condition="'$([MSBuild]::IsOSPlatform(`Windows`))' == 'true'">net10.0;net48</TargetFrameworks>
+    <TargetFrameworks Condition="'$([MSBuild]::IsOSPlatform(`Windows`))' != 'true'">net10.0</TargetFrameworks>
+    <AssemblyName>Folio8.Tests</AssemblyName>
+    <RootNamespace>Folio8Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <!--
+      AnyCPU, deliberately. VSTest's runsettings decide the HOST bitness, so
+      one build of this assembly runs in both a 64-bit and a 32-bit test host
+      — which is what lets CI exercise the win-x86 DLL, and with it the Cdecl
+      calling convention that only diverges from stdcall on x86. Stamping a
+      PlatformTarget here would pin the assembly to one architecture and make
+      that leg impossible.
+
+      x64.runsettings is the default on Windows; CI passes x86.runsettings
+      explicitly for the 32-bit leg.
+    -->
+    <RunSettingsFilePath Condition="'$([MSBuild]::IsOSPlatform(`Windows`))' == 'true'">$(MSBuildThisFileDirectory)x64.runsettings</RunSettingsFilePath>
+    <!--
+      Which native RID gets staged beside the test assembly. CI overrides it
+      with -p:FolioNativeRid=win-x86 for the 32-bit leg.
+    -->
+    <FolioNativeRid Condition="'$(FolioNativeRid)' == ''">win-x64</FolioNativeRid>
+    <FolioNativeDir>$(MSBuildThisFileDirectory)../../build/native</FolioNativeDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+    <!--
+      net48 has no in-box System.Text.Json. It is a TEST-ONLY dependency, for
+      replaying the recorded Go expectations; the shipped assembly takes none,
+      which SurfaceTests proves.
+    -->
+    <PackageReference Include="System.Text.Json" Version="9.0.0" Condition="'$(TargetFramework)' == 'net48'" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/Folio8/Folio8.csproj" />
+  </ItemGroup>
+
+  <!--
+    The native library, staged beside the test assembly so plain DllImport
+    probing finds it.
+  -->
+  <ItemGroup Condition="'$([MSBuild]::IsOSPlatform(`Windows`))' == 'true'">
+    <None Include="$(FolioNativeDir)/$(FolioNativeRid)/folio8.dll" Condition="Exists('$(FolioNativeDir)/$(FolioNativeRid)/folio8.dll')">
+      <Link>folio8.dll</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+  <ItemGroup Condition="'$([MSBuild]::IsOSPlatform(`Windows`))' != 'true'">
+    <None Include="$(FolioNativeDir)/host/libfolio8.dylib" Condition="Exists('$(FolioNativeDir)/host/libfolio8.dylib')">
+      <Link>libfolio8.dylib</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <None Include="$(FolioNativeDir)/host/libfolio8.so" Condition="Exists('$(FolioNativeDir)/host/libfolio8.so')">
+      <Link>libfolio8.so</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <!--
+    FAIL AT BUILD TIME, NAMING THE FIX. Without this the native library's
+    absence surfaces as a bare DllNotFoundException from the first test that
+    touches the engine — which names neither the script that produces the
+    library nor the path it belongs at, and reads like a defect in the binding
+    rather than a step not yet run.
+  -->
+  <Target Name="FolioRequireNativeLibrary" BeforeTargets="Build">
+    <PropertyGroup>
+      <_FolioWindowsNative>$(FolioNativeDir)/$(FolioNativeRid)/folio8.dll</_FolioWindowsNative>
+      <_FolioNativeFound Condition="'$([MSBuild]::IsOSPlatform(`Windows`))' == 'true'">$([System.IO.File]::Exists('$(_FolioWindowsNative)'))</_FolioNativeFound>
+      <_FolioNativeFound Condition="'$([MSBuild]::IsOSPlatform(`Windows`))' != 'true'">$([System.IO.File]::Exists('$(FolioNativeDir)/host/libfolio8.dylib'))</_FolioNativeFound>
+      <_FolioNativeFound Condition="'$([MSBuild]::IsOSPlatform(`Windows`))' != 'true' AND '$(_FolioNativeFound)' != 'true'">$([System.IO.File]::Exists('$(FolioNativeDir)/host/libfolio8.so'))</_FolioNativeFound>
+    </PropertyGroup>
+    <Error Condition="'$(_FolioNativeFound)' != 'true' AND '$([MSBuild]::IsOSPlatform(`Windows`))' != 'true'"
+           Text="folio8: the native library is missing. Run folio-dotnet/build/build-native.sh first — it writes build/native/host/libfolio8.dylib (macOS) or libfolio8.so (Linux). Without it these tests can only report a DllNotFoundException." />
+    <Error Condition="'$(_FolioNativeFound)' != 'true' AND '$([MSBuild]::IsOSPlatform(`Windows`))' == 'true'"
+           Text="folio8: the native library is missing at $(_FolioWindowsNative). Run folio-dotnet\build\build-native.ps1 $(FolioNativeRid) first. Without it these tests can only report a DllNotFoundException." />
+  </Target>
+
+</Project>

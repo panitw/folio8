@@ -1,0 +1,51 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    THE FLOOR, PROVED BY THE COMPILER.
+
+    This project compiles the SHIPPED SOURCES — the very files in
+    src/Folio8, by glob, not a copy and not a stub — against .NET Framework
+    4.6 REFERENCE ASSEMBLIES. If anything in the binding reaches for an API
+    4.6 does not have, this reddens at build time on any operating system,
+    instead of failing on a customer's machine.
+
+    It compiles them rather than referencing the built assembly deliberately.
+    NuGet's compatibility table starts netstandard2.0 support at net461, so a
+    ProjectReference from net46 is refused before a single line is
+    type-checked — which would test the packaging rule, not the floor. The
+    question this project answers is "do these sources fit inside .NET
+    Framework 4.6's API surface", and compiling them is how you ask it.
+    (The packaging consequence — which lib/ folder the NuGet package carries
+    — is story 7's, not this story's.)
+
+    Microsoft.NETFramework.ReferenceAssemblies.net46 is a BUILD-TIME package:
+    it ships the reference assemblies so this check runs on macOS and Linux
+    too, not only where .NET Framework is installed. PrivateAssets="all"
+    keeps it out of everything downstream, and nothing here is shipped.
+  -->
+  <PropertyGroup>
+    <TargetFramework>net46</TargetFramework>
+    <AssemblyName>Folio8.Net46Compile</AssemblyName>
+    <LangVersion>7.3</LangVersion>
+    <Nullable>disable</Nullable>
+    <IsPackable>false</IsPackable>
+    <!-- Not a test project: it is built, never run. dotnet test must not look for tests here. -->
+    <IsTestProject>false</IsTestProject>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <!-- The XML doc cref warnings are the shipped project's business, not this one's. -->
+    <NoWarn>$(NoWarn);1591</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Exclude obj/ and bin/: the shipped project's own generated
+         AssemblyInfo lives there and would collide with this project's. -->
+    <Compile Include="../../src/Folio8/**/*.cs" Exclude="../../src/Folio8/obj/**/*.cs;../../src/Folio8/bin/**/*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies.net46" Version="1.0.3" PrivateAssets="all" />
+  </ItemGroup>
+
+</Project>

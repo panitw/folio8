@@ -158,3 +158,21 @@ folio8-designer/playwright-report/
 # Python bytecode from the BMAD skill scripts, regenerated on every run.
 __pycache__/
 *.py[cod]
+
+# ── .NET (folio-dotnet, client-libraries story 6) ─────────────────
+# MSBuild/NuGet intermediates. `bin/`, `*.dll`, `*.so` and `*.dylib` are
+# already ignored above by the Go section, which is what keeps the native
+# library out of the tree; these are the .NET-specific leftovers.
+obj/
+*.user
+TestResults/
+# folio-dotnet/build/ holds the two BUILD SCRIPTS, not build output, so the
+# generic `build/` rule above (line 28, a Node convention) must not swallow
+# them. Only the artifacts they produce are ignored, below.
+!/folio-dotnet/build/
+!/folio-dotnet/build/*.sh
+!/folio-dotnet/build/*.ps1
+# The native library and the cgo-generated header build-native.sh writes.
+# NEVER committed: the host library is a development aid and the Windows
+# DLLs are CI artifacts, both rebuilt from folio8-go/cshared on demand.
+/folio-dotnet/build/native/

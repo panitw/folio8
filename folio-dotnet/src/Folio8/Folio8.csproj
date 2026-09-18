@@ -1,0 +1,43 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    netstandard2.0, and nothing newer, is the whole point: it is the widest
+    target .NET Framework and modern .NET consume from ONE build, and the
+    4.6 floor bans the modern toolkit (Span<T>, System.Text.Json,
+    NativeLibrary, DllImportResolver, nullable reference types). The binding
+    is therefore plain DllImport marshalling.
+
+    LangVersion is pinned to 7.3 — the last version that does not depend on
+    runtime support this target may not have — so a modern construct is a
+    COMPILER ERROR here rather than a surprise on a customer's .NET Framework
+    4.6 machine. test/Folio8.Net46Compile proves the floor a second way, by
+    compiling these same sources against 4.6 reference assemblies.
+
+    No PackageReference. Ever: a third-party runtime dependency on this
+    assembly is out of scope by decision, not by accident.
+  -->
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>7.3</LangVersion>
+    <AssemblyName>Folio8</AssemblyName>
+    <!--
+      EMPTY ON PURPOSE. The public types sit in the GLOBAL namespace so a call
+      site reads as `Folio8.Render(...)`; a namespace named Folio8 would make
+      that spelling unreachable, because C# resolves the simple name to the
+      namespace and never finds the class inside it. RootNamespace is what the
+      SDK hands to generators and to new files, so leaving it as `Folio8`
+      would drop the next generated file into the one namespace this design
+      forbids.
+    -->
+    <RootNamespace></RootNamespace>
+    <Nullable>disable</Nullable>
+    <Deterministic>true</Deterministic>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnableDefaultNoneItems>false</EnableDefaultNoneItems>
+    <!-- Packaging is story 7; this assembly is consumed by ProjectReference today. -->
+    <IsPackable>false</IsPackable>
+    <Description>folio8 for .NET: render and validate .folio templates with the folio8 engine as a native library.</Description>
+  </PropertyGroup>
+
+</Project>

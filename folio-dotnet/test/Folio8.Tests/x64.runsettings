@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Pins the test host to 64-bit. See Folio8.Tests.csproj for why: the win-x64
+  DLL is what this project stages, and a 32-bit host would look for the other
+  one and fail with a message about image formats rather than about folio8.
+-->
+<RunSettings>
+  <RunConfiguration>
+    <TargetPlatform>x64</TargetPlatform>
+  </RunConfiguration>
+</RunSettings>

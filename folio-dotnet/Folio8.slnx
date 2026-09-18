@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Folio8/Folio8.csproj" />
+  </Folder>
+  <Folder Name="/test/">
+    <Project Path="test/Folio8.Net46Compile/Folio8.Net46Compile.csproj" />
+    <Project Path="test/Folio8.Tests/Folio8.Tests.csproj" />
+  </Folder>
+</Solution>
