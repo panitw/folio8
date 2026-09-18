@@ -18,7 +18,13 @@ if (!wasmExec) throw new Error(`wasm_exec.js not found below ${goRoot}`)
 
 rmSync(outputDir, { recursive: true, force: true })
 mkdirSync(outputDir, { recursive: true })
-execFileSync('go', ['build', '-buildvcs=false', '-o', join(outputDir, 'folio8-render.wasm'), './wasm/cmd/render'], {
+// -trimpath MATTERS HERE, unlike in the designer's build. The engine folio-js
+// publishes is ONE artifact that every Node platform loads, so it must not
+// depend on the machine that built it: without -trimpath the binary embeds the
+// build host's module and GOROOT paths, and CI proved the consequence — the six
+// matrix legs produced three different engines, one per runner OS, from
+// identical source. The rendered PDFs agreed; the artifact did not.
+execFileSync('go', ['build', '-trimpath', '-buildvcs=false', '-o', join(outputDir, 'folio8-render.wasm'), './wasm/cmd/render'], {
   cwd: goModuleRoot,
   env: { ...process.env, GOOS: 'js', GOARCH: 'wasm' },
   stdio: 'inherit',
