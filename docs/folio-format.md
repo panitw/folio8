@@ -9,6 +9,7 @@ edit a template by hand, without the designer, and a hand-written template rende
 designer-written one does. The designer never parses `.folio` itself; the engine owns the document.
 
 - To render a template from Go, see the [rendering library guide](rendering-library.md).
+- To render one from Node, see [folio-js](folio-js.md); from .NET, see [folio-dotnet](folio-dotnet.md).
 - For expression syntax — paths, functions, formulas — see the
   [expression reference](expression-reference.md).
 

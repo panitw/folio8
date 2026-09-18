@@ -25,7 +25,7 @@ export default defineConfig({
           // The bundled documentation pages are already content-addressed by
           // build-wasm.mjs, and they link to each other by those exact names,
           // so a second hash here would break every cross-page link.
-          if (/^(?:rendering-library|folio-format|expression-reference)-[a-f0-9]{20}\.html$/.test(asset.name ?? '')) return 'assets/[name][extname]'
+          if (/^(?:rendering-library|folio-js|folio-dotnet|folio-format|expression-reference)-[a-f0-9]{20}\.html$/.test(asset.name ?? '')) return 'assets/[name][extname]'
           return 'assets/[name]-[hash][extname]'
         },
       },

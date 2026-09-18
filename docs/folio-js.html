@@ -1,0 +1,576 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>folio-js · FOLIO8 Documentation</title>
+
+<style>
+  /* Documentation site redesign: tokens from the designer's DESIGN.md.
+     Zero radius everywhere; committed dark palette; system fonts only, so the
+     page renders offline with no remote requests. Cyan = structure, amber = data. */
+  :root {
+    --ground: #0D0F12; --base: #15181C; --panel: #1A1E23; --raised: #22272D; --row-focus: #1D2228;
+    --line-faint: #191D21; --line-subtle: #22272D; --line: #272C33; --line-strong: #2F353D; --edge: #3A4048;
+    --ink-high: #E6E9EC; --ink: #AAB2BB; --ink-low: #737C86; --ink-faint: #5E666F; --ink-ghost: #4E565F;
+    --select: #58A6C4; --select-bright: #8FD0E4; --select-fill: #1E3B46; --select-tint: #16232A; --select-edge: #2F4F5C;
+    --bind: #C9A758; --bind-text: #E0C07A; --bind-muted: #8A7440; --bind-tint: #241F14; --bind-tint-warm: #1E1B13; --bind-edge: #4A3D1E; --bind-edge-soft: #3A3118;
+    --sans: system-ui, -apple-system, "Segoe UI", "Noto Sans", "Noto Sans Thai", sans-serif;
+    --thai: "Noto Sans Thai", "Thonburi", "Leelawadee UI", system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html { background: var(--ground); }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: var(--sans); font-size: 15px; line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---- shell ---- */
+  .shell { display: flex; align-items: flex-start; min-height: 100vh; }
+  .sidebar {
+    position: sticky; top: 0; height: 100vh; overflow-y: auto; flex: 0 0 292px;
+    background: var(--base); border-right: 1px solid var(--line); padding-bottom: 64px;
+  }
+  .sidebar-head { padding: 22px 24px 16px; border-bottom: 1px solid var(--line-subtle); position: sticky; top: 0; background: var(--base); z-index: 2; }
+  .brand { margin: 0 0 4px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-faint); font-weight: 500; }
+  .tagline { margin: 0 0 14px; font-size: 15px; color: var(--ink-high); font-weight: 600; line-height: 1.4; }
+  .filter {
+    width: 100%; padding: 7px 10px; background: var(--ground); border: 1px solid var(--line-strong); border-radius: 0;
+    color: var(--ink-high); font-family: var(--mono); font-size: 12px; outline: none;
+  }
+  .filter::placeholder { color: var(--ink-ghost); }
+  .filter:focus-visible { border-color: var(--select); }
+  .toc { padding: 14px 0 0; }
+  .toc-group { padding: 0 0 18px; margin: 0 0 6px; border-bottom: 1px solid var(--line-faint); }
+  .toc a { display: block; text-decoration: none; border-left: 2px solid transparent; }
+  .toc-doc { padding: 10px 24px 8px; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--select); font-weight: 600; }
+  .toc-item { padding: 7px 22px 7px 24px; font-size: 13.5px; font-weight: 500; line-height: 1.45; color: var(--ink); }
+  .toc-item.sub { padding: 3px 22px 3px 16px; margin-left: 26px; font-family: var(--mono); font-size: 12px; letter-spacing: -0.01em; color: var(--ink-faint); border-left-color: var(--line-subtle); }
+  .toc a:hover { color: var(--ink-high); background: var(--row-focus); }
+  .toc-doc[aria-current] { border-left-color: var(--select); }
+  .toc-item[aria-current] { color: var(--select-bright); border-left-color: var(--select); background: var(--select-tint); }
+  .toc a:focus-visible { outline: 2px solid var(--select); outline-offset: -2px; }
+  .toc-empty { margin: 0; padding: 10px 24px; font-size: 13px; color: var(--ink-ghost); }
+
+  main { flex: 1 1 auto; min-width: 0; }
+  .col { max-width: 920px; margin: 0 auto; padding: 52px 44px 140px; }
+  .docbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; padding-bottom: 40px; border-bottom: 1px solid var(--line-subtle); margin-bottom: 44px; }
+  main .docbar .brand { margin: 0; flex: 1 1 100%; max-width: none; }
+  .docbar a {
+    font-family: var(--mono); font-size: 13px; color: var(--bind-text); text-decoration: none;
+    padding: 4px 10px; background: var(--bind-tint-warm); border: 1px solid var(--bind-edge-soft);
+  }
+  .docbar a:hover { border-color: var(--bind); background: var(--bind-tint); }
+  .docbar a[aria-current] { color: var(--select-bright); background: var(--select-tint); border-color: var(--select-edge); }
+
+  .article-head { border-bottom: 1px solid var(--line); padding-bottom: 28px; }
+  .eyebrow { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-faint); margin: 0 0 12px; font-weight: 500; }
+  .standfirst { margin: 0 0 14px; max-width: 70ch; color: var(--ink); font-size: 16px; line-height: 1.6; }
+
+  /* ---- prose ---- */
+  main section { margin-top: 52px; scroll-margin-top: 24px; }
+  main h1, main h2, main h3, main h4 { scroll-margin-top: 24px; text-wrap: pretty; }
+  main h1 { font-size: 30px; line-height: 1.2; font-weight: 600; color: var(--ink-high); margin: 0 0 14px; letter-spacing: -0.01em; }
+  main h1 code { font-family: var(--mono); font-size: 0.92em; color: var(--bind-text); }
+  main h2 {
+    font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--select);
+    font-weight: 600; margin: 0 0 22px; padding-bottom: 10px; border-bottom: 1px solid var(--line);
+  }
+  main h2 code { font-family: var(--mono); font-size: 1.1em; text-transform: none; letter-spacing: 0; color: var(--select-bright); }
+  main h2 em { font-style: italic; border: 0; color: inherit; }
+  main h3 { font-size: 17px; font-weight: 600; color: var(--ink-high); margin: 38px 0 12px; }
+  main h3 code { font-family: var(--mono); font-size: 0.95em; color: var(--bind-text); }
+  main h4 { font-size: 15px; font-weight: 600; color: var(--ink-high); margin: 30px 0 10px; }
+  main h4 code { font-family: var(--mono); font-size: 0.95em; color: var(--bind-text); }
+  main p { margin: 0 0 14px; max-width: 72ch; }
+  main ul, main ol { margin: 0 0 16px; padding-left: 22px; max-width: 72ch; }
+  main li { margin: 0 0 8px; }
+  main li p { margin: 0 0 10px; }
+  main li > ul, main li > ol { margin: 8px 0 0; }
+  strong { color: var(--ink-high); font-weight: 600; }
+  em { color: var(--ink-high); font-style: normal; border-bottom: 1px solid var(--bind-edge); }
+  code { font-family: var(--mono); font-size: 0.9em; color: var(--bind-text); overflow-wrap: anywhere; }
+  a { color: var(--select-bright); text-decoration: underline; text-decoration-color: var(--select-edge); text-underline-offset: 2px; }
+  a:hover { text-decoration-color: var(--select-bright); }
+  a em { border-bottom: 0; color: inherit; }
+  a:focus-visible { outline: 2px solid var(--select); outline-offset: 1px; }
+
+  /* ---- samples ---- */
+  .sample { margin: 16px 0 22px; background: var(--base); border: 1px solid var(--line); overflow-x: auto; }
+  pre { margin: 0; padding: 16px 18px; font-family: var(--mono); font-size: 13px; line-height: 1.75; color: var(--bind-text); white-space: pre; }
+  pre code { font-size: inherit; color: inherit; overflow-wrap: normal; }
+  .sample pre.json, .sample .json { color: var(--ink); }
+  .sample .out { color: var(--ink-low); }
+  .sample .th { font-family: var(--thai); color: var(--ink); }
+  .sample .cmt { color: var(--ink-ghost); }
+  .sample .str { color: var(--ink-high); }
+
+  /* ---- tables ---- */
+  .tablewrap { overflow-x: auto; margin: 18px 0 22px; border: 1px solid var(--line); }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 520px; }
+  th {
+    text-align: left; font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--ink-faint); font-weight: 600; padding: 11px 16px; background: var(--panel);
+    border-bottom: 1px solid var(--line-strong); white-space: nowrap;
+  }
+  th code { text-transform: none; letter-spacing: 0; }
+  td { padding: 12px 16px; border-bottom: 1px solid var(--line-faint); vertical-align: top; color: var(--ink); }
+  td:first-child { min-width: 9em; }
+  td:first-child code { overflow-wrap: normal; }
+  tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: var(--row-focus); }
+  td .err { color: var(--ink-high); }
+  .roster td:first-child { color: var(--ink-faint); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; white-space: nowrap; }
+
+  /* ---- callouts ---- */
+  .notice { margin: 26px 0 0; padding: 16px 18px; background: var(--select-tint); border: 1px solid var(--select-edge); border-left-width: 2px; color: var(--ink); font-size: 14px; }
+  .notice strong { color: var(--select-bright); font-weight: 500; }
+  .caution { margin: 22px 0; padding: 16px 18px; background: var(--bind-tint-warm); border: 1px solid var(--bind-edge-soft); border-left: 2px solid var(--bind); font-size: 14px; }
+  .caution p { max-width: none; }
+  .caution strong { color: var(--bind-text); font-weight: 500; }
+
+  /* ---- expression reference function headings ---- */
+  .doc-expressions main h3 { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-family: var(--mono); font-size: 16px; font-weight: 500; }
+  h3 .args { color: var(--ink-faint); }
+  .pill { font-family: var(--sans); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; padding: 2px 8px; border: 1px solid var(--line-strong); color: var(--ink-low); font-weight: 500; white-space: nowrap; }
+  .pill.live { color: var(--select); border-color: var(--select-edge); background: var(--select-tint); }
+
+  .source-note { margin: 56px 0 0; padding-top: 20px; border-top: 1px solid var(--line); color: var(--ink-ghost); font-size: 13px; }
+  .source-note code { color: var(--ink-faint); }
+
+  /* ---- scrollbars ---- */
+  * { scrollbar-color: var(--line-strong) transparent; scrollbar-width: thin; }
+  ::-webkit-scrollbar { width: 11px; height: 11px; }
+  ::-webkit-scrollbar-track { background: var(--ground); border-left: 1px solid var(--line-faint); }
+  ::-webkit-scrollbar-thumb { background: var(--line-strong); border: 2px solid var(--ground); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--edge); }
+  ::-webkit-scrollbar-corner { background: var(--ground); }
+  .sidebar::-webkit-scrollbar-track { background: var(--base); border-left: 1px solid var(--line-subtle); }
+  .sidebar::-webkit-scrollbar-thumb { border-color: var(--base); }
+  .sample::-webkit-scrollbar-track, .tablewrap::-webkit-scrollbar-track { background: var(--base); border-left: 0; border-top: 1px solid var(--line-faint); }
+  .sample::-webkit-scrollbar-thumb, .tablewrap::-webkit-scrollbar-thumb { border-color: var(--base); }
+
+  @media (max-width: 900px) {
+    .shell { flex-wrap: wrap; }
+    .sidebar { position: static; height: auto; max-height: 44vh; flex: 1 1 100%; border-right: 0; border-bottom: 1px solid var(--line); padding-bottom: 16px; }
+    .col { padding: 36px 20px 96px; }
+  }
+  @media (max-width: 620px) {
+    main h1 { font-size: 25px; }
+    .sidebar-head { padding: 18px 16px 14px; }
+    .toc-doc, .toc-item { padding-left: 16px; }
+  }
+
+  /* ---- syntax highlighting: cyan = language structure, amber = data ---- */
+  .sample pre[data-lang] { color: var(--ink); }
+  .tk-kw { color: var(--select); }
+  .tk-type { color: var(--select-bright); }
+  .tk-fn { color: var(--ink-high); }
+  .tk-str { color: var(--bind-text); }
+  .tk-num, .tk-lit { color: var(--bind); }
+  .tk-key { color: var(--ink-high); }
+  .tk-com { color: var(--ink-ghost); }
+  .tk-punc { color: var(--ink-low); }
+</style>
+
+<!-- docs-shell -->
+<div class="shell doc-guide">
+
+  <aside class="sidebar" aria-label="Documentation contents">
+    <div class="sidebar-head">
+      <p class="brand">FOLIO8</p>
+      <p class="tagline">High-performance PDF<br>reporting library</p>
+      <input class="filter" type="search" placeholder="Filter sections" aria-label="Filter sections" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="toc" aria-label="Sections">
+      <div class="toc-group">
+        <a class="toc-doc" href="rendering-library.html">Rendering library</a>
+        <a class="toc-item" href="rendering-library.html#install">Install</a>
+        <a class="toc-item" href="rendering-library.html#your-first-pdf">Your first PDF</a>
+        <a class="toc-item" href="rendering-library.html#writing-to-an-iowriter">Writing to an io.Writer</a>
+        <a class="toc-item" href="rendering-library.html#inputs">Inputs</a>
+        <a class="toc-item sub" href="rendering-library.html#data-and-params">Data and params</a>
+        <a class="toc-item sub" href="rendering-library.html#fonts">Fonts</a>
+        <a class="toc-item" href="rendering-library.html#warnings-and-errors">Warnings and errors</a>
+        <a class="toc-item" href="rendering-library.html#load-time-versus-render-time">Load time versus render time</a>
+        <a class="toc-item" href="rendering-library.html#reproducible-output">Reproducible output</a>
+        <a class="toc-item" href="rendering-library.html#known-limitations">Known limitations</a>
+        <a class="toc-item" href="rendering-library.html#template-features-that-change-the-pdf">Template features that change the PDF</a>
+        <a class="toc-item sub" href="rendering-library.html#formulas">Formulas</a>
+        <a class="toc-item sub" href="rendering-library.html#barcode-and-qr-code">Barcode and QR code</a>
+        <a class="toc-item sub" href="rendering-library.html#section-break">Section break</a>
+        <a class="toc-item sub" href="rendering-library.html#designed-pages">Designed pages</a>
+        <a class="toc-item sub" href="rendering-library.html#table-frame-rules-and-minheight">Table frame, rules and minHeight</a>
+        <a class="toc-item sub" href="rendering-library.html#other-version-gated-table-features">Other version-gated table features</a>
+        <a class="toc-item" href="rendering-library.html#api-reference">API reference</a>
+        <a class="toc-item sub" href="rendering-library.html#rendering-and-validation">Rendering and validation</a>
+        <a class="toc-item sub" href="rendering-library.html#fonts-1">Fonts</a>
+        <a class="toc-item sub" href="rendering-library.html#diagnostics-and-errors">Diagnostics and errors</a>
+        <a class="toc-item sub" href="rendering-library.html#template-helpers">Template helpers</a>
+        <a class="toc-item" href="rendering-library.html#command-line-tool">Command-line tool</a>
+      </div>
+      <div class="toc-group" data-current>
+        <a class="toc-doc" href="#top" aria-current="page">folio-js</a>
+        <a class="toc-item" href="#install">Install</a>
+        <a class="toc-item sub" href="#the-node-version-floor">The Node version floor</a>
+        <a class="toc-item sub" href="#esm-and-require-from-commonjs">ESM and require from CommonJS</a>
+        <a class="toc-item sub" href="#node-only">Node only</a>
+        <a class="toc-item" href="#your-first-pdf">Your first PDF</a>
+        <a class="toc-item sub" href="#passing-params">Passing params</a>
+        <a class="toc-item" href="#warnings-and-errors">Warnings and errors</a>
+        <a class="toc-item" href="#api-reference">API reference</a>
+        <a class="toc-item sub" href="#rendering-and-validation">Rendering and validation</a>
+        <a class="toc-item sub" href="#fonts">Fonts</a>
+        <a class="toc-item sub" href="#types">Types</a>
+        <a class="toc-item sub" href="#errors">Errors</a>
+        <a class="toc-item" href="#determinism">Determinism</a>
+      </div>
+      <div class="toc-group">
+        <a class="toc-doc" href="folio-dotnet.html">folio-dotnet</a>
+        <a class="toc-item" href="folio-dotnet.html#install">Install</a>
+        <a class="toc-item sub" href="folio-dotnet.html#supported-target-frameworks">Supported target frameworks</a>
+        <a class="toc-item sub" href="folio-dotnet.html#supported-platforms">Supported platforms</a>
+        <a class="toc-item sub" href="folio-dotnet.html#choosing-the-native-library">Choosing the native library</a>
+        <a class="toc-item" href="folio-dotnet.html#your-first-pdf">Your first PDF</a>
+        <a class="toc-item sub" href="folio-dotnet.html#passing-params">Passing params</a>
+        <a class="toc-item sub" href="folio-dotnet.html#calling-from-several-threads">Calling from several threads</a>
+        <a class="toc-item" href="folio-dotnet.html#warnings-and-errors">Warnings and errors</a>
+        <a class="toc-item" href="folio-dotnet.html#api-reference">API reference</a>
+        <a class="toc-item sub" href="folio-dotnet.html#rendering-and-validation">Rendering and validation</a>
+        <a class="toc-item sub" href="folio-dotnet.html#fonts">Fonts</a>
+        <a class="toc-item sub" href="folio-dotnet.html#types">Types</a>
+        <a class="toc-item sub" href="folio-dotnet.html#errors">Errors</a>
+        <a class="toc-item" href="folio-dotnet.html#determinism">Determinism</a>
+      </div>
+      <div class="toc-group">
+        <a class="toc-doc" href="expression-reference.html">Expressions</a>
+        <a class="toc-item" href="expression-reference.html#paths">Reading values</a>
+        <a class="toc-item" href="expression-reference.html#upper">Text</a>
+        <a class="toc-item" href="expression-reference.html#formulas">Formulas and visibility</a>
+        <a class="toc-item" href="expression-reference.html#if">Choosing between two values</a>
+        <a class="toc-item" href="expression-reference.html#totals">Totals</a>
+        <a class="toc-item" href="expression-reference.html#format">Dates and numbers</a>
+        <a class="toc-item" href="expression-reference.html#all">The whole list</a>
+      </div>
+      <div class="toc-group">
+        <a class="toc-doc" href="folio-format.html">The .folio format</a>
+        <a class="toc-item" href="folio-format.html#units">Units</a>
+        <a class="toc-item" href="folio-format.html#document">Document</a>
+        <a class="toc-item sub" href="folio-format.html#alignment-sets">Alignment sets</a>
+        <a class="toc-item" href="folio-format.html#versions">Versions</a>
+        <a class="toc-item sub" href="folio-format.html#compatibility-rules">Compatibility rules</a>
+        <a class="toc-item sub" href="folio-format.html#closed-sets">Closed sets</a>
+        <a class="toc-item" href="folio-format.html#load-errors">Load errors</a>
+        <a class="toc-item" href="folio-format.html#page">page</a>
+        <a class="toc-item" href="folio-format.html#fonts">fonts</a>
+        <a class="toc-item" href="folio-format.html#bands">bands</a>
+        <a class="toc-item sub" href="folio-format.html#designed-pages">Designed pages</a>
+        <a class="toc-item sub" href="folio-format.html#pagination">Pagination</a>
+        <a class="toc-item" href="folio-format.html#elements">Elements</a>
+        <a class="toc-item sub" href="folio-format.html#table">table</a>
+        <a class="toc-item sub" href="folio-format.html#expressions">Expressions</a>
+        <a class="toc-item sub" href="folio-format.html#style">style</a>
+        <a class="toc-item" href="folio-format.html#assets">assets</a>
+        <a class="toc-item sub" href="folio-format.html#a-font-asset">A font asset</a>
+        <a class="toc-item" href="folio-format.html#saving">Saving</a>
+        <a class="toc-item" href="folio-format.html#line-breaking">Line breaking</a>
+        <a class="toc-item sub" href="folio-format.html#inferred-breaks">Inferred breaks</a>
+        <a class="toc-item sub" href="folio-format.html#mandatory-breaks">Mandatory breaks</a>
+        <a class="toc-item sub" href="folio-format.html#vertical-placement">Vertical placement</a>
+        <a class="toc-item sub" href="folio-format.html#values-that-must-never-be-split">Values that must never be split</a>
+        <a class="toc-item" href="folio-format.html#what-is-not-in-the-file">What is not in the file</a>
+        <a class="toc-item" href="folio-format.html#worked-example">Worked example</a>
+      </div>
+      <p class="toc-empty" hidden>No section matches.</p>
+    </nav>
+  </aside>
+
+  <main>
+    <div class="col">
+      <nav class="docbar" aria-label="Documents">
+        <p class="brand">FOLIO8 · High-performance PDF reporting library</p>
+        <a href="rendering-library.html">Rendering library</a>
+        <a href="#top" aria-current="page">folio-js</a>
+        <a href="folio-dotnet.html">folio-dotnet</a>
+        <a href="expression-reference.html">Expressions</a>
+        <a href="folio-format.html">.folio format</a>
+      </nav>
+
+      <article id="top">
+        <div class="article-head">
+          <p class="eyebrow">FOLIO8 · Client libraries</p>
+<!-- twin:begin -->
+          <h1 id="folio-js">folio-js</h1>
+          <p class="standfirst"><code>folio-js</code> is the folio8 engine for Node. It turns a <code>.folio</code> template, JSON data and runtime parameters into PDF bytes in process, with the engine itself — compiled to WebAssembly — doing the rendering. There is no service to run, no binary to shell out to and no rendering logic written in JavaScript.</p>
+          <p>The same template, data, params and font set produce the same bytes here as under the Go library, the <code>folio8</code> command-line tool and the designer's preview. That is a tested property rather than a claim: the package renders the fixture corpus and compares SHA-256 against the committed expected hashes on every supported Node version.</p>
+          <p><strong>Every entry point is a promise.</strong> The engine runs on Go's <code>js/wasm</code> target, so <code>parseTemplate</code>, <code>loadTemplate</code>, <code>render</code>, <code>renderTo</code>, <code>validate</code> and <code>parameterReferences</code> all resolve rather than return, and are written with <code>await</code>. Go's synchronous shape is what a Go caller wants; this is what a Node caller wants, because it keeps a large render offloadable to a worker thread.</p>
+          <p>Three companion references hold the rules this guide does not repeat: <a href="folio-format.html">the <code>.folio</code> format</a> is every field of a template, <a href="expression-reference.html">expressions</a> is the syntax inside the double braces, and <a href="rendering-library.html">the rendering library guide</a> covers the same engine from Go, including the shared <a href="rendering-library.html#diagnostic-codes">diagnostic code registry</a>. <a href="folio-dotnet.html">folio-dotnet</a> is this same library for .NET.</p>
+        </div>
+        <!-- /article-head -->
+
+<!-- body -->
+  <section id="install">
+    <h2>Install</h2>
+    <div class="sample"><pre data-lang="shell"><span class="tk-fn">npm</span> install folio-js</pre></div>
+    <p>Nothing else is needed. No Go, no C compiler, no build step, and no network access after the install: the prebuilt WebAssembly engine and all eleven shipped font faces travel inside the package, and the package declares no dependencies of its own.</p>
+    <h3 id="the-node-version-floor">The Node version floor</h3>
+    <p><strong>Node 22.12 is the floor.</strong> That is the version <code>engines.node</code> declares, and it is also the lowest version the corpus is rendered on in continuous integration. A test holds the two equal, so the supported range and the tested range cannot drift apart.</p>
+    <p>Below the floor, <code>npm install</code> reports <code>EBADENGINE</code> — a warning by default, and a refusal when <code>engine-strict</code> is set — and <code>require</code> of this package throws <code>ERR_REQUIRE_ESM</code>, because requiring an ES module is exactly the capability that arrives in 22.12. Nothing below 22.12 is tested, and nothing below it is supported.</p>
+
+    <h3 id="esm-and-require-from-commonjs">ESM, and <code>require</code> from CommonJS</h3>
+    <p><strong>The package is ESM only.</strong> It publishes <code>import</code> entry points and no CommonJS build:</p>
+    <div class="sample"><pre data-lang="js"><span class="tk-kw">import</span> <span class="tk-punc">{</span> loadTemplate<span class="tk-punc">,</span> render <span class="tk-punc">}</span> <span class="tk-kw">from</span> <span class="tk-str">'folio-js'</span>
+<span class="tk-kw">import</span> <span class="tk-punc">{</span> shipped <span class="tk-punc">}</span> <span class="tk-kw">from</span> <span class="tk-str">'folio-js/fonts'</span></pre></div>
+    <p>A CommonJS caller on Node 22.12 or newer reaches the same exports through <code>require</code>, which Node resolves with its support for requiring an ES module. There is no separate CommonJS entry point to name, and nothing in the package is reachable any other way:</p>
+    <div class="sample"><pre data-lang="js"><span class="tk-kw">const</span> <span class="tk-punc">{</span> loadTemplate<span class="tk-punc">,</span> render <span class="tk-punc">}</span> <span class="tk-punc">=</span> <span class="tk-fn">require</span><span class="tk-punc">(</span><span class="tk-str">'folio-js'</span><span class="tk-punc">)</span>
+<span class="tk-kw">const</span> <span class="tk-punc">{</span> shipped <span class="tk-punc">}</span> <span class="tk-punc">=</span> <span class="tk-fn">require</span><span class="tk-punc">(</span><span class="tk-str">'folio-js/fonts'</span><span class="tk-punc">)</span></pre></div>
+    <h3 id="node-only">Node only</h3>
+    <p>Node is the only target. There is no browser build and no bundler build, which is a scope choice rather than a technical limit — the designer runs this same engine in a browser worker.</p>
+  </section>
+
+  <section id="your-first-pdf">
+    <h2>Your first PDF</h2>
+    <p>Put a template at <code>invoice.folio</code> and its data at <code>invoice.json</code>, then:</p>
+    <div class="sample"><pre data-lang="js"><span class="tk-kw">import</span> { readFile, writeFile } <span class="tk-kw">from</span> <span class="tk-str">'node:fs/promises'</span>
+<span class="tk-kw">import</span> { loadTemplate, render } <span class="tk-kw">from</span> <span class="tk-str">'folio-js'</span>
+<span class="tk-kw">import</span> { shipped } <span class="tk-kw">from</span> <span class="tk-str">'folio-js/fonts'</span>
+
+<span class="tk-kw">const</span> template = <span class="tk-kw">await</span> <span class="tk-fn">loadTemplate</span>(<span class="tk-str">'invoice.folio'</span>)
+<span class="tk-kw">const</span> data = JSON.<span class="tk-fn">parse</span>(<span class="tk-kw">await</span> <span class="tk-fn">readFile</span>(<span class="tk-str">'invoice.json'</span>, <span class="tk-str">'utf8'</span>))
+
+<span class="tk-kw">const</span> { bytes, diagnostics } = <span class="tk-kw">await</span> <span class="tk-fn">render</span>(template, data, <span class="tk-lit">null</span>, <span class="tk-kw">await</span> <span class="tk-fn">shipped</span>())
+
+<span class="tk-kw">await</span> <span class="tk-fn">writeFile</span>(<span class="tk-str">'invoice.pdf'</span>, bytes)
+<span class="tk-kw">for</span> (<span class="tk-kw">const</span> d <span class="tk-kw">of</span> diagnostics) console.<span class="tk-fn">warn</span>(<span class="tk-str">`${d.severity} ${d.code}: ${d.message}`</span>)</pre></div>
+    <p><code>loadTemplate</code> reads and parses the file; <code>render</code> resolves to the PDF bytes and to every warning the engine raised on the way. The third argument is the params object, and <code>null</code> says the template reads none.</p>
+    <div class="notice">
+      <p><strong>That snippet is executed, not illustrated.</strong> It is the one the package's own offline-install test runs: it packs the tarball, installs it into an empty project with the network refused, renders a corpus fixture with it, and compares the PDF's SHA-256 against the committed expected hash.</p>
+    </div>
+    <p><strong>Fonts are an explicit argument, always.</strong> There is no default font set and no lookup on the machine the render runs on. <code>shipped</code> is a convenience that resolves the eleven faces packaged with folio-js — the same faces, byte for byte, that Go's <code>fonts.Shipped</code> returns. Build your own map instead whenever you want a different set. Omitting fonts is a caller error, not a fallback.</p>
+    <p><strong>Call <code>shipped</code> once and hold what it gives you.</strong> The first call reads about 14 MB from the package and later calls resolve from memory, but each call returns its own map over those shared bytes, so deleting or replacing an entry cannot change what the next caller sees.</p>
+    <p><strong>A render blocks the event loop.</strong> It runs synchronously inside WebAssembly for its whole duration. Offload a large document to a worker thread if the same process is also serving requests.</p>
+
+    <h3 id="passing-params">Passing params</h3>
+    <p>Params are the runtime values that are not report data — a run date, a branch code, a report title. They live in their own namespace, which a template reads as <code>params.branchCode</code>, and they can never be shadowed by report data. <code>documentDate</code> is the one reserved name: a template that prints a document date reads it from params, because nothing in the library reads the clock.</p>
+    <p>Build the object, hand it over as the third argument, and ask the template which names it wants:</p>
+    <div class="sample"><pre data-lang="js"><span class="tk-kw">import</span> <span class="tk-punc">{</span> loadTemplate<span class="tk-punc">,</span> parameterReferences<span class="tk-punc">,</span> render <span class="tk-punc">}</span> <span class="tk-kw">from</span> <span class="tk-str">'folio-js'</span>
+<span class="tk-kw">import</span> <span class="tk-punc">{</span> shipped <span class="tk-punc">}</span> <span class="tk-kw">from</span> <span class="tk-str">'folio-js/fonts'</span>
+
+<span class="tk-kw">const</span> template <span class="tk-punc">=</span> <span class="tk-kw">await</span> <span class="tk-fn">loadTemplate</span><span class="tk-punc">(</span><span class="tk-str">'statement.folio'</span><span class="tk-punc">)</span>
+console.<span class="tk-fn">log</span><span class="tk-punc">(</span><span class="tk-kw">await</span> <span class="tk-fn">parameterReferences</span><span class="tk-punc">(</span>template<span class="tk-punc">))</span>
+
+<span class="tk-kw">const</span> params <span class="tk-punc">=</span> <span class="tk-punc">{</span>
+  <span class="tk-key">documentDate</span><span class="tk-punc">:</span> <span class="tk-str">'2026-08-15T00:00:00Z'</span><span class="tk-punc">,</span>
+  <span class="tk-key">branchCode</span><span class="tk-punc">:</span> <span class="tk-str">'004'</span><span class="tk-punc">,</span>
+  <span class="tk-key">reportTitle</span><span class="tk-punc">:</span> <span class="tk-str">'Monthly statement'</span><span class="tk-punc">,</span>
+<span class="tk-punc">}</span>
+
+<span class="tk-kw">const</span> <span class="tk-punc">{</span> bytes <span class="tk-punc">}</span> <span class="tk-punc">=</span> <span class="tk-kw">await</span> <span class="tk-fn">render</span><span class="tk-punc">(</span>template<span class="tk-punc">,</span> data<span class="tk-punc">,</span> params<span class="tk-punc">,</span> <span class="tk-kw">await</span> <span class="tk-fn">shipped</span><span class="tk-punc">())</span></pre></div>
+    <p><code>documentDate</code> must be an RFC 3339 timestamp; anything else is a <code>DOCUMENT_DATE_INVALID</code> error. Params take the same three forms <code>data</code> does — raw bytes, a JSON string, or a plain object serialised for you.</p>
+  </section>
+
+  <section id="warnings-and-errors">
+    <h2>Warnings and errors</h2>
+    <p>folio8 reports every problem as a <code>Diagnostic</code>, field for field the object the Go library and folio-dotnet produce for the same condition:</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Field</th><th>Meaning</th></tr></thead>
+        <tbody>
+          <tr><td><code>severity</code></td><td>Either the string warning or the string error. The set is closed, and Go's unset zero value is not representable here.</td></tr>
+          <tr><td><code>code</code></td><td>A stable string from a closed registry, such as TEXT_CLIPPED_WIDTH. This is the field to dispatch on.</td></tr>
+          <tr><td><code>elementId</code></td><td>The template element the problem concerns, when there is one.</td></tr>
+          <tr><td><code>dataPath</code></td><td>The data path, or for a load failure the template field path, when there is one.</td></tr>
+          <tr><td><code>message</code></td><td>A human-readable sentence. Print it; never parse it.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p><strong>A warning reaches <code>diagnostics</code>; an error is thrown.</strong> A successful render never carries a diagnostic of severity error, and a thrown error never appears in <code>diagnostics</code> — the same split Go makes between <code>Result.Diagnostics</code> and a <code>RenderError</code>. The <code>diagnostics</code> array is always present, and empty rather than absent when nothing went wrong.</p>
+    <p><strong><code>code</code> is the contract and <code>message</code> is not.</strong> Codes are additive: once shipped, a code's string and its meaning never change. Message text is prose for a person to read, matches the Go library's word for word for the same condition, and carries no promise beyond that.</p>
+    <p>A rejection the engine raised as a known document condition is a <code>FolioRenderError</code> carrying the <code>Diagnostic</code> that caused it. Everything else — a value that is not a template, data that will not serialise, a stream that failed — rejects with an ordinary <code>TypeError</code> or <code>Error</code>:</p>
+    <div class="sample"><pre data-lang="js"><span class="tk-kw">import</span> <span class="tk-punc">{</span> FolioRenderError<span class="tk-punc">,</span> render <span class="tk-punc">}</span> <span class="tk-kw">from</span> <span class="tk-str">'folio-js'</span>
+
+<span class="tk-kw">try</span> <span class="tk-punc">{</span>
+  <span class="tk-kw">const</span> <span class="tk-punc">{</span> bytes<span class="tk-punc">,</span> diagnostics <span class="tk-punc">}</span> <span class="tk-punc">=</span> <span class="tk-kw">await</span> <span class="tk-fn">render</span><span class="tk-punc">(</span>template<span class="tk-punc">,</span> data<span class="tk-punc">,</span> params<span class="tk-punc">,</span> fonts<span class="tk-punc">)</span>
+  <span class="tk-kw">for</span> <span class="tk-punc">(</span><span class="tk-kw">const</span> d <span class="tk-kw">of</span> diagnostics<span class="tk-punc">)</span> <span class="tk-punc">{</span>
+    <span class="tk-kw">if</span> <span class="tk-punc">(</span>d.code === <span class="tk-str">'TEXT_MISSING_GLYPH'</span><span class="tk-punc">)</span> console.<span class="tk-fn">warn</span><span class="tk-punc">(</span><span class="tk-str">`element ${d.elementId} lost a character: ${d.message}`</span><span class="tk-punc">)</span>
+  <span class="tk-punc">}</span>
+  <span class="tk-kw">return</span> bytes
+<span class="tk-punc">}</span> <span class="tk-kw">catch</span> <span class="tk-punc">(</span>error<span class="tk-punc">)</span> <span class="tk-punc">{</span>
+  <span class="tk-kw">if</span> <span class="tk-punc">(</span>error <span class="tk-kw">instanceof</span> FolioRenderError<span class="tk-punc">)</span> <span class="tk-punc">{</span>
+    <span class="tk-kw">if</span> <span class="tk-punc">(</span>error.diagnostic.code === <span class="tk-str">'BINDING_PATH_ABSENT'</span><span class="tk-punc">)</span> <span class="tk-kw">throw</span> <span class="tk-kw">new</span> <span class="tk-type">Error</span><span class="tk-punc">(</span><span class="tk-str">`data is missing ${error.diagnostic.dataPath}`</span><span class="tk-punc">)</span>
+    <span class="tk-kw">throw</span> <span class="tk-kw">new</span> <span class="tk-type">Error</span><span class="tk-punc">(</span><span class="tk-str">`${error.diagnostic.code}: ${error.message}`</span><span class="tk-punc">)</span>
+  <span class="tk-punc">}</span>
+  <span class="tk-kw">throw</span> error
+<span class="tk-punc">}</span></pre></div>
+    <p>Every code, with its string value and its meaning, is listed under <a href="rendering-library.html#diagnostic-codes">diagnostic codes</a> in the rendering library guide. The registry belongs to the engine, so it reads the same from all three languages and a caller can port between them.</p>
+    <p><code>validate</code> answers the same question without producing a document. It takes raw template bytes, checks them against data, params and fonts, and resolves to the diagnostic list the engine would have raised — rejecting on an error exactly as <code>render</code> does.</p>
+  </section>
+
+  <section id="api-reference">
+    <h2>API reference</h2>
+    <p>Six functions and <code>version</code> come from <code>folio-js</code>; <code>shipped</code> comes from <code>folio-js/fonts</code>. Everything else named here is a type, and TypeScript declarations for all of it ship with the package.</p>
+
+    <h3 id="rendering-and-validation">Rendering and validation</h3>
+
+    <h4>parseTemplate</h4>
+    <div class="sample"><pre data-lang="ts"><span class="tk-fn">parseTemplate</span>(bytes: <span class="tk-type">Uint8Array</span> | <span class="tk-type">string</span>): <span class="tk-type">Promise</span>&lt;<span class="tk-type">Template</span>&gt;</pre></div>
+    <p>Parses <code>.folio</code> bytes into a <code>Template</code>, which is Go's <code>ParseTemplate</code>. This is the primary constructor: bytes in, template out. A malformed document rejects with <code>FolioRenderError</code>.</p>
+
+    <h4>loadTemplate</h4>
+    <div class="sample"><pre data-lang="ts"><span class="tk-fn">loadTemplate</span>(path: <span class="tk-type">string</span>): <span class="tk-type">Promise</span>&lt;<span class="tk-type">Template</span>&gt;</pre></div>
+    <p>Reads the file at the path and parses it, which is Go's <code>LoadTemplate</code>. It is the only call in the library that touches the filesystem on your behalf.</p>
+
+    <h4>render</h4>
+    <div class="sample"><pre data-lang="ts"><span class="tk-fn">render</span>(tpl: <span class="tk-type">Template</span>, data: <span class="tk-type">Data</span>, params: <span class="tk-type">Params</span> | <span class="tk-lit">null</span> | <span class="tk-lit">undefined</span>, fonts: <span class="tk-type">FontSet</span>): <span class="tk-type">Promise</span>&lt;<span class="tk-type">RenderResult</span>&gt;</pre></div>
+    <p>Renders the document and resolves to its bytes plus its warnings, which is Go's <code>Render</code>.</p>
+
+    <h4>renderTo</h4>
+    <div class="sample"><pre data-lang="ts"><span class="tk-fn">renderTo</span>(writable: <span class="tk-type">Writable</span>, tpl: <span class="tk-type">Template</span>, data: <span class="tk-type">Data</span>, params: <span class="tk-type">Params</span> | <span class="tk-lit">null</span> | <span class="tk-lit">undefined</span>, fonts: <span class="tk-type">FontSet</span>): <span class="tk-type">Promise</span>&lt;<span class="tk-type">Diagnostic</span>[]&gt;</pre></div>
+    <p>Renders, writes the PDF to a Node <code>Writable</code>, and resolves to the warnings once the write completes. This is Go's <code>RenderTo</code> with a stream in place of an <code>io.Writer</code>, for HTTP responses and large documents. The stream is never ended and never destroyed, and nothing is written when the render fails.</p>
+
+    <h4>validate</h4>
+    <div class="sample"><pre data-lang="ts"><span class="tk-fn">validate</span>(bytes: <span class="tk-type">Uint8Array</span> | <span class="tk-type">string</span>, data: <span class="tk-type">Data</span>, params: <span class="tk-type">Params</span> | <span class="tk-lit">null</span> | <span class="tk-lit">undefined</span>, fonts: <span class="tk-type">FontSet</span>): <span class="tk-type">Promise</span>&lt;<span class="tk-type">Diagnostic</span>[]&gt;</pre></div>
+    <p>Checks a template against data, params and fonts without producing a document, which is Go's <code>Validate</code>. It takes raw template bytes rather than a parsed <code>Template</code>, matching Go.</p>
+
+    <h4>parameterReferences</h4>
+    <div class="sample"><pre data-lang="ts"><span class="tk-fn">parameterReferences</span>(tpl: <span class="tk-type">Template</span>): <span class="tk-type">Promise</span>&lt;<span class="tk-type">string</span>[]&gt;</pre></div>
+    <p>The sorted, de-duplicated top-level parameter names the template reads, which is Go's <code>ParameterReferences</code>. Use it to build a params object without reading the template by hand.</p>
+
+    <h4>version</h4>
+    <div class="sample"><pre data-lang="ts">version: <span class="tk-type">string</span></pre></div>
+    <p>The folio8 engine version the packaged WebAssembly was built from. A test holds it equal to the value the engine reports about itself, so it can never describe a build it did not come from.</p>
+
+    <h3 id="fonts">Fonts</h3>
+
+    <h4>shipped</h4>
+    <div class="sample"><pre data-lang="ts"><span class="tk-fn">shipped</span>(): <span class="tk-type">Promise</span>&lt;<span class="tk-type">FontSet</span>&gt;</pre></div>
+    <p>The eleven faces Go's <code>fonts.Shipped</code> returns, read from the files inside the package: Roboto and Noto Sans in regular, bold, italic and bold italic, Noto Sans Thai in regular and bold, and Noto Sans SC. Keys and bytes are the engine's own, so a document rendered from this set here and from <code>fonts.Shipped</code> in Go produces identical PDF bytes.</p>
+    <p>It is imported from the <code>folio-js/fonts</code> entry point rather than from the package root, so a caller who supplies their own faces never pays for reading these.</p>
+    <p>These are the keys, and a template's font chain must name one of them verbatim — the engine never derives <code>Roboto Bold</code> from <code>Roboto</code>:</p>
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Family</th><th>Face names (map keys)</th></tr></thead>
+        <tbody>
+          <tr><td>Noto Sans</td><td><code>Noto Sans</code>, <code>Noto Sans Bold</code>, <code>Noto Sans Italic</code>, <code>Noto Sans Bold Italic</code></td></tr>
+          <tr><td>Noto Sans Thai</td><td><code>Noto Sans Thai</code>, <code>Noto Sans Thai Bold</code></td></tr>
+          <tr><td>Noto Sans SC</td><td><code>Noto Sans SC</code></td></tr>
+          <tr><td>Roboto</td><td><code>Roboto</code>, <code>Roboto Bold</code>, <code>Roboto Italic</code>, <code>Roboto Bold Italic</code></td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p>To use your own faces, build the map yourself, optionally starting from the shipped set:</p>
+    <div class="sample"><pre data-lang="js"><span class="tk-kw">const</span> fonts <span class="tk-punc">=</span> <span class="tk-kw">await</span> <span class="tk-fn">shipped</span><span class="tk-punc">()</span>
+fonts.<span class="tk-fn">set</span><span class="tk-punc">(</span><span class="tk-str">'Acme Display'</span><span class="tk-punc">,</span> <span class="tk-kw">new</span> <span class="tk-type">Uint8Array</span><span class="tk-punc">(</span><span class="tk-kw">await</span> <span class="tk-fn">readFile</span><span class="tk-punc">(</span><span class="tk-str">'AcmeDisplay.ttf'</span><span class="tk-punc">)))</span></pre></div>
+    <div class="caution">
+      <p><strong>The shipped faces are licensed under the SIL Open Font License 1.1</strong>, and each face's licence text and provenance notice travel beside it in the package under <code>fonts/</code>. Faces you supply yourself, or embed in a template, are under their own licences: a template that embeds a font redistributes that font with the file. The Go guide's <a href="rendering-library.html#fonts-1">fonts</a> section carries the same rules for the same face set.</p>
+    </div>
+
+    <h3 id="types">Types</h3>
+
+    <h4>Template</h4>
+    <p>An opaque parsed template. It holds the engine's canonical bytes and offers no way to read or change the document — editing is the designer's surface and is deliberately not in this library. Obtain one from <code>parseTemplate</code> or <code>loadTemplate</code>; constructing one directly throws.</p>
+
+    <h4>Data and Params</h4>
+    <div class="sample"><pre data-lang="ts"><span class="tk-kw">type</span> <span class="tk-type">Data</span> = <span class="tk-type">Uint8Array</span> | <span class="tk-type">string</span> | <span class="tk-type">object</span>
+<span class="tk-kw">type</span> <span class="tk-type">Params</span> = <span class="tk-type">Uint8Array</span> | <span class="tk-type">string</span> | <span class="tk-type">object</span></pre></div>
+    <p>Both are JSON. Pass raw bytes, a JSON string, or a plain object that the library serialises for you. <code>Data</code> is the report data; <code>Params</code> carries the runtime values that are not report data, such as <code>documentDate</code>. Params are optional: pass <code>null</code> or <code>undefined</code> when the template reads none.</p>
+
+    <h4>FontSet</h4>
+    <div class="sample"><pre data-lang="ts"><span class="tk-kw">type</span> <span class="tk-type">FontSet</span> = <span class="tk-type">Map</span>&lt;<span class="tk-type">string</span>, <span class="tk-type">Uint8Array</span>&gt;</pre></div>
+    <p>Face name to font file bytes, which is Go's <code>FontSet</code>. It is always an argument and never ambient.</p>
+
+    <h4>RenderResult</h4>
+    <div class="sample"><pre data-lang="ts"><span class="tk-kw">interface</span> <span class="tk-type">RenderResult</span> {
+  bytes: <span class="tk-type">Uint8Array</span>
+  diagnostics: <span class="tk-type">Diagnostic</span>[]
+}</pre></div>
+    <p>What <code>render</code> resolves to: the PDF, and every warning in the engine's order.</p>
+
+    <h4>Diagnostic and Severity</h4>
+    <div class="sample"><pre data-lang="ts"><span class="tk-kw">type</span> <span class="tk-type">Severity</span> = <span class="tk-str">'warning'</span> | <span class="tk-str">'error'</span>
+
+<span class="tk-kw">interface</span> <span class="tk-type">Diagnostic</span> {
+  severity: <span class="tk-type">Severity</span>
+  code: <span class="tk-type">string</span>
+  elementId: <span class="tk-type">string</span>
+  dataPath: <span class="tk-type">string</span>
+  message: <span class="tk-type">string</span>
+}</pre></div>
+    <p>One engine diagnostic, field for field Go's <code>Diagnostic</code>, with the names in the casing JavaScript expects. <code>Severity</code> is a closed set of two dispositions.</p>
+
+    <h3 id="errors">Errors</h3>
+
+    <h4>FolioRenderError</h4>
+    <div class="sample"><pre data-lang="ts"><span class="tk-kw">class</span> <span class="tk-type">FolioRenderError</span> <span class="tk-kw">extends</span> <span class="tk-type">Error</span> {
+  <span class="tk-kw">readonly</span> diagnostic: <span class="tk-type">Diagnostic</span>
+}</pre></div>
+    <p>Thrown when the engine aborts on a known document condition, which is Go's <code>RenderError</code>. Its <code>message</code> is the engine's error text and its <code>diagnostic</code> carries the code, the element and the data path. An error arrives as a throw and never as an entry in <code>diagnostics</code>.</p>
+  </section>
+
+  <section id="determinism">
+    <h2>Determinism</h2>
+    <p>Nothing here reads the clock, the locale, the environment or the network, and nothing touches the filesystem beyond the <code>loadTemplate</code> call you make yourself. A document that needs a date takes it as an ordinary param named <code>documentDate</code>; the <code>SOURCE_DATE_EPOCH</code> convenience belongs to the command-line tool and is not honoured by this library.</p>
+    <p>Templates are immutable here. Neither this library nor folio-dotnet exposes a way to change one.</p>
+  </section>
+<!-- twin:end -->
+<!-- /body -->
+
+        <p class="source-note">Source of truth: <code>docs/folio-js.md</code>. Colours and the two-accent grammar are
+    the designer's own tokens — cyan for structure, amber for data.</p>
+      </article>
+    </div>
+  </main>
+
+</div>
+
+<script>
+(() => {
+  const filter = document.querySelector('.filter')
+  const groups = [...document.querySelectorAll('.toc-group')]
+  const empty = document.querySelector('.toc-empty')
+  filter.addEventListener('input', () => {
+    const query = filter.value.trim().toLowerCase()
+    let shown = 0
+    for (const group of groups) {
+      let hits = 0
+      for (const item of group.querySelectorAll('.toc-item')) {
+        const hit = query === '' || item.textContent.toLowerCase().includes(query)
+        item.hidden = !hit
+        if (hit) hits++
+      }
+      group.hidden = hits === 0
+      shown += hits
+    }
+    empty.hidden = shown !== 0
+  })
+  filter.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && filter.value !== '') { filter.value = ''; filter.dispatchEvent(new Event('input')) }
+  })
+
+  const local = [...document.querySelectorAll('.toc-group[data-current] .toc-item')]
+    .map((item) => ({ item, target: document.getElementById(item.getAttribute('href').slice(1)) }))
+    .filter(({ target }) => target !== null)
+  let active = null
+  let queued = false
+  const update = () => {
+    queued = false
+    let next = null
+    for (const entry of local) {
+      if (entry.target.getBoundingClientRect().top <= 96) next = entry
+      else break
+    }
+    if (next === active) return
+    if (active) active.item.removeAttribute('aria-current')
+    active = next
+    if (active) {
+      active.item.setAttribute('aria-current', 'location')
+      const sidebar = document.querySelector('.sidebar')
+      const box = active.item.getBoundingClientRect()
+      const frame = sidebar.getBoundingClientRect()
+      if (box.top < frame.top + 120 || box.bottom > frame.bottom) sidebar.scrollTop += box.top - frame.top - frame.height / 3
+    }
+  }
+  addEventListener('scroll', () => { if (!queued) { queued = true; requestAnimationFrame(update) } }, { passive: true })
+  update()
+})()
+</script>

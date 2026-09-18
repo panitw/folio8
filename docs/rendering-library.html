@@ -210,6 +210,39 @@
         <a class="toc-item" href="#command-line-tool">Command-line tool</a>
       </div>
       <div class="toc-group">
+        <a class="toc-doc" href="folio-js.html">folio-js</a>
+        <a class="toc-item" href="folio-js.html#install">Install</a>
+        <a class="toc-item sub" href="folio-js.html#the-node-version-floor">The Node version floor</a>
+        <a class="toc-item sub" href="folio-js.html#esm-and-require-from-commonjs">ESM and require from CommonJS</a>
+        <a class="toc-item sub" href="folio-js.html#node-only">Node only</a>
+        <a class="toc-item" href="folio-js.html#your-first-pdf">Your first PDF</a>
+        <a class="toc-item sub" href="folio-js.html#passing-params">Passing params</a>
+        <a class="toc-item" href="folio-js.html#warnings-and-errors">Warnings and errors</a>
+        <a class="toc-item" href="folio-js.html#api-reference">API reference</a>
+        <a class="toc-item sub" href="folio-js.html#rendering-and-validation">Rendering and validation</a>
+        <a class="toc-item sub" href="folio-js.html#fonts">Fonts</a>
+        <a class="toc-item sub" href="folio-js.html#types">Types</a>
+        <a class="toc-item sub" href="folio-js.html#errors">Errors</a>
+        <a class="toc-item" href="folio-js.html#determinism">Determinism</a>
+      </div>
+      <div class="toc-group">
+        <a class="toc-doc" href="folio-dotnet.html">folio-dotnet</a>
+        <a class="toc-item" href="folio-dotnet.html#install">Install</a>
+        <a class="toc-item sub" href="folio-dotnet.html#supported-target-frameworks">Supported target frameworks</a>
+        <a class="toc-item sub" href="folio-dotnet.html#supported-platforms">Supported platforms</a>
+        <a class="toc-item sub" href="folio-dotnet.html#choosing-the-native-library">Choosing the native library</a>
+        <a class="toc-item" href="folio-dotnet.html#your-first-pdf">Your first PDF</a>
+        <a class="toc-item sub" href="folio-dotnet.html#passing-params">Passing params</a>
+        <a class="toc-item sub" href="folio-dotnet.html#calling-from-several-threads">Calling from several threads</a>
+        <a class="toc-item" href="folio-dotnet.html#warnings-and-errors">Warnings and errors</a>
+        <a class="toc-item" href="folio-dotnet.html#api-reference">API reference</a>
+        <a class="toc-item sub" href="folio-dotnet.html#rendering-and-validation">Rendering and validation</a>
+        <a class="toc-item sub" href="folio-dotnet.html#fonts">Fonts</a>
+        <a class="toc-item sub" href="folio-dotnet.html#types">Types</a>
+        <a class="toc-item sub" href="folio-dotnet.html#errors">Errors</a>
+        <a class="toc-item" href="folio-dotnet.html#determinism">Determinism</a>
+      </div>
+      <div class="toc-group">
         <a class="toc-doc" href="expression-reference.html">Expressions</a>
         <a class="toc-item" href="expression-reference.html#paths">Reading values</a>
         <a class="toc-item" href="expression-reference.html#upper">Text</a>
@@ -257,6 +290,8 @@
       <nav class="docbar" aria-label="Documents">
         <p class="brand">FOLIO8 · High-performance PDF reporting library</p>
         <a href="#top" aria-current="page">Rendering library</a>
+        <a href="folio-js.html">folio-js</a>
+        <a href="folio-dotnet.html">folio-dotnet</a>
         <a href="expression-reference.html">Expressions</a>
         <a href="folio-format.html">.folio format</a>
       </nav>
@@ -266,10 +301,12 @@
           <p class="eyebrow">FOLIO8 · Rendering library</p>
           <h1 id="folio8-rendering-library-for-go">folio8 rendering library for Go</h1>
           <p class="standfirst"><code>folio8-go</code> turns a <code>.folio</code> template, JSON data and runtime parameters into a PDF 1.7 document. It reads no clock, no environment, no network and no host fonts while rendering: everything a document needs is passed in. The same inputs rendered with the same Go toolchain produce the same bytes.</p>
-          <p>This guide covers installing the module, rendering your first PDF, the inputs and failures you have to handle, the template features that change what is drawn, and every exported API of the <code>folio8</code> and <code>fonts</code> packages. Two companion references hold the rules this guide does not repeat:</p>
+          <p>This guide covers installing the module, rendering your first PDF, the inputs and failures you have to handle, the template features that change what is drawn, and every exported API of the <code>folio8</code> and <code>fonts</code> packages. The same engine is available outside Go: <a href="folio-js.html">folio-js</a> renders from Node and <a href="folio-dotnet.html">folio-dotnet</a> renders from .NET Framework 4.6 upwards, both producing the bytes this library produces. Four companion references hold the rules this guide does not repeat:</p>
           <ul>
             <li><a href="folio-format.html">The <code>.folio</code> format</a> — every field of a template, version rules and load errors.</li>
             <li><a href="expression-reference.html">Expressions</a> — the syntax inside <code>{{ }}</code> and Visibility formulas.</li>
+            <li><a href="folio-js.html">folio-js</a> — the same engine for Node, promise-based.</li>
+            <li><a href="folio-dotnet.html">folio-dotnet</a> — the same engine for .NET, synchronous.</li>
           </ul>
         </div>
         <!-- /article-head -->

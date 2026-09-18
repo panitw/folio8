@@ -145,11 +145,12 @@ export function verifyOfflineRelease(outputDir = dist, { wasmWitness = false, re
   if (!release.assets.some((asset) => /\/pdf\.worker-[A-Za-z0-9_-]+\.mjs$/.test(asset.url))) fail('missing local PDF.js worker runtime asset')
   if (release.assets.filter((asset) => asset.url.endsWith('.bcmap')).length < 4) fail('missing local PDF.js CMap runtime assets')
   if (!release.assets.some((asset) => /\/pdfjs-standard-fonts-[a-f0-9]{20}\/LiberationSans-Regular\.ttf$/.test(asset.url))) fail('missing local PDF.js standard-font runtime asset')
-  // THE BUNDLED DOCUMENTATION: the guide, the format reference and the
-  // expression reference are each one precached, content-addressed page, and
-  // every link between them names a page this release actually carries — a
-  // link left at its canonical `docs/` name would be a dead link offline.
-  const documentationStems = ['rendering-library', 'folio-format', 'expression-reference']
+  // THE BUNDLED DOCUMENTATION: the Go guide, the folio-js and folio-dotnet
+  // guides, the format reference and the expression reference are each one
+  // precached, content-addressed page, and every link between them names a page
+  // this release actually carries — a link left at its canonical `docs/` name
+  // would be a dead link offline.
+  const documentationStems = ['rendering-library', 'folio-js', 'folio-dotnet', 'folio-format', 'expression-reference']
   for (const stem of documentationStems) {
     const pages = release.assets.filter((asset) => new RegExp(`^/assets/${stem}-[a-f0-9]{20}\\.html$`).test(asset.url))
     if (pages.length !== 1 || !pages[0].immutable) fail(`missing precached documentation page ${stem} (found ${pages.length})`)

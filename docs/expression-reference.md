@@ -12,6 +12,10 @@ with the same eight functions across existing expression inputs.
 > a plausible-looking value: a `sum` that quietly returned `0` on bad input would be a wrong total on
 > a statement, and wrong totals are worse than errors.
 
+These references cover the rest: [the `.folio` format](folio-format.md) is every field of a template, and the
+[rendering library guide](rendering-library.md) renders one from Go — as [folio-js](folio-js.md) does from Node
+and [folio-dotnet](folio-dotnet.md) does from .NET.
+
 ---
 
 ## Formulas and visibility

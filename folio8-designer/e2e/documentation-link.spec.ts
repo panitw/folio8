@@ -21,7 +21,7 @@ const titleOf = (file: string): string => {
   return raw.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&quot;', '"').replaceAll('&#39;', '\'').replaceAll('&amp;', '&')
 }
 const guideTitle = titleOf('rendering-library.html')
-const documentationStems = ['rendering-library', 'folio-format', 'expression-reference']
+const documentationStems = ['rendering-library', 'folio-js', 'folio-dotnet', 'folio-format', 'expression-reference']
 
 type EditorState = Readonly<{ url: string; name: string | null; status: string | null; snapshot: string | null; components: string[]; selected: string[]; undo: boolean; redo: boolean }>
 
@@ -109,10 +109,17 @@ test('pressing Enter on the focused documentation link opens the guide in a new 
 })
 
 // THE BUNDLED COPIES LINK TO EACH OTHER BY THEIR FINGERPRINTED NAMES. Every link
-// in the guide that targets one of the three pages must name an emitted file of
+// in the guide that targets one of the bundled pages must name an emitted file of
 // this build, and none may still spell a canonical `docs/` name — that would be
 // a link into a file the application does not serve.
-test('the bundled guide links to the bundled format and expression references by emitted names', async ({ page }) => {
+//
+// EVERY SIBLING IS REQUIRED BY NAME, not just counted. The designer exposes ONE
+// documentation link, to the guide, and the guides reach each other from there —
+// so a sibling dropped from the guide's document bar and sidebar is a page that
+// exists in the release and is unreachable inside it. Nothing else in the suite
+// would notice: verify:offline checks that the links present are live, not that
+// any particular link is present.
+test('the bundled guide links to every bundled sibling by emitted name', async ({ page }) => {
   await openWorkspace(page)
   const href = await documentationLink(page).getAttribute('href')
   expect(href).not.toBeNull()
@@ -121,15 +128,20 @@ test('the bundled guide links to the bundled format and expression references by
   await expectGuide(guide)
   const hrefs = await guide.locator('a[href]').evaluateAll((anchors) => anchors.map((anchor) => anchor.getAttribute('href') ?? ''))
   const crossPage = hrefs.filter((target) => documentationStems.some((stem) => target.includes(stem)))
-  expect(crossPage.length, 'the guide must link to the format reference').toBeGreaterThan(0)
+  expect(crossPage.length, 'the guide must link to its siblings').toBeGreaterThan(0)
+  for (const stem of documentationStems.filter((candidate) => candidate !== 'rendering-library')) {
+    expect(crossPage.some((target) => target.startsWith(`${stem}-`)), `the guide must link to ${stem}, or that page is unreachable offline`).toBe(true)
+  }
   for (const target of crossPage) {
-    expect(target, 'a cross-page link must be rewritten to a fingerprinted name').toMatch(/^(?:rendering-library|folio-format|expression-reference)-[a-f0-9]{20}\.html(?:#.*)?$/)
+    expect(target, 'a cross-page link must be rewritten to a fingerprinted name').toMatch(/^(?:rendering-library|folio-js|folio-dotnet|folio-format|expression-reference)-[a-f0-9]{20}\.html(?:#.*)?$/)
     const response = await guide.request.get(new URL(target, guide.url()).toString())
     expect(response.ok(), `${target} must be an emitted file`).toBe(true)
     expect(response.headers()['content-type']).toMatch(/text\/html/)
   }
-  const format = crossPage.find((target) => target.startsWith('folio-format-'))
-  expect(format, 'the guide must link to the format reference').toBeDefined()
-  await guide.goto(new URL(format!, guide.url()).toString())
-  await expect(guide).toHaveTitle(titleOf('folio-format.html'))
+  for (const [stem, file] of [['folio-format', 'folio-format.html'], ['folio-js', 'folio-js.html'], ['folio-dotnet', 'folio-dotnet.html']] as const) {
+    const target = crossPage.find((href) => href.startsWith(`${stem}-`))
+    expect(target, `the guide must link to ${stem}`).toBeDefined()
+    await guide.goto(new URL(target!, guide.url()).toString())
+    await expect(guide).toHaveTitle(titleOf(file))
+  }
 })
