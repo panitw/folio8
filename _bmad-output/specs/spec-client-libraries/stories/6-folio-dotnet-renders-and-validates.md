@@ -2,7 +2,7 @@
 title: 'folio-dotnet renders and validates, .NET Framework 4.6 through modern .NET'
 type: 'feature'
 created: '2026-09-18'
-status: 'in-review'
+status: 'done'
 baseline_commit: 'b9bba9bfb8263396886bdd36886ecb14f8d4731b'
 route: 'dispatch'
 review_loop_iteration: 0
@@ -138,6 +138,8 @@ context:
 | 25 | blind | `Folio8.slnx` is committed but never built in CI | low | reject | CI builds the three projects directly, which is the stronger check; the solution file is an IDE convenience. |
 | 26 | blind | No Go round-trip test of the frame encoder | low | reject | `abi_test.go` now exercises the encoder end to end through the exports, which covers the same ground. |
 | 27 | edge | `Frame.Read`'s hand-written truncation messages were partly unreachable | low | patch | Folded into finding 7's bounds checks. |
+| 28 | CI (Windows) | cgo failed with no diagnostic: MSYS2's gcc was selected by full path with its own bin directory off PATH, so it died at DLL load | high | patch | Windows-only, found by the first CI run. The x64 build now prefers the image's standalone mingw, each candidate must compile a trivial file, and a failure dumps `go env` and an `-x` retry. |
+| 29 | CI (Windows) | Every managed test failed with EntryPointNotFound: the native `folio8.dll` and the managed `Folio8.dll` are one file on case-insensitive NTFS | high | patch | Proved by building both DLLs locally: all 8 exports present on both architectures, and writing the two names into one directory leaves one file. The native library is now `folio8_native`, with three cross-platform tests pinning the distinction and a loaded-module path in the error. |
 
 ## Implementation Notes
 
