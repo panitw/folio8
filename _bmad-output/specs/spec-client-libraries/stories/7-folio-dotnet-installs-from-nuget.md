@@ -2,7 +2,7 @@
 title: 'folio-dotnet installs from NuGet and loads the right binary'
 type: 'feature'
 created: '2026-09-18'
-status: 'in-review'
+status: 'done'
 baseline_commit: 'ea5d53018455537417b394bbc168262f42ff396b'
 route: 'dispatch'
 review_loop_iteration: 0
@@ -94,6 +94,30 @@ context:
 ## Spec Change Log
 
 ## Review Triage Log
+
+| # | Layer | Finding | Verdict | Route | Evidence |
+|---|---|---|---|---|---|
+| 1 | edge | The three net48 legs shared one intermediate directory, so a 32-bit leg could run a stale AnyCPU build | high | patch | The bitness proof could pass vacuously. Each leg now has its own intermediate and output paths. |
+| 2 | verification-gap, blind, edge | `buildTransitive/folio-dotnet.targets` was packed but never asserted | medium | patch | Pre-verified: deleting the pack line kept every leg green while transitive consumers would get no native. Now in the required-entry list. |
+| 3 | verification-gap, blind, edge | The 22 font licence and notice files were never asserted | medium | patch | Pre-verified: a broken glob ships eleven OFL faces with no licence text and nothing reddens. Both counts are now checked, as folio-js does. |
+| 4 | blind, edge | The modern consumer never ran forced-32-bit or explicit x86 | medium | patch | Two of the six claimed shapes did not exist. Added, self-contained on win-x86 because the runner has no 32-bit runtime. |
+| 5 | blind, edge | Wrong-bitness was forced only in the 64-bit direction, contradicting the matrix row | medium | patch | Both directions are now forced on both families. |
+| 6 | edge | A missing source native aborted the whole run instead of failing one leg | low | patch | Guarded. |
+| 7 | blind | The `ENGINE` line the consumer prints was never asserted | low | patch | Now checked against `go-parity.json`. |
+| 8 | blind | The consumer suite uploaded no evidence although it is the only proof for .NET Framework | medium | patch | Log and package listing now upload with `if: always()` — and they are what diagnosed the first failing run. |
+| 9 | blind, edge | The pack-time parity check parsed JSON with an order-dependent regex | low | patch | Anchored on the `shippedFaces` array. |
+| 10 | blind | The README snippet could not compile on the 4.6 floor, and the page overclaimed it was tested | medium | patch | Rewritten as a class with `Main` at C# 7.3; the claim now matches what runs. |
+| 11 | blind | `Fonts.Shipped()` copies ~14.8 MB per call while the docs invited per-render use | low | patch | Both the XML doc and the README now say to hoist it. |
+| 12 | blind, edge | Three RELEASING.md claims were untrue (API key prompt, what the push guard greps, building from the tag) | medium | patch | All three corrected to what the code does. |
+| 13 | blind, edge | The nuget-push guard missed several script types, and one assertion could never match | low | patch | Widened, with RELEASING.md excepted by name. |
+| 14 | blind, edge | The documented pack path wrote a 42 MB artifact into an unignored directory | low | patch | Packs to `artifacts/nupkg`; `*.nupkg` ignored. |
+| 15 | blind | The version was typed in four places | low | patch | Declared once; consumers take it from the packed file name. |
+| 16 | blind | `FolioNativeLoadException` lacked the conventional constructors | low | patch | Added. |
+| 17 | edge | The package's own dependency group was never inspected | low | patch | The packed nuspec is now asserted to declare none. |
+| 18 | edge | The zip handle on the package was left open | low | patch | Disposed. |
+| 19 | blind, edge | The script said "publish" while running `dotnet build` | low | patch | Every leg publishes now. |
+| 20 | edge | Blocked P/Invoke is proved only through an injected seam | low | reject | No ordinary consumer process can produce a blocked load on a CI runner; the seam test is the available evidence and the message is shared with the other modes. |
+| 21 | CI | A fully passing consumer suite failed the job | high | patch | Found by the first run of this job: the script never exited, so the shell inherited the exit code of a consumer that fails on purpose. `exit 0` added with the reason recorded. |
 
 **Round 1 — all findings accepted and fixed.**
 
