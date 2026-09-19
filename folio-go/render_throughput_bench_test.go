@@ -37,8 +37,13 @@ import (
 // mutable field in the template would show up; run it under -race to use
 // it as that check.
 //
-// Both report a docs/sec custom metric alongside ns/op so the number a
-// capacity plan needs does not have to be derived by hand.
+// NEITHER REPORTS A docs/sec METRIC, and that is AD-23 rather than an
+// oversight: b.ReportMetric takes a float64, and float64 is banned under
+// this module root by both TestNoFloat64UnderModule and lint's
+// type-aware ScanFloatTypedValues. ns/op carries the same information —
+// documents a second is 1e9/ns_op — so the metric would buy a column at
+// the price of an entry in a deliberately short sanctioned-float
+// inventory. Derive it when you report it.
 
 // throughputFixtures is every fixture in the corpus that carries a
 // data.json — that is, every fixture that exercises the bind path a real
@@ -127,20 +132,6 @@ func isBenchRepoRootDir(dir string) bool {
 	return err1 == nil && folioGo.IsDir() && err2 == nil && fixtures.IsDir()
 }
 
-// reportDocsPerSecond turns the elapsed wall time of the whole benchmark
-// into the throughput figure a capacity plan is written in. It must be
-// called after the loop, while b.Elapsed() still covers only the measured
-// iterations.
-func reportDocsPerSecond(b *testing.B, docs int) {
-	b.Helper()
-
-	seconds := b.Elapsed().Seconds()
-	if seconds <= 0 {
-		return
-	}
-	b.ReportMetric(float64(docs)/seconds, "docs/s")
-}
-
 func BenchmarkRenderThroughput(b *testing.B) {
 	faces := fonts.Shipped()
 
@@ -160,9 +151,6 @@ func BenchmarkRenderThroughput(b *testing.B) {
 					b.Fatalf("render %s produced no bytes", fixture)
 				}
 			}
-
-			b.StopTimer()
-			reportDocsPerSecond(b, b.N)
 		})
 	}
 }
@@ -190,9 +178,6 @@ func BenchmarkRenderThroughputParallel(b *testing.B) {
 					}
 				}
 			})
-
-			b.StopTimer()
-			reportDocsPerSecond(b, b.N)
 		})
 	}
 }

@@ -48,9 +48,13 @@ go test -run '^$' -bench 'BenchmarkRenderThroughputParallel' -benchmem -count 5 
 go test -run '^$' -bench 'BenchmarkLoadTemplate'             -benchmem -count 3 -cpu 1 .
 ```
 
-The benchmarks report a `docs/s` metric alongside `ns/op`. Under `RunParallel`, Go's `ns/op` is wall
-time divided by total iterations — the reciprocal of aggregate throughput, **not** per-document
-latency. The latency figures on this page come from the serial runs.
+The benchmarks report `ns/op`, and documents a second is `1e9/ns_op`. They deliberately report no
+`docs/s` metric of their own: `b.ReportMetric` takes a `float64`, and `float64` is banned under the
+`folio-go` module root by AD-23.
+
+Under `RunParallel`, Go's `ns/op` is wall time divided by total iterations — the reciprocal of
+aggregate throughput, **not** per-document latency. The latency figures on this page come from the
+serial runs.
 
 ## Throughput
 

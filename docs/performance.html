@@ -401,6 +401,10 @@
       per-document time and allocation. Peak resident set comes from a separate probe process,
       because <code>ru_maxrss</code> is a process-wide high-water mark and two workloads in one
       process cannot be told apart.</p>
+    <p>The benchmarks report <code>ns/op</code>, and documents a second is <code>1e9/ns_op</code>.
+      They deliberately report no <code>docs/s</code> metric of their own:
+      <code>b.ReportMetric</code> takes a <code>float64</code>, and <code>float64</code> is banned
+      under the <code>folio-go</code> module root by AD-23.</p>
     <div class="sample"><pre data-lang="sh"><span class="tk-kw">cd</span> folio-go
 go test -run <span class="tk-str">'^$'</span> -bench <span class="tk-str">'BenchmarkRenderThroughput$'</span>       -benchmem -count <span class="tk-num">5</span> -cpu <span class="tk-num">1</span> .
 go test -run <span class="tk-str">'^$'</span> -bench <span class="tk-str">'BenchmarkRenderThroughputParallel'</span> -benchmem -count <span class="tk-num">5</span> .
