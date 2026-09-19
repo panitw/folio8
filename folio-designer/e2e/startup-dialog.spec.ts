@@ -172,16 +172,90 @@ for (const width of [720, 480]) {
   })
 }
 
-test('offline after first load, the dialog and its thumbnails appear and an example opens in Preview', async ({ page, context }) => {
+// THE GATE IS THE CORE TIER, MEASURED AT THE WIRE
+// (spec-deferred-offline-cache, story 2, CAP-1).
+//
+// A cold first load DOES request deferred assets — the launch dialog draws four
+// engine-rendered example thumbnails, and story 1 tiers those `deferred` — so
+// "no deferred asset is requested" would be false and this test says something
+// narrower and true: NONE OF THEM IS REQUESTED BEFORE THE ENGINE STARTS. The
+// engine wasm is the boundary and it is an observable one: the page asks for it
+// only once `engineMayStart` is true, which is once the worker has verified the
+// core tier and broadcast `ready`.
+//
+// AND WHAT FOLLOWS IT IS NAMED RATHER THAN LEFT AS "SOMETHING". After the gate
+// opens the designer asks for the starter template it opens into and the four
+// thumbnails the dialog draws — 0.14 MiB — and for nothing else in the deferred
+// tier. The CJK font (4.72 MiB), the 31 catalogue faces (3.01 MiB), the example
+// templates and samples and the bundled documentation are not touched at all,
+// which is the 7.96 MiB this spec exists to stop charging every visitor.
+test('the blocking load asks for the core tier alone, and the dialog\'s thumbnails follow the engine', async ({ page }) => {
+  const manifest = JSON.parse(readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist', 'offline-release-manifest.json'), 'utf8')) as { assets: ReadonlyArray<{ url: string; tier: string }> }
+  const tierOf = new Map(manifest.assets.map((asset) => [asset.url, asset.tier]))
+  const deferredCount = [...tierOf.values()].filter((tier) => tier === 'deferred').length
+  expect(deferredCount, 'a release with no deferred tier would make every assertion below vacuous').toBeGreaterThan(40)
+  const engineWasm = manifest.assets.find((asset) => asset.url.endsWith('.wasm'))?.url
+  if (!engineWasm) throw new Error('the release carries no engine wasm for this test to take as the gate boundary')
+
+  const requested: string[] = []
+  page.on('request', (request) => {
+    const { pathname } = new URL(request.url())
+    if (tierOf.has(pathname)) requested.push(pathname)
+  })
+  await page.goto('/')
+  await expectLaunchDialog(page)
+
+  const engineAt = requested.indexOf(engineWasm)
+  expect(engineAt, 'the engine wasm must have been requested, or there is no boundary to measure against').toBeGreaterThanOrEqual(0)
+  const deferredBeforeEngine = requested.slice(0, engineAt).filter((url) => tierOf.get(url) === 'deferred')
+  expect(deferredBeforeEngine, 'nothing outside the core tier may be asked for before the designer can start').toEqual([])
+
+  // AND THE DEFERRED TIER THE FIRST LOAD DOES TOUCH IS EXACTLY THE DIALOG'S OWN
+  // — the starter it opens into and the four thumbnails it draws. Naming them
+  // is what keeps the assertion above from being satisfied by a load that
+  // fetched the whole deferred tier one millisecond later.
+  const deferred = [...new Set(requested.filter((url) => tierOf.get(url) === 'deferred'))]
+  const thumbnails = deferred.filter((url) => url.includes('.thumbnail.'))
+  expect(thumbnails, 'the dialog draws four engine-rendered thumbnails, and they are deferred assets').toHaveLength(4)
+  expect(deferred.filter((url) => !url.includes('.thumbnail.') && !url.includes('/starter.')), 'no catalogue face, no CJK font, no example template or sample and no documentation page may be fetched by a first load').toEqual([])
+})
+
+// REWRITTEN BY spec-deferred-offline-cache STORY 2, AND THE REWRITE IS THE
+// POINT RATHER THAN AN ACCOMMODATION.
+//
+// It used to open an example offline that had never been opened before, and it
+// passed because the worker precached all 80 release assets — the bundled
+// examples among them — before the designer would start at all. That is the
+// 18.63 MiB first load this spec exists to remove: the examples are now in the
+// DEFERRED tier and are fetched the first time one is opened.
+//
+// SO THE GUARANTEE IT PROVES IS THE ONE THE SPEC ACTUALLY MAKES: *"An author
+// who has used the designer once still opens it, edits, previews and renders
+// with the network disconnected."* The example is opened once online — which is
+// the fetch, the hash verification and the cache write — and then opened again
+// with the network down, off the cache, through a reload, with no request at
+// all. An example NEVER opened is a different case: it is refused, and giving
+// that refusal its words is CAP-3's, not this story's.
+//
+// THE THUMBNAILS ARE STILL PROVED OFFLINE, unchanged, and they are proved
+// through the same mechanism rather than by exception: the dialog draws them on
+// the first load, so they are fetched and kept then, and `expectLaunchDialog`
+// after `setOffline(true)` requires all four to decode with no network.
+test('an example opened once opens again offline, thumbnails and all', async ({ page, context }) => {
   await page.goto('/')
   await page.reload() // the first installation must activate before it can control a reload
   await expect(page.getByTestId('offline-status')).toHaveText(usableOfflineState)
-  await expectLaunchDialog(page)
+  const online = await expectLaunchDialog(page)
+  await online.getByRole('button', { name: 'Bank Statement', exact: true }).click()
+  await expect(online.getByRole('button', { name: 'Bank Statement', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await online.getByRole('button', { name: 'Open example' }).click()
+  await expectExampleInPreview(page, 'Bank Statement')
+
   await context.setOffline(true)
   await page.reload()
-  const dialog = await expectLaunchDialog(page)
-  await dialog.getByRole('button', { name: 'Bank Statement', exact: true }).click()
-  await expect(dialog.getByRole('button', { name: 'Bank Statement', exact: true })).toHaveAttribute('aria-pressed', 'true')
-  await dialog.getByRole('button', { name: 'Open example' }).click()
+  const offline = await expectLaunchDialog(page)
+  await offline.getByRole('button', { name: 'Bank Statement', exact: true }).click()
+  await expect(offline.getByRole('button', { name: 'Bank Statement', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await offline.getByRole('button', { name: 'Open example' }).click()
   await expectExampleInPreview(page, 'Bank Statement')
 })

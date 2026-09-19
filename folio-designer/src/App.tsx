@@ -25,6 +25,8 @@ import { type FontChainCommitError, type FontChainControl } from './font-chain-c
 import { addFontChainCommand, embedFontFamilyCommand, type FontChainEntryAsk } from './font-chain-command'
 import { catalogueFaces, scriptFallbackFaces } from './generated/font-catalogue'
 import { familyIsInstalled, indexRowFor, offeredFamilies, type FamilySource } from './font-index'
+import { initialHeldLocalFamilies, readHeldLocalFamilies } from './held-local-faces'
+import { watchCanvasFaceMisses } from './canvas-face-misses'
 import { isShippedFamily, shippedFamilyEntry } from './shipped-face-cuts'
 import { browserRows } from './font-browser-model'
 import { fetchWebFamily } from './font-source'
@@ -287,6 +289,10 @@ const NO_CARRIED_FACES: ReadonlySet<string> = new Set()
 // The same trick for the machine store's listing: an empty store and a store
 // that could not be opened both render nothing, and neither should re-render
 // the tree for the privilege.
+const NO_FACE_MISSES: ReadonlyArray<string> = []
+// A stable identity, for the reason `NO_STORED_FACES` is one: a fresh `new Set()`
+// in a `useState` initialiser is a new value on every render.
+const NO_FACE_MISS_DISMISSALS: ReadonlySet<string> = new Set()
 const NO_STORED_FACES: ReadonlyArray<StoredFace> = []
 /**
  * THE PROPOSED FALLBACK TAIL — the shipped faces for the scripts the picked
@@ -608,6 +614,56 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
   // answers, because the modal cannot be open before it has: flashing the
   // degraded copy and then withdrawing it would be a worse lie than either state.
   const [storeKeepsFaces, setStoreKeepsFaces] = useState(true)
+  // WHICH CATALOGUE FAMILIES THIS BROWSER ACTUALLY HOLDS
+  // (spec-deferred-offline-cache, story 2). The 31 catalogue faces are deferred
+  // now, so shipping in the release no longer means being on this machine, and
+  // `familyIsInstalled` is a function of THIS rather than of the tier alone.
+  //
+  // THE FIRST PAINT'S ANSWER IS `initialHeldLocalFamilies`, which argues itself:
+  // empty where there is a cache to probe, and every catalogue family where
+  // there is no Cache API and therefore no deferral to be honest about.
+  const [heldLocalFamilies, setHeldLocalFamilies] = useState<ReadonlySet<string>>(() => initialHeldLocalFamilies(payload?.releaseId))
+  // RE-READ, NEVER INCREMENTED. The release cache is the authority and it can
+  // LOSE entries — eviction, cleared site data — so a set this page only ever
+  // added to would go on claiming a face that is gone. Every caller re-probes.
+  const refreshHeldLocalFamilies = useCallback(() => { void readHeldLocalFamilies(payload?.releaseId).then((held) => setHeldLocalFamilies(held)) }, [payload?.releaseId])
+  // THE THREE MOMENTS THE ANSWER CAN HAVE CHANGED, and none of them is a timer:
+  // mount, opening the typography dialog's family list, and finishing an
+  // install. `cacheReady` is deliberately NOT one of them — readiness is the
+  // core tier and says nothing about any catalogue face.
+  useEffect(() => { refreshHeldLocalFamilies() }, [refreshHeldLocalFamilies])
+  // A CANVAS MISS SUBSTITUTES AND SAYS SO ONCE (spec-deferred-offline-cache,
+  // story 2, owner decision 2026-09-19).
+  //
+  // WHAT IS AND IS NOT AT STAKE. The canvas paints with CSS `@font-face` rules
+  // from `generated/runtime-fonts.css`, and a deferred face behind one of those
+  // rules can now fail to arrive — offline, or a fetch that will not verify.
+  // The ENGINE is unaffected: `folio-go/fonts/fonts.go` embeds its own copies,
+  // so metrics, line breaks and the previewed PDF are exactly what they would
+  // have been. Only the glyphs drawn on this screen differ, and the browser has
+  // already substituted by the time this fires.
+  //
+  // SO IT IS A WARNING AND NEVER A BLOCK. A modal over a document that is
+  // rendering correctly would be the designer lying about the severity of its
+  // own cosmetic degradation. It is per occurrence, it names the family, and it
+  // is dismissible — the author may want to fetch the face, or may not care.
+  //
+  // `loadingerror` IS THE BROWSER'S OWN REPORT, which is the only thing that
+  // knows a substitution happened; nothing here probes or predicts. The
+  // subscription itself lives in `canvas-face-misses.ts`, which is where its
+  // relationship to AD-17 is argued and bounded.
+  const [canvasFaceMisses, setCanvasFaceMisses] = useState<ReadonlyArray<string>>(NO_FACE_MISSES)
+  // DISMISSAL IS STICKY FOR THE SESSION, AND IT HAS TO BE KEPT SEPARATELY TO BE.
+  // Filtering the list alone is not a dismissal: the browser retries a missing
+  // face every time something asks for it, so the next `loadingerror` would put
+  // the row the author just closed straight back on screen. A warning that
+  // cannot be got rid of is worse than no warning.
+  const [dismissedFaceMisses, setDismissedFaceMisses] = useState<ReadonlySet<string>>(NO_FACE_MISS_DISMISSALS)
+  // ONE ROW PER FAMILY, NOT ONE PER EVENT. A page can ask for the same face
+  // several times in a second, and one row per attempt would be a wall of the
+  // same sentence about one missing font.
+  useEffect(() => watchCanvasFaceMisses((families) => setCanvasFaceMisses((current) => [...current, ...families.filter((family) => !current.includes(family))])), [])
+  const shownFaceMisses = canvasFaceMisses.filter((family) => !dismissedFaceMisses.has(family))
   // STORY 16.3 — THE FONT BROWSER IS OPEN OR IT IS NOT, AND THAT IS ALL THE
   // STATE IT HAS UP HERE. Everything the modal knows — the query, the chips,
   // the sort, the staged families — lives inside it and dies with it, which is
@@ -2542,15 +2598,60 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
    * and still be refused the first time it is used, and `embedInstalledFamily`
    * below says exactly that when it happens.
    *
-   * ONLY A `web` ROW HAS ANYTHING TO INSTALL. The local tier ships inside the
-   * release and the stored tier is already here, so both are routed to
-   * `embedInstalledFamily` by the family control's fork and are not stageable in
-   * the browser. Reaching this function with one of them is a routing defect, and
-   * it is NAMED rather than silently answered `undefined`, which would report a
-   * no-op as a success.
+   * TWO TIERS HAVE SOMETHING TO INSTALL SINCE spec-deferred-offline-cache STORY
+   * 2, AND THEY INSTALL DIFFERENT THINGS. A `web` row is fetched, classified and
+   * written to the machine store — the body below. A `local` row is a catalogue
+   * face this release carries but this browser has not yet fetched, because the
+   * catalogue is deferred now; installing it means PULLING ITS BYTES through the
+   * service worker, which verifies them against the release manifest and keeps
+   * them. Only a `stored` row still has nothing to install — it is in the
+   * machine store by definition — and reaching this function with one is a
+   * routing defect, NAMED rather than silently answered `undefined`, which would
+   * report a no-op as a success.
    */
   const installFamily = async (source: FamilySource, responseGeneration: number, selectionKey: string, announce: 'panel' | 'caller' = 'panel'): Promise<string | undefined> => {
     const refuse = (message: string) => refuseFontChain(message, responseGeneration, selectionKey, announce)
+    // A CATALOGUE FACE NOW HAS SOMETHING TO INSTALL, AND THIS IS IT
+    // (spec-deferred-offline-cache, story 2). The 31 catalogue faces are
+    // deferred: the release carries them, the worker does not precache them,
+    // and until something asks, their bytes are not on this machine. So the
+    // font browser is the door to an unfetched one — exactly as Story 16.9 made
+    // it the only door to the web tier — and installing it means PULLING ITS
+    // BYTES, nothing more.
+    //
+    // THE FETCH IS THE INSTALL, AND THE SERVICE WORKER IS THE MECHANISM. This
+    // is a same-origin GET for a content-addressed URL in this release's own
+    // manifest, so the worker answers it from the cache when held and otherwise
+    // fetches, hash-verifies against that manifest entry and keeps it. Nothing
+    // here re-implements any of that, and the response body is deliberately
+    // dropped: what the author installed is the CACHE ENTRY, and the bytes
+    // travel into a document only at first use, through `embedInstalledFamily`.
+    //
+    // NOTHING IS WRITTEN TO THE MACHINE STORE. That store is the fetched-web
+    // tier's home and its records carry a licence provenance a catalogue face
+    // already has committed beside its binary; a second copy there would be two
+    // answers to one question.
+    if (source.tier === 'local') {
+      // THE WORKER HAS TO BE IN CHARGE, OR THIS INSTALLS NOTHING. An
+      // uncontrolled page — the very first load, before `clients.claim()` has
+      // taken effect — fetches straight past the worker, so the bytes arrive,
+      // the response is fine, and NOTHING IS CACHED: the install would report
+      // success while the family stayed absent from AVAILABLE LOCALLY, which is
+      // the worst of the three possible outcomes. Refused by name instead, and
+      // the remedy is one the author can act on.
+      if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) {
+        return refuse(`${source.family} could not be put on this machine yet: this page's offline layer is not in charge of its own requests. Reload the page and try again.`)
+      }
+      try {
+        const response = await fetch(source.face.url)
+        if (!response.ok) throw new Error(`the bundled face responded ${response.status}`)
+        await response.arrayBuffer()
+      } catch (error) {
+        return refuse(`${source.family} could not be fetched onto this machine: ${error instanceof Error ? error.message : String(error)}`)
+      }
+      refreshHeldLocalFamilies()
+      return undefined
+    }
     // Spelled as the discriminant rather than through `familyIsInstalled` so the
     // narrowing below is the compiler's and not a comment's.
     if (source.tier !== 'web') return refuse(`${source.family} is already on this machine, so there is nothing to install. Pick it again to use it in this document.`)
@@ -3700,7 +3801,13 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
           defect class: an inert-until-needed pointer surface, so a click 4px
           from an existing rule is a PLACEMENT and not a selection of the
           neighbour. */}
-      {mode === 'design' ? <main ref={canvasRegionRef} className={`canvas-region${placing ? ' canvas-region-placing' : ''}${selected.length > 1 ? ' canvas-region-multi' : ''}`} aria-label="Canvas region" tabIndex={0} onPointerMove={(event) => { canvasSelection.move(event); pointerPageRef.current = pageUnder(event.target); if (placing) setPlacingAt({ x: event.clientX, y: event.clientY }) }} onPointerUp={(event) => canvasSelection.finish(event)} onPointerCancel={() => canvasSelection.cancel()} onLostPointerCapture={() => canvasSelection.lostCapture()} onPointerDownCapture={(event) => { if (canvasSelection.blocksPointer()) { event.preventDefault(); event.stopPropagation() } else canvasSelection.freshPointer() }} onScroll={() => canvasSelection.cancel()} onClickCapture={(event) => { if (canvasSelection.consumeClick()) { event.preventDefault(); event.stopPropagation() } }} onPointerLeave={() => { setPlacingAt(undefined); pointerPageRef.current = undefined }} onKeyDown={(event) => { if (event.key === 'Escape') { if (canvasSelection.cancel()) { event.preventDefault(); event.stopPropagation(); return } clearInteraction(); installSelection([]) } }}>
+      {mode === 'design' ? <main ref={canvasRegionRef} className={`canvas-region${placing ? ' canvas-region-placing' : ''}${selected.length > 1 ? ' canvas-region-multi' : ''}`} aria-label="Canvas region" tabIndex={0} onPointerMove={(event) => { canvasSelection.move(event); pointerPageRef.current = pageUnder(event.target); if (placing) setPlacingAt({ x: event.clientX, y: event.clientY }) }} onPointerUp={(event) => canvasSelection.finish(event)} onPointerCancel={() => canvasSelection.cancel()} onLostPointerCapture={() => canvasSelection.lostCapture()} onPointerDownCapture={(event) => { if (canvasSelection.blocksPointer()) { event.preventDefault(); event.stopPropagation() } else canvasSelection.freshPointer() }} onScroll={() => canvasSelection.cancel()} onClickCapture={(event) => { if (canvasSelection.consumeClick()) { event.preventDefault(); event.stopPropagation() } }} onPointerLeave={() => { setPlacingAt(undefined); pointerPageRef.current = undefined }} onKeyDown={(event) => { if (event.key === 'Escape') { if (canvasSelection.cancel()) { event.preventDefault(); event.stopPropagation(); return } clearInteraction(); installSelection([]) } }}>{/* THE CONTAINER IS THE LIVE REGION, AND IT IS ALWAYS MOUNTED. A `role="status"`
+            put on each `<li>` would override its implicit `listitem` role, and a list
+            that appears already populated is generally not announced at all — the
+            region has to be on the page BEFORE the row arrives for the row to be read
+            out. So the `<ul>` mounts empty and stays, and its children are plain list
+            items. */}
+          <ul className="canvas-face-misses" role="status" aria-live="polite" aria-label="Fonts the canvas could not paint">{shownFaceMisses.map((family) => <li key={family}><span>{family} could not be loaded, so this canvas is drawing a substitute for it. The layout, the page breaks and the PDF preview are unaffected — they come from the engine's own copy.</span><button type="button" className="diagnostic-dismiss" aria-label={`Dismiss the substitution warning for ${family}`} onClick={() => setDismissedFaceMisses((current) => new Set([...current, family]))}>Dismiss</button></li>)}</ul>
         <div className="canvas-tools" aria-label="Canvas controls"><button className="tool-button" type="button" onClick={() => setZoom((value) => Math.max(0.5, value - 0.1))} aria-label="Zoom out" data-tip="Zoom out"><ToolIcon glyph="zoom-out" /></button><output aria-label="Canvas zoom">{Math.round(zoom * 100)}%</output><button className="tool-button" type="button" onClick={() => setZoom((value) => Math.min(2, value + 0.1))} aria-label="Zoom in" data-tip="Zoom in"><ToolIcon glyph="zoom-in" /></button><button className="tool-button" type="button" onClick={() => setGridVisible((value) => !value)} aria-pressed={gridVisible} aria-label={`Grid ${gridVisible ? 'on' : 'off'}`} data-tip={`Grid ${gridVisible ? 'on' : 'off'}`}><ToolIcon glyph="grid" /></button><button className="tool-button" type="button" onClick={() => setSnapEnabled((value) => !value)} aria-pressed={snapEnabled} aria-label={`Snap ${snapEnabled ? 'on' : 'off'}`} data-tip={toolTip(`Snap ${snapEnabled ? 'on' : 'off'}`, shortcuts.snap)}><ToolIcon glyph="snap" /></button><button className="tool-button" type="button" onClick={duplicateSelection} disabled={selected.length !== 1} aria-label="Duplicate" data-tip={toolTip('Duplicate', shortcuts.duplicate)}><ToolIcon glyph="duplicate" /></button><button className="tool-button" type="button" onClick={breakSelected ? () => deleteSectionBreak(breakPage) : deleteSelection} disabled={selected.length === 0 && !breakSelected} aria-label="Delete" data-tip={toolTip('Delete', `${shortcuts.delete} key`)}><ToolIcon glyph="delete" /></button><button className="tool-button" type="button" onClick={addPage} disabled={addPageReason !== undefined} aria-label="Add page" data-tip={addPageReason ? `Add page: ${addPageReason}` : 'Add page'} aria-describedby={addPageReason ? 'add-page-reason' : undefined}><ToolIcon glyph="add-page" /></button>{addPageReason && <span id="add-page-reason" className="sr-only">{reasonSentence(addPageReason)}</span>}<button ref={deletePageButtonRef} className="tool-button" type="button" onClick={requestDeletePage} disabled={deletePageReason !== undefined} aria-label="Delete page" data-tip={deletePageReason ? `Delete page: ${deletePageReason}` : 'Delete page'} aria-describedby={deletePageReason ? 'delete-page-reason' : undefined}><ToolIcon glyph="delete-page" /></button>{deletePageReason && <span id="delete-page-reason" className="sr-only">{reasonSentence(deletePageReason)}</span>}<span className="tool-hint" role="img" aria-label={toolTip('Nudge', shortcuts.nudge)} data-tip={toolTip('Nudge', shortcuts.nudge)}><ToolIcon glyph="nudge" /></span></div>
         {displayCanvas && stack ? <div className="canvas-body" style={{ width: `calc(${canvasDisplay.css(displayCanvas.width, zoom)} + ${2 * CANVAS_GUTTER}px)`, paddingInline: `${CANVAS_GUTTER}px` }} onPointerDown={(event) => beginRectangle(event, undefined, 0, true)}><div className="sheet-stack" style={{ '--sheet-stack-gap': `${SHEET_STACK_GAP}px`, width: canvasDisplay.css(displayCanvas.width, zoom) } as CSSProperties} onPointerDown={(event) => beginRectangle(event)}>{stack.sheets.map((sheet) => sheetSurface(displayCanvas, stack, sheet))}{canvasSelection.rectangle && <div className="canvas-selection-rectangle" aria-label="Selection rectangle" style={{ left: canvasDisplay.css(canvasSelection.rectangle.left, zoom), top: canvasDisplay.css(canvasSelection.rectangle.top, zoom), width: canvasDisplay.css(canvasSelection.rectangle.right - canvasSelection.rectangle.left, zoom), height: canvasDisplay.css(canvasSelection.rectangle.bottom - canvasSelection.rectangle.top, zoom) }} />}</div></div> : <p className="canvas-awaiting" role="status">Waiting for Go page geometry.</p>}
 
@@ -3749,7 +3856,7 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
             itself belongs to the DATA panel.
             "Configure columns" stays live throughout: the TABLE is still the
             component selection, so `openTableEditor`'s
-            `selectedRef.current[0] !== id` guard is untouched. */}<span className="column-identity-name">Column</span><span className="column-identity-meta">{selectedTableColumn.label === '' ? selectedTableColumn.columnId : selectedTableColumn.label}</span></p>}{mode === 'preview' ? <><p className="section-label">PREVIEW INPUTS</p><ParameterEditor referenceState={parameterReferenceState} accepted={previewParams} draft={previewParamsDraft} error={previewParamsError} onDraft={acceptPreviewParameters} onNamedValue={setNamedParameter} /><p className="honest-note">Parameters are local Preview input and are not part of the template.</p></> : selectedBreak !== undefined && breakPage !== undefined ? <SectionBreakProperties key={`${documentGenerationValue}:${breakPage}:${selectedBreak.offset}`} offset={selectedBreak.offset} anchor={selectedBreak.anchored} onCommit={(draft) => void commitComponent(setSectionBreakCommand(draft, false, breakPage))} onAnchor={(anchor) => void commitComponent(setSectionBreakAnchorCommand(anchor, breakPage))} /> : selected.length > 0 && canvas ? <ComponentProperties key={`${documentGenerationValue}:${selected.join(',')}`} components={canvas.components.filter((component) => selected.includes(component.id))} fontFamilies={canvas.fontFamilies} fontChains={canvas.fontChains} carriedFaces={paintableFaces} specimenBytes={familyControlSpecimenBytes} defaultFontSize={canvas.defaultFontSize} defaultLineSpacing={canvas.defaultLineSpacing} onCommit={applyProperties} onUseFamily={(source) => embedInstalledFamily(source, documentGeneration.current, selected.join(','))} onDeclareFamily={(source) => declareShippedFamily(source, documentGeneration.current, selected.join(','))} onOpenFontBrowser={() => setFontBrowserOpen(true)} browserOpen={fontBrowserOpen} storedFaces={storedFaces} fontChainError={fontChainError} fontChainBusy={fontChainBusy || fileBusy} documentGeneration={documentGenerationValue} propertyError={propertyError} drag={drag} groupPreview={canvasSelection.group} onEditTable={(id) => void openTableEditor(id)} onPickImage={(id) => void applyImageAsset(id)} imageAvailable={imageFileAccess !== undefined} assetBusy={assetBusy} assetError={assetError} /> : <><div className="component-identity"><ToolIcon glyph="blank" /><span className="component-identity-name">Page</span><span className="component-identity-meta">{pageSelection !== undefined ? `page ${pageSelection + 1} of ${pageCount}` : `document · ${pageCount} ${pageCount === 1 ? 'page' : 'pages'}`}</span></div>{canvas && pageSelection !== undefined && <PageSection page={pageSelection} pageBreak={canvas.pageBreaks?.[pageSelection] ?? true} disabled={fileBusy} onPageBreak={(value) => void commitComponent(setPageBreakCommand(pageSelection, value))} />}<PageSetup preset={preset} orientation={orientation} draft={draft} onPreset={setPreset} onOrientation={setOrientation} onDraft={updateDraft} onApply={applyPageSetup} disabled={!canvas || fileBusy} /></>}</div>
+            `selectedRef.current[0] !== id` guard is untouched. */}<span className="column-identity-name">Column</span><span className="column-identity-meta">{selectedTableColumn.label === '' ? selectedTableColumn.columnId : selectedTableColumn.label}</span></p>}{mode === 'preview' ? <><p className="section-label">PREVIEW INPUTS</p><ParameterEditor referenceState={parameterReferenceState} accepted={previewParams} draft={previewParamsDraft} error={previewParamsError} onDraft={acceptPreviewParameters} onNamedValue={setNamedParameter} /><p className="honest-note">Parameters are local Preview input and are not part of the template.</p></> : selectedBreak !== undefined && breakPage !== undefined ? <SectionBreakProperties key={`${documentGenerationValue}:${breakPage}:${selectedBreak.offset}`} offset={selectedBreak.offset} anchor={selectedBreak.anchored} onCommit={(draft) => void commitComponent(setSectionBreakCommand(draft, false, breakPage))} onAnchor={(anchor) => void commitComponent(setSectionBreakAnchorCommand(anchor, breakPage))} /> : selected.length > 0 && canvas ? <ComponentProperties key={`${documentGenerationValue}:${selected.join(',')}`} components={canvas.components.filter((component) => selected.includes(component.id))} fontFamilies={canvas.fontFamilies} fontChains={canvas.fontChains} carriedFaces={paintableFaces} specimenBytes={familyControlSpecimenBytes} defaultFontSize={canvas.defaultFontSize} defaultLineSpacing={canvas.defaultLineSpacing} onCommit={applyProperties} onUseFamily={(source) => embedInstalledFamily(source, documentGeneration.current, selected.join(','))} onDeclareFamily={(source) => declareShippedFamily(source, documentGeneration.current, selected.join(','))} onOpenFontBrowser={() => { refreshHeldLocalFamilies(); setFontBrowserOpen(true) }} browserOpen={fontBrowserOpen} storedFaces={storedFaces} heldLocalFamilies={heldLocalFamilies} onFamilyListOpened={refreshHeldLocalFamilies} fontChainError={fontChainError} fontChainBusy={fontChainBusy || fileBusy} documentGeneration={documentGenerationValue} propertyError={propertyError} drag={drag} groupPreview={canvasSelection.group} onEditTable={(id) => void openTableEditor(id)} onPickImage={(id) => void applyImageAsset(id)} imageAvailable={imageFileAccess !== undefined} assetBusy={assetBusy} assetError={assetError} /> : <><div className="component-identity"><ToolIcon glyph="blank" /><span className="component-identity-name">Page</span><span className="component-identity-meta">{pageSelection !== undefined ? `page ${pageSelection + 1} of ${pageCount}` : `document · ${pageCount} ${pageCount === 1 ? 'page' : 'pages'}`}</span></div>{canvas && pageSelection !== undefined && <PageSection page={pageSelection} pageBreak={canvas.pageBreaks?.[pageSelection] ?? true} disabled={fileBusy} onPageBreak={(value) => void commitComponent(setPageBreakCommand(pageSelection, value))} />}<PageSetup preset={preset} orientation={orientation} draft={draft} onPreset={setPreset} onOrientation={setOrientation} onDraft={updateDraft} onApply={applyPageSetup} disabled={!canvas || fileBusy} /></>}</div>
         <div className="panel-body" role="tabpanel" id="inspector-panel-data" aria-labelledby="inspector-tab-data" hidden={inspectorTab !== 'data'}><DataPanel sample={sampleData} error={sampleError} busy={sampleBusy} available={Boolean(sampleFileAccess)} selectedComponentId={selected.length === 1 ? selected[0] : undefined} selectedComponentType={selectedComponent?.type} selectedBinding={selectedComponent?.type === 'table' ? selectedComponent.tableBind : selectedComponent?.binding} bindingError={bindingError} bindingBusy={bindingBusy} runtimeParameters={{ status: parameterReferenceState.status, names: parameterReferenceState.names, values: parameterValues(previewParams) }} columnScope={columnBindScope} saveDisabled={fileBusy || !fileAccess} onLoad={() => void loadSample()} onSave={() => void saveSampleData()} onConnect={(segments) => void bindPickedPath(segments)} onConnectColumn={(field) => void bindPickedColumn(field)} /></div>
         {/* STORY 13.3 — THE EVIDENCE RAIL, A SIBLING OF THE TABPANELS AND NEVER
             INSIDE ONE.
@@ -3792,7 +3899,7 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
         of the three means UNKNOWN, and the dialog says so rather than drawing a
         zero. */}
     {tableEditor && <TableEditor projection={tableEditor} busy={tableEditorBusy} fileBusy={fileBusy} discarding={tableEditorDiscarding} error={tableEditorError} candidates={sampleCandidateScan.candidates} sampleAvailable={Boolean(sampleData)} band={canvas?.components.find((component) => component.id === tableEditor.table.tableId)?.band} availableWidth={tableEditorAvailableWidth} sampleItemCount={tableSampleItemCount(sampleData?.tree, tableEditor.table.collection)} onClose={closeTableEditor} onAdd={(index) => void commitTableColumn(addTableColumnCommand(tableEditor.table.tableId, index))} onRemove={(columnId) => void commitTableColumn(removeTableColumnCommand(tableEditor.table.tableId, columnId))} onMove={(columnId, index) => void commitTableColumn(moveTableColumnCommand(tableEditor.table.tableId, columnId, index))} onUpdate={(columnId, field, value) => commitTableColumn(updateTableColumnCommand(tableEditor.table.tableId, columnId, field, value))} onTotalWidth={(value) => commitTableColumn(tableWidthCommand(tableEditor.table.tableId, value))} onBinding={(columnId, binding) => commitTableColumn(updateTableColumnExpressionCommand(tableEditor.table.tableId, columnId, binding))} onConfigure={(collection, alias) => void commitTableColumn(configureTableBindingCommand(tableEditor.table.tableId, collection, alias))} onFooter={(columnId, footer, footerOf, footerFormat) => void commitTableColumn(updateTableColumnFooterCommand(tableEditor.table.tableId, columnId, footer, footerOf, footerFormat))} onHeaderHeight={(height) => void commitTableColumn(tableHeaderHeightCommand(tableEditor.table.tableId, height))} onAltRowBackground={(operation, value) => void commitTableColumn(tableAltRowBackgroundCommand(tableEditor.table.tableId, operation, value))} onHeaderStyle={(field, operation, value) => void commitTableColumn(tableHeaderStyleCommand(tableEditor.table.tableId, field, operation, value))} onMinHeight={(operation, value) => void commitTableColumn(tableMinHeightCommand(tableEditor.table.tableId, operation, value))} onRules={(field, operation, value) => void commitTableColumn(tableRulesCommand(tableEditor.table.tableId, field, operation, value))} onCellPadding={(field, operation, value) => void commitTableColumn(updateComponentPropertiesCommand([tableEditor.table.tableId], operation === 'clear' ? { field, operation } : { field, operation, value }))} editCount={tableEditorEditCount} onCancel={() => void cancelTableEditor()} />}
-    {fontBrowserOpen && canvas && <FontBrowser sources={browsableFamilies} inTemplate={canvas.fontFamilies} previewBytes={browserSpecimenBytes} onAddFamily={(source) => addFamilyToDocument(source, documentGeneration.current, selected.join(','), 'caller')} storeKeepsFaces={storeKeepsFaces} onClose={() => setFontBrowserOpen(false)} />}
+    {fontBrowserOpen && canvas && <FontBrowser sources={browsableFamilies} inTemplate={canvas.fontFamilies} heldLocalFamilies={heldLocalFamilies} previewBytes={browserSpecimenBytes} onAddFamily={(source) => addFamilyToDocument(source, documentGeneration.current, selected.join(','), 'caller')} storeKeepsFaces={storeKeepsFaces} onClose={() => setFontBrowserOpen(false)} />}
     {startupOpen && engine && <StartupDialog cards={startupCards} selected={startupSelected} busy={startupBusy} error={startupError} onSelect={(id) => { setStartupSelected(id); setStartupError(undefined) }} onConfirm={chooseStartup} onCancel={cancelStartup} onOpenFile={fileAccess ? requestStartupFile : undefined} />}
     {unsavedWarningOpen && <UnsavedChangesDialog document={title} onKeep={keepEditing} onDiscard={discardForNew} />}
     {offlineState === 'update-available' && (loadState?.mandatory === true || !updateDismissed) && <UpdateDialog version={loadState?.pendingVersion} mandatory={loadState?.mandatory === true} dirty={dirty} document={title} onLater={() => setUpdateDismissed(true)} onUpgrade={() => { void activatePendingRelease() }} onSave={(saveAs) => { void save(saveAs) }} />}
@@ -4204,7 +4311,7 @@ const valignSegments: ReadonlyArray<SegmentSpec> = [{ value: 'top', label: 'Vert
 function PropertySection({ title, tone, children }: { title: string; tone?: 'bind'; children: ReactNode }) {
   return <section className={`property-section property-section-${title.toLowerCase()}${tone === 'bind' ? ' property-section-bind' : ''}`}><p className="section-label">{title}</p>{children}</section>
 }
-function ComponentProperties({ components, fontFamilies, fontChains, carriedFaces, specimenBytes, defaultFontSize, defaultLineSpacing, onCommit, onUseFamily, onDeclareFamily, onOpenFontBrowser, browserOpen, storedFaces, fontChainError, fontChainBusy, documentGeneration, propertyError, drag, groupPreview, onEditTable, onPickImage, imageAvailable, assetBusy, assetError }: { components: ReadonlyArray<PanelComponent>; fontFamilies: ReadonlyArray<string>; fontChains: CanvasProjection['fontChains']; carriedFaces: ReadonlySet<string>; specimenBytes: PreviewFaceBytes; defaultFontSize: number; defaultLineSpacing: number; onCommit: CommitProperties; onUseFamily: (source: FamilySource) => Promise<string | undefined>; onDeclareFamily: (source: FamilySource) => Promise<string | undefined>; onOpenFontBrowser: () => void; browserOpen: boolean; storedFaces: ReadonlyArray<StoredFace>; fontChainError?: FontChainCommitError; fontChainBusy: boolean; documentGeneration: number; propertyError?: PropertyCommitError; drag?: DragState; groupPreview?: GroupPreview; onEditTable: (id: string) => void; onPickImage: (id: string) => void; imageAvailable: boolean; assetBusy: boolean; assetError?: Readonly<{ id: string; message: string }> }) {
+function ComponentProperties({ components, fontFamilies, fontChains, carriedFaces, specimenBytes, defaultFontSize, defaultLineSpacing, onCommit, onUseFamily, onDeclareFamily, onOpenFontBrowser, browserOpen, storedFaces, heldLocalFamilies, onFamilyListOpened, fontChainError, fontChainBusy, documentGeneration, propertyError, drag, groupPreview, onEditTable, onPickImage, imageAvailable, assetBusy, assetError }: { components: ReadonlyArray<PanelComponent>; fontFamilies: ReadonlyArray<string>; fontChains: CanvasProjection['fontChains']; carriedFaces: ReadonlySet<string>; specimenBytes: PreviewFaceBytes; defaultFontSize: number; defaultLineSpacing: number; onCommit: CommitProperties; onUseFamily: (source: FamilySource) => Promise<string | undefined>; onDeclareFamily: (source: FamilySource) => Promise<string | undefined>; onOpenFontBrowser: () => void; browserOpen: boolean; storedFaces: ReadonlyArray<StoredFace>; heldLocalFamilies: ReadonlySet<string>; onFamilyListOpened: () => void; fontChainError?: FontChainCommitError; fontChainBusy: boolean; documentGeneration: number; propertyError?: PropertyCommitError; drag?: DragState; groupPreview?: GroupPreview; onEditTable: (id: string) => void; onPickImage: (id: string) => void; imageAvailable: boolean; assetBusy: boolean; assetError?: Readonly<{ id: string; message: string }> }) {
   const ids = components.map((component) => component.id)
   const types = new Set(components.map((component) => component.type))
   const all = (predicate: (type: PanelComponent['type']) => boolean) => [...types].every(predicate)
@@ -4267,7 +4374,7 @@ function ComponentProperties({ components, fontFamilies, fontChains, carriedFace
     {single && types.has('text') && <PropertySection title="CONTENT">{draftFor(contentField)}<p className="honest-note">Literal text, or {'{{ }}'} placeholders for data.</p></PropertySection>}
     {single && types.has('qrcode') && <PropertySection title="CONTENT">{draftFor(barcodeContentField)}<p className="honest-note">Any text, UTF-8. Literal text or {'{{ }}'} placeholders; a new line (Enter) is a carriage return; type \n for a line feed, \\ for a backslash.</p><SegmentedProperty label="Error correction" field="errorCorrection" segments={errorCorrectionSegments} components={components} ids={ids} onCommit={onCommit} documentGeneration={documentGeneration} error={errorFor('errorCorrection')} /><p className="honest-note">Higher levels survive more damage and need more modules in the same box. None selected is M.</p></PropertySection>}
     {single && types.has('barcode') && <PropertySection title="CONTENT">{draftFor(barcodeContentField)}<p className="honest-note">Code 128, ASCII only. Literal text or {'{{ }}'} placeholders; a new line (Enter) is a carriage return; type \n for a line feed, \\ for a backslash.</p></PropertySection>}
-    {typographic && <PropertySection title="TYPOGRAPHY"><FontFamilyProperty families={fontFamilies} fontChains={fontChains} carriedFaces={carriedFaces} specimenBytes={specimenBytes} components={components} ids={ids} onCommit={onCommit} onUseFamily={onUseFamily} onDeclareFamily={onDeclareFamily} onOpenFontBrowser={onOpenFontBrowser} browserOpen={browserOpen} storedFaces={storedFaces} pickBusy={fontChainBusy} pickError={scopedChainError?.control.action === 'embed' ? scopedChainError : undefined} documentGeneration={documentGeneration} error={errorFor('fontFamily')} /><div className="property-size-row">{draftFor({ ...fontSizeField, empty: points(defaultFontSize), shown: true })}<div className="property-toggles"><div className="property-toggle-row"><BooleanProperty label="Bold" field="bold" components={components} ids={ids} onCommit={onCommit} documentGeneration={documentGeneration} error={errorFor('bold')} absentCutId={missingBoldCut && cutAbsenceId(missingBoldCut)} /><BooleanProperty label="Italic" field="italic" components={components} ids={ids} onCommit={onCommit} documentGeneration={documentGeneration} error={errorFor('italic')} absentCutId={missingItalicCut && cutAbsenceId(missingItalicCut)} /></div>{absentCuts.map((cut) => <p key={cut} id={cutAbsenceId(cut)} className="property-unavailable">{cutAbsenceSentence(cut)}</p>)}</div></div>{draftFor({ ...lineSpacingField, empty: points(defaultLineSpacing), shown: true })}{draftFor(colorField)}<div className="property-grid"><SegmentedProperty label="Align" field="align" segments={alignChoices} components={components} ids={ids} onCommit={onCommit} documentGeneration={documentGeneration} error={errorFor('align')} /><SegmentedProperty label="Vertical align" field="valign" segments={valignSegments} components={components} ids={ids} onCommit={onCommit} documentGeneration={documentGeneration} error={errorFor('valign')} /></div></PropertySection>}
+    {typographic && <PropertySection title="TYPOGRAPHY"><FontFamilyProperty families={fontFamilies} fontChains={fontChains} carriedFaces={carriedFaces} specimenBytes={specimenBytes} components={components} ids={ids} onCommit={onCommit} onUseFamily={onUseFamily} onDeclareFamily={onDeclareFamily} onOpenFontBrowser={onOpenFontBrowser} browserOpen={browserOpen} storedFaces={storedFaces} heldLocalFamilies={heldLocalFamilies} onFamilyListOpened={onFamilyListOpened} pickBusy={fontChainBusy} pickError={scopedChainError?.control.action === 'embed' ? scopedChainError : undefined} documentGeneration={documentGeneration} error={errorFor('fontFamily')} /><div className="property-size-row">{draftFor({ ...fontSizeField, empty: points(defaultFontSize), shown: true })}<div className="property-toggles"><div className="property-toggle-row"><BooleanProperty label="Bold" field="bold" components={components} ids={ids} onCommit={onCommit} documentGeneration={documentGeneration} error={errorFor('bold')} absentCutId={missingBoldCut && cutAbsenceId(missingBoldCut)} /><BooleanProperty label="Italic" field="italic" components={components} ids={ids} onCommit={onCommit} documentGeneration={documentGeneration} error={errorFor('italic')} absentCutId={missingItalicCut && cutAbsenceId(missingItalicCut)} /></div>{absentCuts.map((cut) => <p key={cut} id={cutAbsenceId(cut)} className="property-unavailable">{cutAbsenceSentence(cut)}</p>)}</div></div>{draftFor({ ...lineSpacingField, empty: points(defaultLineSpacing), shown: true })}{draftFor(colorField)}<div className="property-grid"><SegmentedProperty label="Align" field="align" segments={alignChoices} components={components} ids={ids} onCommit={onCommit} documentGeneration={documentGeneration} error={errorFor('align')} /><SegmentedProperty label="Vertical align" field="valign" segments={valignSegments} components={components} ids={ids} onCommit={onCommit} documentGeneration={documentGeneration} error={errorFor('valign')} /></div></PropertySection>}
     {image && <ImageSection component={image} onPick={onPickImage} available={imageAvailable} busy={assetBusy} error={assetError?.id === image.id ? assetError.message : undefined} />}
     <PropertySection title="BOX">{!types.has('line') && !types.has('barcode') && !types.has('qrcode') && borderFields.map(draftFor)}{!types.has('line') && !types.has('barcode') && !types.has('qrcode') && <BorderEdgesProperty components={components} ids={ids} onCommit={onCommit} documentGeneration={documentGeneration} error={errorFor('borderEdges')} />}{line && borderProjected(line) && <p className="honest-note">This line carries a border in the document — the panel does not offer one, because a line is authored as a thickness and a colour. The stored border is unchanged and still paints. This note reports what the engine projects, not what the PDF draws.</p>}{!types.has('barcode') && !types.has('qrcode') && draftFor(boxFillFieldFor(single?.type))}{draftFor(visibilityField)}<p className="honest-note">Visibility takes a boolean or null formula — {'e.g. loanAmount > 20000'}. Use true, false, arithmetic, or nested conditions. Empty is always visible.</p></PropertySection>
     {table && <PropertySection title="TABLE"><button type="button" className="file-button" onClick={() => onEditTable(table.id)}>Configure columns</button></PropertySection>}
@@ -5235,11 +5342,18 @@ function scriptsForFamilyName(family: string): ReadonlyArray<string> {
   return catalogueFaces.find((face) => face.family === family)?.scripts ?? indexRowFor(family)?.scripts ?? []
 }
 
-function FontFamilyProperty({ families, fontChains, carriedFaces, specimenBytes, components, ids, onCommit, onUseFamily, onDeclareFamily, onOpenFontBrowser, browserOpen, storedFaces, pickBusy, pickError, documentGeneration, error }: { families: ReadonlyArray<string>; fontChains: CanvasProjection['fontChains']; carriedFaces: ReadonlySet<string>; specimenBytes: PreviewFaceBytes; components: ReadonlyArray<PanelComponent>; ids: ReadonlyArray<string>; onCommit: CommitProperties; onUseFamily: (source: FamilySource) => Promise<string | undefined>; onDeclareFamily: (source: FamilySource) => Promise<string | undefined>; onOpenFontBrowser: () => void; browserOpen: boolean; storedFaces: ReadonlyArray<StoredFace>; pickBusy: boolean; pickError?: FontChainCommitError; documentGeneration: number; error?: PropertyCommitError }) {
+function FontFamilyProperty({ families, fontChains, carriedFaces, specimenBytes, components, ids, onCommit, onUseFamily, onDeclareFamily, onOpenFontBrowser, browserOpen, storedFaces, heldLocalFamilies, onFamilyListOpened, pickBusy, pickError, documentGeneration, error }: { families: ReadonlyArray<string>; fontChains: CanvasProjection['fontChains']; carriedFaces: ReadonlySet<string>; specimenBytes: PreviewFaceBytes; components: ReadonlyArray<PanelComponent>; ids: ReadonlyArray<string>; onCommit: CommitProperties; onUseFamily: (source: FamilySource) => Promise<string | undefined>; onDeclareFamily: (source: FamilySource) => Promise<string | undefined>; onOpenFontBrowser: () => void; browserOpen: boolean; storedFaces: ReadonlyArray<StoredFace>; heldLocalFamilies: ReadonlySet<string>; onFamilyListOpened: () => void; pickBusy: boolean; pickError?: FontChainCommitError; documentGeneration: number; error?: PropertyCommitError }) {
   const values = components.map((component) => committedValue(component, 'fontFamily'))
   const uniform = sameProperty(components, 'fontFamily')
   const committed = uniform ? values[0] ?? '' : ''
   const [open, setOpen] = useState(false)
+  // THE GROUP IS RE-READ EACH TIME THE LIST IS OPENED, which is what makes
+  // "once its bytes are held it appears under AVAILABLE LOCALLY" true WITHOUT A
+  // RELOAD (spec-deferred-offline-cache, story 2). An author installs a
+  // catalogue family through `Add fonts…`, comes back to this control, and the
+  // family is there. Nothing polls: opening the list is the only moment this
+  // control's answer is looked at, so it is the only moment worth re-reading.
+  useEffect(() => { if (open) onFamilyListOpened() }, [open, onFamilyListOpened])
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
   const [pending, setPending] = useState(false)
@@ -5315,7 +5429,18 @@ function FontFamilyProperty({ families, fontChains, carriedFaces, specimenBytes,
   // opening this dropdown a zero-fetch operation: a row that is never in
   // `onThisMachine` is never registered for a specimen, never rendered, and
   // never reachable by a pick.
-  const onThisMachine = offeredFamilies(query, storedFaces).filter((source) => !families.includes(source.family) && familyIsInstalled(source))
+  // AVAILABLE LOCALLY NOW MEANS GENUINELY HELD (spec-deferred-offline-cache,
+  // story 2, owner decision 2026-09-19). `familyIsInstalled` reads the set of
+  // catalogue families whose bytes this browser has actually fetched, so a
+  // catalogue family nobody has used yet is simply NOT HERE — not greyed, not
+  // relabelled, not a row that fetches when pressed. `Add fonts…` below is the
+  // door to it, exactly as Story 16.9 made it the only door to the web tier.
+  //
+  // `IN THIS TEMPLATE` IS UNTOUCHED AND MUST STAY SO. `declared` above is the
+  // document's own chains, and a font the open `.folio` carries is always
+  // offered here whatever this browser's cache holds. Nothing in this line
+  // reaches that group.
+  const onThisMachine = offeredFamilies(query, storedFaces).filter((source) => !families.includes(source.family) && familyIsInstalled(source, heldLocalFamilies))
   // THE REGISTRY HOLDS EXACTLY THE FAMILIES THIS RENDER CAN SHOW A SPECIMEN
   // FOR — `onThisMachine`, and nothing else. NUL-JOINED for the reason
   // `FontBrowser.tsx`'s own key is: family names contain spaces. EMPTY

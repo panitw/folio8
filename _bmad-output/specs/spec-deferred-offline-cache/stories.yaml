@@ -9,7 +9,7 @@
     Nothing about loading behaviour changes in this story: the worker still precaches and
     gates on the whole release. This story only makes the tiering exist and be enforced.
 
-    The core tier is the 28 assets in asset-tiers.md. The bound that matters from here on is
+    The core tier is the 29 assets in asset-tiers.md. The bound that matters from here on is
     the CORE tier's asset count, not the release total.
 
     `minimumCacheAssets`, `maximumCacheAssets` and `warnCacheAssets` in
@@ -34,7 +34,7 @@
     (CAP-1, CAP-2, CAP-4).
   spec_checkpoint: true
   invoke_dev_with: >-
-    This is the story that delivers the first-load win: 28 assets / 10.67 MiB blocking instead
+    This is the story that delivers the first-load win: 29 assets / 10.67 MiB blocking instead
     of 80 / 18.63 MiB. Measure a cold-cache load before and after and report both numbers.
 
     `cacheReady` in folio-designer/src/offline-lifecycle.ts currently means "this browser holds

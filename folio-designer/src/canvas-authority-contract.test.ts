@@ -1023,6 +1023,32 @@ function withoutApprovedRuntimeFaceRegistration(file: string, source: string): s
     expect(readiness).toMatch(seam)
     return readiness.replace(seam, (body) => body.replace(/new FontFace\b/g, 'approvedSeamFaceConstruction').replace(/document\.fonts\b/g, 'approvedSeamFontSet'))
   }
+  // THE ONE SEAM THAT MAY HEAR THE FONT SET REPORT A FAILURE
+  // (spec-deferred-offline-cache, story 2). Since that story the catalogue and
+  // CJK faces the canvas paints with are DEFERRED, so one of them can fail to
+  // arrive and the browser substitutes another without telling anyone. The
+  // author is owed one dismissible sentence naming the family, and the font
+  // set's own `loadingerror` is the only thing that knows a substitution
+  // happened.
+  //
+  // IT IS NOT MEASUREMENT, WHICH IS WHY IT IS WAIVABLE AT ALL. AD-17 forbids
+  // `document.fonts` because the browser may not be an authority on how text is
+  // laid out; this seam reads a family NAME off an error event and no width,
+  // height, advance or line count. The engine's embedded copies remain the
+  // layout authority, so the substitution changes painted glyphs and nothing
+  // else.
+  //
+  // THE CARVE-OUT IS ONE SPELLING INSIDE ONE FUNCTION, in the shape of the
+  // sibling above: `new FontFace` stays red here — this module may not register
+  // a face, and `embedded-face-registry.ts` is still the only place that may —
+  // and so does every non-font prohibition. It holds only while the function
+  // that earns it is still there.
+  if (path.basename(file) === 'canvas-face-misses.ts') {
+    const seam = /export function watchCanvasFaceMisses\([\s\S]*?\n}\n/
+    expect(readiness).toMatch(seam)
+    expect(readiness.match(new RegExp(seam, 'g')) ?? []).toHaveLength(1)
+    return readiness.replace(seam, (body) => body.replace(/document\.fonts\b/g, 'approvedMissReportFontSet'))
+  }
   // THE DETECTOR'S OWN FIXTURES. canvas-font-stack.test.ts is the test that
   // proves runtime registration happens in exactly one place, and it cannot
   // prove its scanner detects a mechanism without spelling that mechanism. The

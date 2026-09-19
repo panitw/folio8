@@ -8,6 +8,19 @@ import { blankComments } from '../scripts/forbidden-font-hosts.mjs'
 import { addableFamilyCount, familyIsInstalled, familySourceNote, indexCategories, indexRowFor, indexScripts, indexExcludedCjkFamilies, localTierHolds, offeredFamilies, webFamilies } from './font-index'
 import type { StoredFace } from './font-store'
 
+// EVERY CATALOGUE FAMILY HELD — the state this designer is in once its
+// catalogue faces have been fetched, and the one in which the offered-order
+// claims below are about ORDER rather than about what has been downloaded.
+// `familyIsInstalled` takes the held set explicitly since spec-deferred-offline-
+// cache story 2, because a catalogue face is deferred and shipping in the
+// release no longer proves it is on this machine.
+const allHeld: ReadonlySet<string> = new Set(catalogueFaces.map((face) => face.family))
+// AND A GENUINELY PARTIAL ONE: every other catalogue family fetched. This is
+// the ordinary state of a browser that has used the designer for a while, and
+// it is the input under which an ordering claim keyed on installedness stops
+// being two runs — see the run-structure test below.
+const halfHeld: ReadonlySet<string> = new Set(catalogueFaces.filter((_, index) => index % 2 === 0).map((face) => face.family))
+
 // STORY 16.1 — THE TWO TIERS AND THE JOIN BETWEEN THEM (D-16.R.3, D-16.R.2).
 
 const here = path.dirname(fileURLToPath(import.meta.url))
@@ -398,26 +411,39 @@ describe('the faces this machine already holds', () => {
     // pass the broken implementation too.
     expect(deep, 'the planted family must sit deep in the snapshot for this to measure anything').toBeGreaterThan(500)
     const offered = offeredFamilies('', [stored(planted.family, 'f'.repeat(64))])
-    const installed = offered.map(familyIsInstalled)
-    const runs = installed.reduce<boolean[]>((acc, flag) => (acc.length === 0 || acc[acc.length - 1] !== flag ? [...acc, flag] : acc), [])
-    expect(runs, 'installed first, then everything that needs a download — two runs, never four').toEqual([true, false])
-    // AND THE PLANTED ROW IS INSIDE THE INSTALLED RUN, so the structure above
-    // cannot be satisfied by dropping it instead of moving it.
+    // MEASURED OVER TIER, NOT OVER `familyIsInstalled`, AND DRIVEN WITH A
+    // PARTIALLY-HELD SET (spec-deferred-offline-cache, story 2). The catalogue
+    // is deferred now, so a `local` row can be a family this browser has not
+    // fetched; `offeredFamilies` does not consult the held set and must not, so
+    // the unheld local rows sit INTERLEAVED among the held ones and an
+    // installedness-keyed run structure is no longer two runs. Driving this
+    // with an all-held set would restore `[true, false]` and quietly convert
+    // the one live measurement of the ordering into a tautology.
+    const runsOf = <T,>(flags: ReadonlyArray<T>) => flags.reduce<T[]>((acc, flag) => (acc.length === 0 || acc[acc.length - 1] !== flag ? [...acc, flag] : acc), [])
+    const onThisMachineTier = offered.map((source) => source.tier !== 'web')
+    expect(runsOf(onThisMachineTier), 'local and stored first, then everything that needs a download — two runs, never four').toEqual([true, false])
+    // AND THE HELD SET IS GENUINELY PARTIAL HERE, which is what makes the line
+    // above a claim about TIER rather than an accident of every row being held.
+    const installed = offered.map((source) => familyIsInstalled(source, halfHeld))
+    expect(installed.filter((flag) => flag).length, 'the partial held set must leave some catalogue rows uninstalled').toBeLessThan(onThisMachineTier.filter(Boolean).length)
+    expect(runsOf(installed).length, 'an unheld catalogue family sits among held ones, so installedness is NOT two runs — the family control filters before it groups').toBeGreaterThan(2)
+    // AND THE PLANTED ROW IS INSIDE THE ON-THIS-MACHINE RUN, so the structure
+    // above cannot be satisfied by dropping it instead of moving it.
     const at = offered.findIndex((source) => source.family === planted.family)
     expect(at, 'the planted stored family must still be offered').toBeGreaterThanOrEqual(0)
     expect(offered[at]!.tier).toBe('stored')
-    expect(at).toBeLessThan(installed.indexOf(false))
+    expect(at).toBeLessThan(onThisMachineTier.indexOf(false))
     // THE POPULATION IS STATED BESIDE THE STRUCTURE. Two runs over a list with
     // only one kind of row in it would be a vacuous pass.
-    expect(installed.filter((flag) => flag).length).toBeGreaterThan(catalogueFaces.length)
-    expect(installed.filter((flag) => !flag).length).toBeGreaterThan(0)
+    expect(onThisMachineTier.filter((flag) => flag).length).toBeGreaterThan(catalogueFaces.length)
+    expect(onThisMachineTier.filter((flag) => !flag).length).toBeGreaterThan(0)
   })
 
   // AND THE SAME PROPERTY WITH THE STORE EMPTY, because the repair must not be
   // a special case that only fires when something is planted: the local tier is
   // the installed run on a fresh machine and it is already contiguous.
   it('returns one contiguous installed run with no store at all', () => {
-    const runs = offeredFamilies('').map(familyIsInstalled).reduce<boolean[]>((acc, flag) => (acc.length === 0 || acc[acc.length - 1] !== flag ? [...acc, flag] : acc), [])
+    const runs = offeredFamilies('').map((source) => source.tier !== 'web').reduce<boolean[]>((acc, flag) => (acc.length === 0 || acc[acc.length - 1] !== flag ? [...acc, flag] : acc), [])
     expect(runs).toEqual([true, false])
   })
 
@@ -452,9 +478,16 @@ describe('the faces this machine already holds', () => {
     // THE TIE BETWEEN THIS SENTENCE AND THE FORK IT DESCRIBES. `familyIsInstalled`
     // is what the family control switches on, so a note that said "use it" over a
     // row the control would install is caught here rather than in a screenshot.
-    expect(familyIsInstalled(local)).toBe(true)
-    expect(familyIsInstalled(fromStore)).toBe(true)
-    expect(familyIsInstalled(web)).toBe(false)
+    expect(familyIsInstalled(local, allHeld)).toBe(true)
+    expect(familyIsInstalled(fromStore, allHeld)).toBe(true)
+    expect(familyIsInstalled(web, allHeld)).toBe(false)
+    // AND THE CLAUSE STORY 2 ADDED: a catalogue family this browser has not
+    // fetched is NOT installed, whatever the release ships. The stored tier is
+    // unaffected — its listing is the evidence — and the web tier is still
+    // never installed.
+    expect(familyIsInstalled(local, new Set())).toBe(false)
+    expect(familyIsInstalled(fromStore, new Set())).toBe(true)
+    expect(familyIsInstalled(web, new Set([web.family]))).toBe(false)
   })
 })
 

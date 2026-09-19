@@ -202,6 +202,53 @@ async function placeAndSelectText(page: import('@playwright/test').Page) {
   await expect(page.getByRole('combobox', { name: 'Font family' })).toBeVisible()
 }
 
+/**
+ * PUT EVERY CATALOGUE FACE ON THIS MACHINE, THE WAY AN AUTHOR WOULD
+ * (spec-deferred-offline-cache, story 2).
+ *
+ * The 31 catalogue faces used to be precached with the rest of the release, so
+ * a fresh browser held all of them before the designer would start and
+ * AVAILABLE LOCALLY listed the whole tier on the first ever load. They are
+ * DEFERRED now: the release carries them, nothing fetches them until something
+ * asks, and a family whose bytes are not here is deliberately absent from that
+ * group — `Add fonts…` is its door.
+ *
+ * So the state these two measurements are about — "every catalogue family is
+ * offered, in the right group" — is the state AFTER the author has fetched
+ * them, and this helper is how the harness gets there. It asks for exactly the
+ * URLs the release's own manifest records for the catalogue, which is the same
+ * request the font browser's install makes: the service worker answers from the
+ * cache when held and otherwise fetches, verifies against that manifest entry's
+ * digest and keeps it.
+ *
+ * NOTHING IS STUBBED AND NO PRIVATE DOOR IS USED. A test that reached past the
+ * worker to plant bytes would stop measuring the mechanism the product ships.
+ * Repeat calls are cache hits.
+ */
+async function holdEveryCatalogueFace(page: import('@playwright/test').Page, expected: number) {
+  // THE WORKER HAS TO BE IN CHARGE FIRST, OR THIS PRIMES NOTHING. A page that
+  // installed the worker on its own first load is not yet CONTROLLED by it, so
+  // these fetches would go straight past to the server and be cached nowhere —
+  // and the measurement below would read as a product failure. The reload is
+  // the same one `startup-dialog.spec.ts` performs for the same reason.
+  await page.goto('/')
+  await page.evaluate(async () => { await navigator.serviceWorker.ready })
+  if (!(await page.evaluate(() => Boolean(navigator.serviceWorker.controller)))) await page.reload()
+  const held = await page.evaluate(async () => {
+    const manifest = await (await fetch('/offline-release-manifest.json')).json() as { assets: ReadonlyArray<{ url: string; tier: string }> }
+    const catalogue = manifest.assets.filter((asset) => asset.tier === 'deferred' && /\/assets\/catalogue-/.test(asset.url))
+    for (const asset of catalogue) {
+      const response = await fetch(asset.url)
+      if (!response.ok) throw new Error(`${asset.url} responded ${response.status}`)
+      await response.arrayBuffer()
+    }
+    return catalogue.length
+  })
+  // A HELPER THAT FETCHED NOTHING WOULD LEAVE BOTH MEASUREMENTS BELOW LOOKING
+  // LIKE PRODUCT FAILURES. It is held to the population it exists to cover.
+  expect(held, 'the release must carry one deferred catalogue asset per catalogue family, or this harness is priming the wrong set').toBe(expected)
+}
+
 async function currentRevision(page: import('@playwright/test').Page): Promise<number> {
   const label = await page.getByTestId('engine-snapshot').textContent()
   const match = /REVISION (\d+)/.exec(label ?? '')
@@ -240,6 +287,11 @@ async function currentRevision(page: import('@playwright/test').Page): Promise<n
 const WEB_NOTE = ' — install on this machine'
 
 test('the dropdown splits the catalogue into the template\'s own chains and the whole rest of the local face tier, with no install row', async ({ page }) => {
+  // THE CATALOGUE IS DEFERRED SINCE spec-deferred-offline-cache STORY 2, so the
+  // whole-tier claim below is about a machine that has fetched it. See
+  // `holdEveryCatalogueFace`. It runs BEFORE the workspace is set up, because
+  // it navigates.
+  await holdEveryCatalogueFace(page, families.length)
   await placeAndSelectText(page)
   await page.getByRole('combobox', { name: 'Font family' }).click()
   const local = (await page.getByRole('group', { name: 'AVAILABLE LOCALLY' }).getByRole('option').locator('.property-option-name').allTextContents()).map((text) => text.trim())
@@ -344,6 +396,10 @@ test('every family is offered in the group its declaredness puts it in, the pick
   expect(carriedFamilies.length, `the UNCHANGED class has no subject: a new element is born carrying ${bornFamily}, which is not a catalogue family, so no pick in this loop can be a no-op`).toBeGreaterThan(0)
   expect(changedFamilies.length, 'the ADVANCED class has no subject: every catalogue family is the one a new element is born carrying').toBeGreaterThan(0)
   const rows: Row[] = []
+  // ONCE, BEFORE THE LOOP. The release cache outlives every navigation this
+  // loop makes, so the catalogue is on this machine for all of them — which is
+  // the state the per-family partition below is a claim about (story 2).
+  await holdEveryCatalogueFace(page, families.length)
   for (const family of families) {
     await placeAndSelectText(page)
     const before = await currentRevision(page)

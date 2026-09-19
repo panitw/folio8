@@ -44,6 +44,17 @@ const RELEASE = ${encoded}
 const CACHE_NAME = 'folio8-release-' + RELEASE.id
 const MARKER = '/__folio8-release__/' + RELEASE.id
 const STATIC_PATHS = new Set(RELEASE.assets.map((asset) => asset.url))
+// THE BLOCKING SET AND THE ON-DEMAND SET, DERIVED FROM ONE AUTHORITY
+// (spec-deferred-offline-cache, story 2). \`tier\` is stamped into every asset by
+// scripts/offline-release-contract.mjs at build time and travels inside this
+// embedded RELEASE record, so the worker classifies nothing and guesses nothing.
+//
+// CORE_ASSETS IS WHAT INSTALL WAITS FOR AND WHAT \`ready\` MEANS. DEFERRED_ASSETS
+// is a lookup, not a list to walk: nothing iterates it, because nothing
+// prefetches it. Its only reader is \`serveFromRelease\` below, which consults it
+// on a cache MISS for a path an author's own action has just requested.
+const CORE_ASSETS = RELEASE.assets.filter((asset) => asset.tier === 'core')
+const DEFERRED_ASSETS = new Map(RELEASE.assets.filter((asset) => asset.tier === 'deferred').map((asset) => [asset.url, asset]))
 const MESSAGE_VERSION = ${messageVersion}
 const cacheableRequest = ${isCacheableStaticRequest.toString()}
 const documentNavigation = ${isCacheableDocumentNavigation.toString()}
@@ -55,33 +66,121 @@ async function progress(state, asset) {
   await notify({ type: 'offline-progress', state, assetUrl: asset?.url ?? null })
 }
 
+// THE ONLY NETWORK READ IN THIS WORKER, AND IT IS ADDRESSED BY MANIFEST ENTRY
+// RATHER THAN BY REQUEST. It takes an \`asset\` out of this release's own
+// embedded record — never \`event.request\`, never a URL off the wire — fetches
+// THAT url, and refuses to return bytes whose digest is not the one the release
+// recorded. Both callers, the install precache and the on-demand deferred path,
+// go through it, so there is exactly one place where bytes can enter this
+// origin's cache and exactly one digest comparison guarding it.
+//
+// verify-offline-release.mjs counts the network reads in the emitted worker and
+// requires there to be exactly one, here, immediately followed by this digest
+// check. That is how the old blanket ban on two banned spellings is
+// re-expressed: not "those two spellings are absent" but "every network read in
+// this worker is this one, and it verifies". The banned spellings therefore may
+// not appear even in a comment, which is why this note does not name them.
+async function fetchVerified(asset) {
+  const response = await fetch(asset.url, { cache: 'reload', credentials: 'omit' })
+  if (!response.ok || response.type === 'opaque') throw new Error('offline asset missing')
+  const bytes = await response.clone().arrayBuffer()
+  const digest = await crypto.subtle.digest('SHA-256', bytes)
+  const actual = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+  if (actual !== asset.sha256) throw new Error('offline asset integrity mismatch')
+  return response
+}
+
+// THE PRECACHE IS THE CORE TIER AND NOTHING ELSE. Install used to walk
+// RELEASE.assets, so a first-time visitor waited for the CJK font, the 31
+// catalogue faces, the bundled examples and the documentation before the
+// designer would start. What it waits for now is what it cannot be used
+// without; everything else arrives at the moment something asks for it.
 async function completeCache() {
   const cache = await caches.open(CACHE_NAME)
   let activeAsset = null
-  try { for (const [index, asset] of RELEASE.assets.entries()) {
+  try { for (const [index, asset] of CORE_ASSETS.entries()) {
     activeAsset = asset
     await progress('active', asset)
-    const response = await fetch(asset.url, { cache: 'reload', credentials: 'omit' })
-    if (!response.ok || response.type === 'opaque') throw new Error('offline asset missing')
-    const bytes = await response.clone().arrayBuffer()
-    const digest = await crypto.subtle.digest('SHA-256', bytes)
-    const actual = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
-    if (actual !== asset.sha256) throw new Error('offline asset integrity mismatch')
+    const response = await fetchVerified(asset)
     await cache.put(asset.url, response)
     // Delay the final verified notification until the marker exists. That makes
-    // a 100% page readout proof of a complete release, not just of the last put.
-    if (index < RELEASE.assets.length - 1) await progress('verified', asset)
+    // a 100% page readout proof of a complete core tier, not just of the last put.
+    if (index < CORE_ASSETS.length - 1) await progress('verified', asset)
     }
     await cache.put(MARKER, new Response(RELEASE.id, { headers: { 'content-type': 'text/plain' } }))
     await progress('verified', activeAsset)
   } catch (error) { error.asset = activeAsset; throw error }
 }
 
+// COMPLETE MEANS THE CORE TIER IS HELD, AND IT MUST NOT MEAN ANY MORE THAN THAT.
+// This answers the page's status request and gates activation, so a deferred
+// asset counted here would make \`ready\` — and with it \`cacheReady\` and
+// \`engineMayStart\` — false on a browser that is perfectly usable, and would
+// come back false again the moment a cache eviction took a catalogue face.
 async function hasCompleteCache() {
   const cache = await caches.open(CACHE_NAME)
   const marker = await cache.match(MARKER)
   if (!marker || await marker.text() !== RELEASE.id) return false
-  return (await Promise.all(RELEASE.assets.map((asset) => cache.match(asset.url)))).every(Boolean)
+  return (await Promise.all(CORE_ASSETS.map((asset) => cache.match(asset.url)))).every(Boolean)
+}
+
+// ONE ANSWER FOR EVERY ALLOWED PATH, held or deferred (story 2).
+//
+// A HELD RESPONSE ALWAYS WINS, whatever tier it is: the second demand for a
+// deferred face transfers nothing and works with the network down, which is the
+// whole point of keeping it.
+//
+// A MISS IS SERVED FROM THE NETWORK ONLY WHEN THE PATH IS A DEFERRED ENTRY OF
+// THIS RELEASE. That is the restriction the generic-fallback ban was always
+// about: the lookup is into this worker's own embedded manifest, so a path that
+// is not in it — including a core asset the cache somehow lost, and anything not
+// in the release at all — is \`Response.error()\` exactly as before. A deferred
+// fetch therefore cannot resolve against another release: the URL comes out of
+// THIS RELEASE's record, and \`fetchVerified\` holds it to THAT entry's digest.
+//
+// FAILURE IS PER ASSET. An offline or failing deferred fetch errors this one
+// response and touches neither the marker nor the core cache, so the release
+// stays ready and the designer stays usable.
+// ONE DEMAND PER ASSET AT A TIME. The CSS \`@font-face\` rule, the specimen read
+// and an embed can each ask for the same face within a few milliseconds of one
+// another, and without this every one of them would fetch, hash and cache-put
+// the same bytes — 4.72 MiB apiece on the CJK face. Keyed by pathname and
+// deleted on settle, so a failed demand is retried rather than remembered.
+const inFlight = new Map()
+
+async function serveFromRelease(pathname) {
+  const cache = await caches.open(CACHE_NAME)
+  const held = await cache.match(pathname)
+  if (held) return held
+  const deferred = DEFERRED_ASSETS.get(pathname)
+  if (!deferred) return Response.error()
+  let demand = inFlight.get(pathname)
+  if (!demand) {
+    demand = fetchVerifiedAndKeep(deferred).finally(() => inFlight.delete(pathname))
+    inFlight.set(pathname, demand)
+  }
+  let response
+  try { response = await demand } catch { return Response.error() }
+  // EVERY CONSUMER GETS A CLONE AND THE SHARED RESPONSE IS NEVER READ. A body
+  // can be consumed once, so handing the shared object to the first caller
+  // would make the second caller's clone throw on a disturbed stream — the
+  // failure the in-flight map would otherwise introduce.
+  return response.clone()
+}
+
+// THE FETCH AND THE KEEP, AS ONE SHARED ACT — so concurrent demands write the
+// cache once rather than once each.
+//
+// THE KEEP MAY FAIL ON ITS OWN AND THE RESPONSE STILL STANDS. A
+// QuotaExceededError here would otherwise turn bytes that had already verified
+// into a refusal: the author loses a face they had in hand because the browser
+// had no room to KEEP it. Keeping is the optimisation; serving is the job, and
+// the next demand tries the write again.
+async function fetchVerifiedAndKeep(asset) {
+  const response = await fetchVerified(asset)
+  const keep = response.clone()
+  try { await (await caches.open(CACHE_NAME)).put(asset.url, keep) } catch { /* not kept; still served */ }
+  return response
 }
 
 async function notify(detail, target) {
@@ -111,15 +210,17 @@ self.addEventListener('fetch', (event) => {
   const request = event.request
   const url = new URL(request.url)
   if (request.mode === 'navigate' && url.origin === self.location.origin && (url.pathname === '/' || url.pathname === '/index.html')) {
-    event.respondWith(caches.open(CACHE_NAME).then((cache) => cache.match('/index.html')).then((response) => response || Response.error()))
+    event.respondWith(serveFromRelease('/index.html'))
     return
   }
+  // The bundled documentation pages are deferred, so opening one in its own tab
+  // is a demand like any other and goes through the same door.
   if (documentNavigation(request, self.location.origin, STATIC_PATHS)) {
-    event.respondWith(caches.open(CACHE_NAME).then((cache) => cache.match(url.pathname)).then((response) => response || Response.error()))
+    event.respondWith(serveFromRelease(url.pathname))
     return
   }
   if (!cacheableRequest(request, self.location.origin, STATIC_PATHS)) return
-  event.respondWith(caches.open(CACHE_NAME).then((cache) => cache.match(url.pathname)).then((response) => response || Response.error()))
+  event.respondWith(serveFromRelease(url.pathname))
 })
 
 self.addEventListener('message', (event) => {

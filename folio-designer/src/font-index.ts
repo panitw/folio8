@@ -186,8 +186,18 @@ export const addableFamilyCount = webFamilies.length + catalogueFaces.length
  * THE ORDER IS PART OF THE CONTRACT, NOT A PRESENTATION DETAIL. The family
  * control groups this list under headings and caps only its tail; a caller that
  * trusts the heading over the order draws a heading it cannot fill. So the
- * guarantee is stated in one line: EVERY ROW SATISFYING `familyIsInstalled`
- * COMES BEFORE EVERY ROW THAT DOES NOT — exactly two runs, never four.
+ * guarantee is stated in one line: EVERY LOCAL AND STORED ROW COMES BEFORE
+ * EVERY WEB ROW — exactly two runs of TIER, never four.
+ *
+ * IT IS A CLAIM ABOUT TIER, AND SINCE spec-deferred-offline-cache STORY 2 THAT
+ * IS NO LONGER THE SAME CLAIM AS ONE ABOUT `familyIsInstalled`. The catalogue
+ * is deferred, so a `local` row may be a family this browser has not fetched
+ * and `familyIsInstalled` answers false for it — INTERLEAVED among local rows
+ * that are held, because this function does not know or consult the held set.
+ * That is correct: this module joins three lists and the family control is what
+ * FILTERS on installedness, dropping the unheld rows before it groups. Stating
+ * the invariant over `familyIsInstalled` would have been false the moment the
+ * catalogue was deferred, and only an all-held input would have hidden it.
  *
  * Local first is the honest order rather than a preference: those rows need no
  * network, and the join above has already removed their web duplicates, so a
@@ -298,18 +308,42 @@ export function offeredFamilies(query: string, storedListing: ReadonlyArray<Stor
  * "INSTALLED", read by the family control's fork and by the browser's row state
  * so the two cannot disagree (Story 16.5).
  *
- * TWO TIERS ARE INSTALLED AND ONE IS NOT, AND THE LINE IS "CAN THESE BYTES BE
- * HAD WITH NO NETWORK". The local tier ships inside the release behind the
- * service worker; the stored tier is what this designer fetched and kept. Only
- * a `web` row needs a download, so only a `web` row has anything to install.
+ * THE LINE IS, AND ALWAYS WAS, "CAN THESE BYTES BE HAD WITH NO NETWORK". What
+ * changed in spec-deferred-offline-cache story 2 is that the LOCAL TIER STOPPED
+ * ANSWERING THAT QUESTION BY ITS TIER ALONE. It used to: the release precached
+ * all 80 assets, so a catalogue face shipping inside the release was, by the
+ * time anything could ask, on this machine. The worker now precaches the core
+ * tier only and the 31 catalogue faces are deferred, so a family can ship in
+ * this release and still not be here — and `source.tier !== 'web'` would have
+ * gone on claiming it was, which is exactly the untruth CAP-4 names.
  *
- * IT IS DELIBERATELY NOT A FOURTH TIER. A tier says where a face's BYTES come
- * from, and install/embed separation did not add a byte source — it split what a
- * pick does. Reinterpreting `'stored'` to mean "installed" would have compiled
- * everywhere and changed nothing, which is exactly why the new state is stated
- * here and in `rowState` instead.
+ * SO THE HELD SET IS A REQUIRED ARGUMENT, NOT AN OPTIONAL ONE. A default of
+ * "assume held" would let a caller that has not done the read quietly get the
+ * old, wrong answer; making every call site pass it is what forced both
+ * surfaces — the family control's AVAILABLE LOCALLY group and the font
+ * browser's row state — to be looked at together. `readHeldLocalFamilies` in
+ * `held-local-faces.ts` is the read; this module stays a pure function of its
+ * inputs and opens no storage of its own.
+ *
+ * THE STORED TIER IS UNCONDITIONAL AND THE WEB TIER IS STILL NEVER INSTALLED.
+ * A stored face is in the machine store by definition — the listing it came from IS the
+ * evidence — and a web row has bytes nowhere on this machine at all.
+ *
+ * IT IS STILL DELIBERATELY NOT A FOURTH TIER. A tier says where a face's BYTES
+ * COME FROM; whether this browser has yet fetched them is a different axis, and
+ * it belongs in the argument rather than in the union.
  */
-export const familyIsInstalled = (source: FamilySource): boolean => source.tier !== 'web'
+export const familyIsInstalled = (source: FamilySource, heldLocalFamilies: ReadonlySet<string>): boolean => {
+  switch (source.tier) {
+    case 'local': return heldLocalFamilies.has(source.family)
+    case 'stored': return true
+    case 'web': return false
+    default: {
+      const unhandled: never = source
+      throw new Error(`a FamilySource tier nothing describes reached the installed predicate: ${String((unhandled as FamilySource).tier)}`)
+    }
+  }
+}
 
 /**
  * THE TIER A ROW IS OFFERED FROM, IN THE AUTHOR'S OWN TERMS — one exhaustive

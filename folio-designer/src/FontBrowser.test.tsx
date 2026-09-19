@@ -47,13 +47,18 @@ const sources: ReadonlyArray<FamilySource> = [
 ]
 
 const bytes = () => new Uint8Array([0, 1, 2, 3]).buffer
+// NO CATALOGUE FACE HELD. Every `sources` fixture in this file is a `web` or a
+// `stored` row, for neither of which the held set is consulted, so an empty one
+// is the honest default rather than a shortcut — see `font-index.test.ts` for
+// the local tier's own coverage of it.
+const NO_LOCAL_HELD: ReadonlySet<string> = new Set()
 
 type Overrides = Partial<Parameters<typeof FontBrowser>[0]>
 
 function open(overrides: Overrides = {}) {
   const onClose = vi.fn()
   const onAddFamily = vi.fn(async (source: FamilySource): Promise<string | undefined> => { void source; return undefined })
-  const result = render(<FontBrowser sources={sources} inTemplate={[]} previewBytes={async () => bytes()} onAddFamily={onAddFamily} storeKeepsFaces onClose={onClose} {...overrides} />)
+  const result = render(<FontBrowser sources={sources} inTemplate={[]} heldLocalFamilies={NO_LOCAL_HELD} previewBytes={async () => bytes()} onAddFamily={onAddFamily} storeKeepsFaces onClose={onClose} {...overrides} />)
   return { ...result, onClose, onAddFamily }
 }
 
@@ -445,7 +450,7 @@ describe('a browser that cannot keep typefaces says what confirming will do inst
 
     // THE OVER-BROADNESS CONTROL: with a working store none of it appears. A
     // dialog that warned unconditionally would pass every line above.
-    rerender(<FontBrowser sources={sources} inTemplate={[]} previewBytes={async () => bytes()} onAddFamily={vi.fn(async () => undefined)} storeKeepsFaces onClose={vi.fn()} />)
+    rerender(<FontBrowser sources={sources} inTemplate={[]} heldLocalFamilies={NO_LOCAL_HELD} previewBytes={async () => bytes()} onAddFamily={vi.fn(async () => undefined)} storeKeepsFaces onClose={vi.fn()} />)
     expect(screen.getByRole('button', { name: 'Install 2 on this machine' })).toBeInTheDocument()
     expect(screen.queryByText(/go straight into the document/)).toBeNull()
     expect(screen.queryByRole('button', { name: /will not keep fonts/ })).toBeNull()
@@ -468,7 +473,7 @@ describe('with no network the browser says so, and the faces this machine holds 
     // Offline: every web family fails to resolve; the stored one is on this
     // machine and resolves without a network.
     const offlineBytes = async (family: string) => family === 'Kanit' ? bytes() : undefined
-    render(<FontBrowser sources={[stored, ...sources]} inTemplate={[]} previewBytes={offlineBytes} onAddFamily={vi.fn(async () => undefined)} storeKeepsFaces onClose={vi.fn()} />)
+    render(<FontBrowser sources={[stored, ...sources]} inTemplate={[]} heldLocalFamilies={NO_LOCAL_HELD} previewBytes={offlineBytes} onAddFamily={vi.fn(async () => undefined)} storeKeepsFaces onClose={vi.fn()} />)
 
     // THE STORED FAMILY IS SET IN ITSELF, and that is the half that proves the
     // store is read rather than merely present.
@@ -498,7 +503,7 @@ describe('with no network the browser says so, and the faces this machine holds 
   it('reports the stored family as already here rather than offering to install it, while web rows stay stageable', async () => {
     installed = installStubFontSet()
     const onAddFamily = vi.fn(async (source: FamilySource): Promise<string | undefined> => { void source; return undefined })
-    render(<FontBrowser sources={[stored, ...sources]} inTemplate={[]} previewBytes={async (family) => family === 'Kanit' ? bytes() : undefined} onAddFamily={onAddFamily} storeKeepsFaces onClose={vi.fn()} />)
+    render(<FontBrowser sources={[stored, ...sources]} inTemplate={[]} heldLocalFamilies={NO_LOCAL_HELD} previewBytes={async (family) => family === 'Kanit' ? bytes() : undefined} onAddFamily={onAddFamily} storeKeepsFaces onClose={vi.fn()} />)
 
     const kanit = screen.getByLabelText(/Kanit/i, { selector: 'button.font-browser-add' })
     expect(kanit).toHaveAccessibleName('Kanit is already on this machine')

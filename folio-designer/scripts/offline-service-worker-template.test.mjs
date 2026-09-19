@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import vm from 'node:vm'
 import { isActivateRequest, isCacheableDocumentNavigation, isCacheableStaticRequest, isStatusRequest, isVersionRequest, serviceWorkerSource } from './offline-service-worker-template.mjs'
 
-const release = (id = 'a'.repeat(64), workerRevision = 'b'.repeat(64)) => ({ version: 2, id, pageId: 'c'.repeat(64), workerRevision, assets: [{ url: '/index.html', sha256: 'd'.repeat(64), immutable: false }, { url: '/assets/app-abc12345.js', sha256: 'e'.repeat(64), immutable: true }] })
+const release = (id = 'a'.repeat(64), workerRevision = 'b'.repeat(64)) => ({ version: 2, id, pageId: 'c'.repeat(64), workerRevision, assets: [{ url: '/index.html', sha256: 'd'.repeat(64), immutable: false, tier: 'core' }, { url: '/assets/app-abc12345.js', sha256: 'e'.repeat(64), immutable: true, tier: 'core' }] })
 const request = (overrides = {}) => ({ url: 'https://folio8.test/assets/app-abc12345.js', method: 'GET', credentials: 'omit', mode: 'cors', ...overrides })
 
 function workerHarness(workerRelease, options = {}) {
@@ -21,7 +21,7 @@ function workerHarness(workerRelease, options = {}) {
   const clients = { claim: async () => {}, matchAll: async () => options.windows ?? [] }
   const skipWaitingCalls = []
   const self = { location: { origin: 'https://folio8.test' }, addEventListener: (name, handler) => { handlers[name] = handler }, skipWaiting: () => { skipWaitingCalls.push(true) } }
-  vm.runInNewContext(serviceWorkerSource(workerRelease), { self, caches, clients, fetch: options.fetch ?? (async () => { throw new Error('network unavailable') }), crypto: globalThis.crypto, Response, URL, Set, Promise, Uint8Array })
+  vm.runInNewContext(serviceWorkerSource(workerRelease), { self, caches, clients, fetch: options.fetch ?? (async () => { throw new Error('network unavailable') }), crypto: globalThis.crypto, Response, URL, Set, Map, Promise, Uint8Array })
   return { handlers, cacheData, deleted, skipWaitingCalls }
 }
 
@@ -55,7 +55,7 @@ describe('service worker static policy', () => {
   it('serves a navigation to a precached documentation page from the release cache, and leaves other navigations alone', async () => {
     const guide = '/assets/rendering-library-0123456789abcdef0123.html'
     const base = release()
-    const workerRelease = { ...base, assets: [...base.assets, { url: guide, sha256: 'f'.repeat(64), immutable: true }] }
+    const workerRelease = { ...base, assets: [...base.assets, { url: guide, sha256: 'f'.repeat(64), immutable: true, tier: 'deferred' }] }
     const cached = { body: 'guide' }
     const index = { body: 'index' }
     const cacheData = new Map([[`folio8-release-${workerRelease.id}`, new Map([[guide, cached], ['/index.html', index]])]])
@@ -115,6 +115,68 @@ describe('service worker static policy', () => {
     retired.handlers.activate({ waitUntil: (promise) => { completion = promise } })
     await completion
     expect(cacheData.has(oldCache)).toBe(false)
+  })
+})
+
+// THE TIERED PRECACHE, EXECUTED (spec-deferred-offline-cache, story 2).
+//
+// Every other fixture in this file is all-`core`, so a worker that widened its
+// precache back to `RELEASE.assets` would pass all of them. These two cases are
+// the ones that can tell the difference: a release with a real deferred asset in
+// it, run through the emitted install and the emitted status answer.
+describe('the precache and the readiness answer are the core tier', () => {
+  const digest = async (bytes) => Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)), (byte) => byte.toString(16).padStart(2, '0')).join('')
+
+  // Bodies are real, so the emitted digest check is exercised rather than
+  // bypassed: a precache that fetched the right URLs and skipped verification
+  // would not survive this fixture.
+  const tieredRelease = async () => {
+    const parts = [['/index.html', 'core'], ['/assets/app-abc12345.js', 'core'], ['/assets/noto-sans-cjk.ttf', 'deferred'], ['/assets/catalogue-lora.ttf', 'deferred']]
+    const bodies = new Map()
+    const assets = []
+    for (const [url, tier] of parts) {
+      const bytes = new TextEncoder().encode(`bytes for ${url}`)
+      bodies.set(url, bytes)
+      assets.push({ url, sha256: await digest(bytes), immutable: url !== '/index.html', tier })
+    }
+    return { release: { version: 3, id: 'a'.repeat(64), pageId: 'c'.repeat(64), workerRevision: 'b'.repeat(64), assets }, bodies }
+  }
+
+  it('fetches every core asset at install and asks for no deferred asset at all', async () => {
+    const { release: tiered, bodies } = await tieredRelease()
+    const asked = []
+    const harness = workerHarness(tiered, { fetch: async (url) => { asked.push(url); return new Response(bodies.get(url)) } })
+    let completion
+    harness.handlers.install({ waitUntil: (promise) => { completion = promise } })
+    await completion
+
+    const core = tiered.assets.filter((asset) => asset.tier === 'core').map((asset) => asset.url)
+    const deferred = tiered.assets.filter((asset) => asset.tier === 'deferred').map((asset) => asset.url)
+    // NON-VACUITY: both tiers must have members, or "only core" is a claim about
+    // a release with one kind of asset in it.
+    expect(core.length).toBeGreaterThan(0)
+    expect(deferred.length).toBeGreaterThan(0)
+    expect([...asked].sort()).toEqual([...core].sort())
+    // AND THE CACHE HOLDS THE SAME SET, plus the completion marker. A deferred
+    // asset written here would be 7.96 MiB a first-time visitor waited for.
+    const stored = [...harness.cacheData.get(`folio8-release-${tiered.id}`).keys()]
+    expect(stored.sort()).toEqual([...core, `/__folio8-release__/${tiered.id}`].sort())
+  })
+
+  it('answers ready with the whole deferred tier absent from the cache', async () => {
+    const { release: tiered } = await tieredRelease()
+    const marker = `/__folio8-release__/${tiered.id}`
+    // Exactly the core tier and the marker: the state install leaves behind.
+    const held = new Map([[marker, { text: async () => tiered.id }], ...tiered.assets.filter((asset) => asset.tier === 'core').map((asset) => [asset.url, {}])])
+    for (const asset of tiered.assets) {
+      if (asset.tier === 'deferred') expect(held.has(asset.url), 'this case only measures anything while the deferred tier really is absent').toBe(false)
+    }
+    const harness = workerHarness(tiered, { cacheData: new Map([[`folio8-release-${tiered.id}`, held]]) })
+    const messages = []
+    let completion
+    harness.handlers.message({ data: { version: 1, type: 'get-offline-status' }, source: { postMessage: (message) => messages.push(message) }, waitUntil: (promise) => { completion = promise } })
+    await completion
+    expect(messages).toEqual([{ version: 1, type: 'offline-status', state: 'ready', releaseId: tiered.id, pageId: tiered.pageId }])
   })
 })
 

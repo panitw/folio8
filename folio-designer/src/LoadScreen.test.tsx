@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { LoadScreen } from './LoadScreen'
 import { formatMiB, type S1Payload, type S1Row } from './release-payload'
 
-const payload: S1Payload = { version: 1, releaseId: 'a'.repeat(64), pageId: 'b'.repeat(64), unit: 'MiB', decimals: 2, cachedBytes: 100, assetCount: 10, cacheAssets: ['/index.html', '/engine', '/latin', '/thai', '/cjk', '/a', '/b', '/c', '/d', '/e'].map((assetUrl) => ({ assetUrl, bytes: 10 })), rows: [
+const payload: S1Payload = { version: 1, releaseId: 'a'.repeat(64), pageId: 'b'.repeat(64), unit: 'MiB', decimals: 2, cachedBytes: 100, assetCount: 10, cacheAssets: ['/index.html', '/engine', '/latin', '/thai', '/cjk', '/a', '/b', '/c', '/d', '/e'].map((assetUrl) => ({ assetUrl, bytes: 10, tier: 'core' as const })), rows: [
   { id: 'engine', label: 'Engine', delivery: 'cached-asset', assetUrl: '/engine', bytes: 10, sha256: 'a'.repeat(64) }, { id: 'latin-font', label: 'Latin font', delivery: 'cached-asset', assetUrl: '/latin', bytes: 10, sha256: 'a'.repeat(64) }, { id: 'thai-font', label: 'Thai font', delivery: 'cached-asset', assetUrl: '/thai', bytes: 10, sha256: 'a'.repeat(64) }, { id: 'cjk-font', label: 'CJK font', delivery: 'cached-asset', assetUrl: '/cjk', bytes: 10, sha256: 'a'.repeat(64) }, { id: 'thai-dictionary', label: 'Thai dictionary', delivery: 'embedded-in-engine', assetUrl: '/engine', bytes: 5, sha256: 'a'.repeat(64) },
 ] }
 describe('honest first-run load screen', () => {
@@ -18,8 +18,54 @@ describe('honest first-run load screen', () => {
     render(<LoadScreen lifecycle={{ state: 'caching', cacheReady: false, verifiedAssetUrls: ['/engine', '/latin', '/thai', '/cjk', '/a', '/b', '/c', '/d', '/e'], activeAssetUrl: '/index.html' }} payload={payload} engineState="waiting" onRetry={vi.fn()} />)
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '90')
     expect(screen.getByLabelText('Offline payload manifest')).toHaveTextContent('✓')
-    expect(screen.getByText(/10 release assets/)).toBeInTheDocument()
+    expect(screen.getByText(/10 core release assets/)).toBeInTheDocument()
   })
+  // A MIXED-TIER RELEASE, WHICH IS THE ONLY SHAPE THAT MEASURES THE CHANGE
+  // (spec-deferred-offline-cache, story 2).
+  //
+  // Every other payload in this file is all-`core`, so `cachedBytes` and the
+  // core subtotal are the same number and a screen that went back to reading
+  // `payload.cachedBytes`/`payload.assetCount` would pass every one of them.
+  // Here the deferred half is 60% of the release, and the first assertion is
+  // that the two totals genuinely DIFFER — without it the rest of this case
+  // could quietly become another tautology.
+  it('counts and itemises the blocking set alone, with the deferred tier absent from both', () => {
+    const MiB = 1024 * 1024
+    const cacheAssets = [
+      { assetUrl: '/index.html', bytes: MiB, tier: 'core' as const },
+      { assetUrl: '/engine', bytes: MiB, tier: 'core' as const },
+      { assetUrl: '/latin', bytes: MiB, tier: 'core' as const },
+      { assetUrl: '/thai', bytes: MiB, tier: 'core' as const },
+      // The CJK face is the deferred tier's own witness: 4.72 MiB in the real
+      // release, and the row this screen must stop itemising.
+      { assetUrl: '/cjk', bytes: 5 * MiB, tier: 'deferred' as const },
+      { assetUrl: '/catalogue', bytes: MiB, tier: 'deferred' as const },
+    ]
+    const cachedBytes = cacheAssets.reduce((total, asset) => total + asset.bytes, 0)
+    const coreBytes = cacheAssets.filter((asset) => asset.tier === 'core').reduce((total, asset) => total + asset.bytes, 0)
+    expect(coreBytes, 'the two totals must differ or this case cannot tell the core denominator from the release one').not.toBe(cachedBytes)
+    const mixed: S1Payload = { ...payload, cachedBytes, assetCount: cacheAssets.length, cacheAssets }
+    render(<LoadScreen lifecycle={{ state: 'caching', cacheReady: false, verifiedAssetUrls: ['/engine'] }} payload={mixed} engineState="waiting" onRetry={vi.fn()} />)
+
+    // THE DENOMINATOR IS THE CORE SUBTOTAL, stated as the bar's own maximum and
+    // in the sentence beside it.
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuemax', String(coreBytes))
+    expect(screen.getByText(new RegExp(`of ${formatMiB(coreBytes)} verified`))).toBeInTheDocument()
+    expect(screen.queryByText(new RegExp(formatMiB(cachedBytes))), 'the release total is not what this screen is waiting for and must not be quoted').not.toBeInTheDocument()
+    // AND THE COUNT IS THE CORE COUNT, not the release's six.
+    expect(screen.getByText(/1 of 4 core release assets/)).toBeInTheDocument()
+
+    // THE LIST ITEMISES CORE ROWS ONLY (owner decision, 2026-09-19). The CJK row
+    // names a deferred asset, so it is gone — a row sitting at `— pending` for
+    // something nobody is fetching would tell the author to wait for what is
+    // not coming. The dictionary row reports the ENGINE's asset URL, so it
+    // stays by the same test rather than by an exception.
+    const manifest = screen.getByLabelText('Offline payload manifest')
+    expect(within(manifest).queryByText('CJK font')).not.toBeInTheDocument()
+    expect(within(manifest).getByText('Engine')).toBeInTheDocument()
+    expect(within(manifest).getByText('Thai dictionary')).toBeInTheDocument()
+  })
+
   // THE DISPLAYED TOTAL IS THE SUM OF `cacheAssets`, NEVER THE SUM OF `rows`
   // (Story 11.1, AC3, D-11.1.8).
   //
@@ -63,7 +109,7 @@ describe('honest first-run load screen', () => {
       // bytes live inside the engine asset already counted above.
       { id: 'thai-dictionary', label: 'Thai dictionary', delivery: 'embedded-in-engine', assetUrl: '/engine', bytes: 5 * MiB, sha256: 'a'.repeat(64) },
     ]
-    const cacheAssets = ['/index.html', '/engine', '/latin', '/thai', '/cjk', '/sans-bold', '/sans-italic', '/sans-bold-italic', '/thai-bold', '/roboto-bold', '/roboto-italic', '/roboto-bold-italic', '/spare'].map((assetUrl) => ({ assetUrl, bytes: MiB }))
+    const cacheAssets = ['/index.html', '/engine', '/latin', '/thai', '/cjk', '/sans-bold', '/sans-italic', '/sans-bold-italic', '/thai-bold', '/roboto-bold', '/roboto-italic', '/roboto-bold-italic', '/spare'].map((assetUrl) => ({ assetUrl, bytes: MiB, tier: 'core' as const }))
     const cachedBytes = cacheAssets.reduce((total, asset) => total + asset.bytes, 0)
     const rowBytes = rows.reduce((total, row) => total + row.bytes, 0)
     // NON-VACUITY: if the two sums agreed, every assertion below would pass over

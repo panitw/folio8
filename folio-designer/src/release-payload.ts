@@ -1,5 +1,20 @@
 export type S1Row = Readonly<{ id: 'engine' | 'latin-font' | 'thai-font' | 'cjk-font' | 'noto-sans-bold-font' | 'noto-sans-italic-font' | 'noto-sans-bold-italic-font' | 'noto-sans-thai-bold-font' | 'roboto-bold-font' | 'roboto-italic-font' | 'roboto-bold-italic-font' | 'thai-dictionary'; label: 'Engine' | 'Latin font' | 'Thai font' | 'CJK font' | 'Noto Sans Bold' | 'Noto Sans Italic' | 'Noto Sans Bold Italic' | 'Noto Sans Thai Bold' | 'Roboto Bold' | 'Roboto Italic' | 'Roboto Bold Italic' | 'Thai dictionary'; delivery: 'cached-asset' | 'embedded-in-engine'; assetUrl: string; bytes: number; sha256: string }>
-export type S1Payload = Readonly<{ version: 1; releaseId: string; pageId: string; unit: 'MiB'; decimals: 2; cachedBytes: number; assetCount: number; cacheAssets: readonly Readonly<{ assetUrl: string; bytes: number }>[]; rows: readonly S1Row[] }>
+// THE TIER TRAVELS WITH EVERY CACHE ASSET SINCE STORY 2 OF
+// spec-deferred-offline-cache. Story 1 stamped it into the manifest the WORKER
+// embeds and deliberately left this parser alone; the worker now precaches and
+// gates on the core tier, so without the tier HERE the page could not say what
+// `cacheReady` covers, could not count progress against the set actually being
+// waited for, and could not itemise the load screen's rows to it.
+export type S1CacheAsset = Readonly<{ assetUrl: string; bytes: number; tier: 'core' | 'deferred' }>
+export type S1Payload = Readonly<{ version: 1; releaseId: string; pageId: string; unit: 'MiB'; decimals: 2; cachedBytes: number; assetCount: number; cacheAssets: readonly S1CacheAsset[]; rows: readonly S1Row[] }>
+// THE BLOCKING SET, AS THE PAGE SEES IT — one derivation, read by the lifecycle
+// reducer and by the load screen, so the two cannot disagree about what is
+// being waited for. It is NOT a bound check: `coreCacheAssetFloor`/
+// `coreCacheAssetCeiling` pin the BUILD, and a page that rejected a payload for
+// carrying 28 core assets would refuse to start over a number the build has
+// already refused to emit.
+export const coreCacheAssets = (payload: S1Payload): readonly S1CacheAsset[] => payload.cacheAssets.filter((asset) => asset.tier === 'core')
+export const coreCachedBytes = (payload: S1Payload): number => coreCacheAssets(payload).reduce((total, asset) => total + asset.bytes, 0)
 // EVERY REJECTION CARRIES ITS OWN NAME. The bound and the fifteen unrelated shape
 // checks used to share one bare `undefined`, so "this release lists more assets
 // than the reader accepts" and "this is not a payload at all" were the same
@@ -12,6 +27,15 @@ export type S1PayloadRejection =
   | 'asset-count-over-maximum'
   | 'asset-count-under-minimum'
   | 'cache-assets-invalid'
+  // KEPT DISTINCT FROM `cache-assets-invalid` ON PURPOSE (story 2), AND NAMED
+  // FOR WHAT IT ACTUALLY CATCHES. The exact-key-count check above runs first, so
+  // an entry with NO tier key is a shape fault and rejects as
+  // `cache-assets-invalid`; what reaches this arm is an entry that carries a
+  // tier this reader does not recognise — a release emitted by a build whose
+  // tier vocabulary has moved. It was first written as
+  // `cache-asset-tier-missing`, which was a lie about its own trigger: nothing
+  // missing ever reaches it.
+  | 'cache-asset-tier-unrecognised'
   | 'cached-bytes-mismatch'
   | 'row-not-an-object'
   | 'row-shape'
@@ -138,7 +162,16 @@ export function parseS1Payload(value: unknown): S1PayloadResult {
   if (candidate.assetCount > maximumCacheAssets) return reject('asset-count-over-maximum')
   if (candidate.assetCount < minimumCacheAssets) return reject('asset-count-under-minimum')
   const cacheAssets = candidate.cacheAssets as unknown[]
-  if (new Set(cacheAssets.map((asset) => typeof asset === 'object' && asset ? (asset as Record<string, unknown>).assetUrl : undefined)).size !== candidate.assetCount || !cacheAssets.every((asset) => { const item = asset as Record<string, unknown>; return asset && typeof asset === 'object' && Object.keys(item).length === 2 && typeof item.assetUrl === 'string' && item.assetUrl.startsWith('/') && item.assetUrl.length <= 256 && typeof item.bytes === 'number' && Number.isSafeInteger(item.bytes) && item.bytes > 0 })) return reject('cache-assets-invalid')
+  // THE KEY COUNT MOVED 2 → 3 DELIBERATELY (story 2), and it is still an EXACT
+  // count rather than a minimum: an entry carrying a key this reader does not
+  // know about is a release this page does not understand, and reading it
+  // anyway is how a payload shape drifts without anyone noticing.
+  if (new Set(cacheAssets.map((asset) => typeof asset === 'object' && asset ? (asset as Record<string, unknown>).assetUrl : undefined)).size !== candidate.assetCount || !cacheAssets.every((asset) => { const item = asset as Record<string, unknown>; return asset && typeof asset === 'object' && Object.keys(item).length === 3 && typeof item.assetUrl === 'string' && item.assetUrl.startsWith('/') && item.assetUrl.length <= 256 && typeof item.bytes === 'number' && Number.isSafeInteger(item.bytes) && item.bytes > 0 })) return reject('cache-assets-invalid')
+  // ITS OWN ARM, REACHABLE BY ITS OWN CAUSE ALONE — the same argument the two
+  // bound rejections above are built on. The shape check has already
+  // established every entry is an object with exactly three keys, two of which
+  // it named; this is the third.
+  if (!cacheAssets.every((asset) => { const tier = (asset as Record<string, unknown>).tier; return tier === 'core' || tier === 'deferred' })) return reject('cache-asset-tier-unrecognised')
   if (cacheAssets.reduce<number>((total, asset) => total + (asset as { bytes: number }).bytes, 0) !== candidate.cachedBytes) return reject('cached-bytes-mismatch')
   const rows: S1Row[] = []
   for (let index = 0; index < ids.length; index++) {
@@ -166,7 +199,7 @@ export function parseS1Payload(value: unknown): S1PayloadResult {
   const dictionary = rows.find((row) => row.id === 'thai-dictionary')
   const engine = rows.find((row) => row.id === 'engine')
   if (cached.length !== ids.length - 1 || !dictionary || !engine || dictionary.delivery !== 'embedded-in-engine' || dictionary.assetUrl !== engine.assetUrl) return reject('row-delivery-composition')
-  return { ok: true, payload: { version: 1, releaseId: candidate.releaseId as string, pageId: candidate.pageId as string, unit: 'MiB', decimals: 2, cachedBytes: candidate.cachedBytes, assetCount: candidate.assetCount, cacheAssets: cacheAssets as { assetUrl: string; bytes: number }[], rows } }
+  return { ok: true, payload: { version: 1, releaseId: candidate.releaseId as string, pageId: candidate.pageId as string, unit: 'MiB', decimals: 2, cachedBytes: candidate.cachedBytes, assetCount: candidate.assetCount, cacheAssets: cacheAssets as S1CacheAsset[], rows } }
 }
 
 export function loadS1Payload(): S1PayloadResult {

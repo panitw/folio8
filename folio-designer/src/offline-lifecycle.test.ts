@@ -4,7 +4,7 @@ import type { S1Payload } from './release-payload'
 
 const release = 'a'.repeat(64)
 const page = 'b'.repeat(64)
-const payload: S1Payload = { version: 1, releaseId: release, pageId: page, unit: 'MiB', decimals: 2, cachedBytes: 100, assetCount: 10, cacheAssets: ['/index.html', '/assets/engine.wasm', '/assets/latin.ttf', '/assets/thai.ttf', '/assets/cjk.ttf', '/assets/a.js', '/assets/b.js', '/assets/c.js', '/assets/d.js', '/assets/e.js'].map((assetUrl) => ({ assetUrl, bytes: 10 })), rows: [
+const payload: S1Payload = { version: 1, releaseId: release, pageId: page, unit: 'MiB', decimals: 2, cachedBytes: 100, assetCount: 10, cacheAssets: ['/index.html', '/assets/engine.wasm', '/assets/latin.ttf', '/assets/thai.ttf', '/assets/cjk.ttf', '/assets/a.js', '/assets/b.js', '/assets/c.js', '/assets/d.js', '/assets/e.js'].map((assetUrl) => ({ assetUrl, bytes: 10, tier: 'core' as const })), rows: [
   { id: 'engine', label: 'Engine', delivery: 'cached-asset', assetUrl: '/assets/engine.wasm', bytes: 10, sha256: release },
   { id: 'latin-font', label: 'Latin font', delivery: 'cached-asset', assetUrl: '/assets/latin.ttf', bytes: 10, sha256: release },
   { id: 'thai-font', label: 'Thai font', delivery: 'cached-asset', assetUrl: '/assets/thai.ttf', bytes: 10, sha256: release },

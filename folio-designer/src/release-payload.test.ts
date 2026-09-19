@@ -9,7 +9,7 @@ const cacheAssets = ['/index.html', '/engine', '/latin', '/thai', '/cjk', ...Arr
 // fixture short of a row rejects as `payload-shape` and every case below would
 // then be asserting the wrong reason.
 const cachedRow = (id: string, label: string, assetUrl: string) => ({ id, label, delivery: 'cached-asset', assetUrl, bytes: 10, sha256: hash })
-const payload = () => ({ version: 1, releaseId: hash, pageId: 'b'.repeat(64), unit: 'MiB', decimals: 2, cachedBytes: 200, assetCount: 20, cacheAssets: cacheAssets.map((assetUrl) => ({ assetUrl, bytes: 10 })), rows: [
+const payload = () => ({ version: 1, releaseId: hash, pageId: 'b'.repeat(64), unit: 'MiB', decimals: 2, cachedBytes: 200, assetCount: 20, cacheAssets: cacheAssets.map((assetUrl, index) => ({ assetUrl, bytes: 10, tier: index < 5 ? 'core' : 'deferred' })), rows: [
   cachedRow('engine', 'Engine', '/engine'),
   cachedRow('latin-font', 'Latin font', '/latin'),
   cachedRow('thai-font', 'Thai font', '/thai'),
@@ -30,7 +30,7 @@ const payload = () => ({ version: 1, releaseId: hash, pageId: 'b'.repeat(64), un
 // instead of quietly satisfying a `not.toBe` somewhere.
 const reasonOf = (value: unknown): S1PayloadRejection | 'accepted' => { const result = parseS1Payload(value); return result.ok ? 'accepted' : result.reason }
 
-const overBound = () => { const over = payload(); over.assetCount = 91; over.cacheAssets = Array.from({ length: 91 }, (_, index) => ({ assetUrl: `/asset-${index}`, bytes: 10 })); over.cachedBytes = 910; return over }
+const overBound = () => { const over = payload(); over.assetCount = 91; over.cacheAssets = Array.from({ length: 91 }, (_, index) => ({ assetUrl: `/asset-${index}`, bytes: 10, tier: 'core' as const })); over.cachedBytes = 910; return over }
 const underBound = () => { const under = payload(); under.assetCount = 9; under.cacheAssets = under.cacheAssets.slice(0, 9); under.cachedBytes = 90; return under }
 const staleArithmetic = () => { const total = payload(); total.cachedBytes = 41; return total }
 // KEYED BY ID, LIKE THE ASSERTION IT FALSIFIES. `rows[4]` was the dictionary
@@ -39,9 +39,18 @@ const staleArithmetic = () => { const total = payload(); total.cachedBytes = 41;
 // wrong reason, which is a red proof that has stopped proving its own claim.
 const deliveryFiction = () => { const delivery = payload(); const dictionary = delivery.rows.find((row) => row.id === 'thai-dictionary'); if (!dictionary) throw new Error('the delivery-fiction fixture has no thai-dictionary row to mutate'); dictionary.delivery = 'cached-asset'; return delivery }
 const surplusField = () => ({ ...payload(), document: 'must-not-cross-boundary' })
+// THE TIER IS A THIRD KEY, AND ITS ABSENCE IS ITS OWN REASON (spec-deferred-
+// offline-cache, story 2). A release emitted before tiering, or by a build that
+// dropped the stamp, reaches the page as an entry the worker's readiness signal
+// no longer describes — and it must not be reported with the same word as a
+// malformed one, because the fix is different.
+const untieredCacheAsset = () => { const untiered = payload(); (untiered.cacheAssets[2] as { tier?: string }).tier = 'later'; return untiered }
+// Removing the key entirely is a SHAPE fault — two keys where three are
+// required — and is asserted separately so the two arms stay distinguishable.
+const cacheAssetMissingTier = () => { const missing = payload(); delete (missing.cacheAssets[2] as { tier?: string }).tier; return missing }
 const rowNotAnObject = () => { const rows = payload(); (rows.rows as unknown[])[2] = null; return rows }
 const rowMislabelled = () => { const rows = payload(); rows.rows[1].label = 'Engine'; return rows }
-const duplicateCacheAsset = () => { const duplicate = payload(); duplicate.cacheAssets[3] = { assetUrl: '/engine', bytes: 10 }; return duplicate }
+const duplicateCacheAsset = () => { const duplicate = payload(); duplicate.cacheAssets[3] = { assetUrl: '/engine', bytes: 10, tier: 'core' }; return duplicate }
 
 // Every rejecting input this file asserts, in one table, so the exclusivity claim
 // below is over the whole set rather than over whichever cases someone remembered.
@@ -53,6 +62,8 @@ const rejections: readonly (readonly [string, () => unknown, S1PayloadRejection]
   ['a payload over the release bound', overBound, 'asset-count-over-maximum'],
   ['a payload under the release floor', underBound, 'asset-count-under-minimum'],
   ['a duplicated cache asset', duplicateCacheAsset, 'cache-assets-invalid'],
+  ['a cache asset with no tier key at all', cacheAssetMissingTier, 'cache-assets-invalid'],
+  ['a cache asset naming a tier this reader does not know', untieredCacheAsset, 'cache-asset-tier-unrecognised'],
   ['stale cached-byte arithmetic', staleArithmetic, 'cached-bytes-mismatch'],
   ['a row that is not an object', rowNotAnObject, 'row-not-an-object'],
   ['a mislabelled row', rowMislabelled, 'row-shape'],
@@ -153,7 +164,7 @@ const readerRejections: readonly (readonly [string, () => S1PayloadResult, S1Pay
 
 // Exhaustive BY TYPE: a new member of S1PayloadRejection that no table above
 // drives is a typecheck failure here, not a silently uncovered reason.
-const declaredReasons: Readonly<Record<S1PayloadRejection, true>> = { 'not-an-object': true, 'payload-shape': true, 'asset-count-over-maximum': true, 'asset-count-under-minimum': true, 'cache-assets-invalid': true, 'cached-bytes-mismatch': true, 'row-not-an-object': true, 'row-shape': true, 'row-delivery-composition': true, 'no-bootstrap': true, 'malformed-json': true }
+const declaredReasons: Readonly<Record<S1PayloadRejection, true>> = { 'not-an-object': true, 'payload-shape': true, 'asset-count-over-maximum': true, 'asset-count-under-minimum': true, 'cache-assets-invalid': true, 'cached-bytes-mismatch': true, 'row-not-an-object': true, 'row-shape': true, 'row-delivery-composition': true, 'cache-asset-tier-unrecognised': true, 'no-bootstrap': true, 'malformed-json': true }
 
 describe("the decisions main.tsx makes about a result", () => {
   it('names the cause of every reader-level rejection too', () => {

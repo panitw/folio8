@@ -1486,3 +1486,6 @@ label.page-break-setting input[type="checkbox"] { width: 12px; min-height: 12px;
 .canvas-face-misses { list-style: none; margin: 0; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
 .canvas-face-misses li { display: flex; gap: 8px; align-items: flex-start; justify-content: space-between; padding: 8px 10px; border: var(--hairline) solid var(--color-edge); background: var(--color-raised); color: var(--color-ink-high); }
 .canvas-face-misses button { flex: none; min-height: 28px; }
+/* The list is the live region, so it stays in the DOM to be announced when a
+   row arrives; empty, it must take no space. */
+.canvas-face-misses:empty { padding: 0; }

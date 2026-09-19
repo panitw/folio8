@@ -38,6 +38,15 @@ type Props = Readonly<{
   sources: ReadonlyArray<FamilySource>
   /** The chains the document carries. A family here is `In template` and cannot be staged. */
   inTemplate: ReadonlyArray<string>
+  /**
+   * THE CATALOGUE FAMILIES THIS BROWSER ACTUALLY HOLDS
+   * (spec-deferred-offline-cache, story 2). The catalogue is deferred now, so
+   * a `local` row can be a family this machine has never fetched, and this
+   * dialog is the door through which it is fetched. The set is read by App and
+   * passed in for the same reason `sources` is: this modal joins and draws, it
+   * does not open storage.
+   */
+  heldLocalFamilies: ReadonlySet<string>
   /** The bytes a specimen is set in. Owned by the caller, because the tiers are. */
   previewBytes: PreviewFaceBytes
   /** THE SEAM. One call per staged family; resolves to a refusal sentence, or `undefined` when the family went in. */
@@ -54,7 +63,7 @@ type Props = Readonly<{
 
 type Refusal = Readonly<{ family: string; message: string }>
 
-export function FontBrowser({ sources, inTemplate, previewBytes, onAddFamily, storeKeepsFaces, onClose }: Props) {
+export function FontBrowser({ sources, inTemplate, heldLocalFamilies, previewBytes, onAddFamily, storeKeepsFaces, onClose }: Props) {
   const [filters, setFilters] = useState<BrowserFilters>(noFilters)
   const [sort, setSort] = useState<BrowserSort>('Trending')
   const [view, setView] = useState<BrowserView>('Row')
@@ -86,7 +95,13 @@ export function FontBrowser({ sources, inTemplate, previewBytes, onAddFamily, st
   // reads. It is derived from `rows` — the UNFILTERED set — for the same reason
   // `byFamily` is: filtering, sorting and paging must not change what a family's
   // relationship to this machine IS.
-  const installedFamilies = useMemo(() => rows.filter((row) => familyIsInstalled(row.source)).map((row) => row.family), [rows])
+  // SINCE STORY 2 OF spec-deferred-offline-cache IT ALSO DEPENDS ON WHAT THIS
+  // BROWSER HAS FETCHED, not on the tier alone — a catalogue family whose bytes
+  // are not here reads `addable`, and pressing Add pulls them. That is the
+  // point of routing it through the same predicate the family control uses: the
+  // face this dialog says is not yet here is exactly the one that control
+  // declines to offer.
+  const installedFamilies = useMemo(() => rows.filter((row) => familyIsInstalled(row.source, heldLocalFamilies)).map((row) => row.family), [rows, heldLocalFamilies])
 
   // THE REGISTRY'S LIFETIME IS THIS COMPONENT'S. It opens once, on mount, and
   // its release runs on unmount — so closing the modal removes every preview

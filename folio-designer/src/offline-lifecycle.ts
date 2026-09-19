@@ -1,6 +1,16 @@
-import type { S1Payload } from './release-payload'
+import { coreCacheAssets, type S1Payload } from './release-payload'
 
 export type OfflineLifecycleState = 'checking' | 'caching' | 'ready' | 'update-available' | 'unavailable' | 'dev-bypass'
+// `cacheReady` MEANS THE CORE TIER, AND MEANS NOTHING ABOUT THE DEFERRED ONE
+// (spec-deferred-offline-cache, story 2). It used to assert that every asset in
+// the release was cached and verified, because that is what the worker's
+// `offline-status: ready` asserted. The worker now precaches the core tier and
+// broadcasts `ready` over that; this flag is the page's copy of that claim and
+// nothing more. It is still exactly what `engineMayStart` gates on — the engine
+// carries its own embedded faces and needs no deferred asset to start — and it
+// is deliberately NOT readable as "this browser holds the CJK font", "…the
+// catalogue", or "…the bundled examples". Each of those is answered where it is
+// asked, by the asset being there or being fetched.
 export type OfflineLifecycle = Readonly<{ state: OfflineLifecycleState; cacheReady: boolean; verifiedAssetUrls: readonly string[]; activeAssetUrl?: string; failedAssetUrl?: string; failure?: 'timeout' | 'install' | 'unsupported'; pendingVersion?: string; mandatory?: boolean }>
 // `vite dev` serves unbundled mutable modules, so no content-addressed release
 // exists for the worker to verify. Development bypasses the offline gate
@@ -41,7 +51,13 @@ function identity(candidate: Record<string, unknown>): boolean { return candidat
 export function parseWorkerStatus(value: unknown): WorkerStatus | undefined { if (!value || typeof value !== 'object') return undefined; const candidate = value as Record<string, unknown>; return Object.keys(candidate).length === 5 && identity(candidate) && candidate.type === 'offline-status' && (candidate.state === 'ready' || candidate.state === 'unavailable') ? candidate as WorkerStatus : undefined }
 export function parseWorkerProgress(value: unknown): WorkerProgress | undefined { if (!value || typeof value !== 'object') return undefined; const candidate = value as Record<string, unknown>; return Object.keys(candidate).length === 6 && identity(candidate) && candidate.type === 'offline-progress' && (candidate.state === 'active' || candidate.state === 'verified' || candidate.state === 'failed') && (candidate.assetUrl === null || (typeof candidate.assetUrl === 'string' && candidate.assetUrl.startsWith('/') && candidate.assetUrl.length <= 256)) ? candidate as WorkerProgress : undefined }
 const matches = (event: WorkerStatus | WorkerProgress, payload: S1Payload) => event.releaseId === payload.releaseId && event.pageId === payload.pageId
-const known = (url: string, payload: S1Payload) => payload.cacheAssets.some((asset) => asset.assetUrl === url)
+// A PROGRESS EVENT IS KNOWN ONLY IF IT IS ABOUT THE BLOCKING SET (story 2). The
+// worker emits progress for core assets alone, so this narrowing changes no
+// behaviour against a worker of this release — it states the invariant the
+// screen depends on, so a deferred asset's URL can never enter
+// `verifiedAssetUrls` and be counted into a denominator that does not contain
+// it. An unknown URL stays the silent no-op it already was.
+const known = (url: string, payload: S1Payload) => coreCacheAssets(payload).some((asset) => asset.assetUrl === url)
 
 export function reduceOfflineLifecycle(previous: OfflineLifecycle, event: WorkerStatus | WorkerProgress | PendingRelease | 'checking' | 'update-available' | 'unavailable' | 'timeout', payload?: S1Payload): OfflineLifecycle {
   // A PENDING RELEASE NEVER CLEARS `cacheReady`. The release this tab is running

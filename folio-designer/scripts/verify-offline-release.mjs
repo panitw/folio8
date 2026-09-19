@@ -210,7 +210,63 @@ export function verifyOfflineRelease(outputDir = dist, { wasmWitness = false, re
   const sw = readFileSync(join(outputDir, 'sw.js'), 'utf8')
   const embedded = sw.match(/const RELEASE = (.+)\nconst CACHE_NAME/m)?.[1]
   if (!embedded || JSON.stringify(JSON.parse(embedded)) !== JSON.stringify(release)) fail('service worker and manifest release records differ')
+  // THE PRECACHE IS THE CORE TIER, PINNED AS TEXT
+  // (spec-deferred-offline-cache, story 2). The release-record comparison above
+  // proves the worker carries the right MANIFEST; it says nothing about the
+  // code that reads it, so a worker that precached `RELEASE.assets.slice(1)`,
+  // or filtered on the wrong tier, would pass every check in this file. These
+  // two lines are the derivation and the loop that consumes it, and they are
+  // pinned exactly. Red-proved as `precache-not-the-core-tier`.
+  const CORE_DERIVATION = "const CORE_ASSETS = RELEASE.assets.filter((asset) => asset.tier === 'core')"
+  const CORE_PRECACHE_LOOP = 'try { for (const [index, asset] of CORE_ASSETS.entries()) {'
+  const CORE_READINESS = 'return (await Promise.all(CORE_ASSETS.map((asset) => cache.match(asset.url)))).every(Boolean)'
+  // MATCHED AS WHOLE LINES, NOT AS SUBSTRINGS. `includes` would be satisfied by
+  // `…tier === 'core').slice(1)` — the derivation with an asset silently
+  // dropped off it, which is precisely the narrowing this pin exists to catch,
+  // and the red proof below manufactures exactly that.
+  const swLines = new Set(sw.split('\n').map((line) => line.trim()))
+  for (const [pin, what] of [[CORE_DERIVATION, 'derive its blocking set as exactly the core-tier assets of its own embedded release'], [CORE_PRECACHE_LOOP, 'precache that blocking set and no more'], [CORE_READINESS, 'report readiness over that blocking set and no more']]) {
+    if (!swLines.has(pin)) fail(`precache-not-the-core-tier: the emitted service worker must ${what}, spelled exactly \`${pin}\` on a line of its own, and it does not — a worker whose precache is not the core tier either blocks a first-time visitor on the whole release again or reports a release ready that it has not verified`)
+  }
+  // THE GENERIC-FALLBACK BAN, RE-EXPRESSED AS A WHITELIST OF ONE (story 2).
+  //
+  // It used to read `!sw.includes('cache.addAll') && !sw.includes('fetch(event.request)')`,
+  // which is a ban on two SPELLINGS. Story 2 gives the worker a legitimate
+  // network read — the on-demand deferred fetch — and a ban expressed as two
+  // absent substrings would have stopped matching without anyone re-deciding
+  // what is actually forbidden. So the rule now says the thing it always meant:
+  // THE WORKER MAKES EXACTLY ONE NETWORK READ, IT IS ADDRESSED BY MANIFEST ENTRY
+  // RATHER THAN BY REQUEST, AND ITS BYTES ARE DIGEST-CHECKED BEFORE THEY GO
+  // ANYWHERE. Every generic fallback — including the two old spellings, which
+  // would each be a SECOND read — fails this, and so does a deferred fetch that
+  // skips verification.
+  //
+  // THE VERIFIED BLOCK IS PINNED CONTIGUOUSLY, fetch through digest comparison,
+  // because a check that merely required both to be PRESENT would be satisfied
+  // by a worker that verified one asset and returned another unchecked.
+  // Red-proved as `unverified-network-read` and `deferred-fetch-unverified`.
+  const VERIFIED_READ_BLOCK = `  const response = await fetch(asset.url, { cache: 'reload', credentials: 'omit' })
+  if (!response.ok || response.type === 'opaque') throw new Error('offline asset missing')
+  const bytes = await response.clone().arrayBuffer()
+  const digest = await crypto.subtle.digest('SHA-256', bytes)
+  const actual = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('')
+  if (actual !== asset.sha256) throw new Error('offline asset integrity mismatch')`
+  const networkReads = sw.split('fetch(').length - 1
+  if (networkReads !== 1) fail(`unverified-network-read: the emitted service worker makes ${networkReads} network reads and it may make exactly one — the manifest-addressed, digest-verified read in \`fetchVerified\`. A second read is a generic fallback however it is spelled, and an offline-first release may not put bytes on the page that nothing checked`)
+  if (!sw.includes(VERIFIED_READ_BLOCK)) fail('deferred-fetch-unverified: the emitted service worker\'s single network read is not immediately followed by the digest comparison that admits its bytes, so a fetched asset could reach the page or the cache unverified')
+  // AND THE ON-DEMAND PATH IS RESTRICTED TO DEFERRED MANIFEST ENTRIES OF THIS
+  // RELEASE. The single verified read above is reachable from `completeCache`
+  // and from here; this is what keeps the second caller from being widened into
+  // "fetch whatever was asked for and hash it against nothing".
+  for (const pin of ["const DEFERRED_ASSETS = new Map(RELEASE.assets.filter((asset) => asset.tier === 'deferred')", 'const deferred = DEFERRED_ASSETS.get(pathname)', 'if (!deferred) return Response.error()']) {
+    if (!sw.includes(pin)) fail(`unrestricted-deferred-path: the emitted service worker must resolve an on-demand fetch through its own embedded deferred-tier manifest entries, spelled \`${pin}\`, and it does not`)
+  }
   for (const required of ["const CACHE_NAME = 'folio8-release-' + RELEASE.id", "credentials: 'omit'", 'url.origin === origin', 'paths.has(url.pathname)', 'RELEASE.pageId', 'windows.length === 0', 'offline asset integrity mismatch']) if (!sw.includes(required)) fail(`service worker lacks ${required}`)
+  // THE TWO OLD SPELLINGS, KEPT AS A NAMED BAN RATHER THAN LEFT TO THE COUNT
+  // ABOVE. The whitelist-of-one already refuses both — each is a second network
+  // read, or a read that is not the verified one — but the two names are what a
+  // reader greps for, and a guard that only refuses them by arithmetic is a
+  // guard the next author will not find.
   if (sw.includes('cache.addAll') || sw.includes('fetch(event.request)')) fail('service worker has a generic network fallback')
   // `skipWaiting` USED TO BE BANNED OUTRIGHT, and the ban is now a LEASH rather
   // than a wall: exactly one occurrence, in exactly the author-gated line below.
@@ -248,6 +304,23 @@ export function verifyOfflineRelease(outputDir = dist, { wasmWitness = false, re
   const semanticLabels = ['Engine', 'Latin font', 'Thai font', 'CJK font', 'Noto Sans Bold', 'Noto Sans Italic', 'Noto Sans Bold Italic', 'Noto Sans Thai Bold', 'Roboto Bold', 'Roboto Italic', 'Roboto Bold Italic', 'Thai dictionary']
   if (s1.rows.map((row) => row.label).join(',') !== semanticLabels.join(',') || s1.rows.some((row) => /cloud|download|account|sync/i.test(row.label))) fail('S1 semantic labels contain delivery fiction')
   if (s1.cacheAssets.length !== release.assets.length || new Set(s1.cacheAssets.map((asset) => asset.assetUrl)).size !== release.assets.length) fail('S1 cache assets are incomplete')
+  // THE PAGE AND THE WORKER MUST AGREE ABOUT EVERY ASSET'S TIER
+  // (spec-deferred-offline-cache, story 2). They read DIFFERENT records of it:
+  // the worker reads `release.assets[].tier` out of the manifest it embeds, the
+  // page reads `s1.cacheAssets[].tier` out of the bootstrap in index.html, and
+  // `generate-offline-release.mjs` stamps both. A disagreement is the one fault
+  // that produces a designer whose gate and whose progress screen are about
+  // different sets: the worker completing on 29 assets while the page counts a
+  // denominator of 80, or worse, a page reporting ready over a set the worker
+  // never waited for. Red-proved as `s1-tier-drift`.
+  //
+  // IT SITS BEFORE THE BYTE-LENGTH LOOP BELOW so it is reachable on its own
+  // message: a tier flipped in the bootstrap changes index.html's own length,
+  // which that loop would otherwise report first.
+  for (const asset of release.assets) {
+    const cacheAsset = s1.cacheAssets.find((candidate) => candidate.assetUrl === asset.url)
+    if (!cacheAsset || cacheAsset.tier !== asset.tier) fail(`s1-tier-drift: the page's S1 payload records ${JSON.stringify(cacheAsset?.tier)} as the tier of ${asset.url} and the manifest the worker embeds records ${JSON.stringify(asset.tier)} — the gate and the screen would be about different sets`)
+  }
   for (const asset of release.assets) {
     const cacheAsset = s1.cacheAssets.find((candidate) => candidate.assetUrl === asset.url)
     if (!cacheAsset || cacheAsset.bytes !== readFileSync(join(outputDir, asset.url.slice(1))).byteLength) fail(`S1 cache denominator is not the emitted release ${asset.url}`)
@@ -576,6 +649,64 @@ export function runRedProofs(baseline = verifyOfflineRelease()) {
     const dropped = firstTiered(release, 'core', 'core-asset-count-under-bound')
     release.assets = release.assets.filter((asset) => asset.url !== dropped.url)
   }, 'under the declared core minimum of')
+  // THE TIERED WORKER, PROVED BY BREAKING BOTH HALVES OF IT
+  // (spec-deferred-offline-cache, story 2). These mutate sw.js's CODE and leave
+  // the embedded RELEASE record alone, so the worker/manifest comparison cannot
+  // trip first and each proof reaches the guard it exists for.
+  const swProof = (name, mutate, expected) => redProof(name, (outputDir) => {
+    const worker = join(outputDir, 'sw.js')
+    const original = readFileSync(worker, 'utf8')
+    const mutated = mutate(original)
+    // A FALSIFIER THAT CANNOT FIND ITS SUBJECT PROVES NOTHING (D-11.1.16). An
+    // unchanged worker verifies green, which the harness would report as the
+    // guard having escaped — blaming the guard for the proof's own failure.
+    if (mutated === original) fail(`red proof ${name} could not locate the worker text it exists to mutate`)
+    writeFileSync(worker, mutated)
+    return () => writeFileSync(worker, original)
+  }, expected)
+  // A CORE ASSET LEFT OUT OF THE PRECACHE. The derivation still reads the core
+  // tier and still type-checks as a worker; it simply drops one of them, which
+  // is exactly the silent narrowing the text pin exists to refuse — a release
+  // that reports itself ready while an asset the designer cannot start without
+  // was never fetched.
+  swProof('precache-not-the-core-tier', (worker) => worker.replace("const CORE_ASSETS = RELEASE.assets.filter((asset) => asset.tier === 'core')", "const CORE_ASSETS = RELEASE.assets.filter((asset) => asset.tier === 'core').slice(1)"), 'precache-not-the-core-tier')
+  // A DEFERRED FETCH THAT SKIPS VERIFICATION, TWO WAYS.
+  //
+  // The first adds a SECOND network read on the deferred path — the shape a
+  // "just fetch it, it is only a font" widening actually takes — and the
+  // whitelist-of-one refuses it without having to recognise its spelling.
+  swProof('unverified-network-read', (worker) => worker.replace('  const deferred = DEFERRED_ASSETS.get(pathname)', '  const bypass = await fetch(pathname)\n  if (bypass.ok) return bypass\n  const deferred = DEFERRED_ASSETS.get(pathname)'), 'unverified-network-read')
+  // The second leaves ONE read and removes the digest comparison that admits
+  // its bytes. The contiguous block pin is what catches it; a check that merely
+  // required the mismatch string to be present somewhere would not, which is
+  // why this proof is separate from the count above.
+  swProof('deferred-fetch-unverified', (worker) => worker.replace("  if (actual !== asset.sha256) throw new Error('offline asset integrity mismatch')\n", ''), 'deferred-fetch-unverified')
+  // AND THE ON-DEMAND PATH WIDENED OFF THE MANIFEST. Removing the deferred
+  // lookup's refusal turns "serve a deferred entry of this release" into "serve
+  // whatever was asked for", which is the generic fallback wearing a new name.
+  swProof('unrestricted-deferred-path', (worker) => worker.replace('  if (!deferred) return Response.error()\n', ''), 'unrestricted-deferred-path')
+  // THE TWO RECORDS OF ONE TIER, PROVED BY PARTING THEM. Every other copy is
+  // moved with it — the worker's embedded release and the page's bootstrap —
+  // so the sw/manifest comparison and the bootstrap comparison both still pass
+  // and `s1-tier-drift` is the guard left standing.
+  redProof('s1-tier-drift', (outputDir) => {
+    const manifest = join(outputDir, 'offline-release-manifest.json')
+    const worker = join(outputDir, 'sw.js')
+    const index = join(outputDir, 'index.html')
+    const oldManifest = readFileSync(manifest)
+    const oldWorker = readFileSync(worker)
+    const oldIndex = readFileSync(index)
+    const release = readRelease(outputDir)
+    const core = release.s1.cacheAssets.find((asset) => asset.tier === 'core')
+    if (!core) fail('red proof s1-tier-drift could not find a core-tier S1 cache asset to mutate; a falsifier that cannot locate its subject proves nothing')
+    core.tier = 'deferred'
+    rewriteRelease(outputDir, release)
+    const bootstrap = /(<script id="folio8-release-bootstrap" type="application\/json">)[^<]*(<\/script>)/
+    const rewritten = oldIndex.toString().replace(bootstrap, (_, open, close) => `${open}${JSON.stringify({ s1: release.s1 })}${close}`)
+    if (rewritten === oldIndex.toString()) fail('red proof s1-tier-drift could not locate the page bootstrap it has to move in step')
+    writeFileSync(index, rewritten)
+    return () => { writeFileSync(manifest, oldManifest); writeFileSync(worker, oldWorker); writeFileSync(index, oldIndex) }
+  }, 's1-tier-drift')
   redProof('s1-cloud-label', (outputDir) => { const manifest = join(outputDir, 'offline-release-manifest.json'); const original = readFileSync(manifest); const release = JSON.parse(original); s1RowById(release, 'engine', 's1-cloud-label').label = 'Cloud download'; writeFileSync(manifest, JSON.stringify(release)); return () => writeFileSync(manifest, original) })
   redProof('s1-progress-denominator', (outputDir) => { const manifest = join(outputDir, 'offline-release-manifest.json'); const original = readFileSync(manifest); const release = JSON.parse(original); release.s1.cacheAssets.pop(); writeFileSync(manifest, JSON.stringify(release)); return () => writeFileSync(manifest, original) })
   redProof('s1-bootstrap-drift', (outputDir) => { const index = join(outputDir, 'index.html'); const original = readFileSync(index); writeFileSync(index, original.toString().replace('"releaseId":"', '"releaseId":"0')); return () => writeFileSync(index, original) })

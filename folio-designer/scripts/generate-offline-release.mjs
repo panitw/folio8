@@ -21,6 +21,16 @@ export function assertPinnedRuntime(version = process.version) {
   if (version !== RELEASE_RUNTIME) throw new Error(`offline release generation requires Node ${RELEASE_RUNTIME}; received ${version}`)
 }
 
+// THE ONE PLACE AN EMITTED URL BECOMES A TIER, and the one place an
+// unclassifiable asset stops the build. It is called from TWO loops now — the
+// S1 payload the page reads and the manifest the worker embeds — and a second
+// copy of the throw is how those two would come to disagree.
+function assetTier(url) {
+  const tier = classifyAssetTier(url)
+  if (!tier) throw new Error(`the emitted asset ${url} matches no tier rule in scripts/offline-release-contract.mjs, so nothing has decided whether a first-time visitor must wait for it. Classify it there — as \`core\` if the designer cannot be used without it, as \`deferred\` otherwise — rather than letting an unclassified asset default into the blocking set`)
+  return tier
+}
+
 export function generateOfflineRelease(outputDir = dist) {
   assertPinnedRuntime()
   if (!existsSync(join(outputDir, 'index.html'))) throw new Error('build output is required before offline release generation')
@@ -118,7 +128,18 @@ export function generateOfflineRelease(outputDir = dist) {
   ]
   const visibleBytes = rows.reduce((total, row) => total + row.bytes, 0)
   if (!rows.every((row) => Number.isSafeInteger(row.bytes) && row.bytes > 0)) throw new Error('S1 payload rows are incomplete')
-  const s1 = { version: 1, releaseId, pageId, unit: 'MiB', decimals: 2, cachedBytes: 0, assetCount: initialAssets.length, cacheAssets: initialAssets.map((asset) => ({ assetUrl: asset.url, bytes: statSync(join(outputDir, asset.url.slice(1))).size })), rows: [...rows, { id: 'thai-dictionary', label: 'Thai dictionary', delivery: 'embedded-in-engine', assetUrl: engine.url, bytes: thaiDictionary.byteLength, sha256: sha256(thaiDictionary) }] }
+  // THE TIER TRAVELS INTO THE PAGE'S OWN PAYLOAD, NOT ONLY INTO THE WORKER'S
+  // (spec-deferred-offline-cache, story 2). Story 1 stamped the tier onto the
+  // manifest assets, which is what the WORKER reads; the page reads `s1`, and
+  // without the tier here it can neither gate on the core set nor count
+  // progress against it — it would be back to "readiness means all 80 assets"
+  // with a worker that no longer means that.
+  //
+  // SAME CLASSIFIER, SAME THROW, one line further up the file. An asset no rule
+  // recognises stops the build here exactly as it does in the manifest loop
+  // below, rather than reaching the page as an untiered entry the parser would
+  // then have to invent a reading for.
+  const s1 = { version: 1, releaseId, pageId, unit: 'MiB', decimals: 2, cachedBytes: 0, assetCount: initialAssets.length, cacheAssets: initialAssets.map((asset) => ({ assetUrl: asset.url, bytes: statSync(join(outputDir, asset.url.slice(1))).size, tier: assetTier(asset.url) })), rows: [...rows, { id: 'thai-dictionary', label: 'Thai dictionary', delivery: 'embedded-in-engine', assetUrl: engine.url, bytes: thaiDictionary.byteLength, sha256: sha256(thaiDictionary) }] }
   const index = join(outputDir, 'index.html')
   // Regeneration is part of normal local verification. Strip our previous
   // generated bootstrap so a second build:offline run replaces it instead of
@@ -163,17 +184,14 @@ export function generateOfflineRelease(outputDir = dist) {
   // the build until somebody decides, in `offline-release-contract.mjs`, whether
   // a first-time visitor has to wait for it.
   //
-  // NOTHING ABOUT LOADING CHANGES HERE. The worker still precaches and gates on
-  // the whole release; this records WHICH assets that gate would still need if
-  // it were narrowed. `verify-offline-release.mjs` requires sw.js's embedded
+  // AND SINCE STORY 2 THIS FIELD IS LOAD-BEARING RATHER THAN MERELY RECORDED.
+  // The worker precaches the `core` assets and gates readiness on them, and
+  // serves a `deferred` asset from the cache when held or fetch-verifies it on
+  // first demand. `verify-offline-release.mjs` requires sw.js's embedded
   // `RELEASE` to byte-equal this manifest, so the tier reaches the worker with
   // no second write, and `releaseIdentity` hashes only `url` and `sha256`, so
   // adding the field cannot move `release.id` or `release.pageId`.
-  for (const asset of assets) {
-    const tier = classifyAssetTier(asset.url)
-    if (!tier) throw new Error(`the emitted asset ${asset.url} matches no tier rule in scripts/offline-release-contract.mjs, so nothing has decided whether a first-time visitor must wait for it. Classify it there — as \`core\` if the designer cannot be used without it, as \`deferred\` otherwise — rather than letting an unclassified asset default into the blocking set`)
-    asset.tier = tier
-  }
+  for (const asset of assets) asset.tier = assetTier(asset.url)
   // AND THE CATALOGUE'S SHARE OF IT, AS ONE NUMBER (AC5, D-8.4j.8). Story 8.4d
   // owns the threshold and sets it last against the finished weight; this story
   // RECORDS the weight and sets nothing. A subtotal spread over twenty-one rows
