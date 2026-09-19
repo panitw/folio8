@@ -27,7 +27,7 @@ the measured release passed some time ago.
     preview and render an ordinary Latin or Thai document are cached and verified — not once
     the whole release is.
   - **success:** With a cold cache, the designer is interactive after the core tier
-    (28 assets, 10.67 MiB — see `asset-tiers.md`) verifies and no later; the deferred tier is
+    (29 assets, 10.67 MiB — see `asset-tiers.md`) verifies and no later; the deferred tier is
     provably not requested during that first load.
 
 - **CAP-2 — Deferred assets are fetched the first time they are needed, then kept**
@@ -73,7 +73,7 @@ the measured release passed some time ago.
   stays whole and in the core tier; tiering roughly halves the first load and that is the win
   this change is scoped to deliver. This supersedes `spec-folio`'s "~9 MB first load".
 - **pdf.js and its cmaps are core.** Preview sits close enough to the primary workflow that
-  0.65 MiB does not justify a second refusal path through it.
+  its 0.76 MiB across eleven assets does not justify a second refusal path through it.
 - **Readiness means the core tier, and says so.** `cacheReady` today asserts all 80 assets
   verified and gates the engine on it. The replacement signal must assert the core tier and
   must not be readable as a claim that the deferred tier is present.
@@ -106,8 +106,8 @@ the measured release passed some time ago.
 ## Success signal
 
 A first-time visitor on a cold cache reaches an editable, previewable document after
-transferring 10.67 MiB instead of 18.63 MiB and verifying 28 assets instead of 80 — and a
-session that stays on Latin text never transfers the other 7.97 MiB at all. An author who has
+transferring 10.67 MiB instead of 18.63 MiB and verifying 29 assets instead of 80 — and a
+session that stays on Latin text never transfers the other 7.96 MiB at all. An author who has
 used the designer once still opens it, edits, previews and renders with the network
 disconnected, and is told precisely which asset is missing on the one occasion that is not true.
 

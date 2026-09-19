@@ -83,6 +83,49 @@ const warnCacheAssets = 82
 // A REFERENCE, never a second copy of the value: the `const` line stays the
 // single authority, and changing it changes this too.
 export const cacheAssetApproachWarning = warnCacheAssets
+
+// THE CORE TIER'S BOUND, AND IT IS A PIN RATHER THAN AN ENVELOPE
+// (spec-deferred-offline-cache story 1, owner decision 2026-09-19).
+//
+// `minimumCacheAssets`/`maximumCacheAssets` above bound the release TOTAL and
+// are unchanged. These two bound the BLOCKING SET: the assets a first-time
+// visitor must have before the designer can be used at all.
+// `scripts/offline-release-contract.mjs` classifies every emitted asset as
+// `core` or `deferred`, `scripts/generate-offline-release.mjs` stamps that into
+// the manifest, and `scripts/verify-offline-release.mjs` DERIVES these two
+// numbers from these lines and refuses a release outside them.
+//
+// BOTH ENDS ARE THE SAME NUMBER ON PURPOSE. Any growth OR shrinkage of the
+// blocking set fails the build until someone moves this number deliberately,
+// with a rationale comment of their own. Headroom was considered and rejected:
+// an unwatched number is precisely how the first load reached 18.63 MiB while
+// `spec-folio` still recorded it as "~9 MB". The coherence check in
+// `declaredCoreCacheAssetBounds` compares `>` and not `>=`, so an envelope with
+// equal ends is expressible and legal.
+//
+// 29 IS THE MEASURED BLOCKING SET. `asset-tiers.md` in the spec folder records
+// it as 29 assets / 10.67 MiB against a deferred tier of 51 / 7.96 MiB, under
+// its own "Corrected 2026-09-19" note: an earlier measurement counted
+// `/assets/pdf_thumbnail_view-<hash>.js` into the bundled-example group by its
+// `thumbnail` substring, and that 2.2 KiB pdf.js preview chunk is core —
+// SPEC.md puts pdf.js in the core tier. The correction moved only the COUNTS;
+// the MiB figures were right throughout, which is why the miscount survived as
+// long as it did. Whoever moves this number next: re-measure both tiers and
+// correct that companion in the same change, or the next reader inherits the
+// same mismatch.
+const minimumCoreCacheAssets = 29
+const maximumCoreCacheAssets = 29
+// EXPORTED FOR THE REASON `cacheAssetApproachWarning` IS, AND WITH THE SAME
+// OBLIGATION: nothing in `src/` reads the `const` lines above (they are shaped
+// for a text reader in another language), so without a consumer `noUnusedLocals`
+// would be the only thing holding them. `scripts/verify-offline-release.test.mjs`
+// asserts these equal `declaredCoreCacheAssetBounds()` — the values the regex
+// reader pulls out of this file's source text — which is what makes the
+// cross-language derivation a measurement rather than a convention.
+//
+// REFERENCES, never second copies: the `const` lines stay the single authority.
+export const coreCacheAssetFloor = minimumCoreCacheAssets
+export const coreCacheAssetCeiling = maximumCoreCacheAssets
 const reject = (reason: S1PayloadRejection): S1PayloadResult => ({ ok: false, reason })
 
 export function parseS1Payload(value: unknown): S1PayloadResult {

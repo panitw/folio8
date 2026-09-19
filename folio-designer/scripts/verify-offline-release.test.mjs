@@ -1,12 +1,12 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { declaredCacheAssetWarning } from './offline-release-contract.mjs'
+import { declaredCacheAssetWarning, declaredCoreCacheAssetBounds } from './offline-release-contract.mjs'
 import { documentationFontHostFinding, reportCacheAssetApproach, templateAssetFinding } from './verify-offline-release.mjs'
 import { FORBIDDEN_FONT_HOSTS } from './forbidden-font-hosts.mjs'
 // THE TYPESCRIPT DECLARATION ITSELF, IMPORTED AS A VALUE. See the tie below for
 // why this import is the point rather than a convenience.
-import { cacheAssetApproachWarning } from '../src/release-payload'
+import { cacheAssetApproachWarning, coreCacheAssetCeiling, coreCacheAssetFloor } from '../src/release-payload'
 
 // ---------------------------------------------------------------------------
 // THE CACHE-ASSET APPROACH WARNING, EXECUTED (Story 11.1, D-11.1.10).
@@ -150,5 +150,34 @@ describe('the offline release approach warning', () => {
     expect(source, 'the CLI must ask for the report on the branch that verifies the REAL dist').toContain('verifyOfflineRelease(dist, { wasmWitness, reportApproach: true })')
     expect(source, 'the option must default to OFF, so the two dozen red-proof calls over a mutated dist stay quiet without a latch').toContain('reportApproach = false')
     expect(source, 'a module-scope first-call latch is what let a red-proof fixture consume the one warning the real release was owed').not.toContain('approachWarningReported')
+  })
+})
+
+// ---------------------------------------------------------------------------
+// THE CORE TIER'S PIN, TIED THE SAME WAY (spec-deferred-offline-cache, story 1).
+//
+// `coreCacheAssetFloor` and `coreCacheAssetCeiling` exist for the reason
+// `cacheAssetApproachWarning` does: nothing in `src/` reads the two `const`
+// lines they reference, so without a real consumer the only thing holding them
+// would be `noUnusedLocals` — and a public symbol whose callers are nobody is a
+// symbol the next person deletes. These are that consumer, and they are the
+// only assertions in the repository that put the number the regex reader pulls
+// out of the file's SOURCE TEXT beside the value the module actually evaluates
+// to.
+// ---------------------------------------------------------------------------
+describe('the core cache-asset pin', () => {
+  it('reads the same two numbers the TypeScript module declares, text reader against evaluated values', () => {
+    const { minimumCoreCacheAssets, maximumCoreCacheAssets } = declaredCoreCacheAssetBounds()
+    expect(minimumCoreCacheAssets, 'scripts/offline-release-contract.mjs reads `minimumCoreCacheAssets` out of src/release-payload.ts as TEXT; this is the value that file actually evaluates to').toBe(coreCacheAssetFloor)
+    expect(maximumCoreCacheAssets, 'scripts/offline-release-contract.mjs reads `maximumCoreCacheAssets` out of src/release-payload.ts as TEXT; this is the value that file actually evaluates to').toBe(coreCacheAssetCeiling)
+  })
+
+  // THE PIN IS THE POINT. Owner decision, 2026-09-19: the core tier is pinned
+  // exactly rather than given headroom, so that growth AND shrinkage of the
+  // blocking set both fail the build. Headroom reintroduced by a later edit
+  // would leave every other assertion here green while the guard stopped
+  // guarding one of the two directions.
+  it('is declared as an exact pin rather than an envelope with headroom', () => {
+    expect(coreCacheAssetFloor, 'both ends equal is what makes any movement of the blocking set fail the build').toBe(coreCacheAssetCeiling)
   })
 })

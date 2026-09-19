@@ -9,7 +9,7 @@ import { assertPinnedRuntime, generateOfflineRelease } from './generate-offline-
 import { assertNoVCSStamp, buildEngineWasm } from './wasm-vcs-stamp.mjs'
 import { FORBIDDEN_FONT_HOSTS } from './forbidden-font-hosts.mjs'
 import { exampleIds } from './build-examples.mjs'
-import { RELEASE_RUNTIME, declaredCacheAssetBounds, declaredCacheAssetWarning, isCatalogueAssetUrl, pageIdentity, parseAppVersion, releaseIdentity, sha256 } from './offline-release-contract.mjs'
+import { ASSET_TIERS, DOCUMENTATION_STEMS, RELEASE_RUNTIME, classifyAssetTier, declaredCacheAssetBounds, declaredCacheAssetWarning, declaredCoreCacheAssetBounds, isCatalogueAssetUrl, pageIdentity, parseAppVersion, releaseIdentity, sha256 } from './offline-release-contract.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const dist = join(root, 'dist')
@@ -136,6 +136,42 @@ export function verifyOfflineRelease(outputDir = dist, { wasmWitness = false, re
   // the CLI's real-release call asks for it, and a fixture cannot consume it
   // because a fixture never requests it.
   if (reportApproach) reportCacheAssetApproach(release.assets.length)
+  // THE TIERING, ENFORCED WHERE A RELEASE IS STILL REFUSABLE
+  // (spec-deferred-offline-cache, story 1).
+  //
+  // IT SITS HERE, immediately after the release-total bound and BEFORE the
+  // manifest/output set comparison, for the reason that bound sits where it
+  // does: a release manufactured with a wrong tier necessarily survives none of
+  // the digest, Brotli and identity loops further down, so a tier check placed
+  // after any of them could never be red-proved on its own message.
+  //
+  // THREE DISTINCT FAULTS, THREE DISTINCT MESSAGES. An asset carrying no tier
+  // is a rule that has not been extended; an asset carrying the WRONG tier is a
+  // manifest that no longer describes what the rule decided; and a core count
+  // outside the declared pin is the blocking set moving without anyone saying
+  // so. Red-proved as `untiered-asset`, `asset-tier-drift`,
+  // `core-asset-count-over-bound` and `core-asset-count-under-bound`.
+  for (const asset of release.assets) {
+    // ONE RENDERING OF THE TIER IN BOTH MESSAGES. A deleted field and the string
+    // `'undefined'` are different faults, and `JSON.stringify` is what keeps
+    // them from reading identically in a build log.
+    const recorded = JSON.stringify(asset.tier)
+    if (!ASSET_TIERS.includes(asset.tier)) fail(`untiered-asset: ${asset.url} records ${recorded} as its tier, and a release asset must record one of ${ASSET_TIERS.map((tier) => JSON.stringify(tier)).join(' or ')} — an untiered asset is one nobody has decided a first-time visitor must wait for`)
+    // THE CLASSIFIER'S OWN THROW IS A VERIFICATION FAILURE TOO, and it goes out
+    // through `fail` so it carries this file's prefix rather than escaping as a
+    // bare Error a build log would not attribute to the release verifier.
+    let classified
+    try { classified = classifyAssetTier(asset.url) } catch (error) { fail(`asset-tier-rules: ${error.message}`) }
+    if (asset.tier !== classified) fail(`asset-tier-drift: ${asset.url} records tier ${recorded} and the build-time rule in scripts/offline-release-contract.mjs classifies it ${JSON.stringify(classified)}`)
+  }
+  // THE PIN, DERIVED FROM src/release-payload.ts AND NEVER RE-TYPED. `npm run
+  // build` runs this verifier and never Vitest, so a second copy of the number
+  // here would leave a drifted build green — the same argument the release-total
+  // bound above is built on.
+  const { minimumCoreCacheAssets, maximumCoreCacheAssets } = declaredCoreCacheAssetBounds()
+  const coreAssetCount = release.assets.filter((asset) => asset.tier === 'core').length
+  if (coreAssetCount > maximumCoreCacheAssets) fail(`release carries ${coreAssetCount} core-tier cache assets, over the declared core maximum of ${maximumCoreCacheAssets} — the blocking set a first-time visitor waits for has grown, and \`maximumCoreCacheAssets\` in src/release-payload.ts is the deliberate act that admits it`)
+  if (coreAssetCount < minimumCoreCacheAssets) fail(`release carries ${coreAssetCount} core-tier cache assets, under the declared core minimum of ${minimumCoreCacheAssets} — an asset the designer needs before it can start has left the blocking set, and \`minimumCoreCacheAssets\` in src/release-payload.ts is the deliberate act that admits it`)
   const outputUrls = runtimeOutputUrls(outputDir)
   if (!sameSet(manifestUrls, outputUrls)) fail('manifest and production runtime output are not an exact set')
   if (!manifestUrls.has('/index.html')) fail('navigation entry is absent')
@@ -150,7 +186,7 @@ export function verifyOfflineRelease(outputDir = dist, { wasmWitness = false, re
   // report are each one precached, content-addressed page, and every link
   // between them names a page this release actually carries — a link left at
   // its canonical `docs/` name would be a dead link offline.
-  const documentationStems = ['rendering-library', 'folio-js', 'folio-dotnet', 'folio-format', 'expression-reference', 'performance']
+  const documentationStems = DOCUMENTATION_STEMS
   for (const stem of documentationStems) {
     const pages = release.assets.filter((asset) => new RegExp(`^/assets/${stem}-[a-f0-9]{20}\\.html$`).test(asset.url))
     if (pages.length !== 1 || !pages[0].immutable) fail(`missing precached documentation page ${stem} (found ${pages.length})`)
@@ -496,6 +532,50 @@ export function runRedProofs(baseline = verifyOfflineRelease()) {
     rewriteRelease(outputDir, release)
     return () => { writeFileSync(manifest, oldManifest); writeFileSync(worker, oldWorker) }
   }, 'under the declared minimum of')
+  // THE TIERING, PROVED BY BREAKING IT THREE WAYS AND THE PIN TWO MORE
+  // (spec-deferred-offline-cache, story 1). All five follow the
+  // `asset-count-*-bound` shape: `rewriteRelease` writes BOTH the manifest and
+  // the worker and recomputes the identities, so neither the sw/manifest
+  // comparison nor the identity checks can trip first, and `expected` holds each
+  // proof to its own guard's message rather than to any failure at all.
+  const tierProof = (name, mutate, expected) => redProof(name, (outputDir) => {
+    const manifest = join(outputDir, 'offline-release-manifest.json')
+    const worker = join(outputDir, 'sw.js')
+    const oldManifest = readFileSync(manifest)
+    const oldWorker = readFileSync(worker)
+    const release = readRelease(outputDir)
+    mutate(release)
+    rewriteRelease(outputDir, release)
+    return () => { writeFileSync(manifest, oldManifest); writeFileSync(worker, oldWorker) }
+  }, expected)
+  // A FALSIFIER MUST FIND ITS SUBJECT OR FAIL LOUDLY (D-11.1.16, applied to
+  // tiers). A mutation applied to `undefined` throws a TypeError the harness
+  // would report as the guard having gone red — a red proof passing for the
+  // wrong reason.
+  const firstTiered = (release, tier, proof) => {
+    const asset = release.assets.find((candidate) => candidate.tier === tier)
+    if (!asset) fail(`red proof ${proof} could not find the '${tier}'-tier asset it exists to mutate; a falsifier that cannot locate its subject proves nothing`)
+    return asset
+  }
+  tierProof('untiered-asset', (release) => { delete firstTiered(release, 'core', 'untiered-asset').tier }, 'untiered-asset')
+  // Flipping a core asset to `deferred` also drops the core count below the pin.
+  // The drift check runs FIRST and `expected` holds this proof to it, so the two
+  // guards stay separately provable rather than one shadowing the other.
+  tierProof('asset-tier-drift', (release) => { firstTiered(release, 'core', 'asset-tier-drift').tier = 'deferred' }, 'asset-tier-drift')
+  tierProof('core-asset-count-over-bound', (release) => {
+    const { maximumCoreCacheAssets } = declaredCoreCacheAssetBounds()
+    // The added assets are classified `core` by the real rule and record that,
+    // so the drift check above passes and the PIN is the only guard left.
+    while (release.assets.filter((asset) => asset.tier === 'core').length <= maximumCoreCacheAssets) {
+      const url = `/assets/over-core-bound-${release.assets.length}-0123456789ab.js`
+      if (classifyAssetTier(url) !== 'core') fail(`red proof core-asset-count-over-bound manufactured ${url}, which the tier rule does not classify as core, so it would prove the wrong guard`)
+      release.assets.push({ url, sha256: '0'.repeat(64), immutable: true, brotliBytes: 1, tier: 'core' })
+    }
+  }, 'over the declared core maximum of')
+  tierProof('core-asset-count-under-bound', (release) => {
+    const dropped = firstTiered(release, 'core', 'core-asset-count-under-bound')
+    release.assets = release.assets.filter((asset) => asset.url !== dropped.url)
+  }, 'under the declared core minimum of')
   redProof('s1-cloud-label', (outputDir) => { const manifest = join(outputDir, 'offline-release-manifest.json'); const original = readFileSync(manifest); const release = JSON.parse(original); s1RowById(release, 'engine', 's1-cloud-label').label = 'Cloud download'; writeFileSync(manifest, JSON.stringify(release)); return () => writeFileSync(manifest, original) })
   redProof('s1-progress-denominator', (outputDir) => { const manifest = join(outputDir, 'offline-release-manifest.json'); const original = readFileSync(manifest); const release = JSON.parse(original); release.s1.cacheAssets.pop(); writeFileSync(manifest, JSON.stringify(release)); return () => writeFileSync(manifest, original) })
   redProof('s1-bootstrap-drift', (outputDir) => { const index = join(outputDir, 'index.html'); const original = readFileSync(index); writeFileSync(index, original.toString().replace('"releaseId":"', '"releaseId":"0')); return () => writeFileSync(index, original) })

@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync 
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { serviceWorkerSource } from './offline-service-worker-template.mjs'
-import { RELEASE_RUNTIME, isCatalogueAssetUrl, normalizePublicPath, pageIdentity, readAppVersion, releaseIdentity, sha256 } from './offline-release-contract.mjs'
+import { RELEASE_RUNTIME, classifyAssetTier, isCatalogueAssetUrl, normalizePublicPath, pageIdentity, readAppVersion, releaseIdentity, sha256 } from './offline-release-contract.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const dist = join(root, 'dist')
@@ -154,6 +154,25 @@ export function generateOfflineRelease(outputDir = dist) {
     const bytes = brotliSidecarBytes.get(asset.url)
     if (!Number.isSafeInteger(bytes) || bytes <= 0) throw new Error(`no Brotli sidecar size was recorded for immutable asset ${asset.url}`)
     asset.brotliBytes = bytes
+  }
+  // AND EVERY ASSET CARRIES THE TIER IT IS FETCHED IN
+  // (spec-deferred-offline-cache, story 1). Same shape as the Brotli loop above,
+  // and for the same reason: an asset the rule cannot classify THROWS rather
+  // than defaulting. A default would be silent, and an unwatched blocking set is
+  // exactly how the first load reached 18.63 MiB — so a new asset class stops
+  // the build until somebody decides, in `offline-release-contract.mjs`, whether
+  // a first-time visitor has to wait for it.
+  //
+  // NOTHING ABOUT LOADING CHANGES HERE. The worker still precaches and gates on
+  // the whole release; this records WHICH assets that gate would still need if
+  // it were narrowed. `verify-offline-release.mjs` requires sw.js's embedded
+  // `RELEASE` to byte-equal this manifest, so the tier reaches the worker with
+  // no second write, and `releaseIdentity` hashes only `url` and `sha256`, so
+  // adding the field cannot move `release.id` or `release.pageId`.
+  for (const asset of assets) {
+    const tier = classifyAssetTier(asset.url)
+    if (!tier) throw new Error(`the emitted asset ${asset.url} matches no tier rule in scripts/offline-release-contract.mjs, so nothing has decided whether a first-time visitor must wait for it. Classify it there — as \`core\` if the designer cannot be used without it, as \`deferred\` otherwise — rather than letting an unclassified asset default into the blocking set`)
+    asset.tier = tier
   }
   // AND THE CATALOGUE'S SHARE OF IT, AS ONE NUMBER (AC5, D-8.4j.8). Story 8.4d
   // owns the threshold and sets it last against the finished weight; this story

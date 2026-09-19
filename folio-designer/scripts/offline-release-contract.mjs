@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { exampleIds } from './build-examples.mjs'
 
 export const RELEASE_RUNTIME = 'v24.16.0'
 
@@ -16,6 +17,93 @@ export const sha256 = (bytes) => createHash('sha256').update(bytes).digest('hex'
 // the cache-asset bound below is DERIVED rather than re-typed.
 export const CATALOGUE_ASSET_PREFIX = 'catalogue-'
 export const isCatalogueAssetUrl = (url) => new RegExp(String.raw`^/assets/${CATALOGUE_ASSET_PREFIX}[a-z0-9]+\.[a-f0-9]{20}-[A-Za-z0-9_-]+\.ttf$`).test(url)
+
+// THE ONE SPELLING OF "WHEN IS THIS ASSET FETCHED" (spec-deferred-offline-cache,
+// story 1). Every emitted asset belongs to exactly one tier: `core` is the set a
+// first-time visitor must have before the designer can be used at all, and
+// `deferred` is everything an author pays for only when they reach for it.
+//
+// IT LIVES HERE, BESIDE `isCatalogueAssetUrl`, FOR THE SAME REASON THAT DOES:
+// `generate-offline-release.mjs` stamps the tier into the manifest and
+// `verify-offline-release.mjs` refuses a release whose tiers have drifted, and a
+// second copy of the rule is a copy that drifts. Story 1 changes NOTHING about
+// loading — the worker still precaches and gates on the whole release — so this
+// is a declaration and a guard, not yet a behaviour.
+export const ASSET_TIERS = ['core', 'deferred']
+
+// THE RULES MATCH IDENTITIES, NOT FILENAME SHAPES, and they are mutually
+// exclusive: `classifyAssetTier` refuses a URL that reaches two of them at all.
+// Shape alone is not enough in either direction. `build-wasm.mjs` fingerprints
+// EVERY emitted file as `<stem>.<20 hex>-<vite hash>.<ext>`, so a rule keyed on
+// that shape plus an extension would sweep an unrelated `.json`, `.png` or
+// `.html` into the deferred tier and stop blocking on it without anyone
+// deciding; and a lookahead that stopped one exact stem would let a sibling
+// (`noto-sans-cjk-sc`) into the blocking set the same way. The drift guard in
+// `verify-offline-release.mjs` cannot backstop either mistake, because it calls
+// this same classifier — so an asset no rule RECOGNISES must fall through to
+// `undefined` and stop the build.
+const CJK_FONT_STEM = 'noto-sans-cjk'
+const contentAddressed = String.raw`[a-f0-9]{20}-[A-Za-z0-9_-]+`
+// The stem and every face cut of it: `noto-sans-cjk.`, `noto-sans-cjk-bold.`,
+// `noto-sans-cjk-sc.`. A boundary of `.` OR `-` is what makes the exclusion in
+// the core font rule below cover the whole family rather than one file.
+const cjkFamily = String.raw`${CJK_FONT_STEM}(?:-[a-z0-9-]+)?`
+const CJK_FONT_ASSET = new RegExp(String.raw`^/assets/${cjkFamily}\.${contentAddressed}\.ttf$`)
+// THE BUNDLED TEMPLATES BY NAME. `exampleIds` is the same list
+// `build-examples.mjs` builds from and `verify-offline-release.mjs` already
+// checks the release against, plus the starter `build-wasm.mjs` emits. Naming
+// them is what keeps this rule off `/assets/font-index.<hash>.json`,
+// `/assets/logo.<hash>.png` and `/assets/pdf_thumbnail_view-<hash>.js` — the
+// last of which is a pdf.js preview chunk whose filename contains `thumbnail`
+// and which is core.
+const BUNDLED_TEMPLATE_STEMS = ['starter', ...exampleIds]
+const BUNDLED_EXAMPLE_ASSET = new RegExp(String.raw`^/assets/(?:${BUNDLED_TEMPLATE_STEMS.join('|')})\.(?:${contentAddressed}\.folio|sample\.${contentAddressed}\.json|thumbnail\.${contentAddressed}\.png)$`)
+// THE PRECACHED DOCUMENTATION PAGES BY NAME, and this is the one authority for
+// that list: `verify-offline-release.mjs` imports it rather than re-typing it,
+// for the same reason the cache-asset bound is derived rather than re-typed.
+export const DOCUMENTATION_STEMS = ['rendering-library', 'folio-js', 'folio-dotnet', 'folio-format', 'expression-reference', 'performance']
+const BUNDLED_DOCUMENTATION_ASSET = new RegExp(String.raw`^/assets/(?:${DOCUMENTATION_STEMS.join('|')})-[a-f0-9]{20}\.html$`)
+const ENGINE_WASM_ASSET = new RegExp(String.raw`^/assets/folio8-engine\.${contentAddressed}\.wasm$`)
+// index-*.js, index-*.css, pdf-*.js, pdf.worker-*.mjs, pdf_thumbnail_view-*.js,
+// engine.worker-*.js and wasm-exec.<digest>-*.js: everything Vite emits as a
+// fingerprinted script or stylesheet.
+const APP_BUNDLE_ASSET = /^\/assets\/[A-Za-z0-9_.-]+-[A-Za-z0-9_-]{8,}\.(?:js|mjs|css)$/
+// The designer's own UI faces and the document faces an ordinary Latin or Thai
+// document declares — every fingerprinted `.ttf` that is neither a catalogue
+// face nor part of the CJK family.
+const SHELL_OR_DOCUMENT_FONT_ASSET = new RegExp(String.raw`^/assets/(?!${CATALOGUE_ASSET_PREFIX}|${CJK_FONT_STEM}[.-])[a-z0-9-]+\.${contentAddressed}\.ttf$`)
+// pdf.js ships its CMaps and standard fonts as whole directories fingerprinted
+// once, so the files inside them are not individually content-addressed.
+const PDFJS_COLLECTION_ASSET = /^\/assets\/pdfjs-(?:cmaps|standard-fonts)-[a-f0-9]{20}\/[A-Za-z0-9_-]+\.(?:bcmap|ttf)$/
+
+export const ASSET_TIER_RULES = [
+  { name: 'catalogue face', tier: 'deferred', matches: isCatalogueAssetUrl },
+  { name: 'CJK font', tier: 'deferred', matches: (url) => CJK_FONT_ASSET.test(url) },
+  { name: 'bundled example', tier: 'deferred', matches: (url) => BUNDLED_EXAMPLE_ASSET.test(url) },
+  { name: 'bundled documentation page', tier: 'deferred', matches: (url) => BUNDLED_DOCUMENTATION_ASSET.test(url) },
+  { name: 'navigation shell', tier: 'core', matches: (url) => url === '/index.html' },
+  { name: 'engine wasm', tier: 'core', matches: (url) => ENGINE_WASM_ASSET.test(url) },
+  { name: 'application bundle', tier: 'core', matches: (url) => APP_BUNDLE_ASSET.test(url) },
+  { name: 'shell or document font', tier: 'core', matches: (url) => SHELL_OR_DOCUMENT_FONT_ASSET.test(url) },
+  { name: 'pdf.js collection', tier: 'core', matches: (url) => PDFJS_COLLECTION_ASSET.test(url) },
+]
+
+// `undefined` MEANS UNCLASSIFIED, AND UNCLASSIFIED IS A BUILD FAILURE at the
+// caller — never a default. Defaulting an unknown asset to `core` would be safe
+// at runtime but silent, and silence in exactly this place is what let the first
+// load grow unnoticed; defaulting to `deferred` would be worse, because an asset
+// the designer needs would stop blocking without anyone deciding that.
+export function classifyAssetTier(url, rules = ASSET_TIER_RULES) {
+  const matched = rules.filter((rule) => rule.matches(url))
+  // OVERLAP IS A FAULT IN THE RULES, EVEN WHEN THE TWO AGREE. Two rules of the
+  // same tier matching one URL is a rule nobody can reason about any more, and
+  // the next widening of either one is what turns that into a disagreement. The
+  // `rules` parameter is injectable for the same reason the bound readers take
+  // a source string: this throw is unreachable from the real table, and a guard
+  // no test can execute is a guard nobody has seen work.
+  if (matched.length > 1) throw new Error(`asset ${url} reaches ${matched.length} tier rules — ${matched.map((rule) => `${rule.name} (${rule.tier})`).join(', ')} — and the rules are written to be mutually exclusive, so overlap is a fault in the rules rather than in the release`)
+  return matched[0]?.tier
+}
 
 export function normalizePublicPath(value) {
   return `/${value.replaceAll('\\', '/').replace(/^\/+/, '')}`
@@ -106,6 +194,28 @@ export function declaredCacheAssetBounds(source, label = source === undefined ? 
   // when the fault is in this declaration. Say which it is, here, once.
   if (minimumCacheAssets > maximumCacheAssets) throw new Error(`${label} declares an inverted cache-asset envelope: \`minimumCacheAssets\` is ${minimumCacheAssets} and \`maximumCacheAssets\` is ${maximumCacheAssets}, so no release can satisfy both and the fault is in the declaration rather than in any release`)
   return { minimumCacheAssets, maximumCacheAssets }
+}
+
+// THE CORE TIER'S OWN ENVELOPE, READ THROUGH THE SAME LINE-ANCHORED READER, AND
+// A SEPARATE EXPORT FOR THE REASON `declaredCacheAssetWarning` IS ONE: the shape
+// `declaredCacheAssetBounds` returns is asserted by exact equality in
+// `offline-release-contract.test.mjs`, and its failure cases are driven with
+// two-constant fixture strings, so widening it would make every one of those
+// fixtures throw for a reason that has nothing to do with the case under test.
+//
+// `minimumCacheAssets`/`maximumCacheAssets` keep bounding the release TOTAL,
+// unchanged. These two bound the BLOCKING SET — the assets a first-time visitor
+// must have before the designer is usable — which is the number that decides
+// what a first load costs.
+export function declaredCoreCacheAssetBounds(source, label = source === undefined ? 'src/release-payload.ts' : 'the injected release-payload source') {
+  const text = source === undefined ? readFileSync(releasePayloadSource, 'utf8') : source
+  const minimumCoreCacheAssets = readDeclaredConstant(text, 'minimumCoreCacheAssets', label)
+  const maximumCoreCacheAssets = readDeclaredConstant(text, 'maximumCoreCacheAssets', label)
+  // Same fault, same voice as the release-total envelope above: an inverted
+  // declaration would fail every release with a message blaming the RELEASE for
+  // the wrong number of core assets, when the fault is in the declaration.
+  if (minimumCoreCacheAssets > maximumCoreCacheAssets) throw new Error(`${label} declares an inverted core cache-asset envelope: \`minimumCoreCacheAssets\` is ${minimumCoreCacheAssets} and \`maximumCoreCacheAssets\` is ${maximumCoreCacheAssets}, so no release can satisfy both and the fault is in the declaration rather than in any release`)
+  return { minimumCoreCacheAssets, maximumCoreCacheAssets }
 }
 
 // THE APP VERSION, AND THE ONE RULE THAT MAKES AN UPGRADE MANDATORY.
