@@ -4,7 +4,7 @@ using System.Security.Cryptography;
 
 /// <summary>
 /// A CONSUMER, not a test. It knows nothing about this repository: it has a
-/// PackageReference on folio-dotnet, it pastes the README's first-PDF snippet,
+/// PackageReference on folio8, it pastes the README's first-PDF snippet,
 /// and it prints what it got. Everything it proves — that the right native
 /// loaded for this process shape, that the shipped faces arrived, and that the
 /// bytes are the corpus's — is decided by run-consumers.ps1 comparing this

@@ -2,12 +2,14 @@
 
   <!--
     ============================================================
-    folio-dotnet: the .NET Framework delivery of the native library.
+    folio8 (.NET): the .NET Framework delivery of the native library.
     ============================================================
 
     NuGet imports this file automatically, in every project that references
-    the folio-dotnet package, because it is `build/<package id>.targets`. The
-    consumer authors nothing.
+    the `folio8` package, because it is packed as `build/<package id>.targets`
+    — `build/folio8.targets`. The file keeps the repository directory's name
+    here; only its packed path has to match the package id. The consumer
+    authors nothing.
 
     WHY IT EXISTS. The package carries its two Windows natives in the RID
     layout — runtimes/win-x86/native/ and runtimes/win-x64/native/ — which is
@@ -62,7 +64,7 @@
   -->
   <Target Name="FolioVerifyNativeAssets" BeforeTargets="Build" Condition="'$(TargetFrameworkIdentifier)' == '.NETFramework'">
     <Error Condition="!Exists('$(_FolioNativeRoot)win-x64/native/folio8_native.dll') OR !Exists('$(_FolioNativeRoot)win-x86/native/folio8_native.dll')"
-           Text="folio-dotnet: the package's native libraries were not found under $(_FolioNativeRoot). Both runtimes/win-x64/native/folio8_native.dll and runtimes/win-x86/native/folio8_native.dll must be present — a .NET Framework project is AnyCPU by default and may run at either bitness, so folio-dotnet stages both and chooses at load time. Restore the folio-dotnet package again; if it is still absent the package is damaged." />
+           Text="folio8: the package's native libraries were not found under $(_FolioNativeRoot). Both runtimes/win-x64/native/folio8_native.dll and runtimes/win-x86/native/folio8_native.dll must be present — a .NET Framework project is AnyCPU by default and may run at either bitness, so folio8 stages both and chooses at load time. Restore the folio8 package again; if it is still absent the package is damaged." />
   </Target>
 
 </Project>

@@ -53,7 +53,7 @@ async function boot(onExit: () => void): Promise<Host> {
   const runtime = new URL('../wasm/', import.meta.url)
   await import(new URL('wasm_exec.js', runtime).href)
   const Go = (globalThis as { Go?: GoConstructor }).Go
-  if (!Go) throw new Error('folio-js: wasm_exec.js did not define Go')
+  if (!Go) throw new Error('folio8: wasm_exec.js did not define Go')
   const go = new Go()
   const { instance } = await (globalThis as unknown as { WebAssembly: WasmApi }).WebAssembly.instantiate(await readFile(new URL('folio8-render.wasm', runtime)), go.importObject)
   const global = globalThis as { Folio8RenderHost?: Host }
@@ -63,7 +63,7 @@ async function boot(onExit: () => void): Promise<Host> {
   // engine is gone.
   go.run(instance).then(onExit, onExit)
   const registered = global.Folio8RenderHost
-  if (!registered) throw new Error('folio-js: the folio8 render engine did not register')
+  if (!registered) throw new Error('folio8: the render engine did not register')
   return registered
 }
 
@@ -72,7 +72,7 @@ export function unwrap(reply: HostReply): Envelope & { bytes?: Uint8Array } {
   const envelope = JSON.parse(reply.envelope) as Envelope
   if (!envelope.ok) {
     if (envelope.error?.diagnostic) throw new FolioRenderError(envelope.error.diagnostic)
-    throw new Error(envelope.error?.message ?? 'folio-js: the engine failed without a message')
+    throw new Error(envelope.error?.message ?? 'folio8: the engine failed without a message')
   }
   return { ...envelope, bytes: reply.bytes }
 }

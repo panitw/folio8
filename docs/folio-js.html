@@ -301,7 +301,7 @@
           <p class="eyebrow">FOLIO8 · Client libraries</p>
 <!-- twin:begin -->
           <h1 id="folio-js">folio-js</h1>
-          <p class="standfirst"><code>folio-js</code> is the folio8 engine for Node. It turns a <code>.folio</code> template, JSON data and runtime parameters into PDF bytes in process, with the engine itself — compiled to WebAssembly — doing the rendering. There is no service to run, no binary to shell out to and no rendering logic written in JavaScript.</p>
+          <p class="standfirst">folio-js is the folio8 engine for Node, published to npm as <code>folio8</code>. It turns a <code>.folio</code> template, JSON data and runtime parameters into PDF bytes in process, with the engine itself — compiled to WebAssembly — doing the rendering. There is no service to run, no binary to shell out to and no rendering logic written in JavaScript.</p>
           <p>The same template, data, params and font set produce the same bytes here as under the Go library, the <code>folio8</code> command-line tool and the designer's preview. That is a tested property rather than a claim: the package renders the fixture corpus and compares SHA-256 against the committed expected hashes on every supported Node version.</p>
           <p><strong>Every entry point is a promise.</strong> The engine runs on Go's <code>js/wasm</code> target, so <code>parseTemplate</code>, <code>loadTemplate</code>, <code>render</code>, <code>renderTo</code>, <code>validate</code> and <code>parameterReferences</code> all resolve rather than return, and are written with <code>await</code>. Go's synchronous shape is what a Go caller wants; this is what a Node caller wants, because it keeps a large render offloadable to a worker thread.</p>
           <p>Three companion references hold the rules this guide does not repeat: <a href="folio-format.html">the <code>.folio</code> format</a> is every field of a template, <a href="expression-reference.html">expressions</a> is the syntax inside the double braces, and <a href="rendering-library.html">the rendering library guide</a> covers the same engine from Go, including the shared <a href="rendering-library.html#diagnostic-codes">diagnostic code registry</a>. <a href="folio-dotnet.html">folio-dotnet</a> is this same library for .NET.</p>
@@ -311,7 +311,7 @@
 <!-- body -->
   <section id="install">
     <h2>Install</h2>
-    <div class="sample"><pre data-lang="shell"><span class="tk-fn">npm</span> install folio-js</pre></div>
+    <div class="sample"><pre data-lang="shell"><span class="tk-fn">npm</span> install folio8</pre></div>
     <p>Nothing else is needed. No Go, no C compiler, no build step, and no network access after the install: the prebuilt WebAssembly engine and all eleven shipped font faces travel inside the package, and the package declares no dependencies of its own.</p>
     <h3 id="the-node-version-floor">The Node version floor</h3>
     <p><strong>Node 22.12 is the floor.</strong> That is the version <code>engines.node</code> declares, and it is also the lowest version the corpus is rendered on in continuous integration. A test holds the two equal, so the supported range and the tested range cannot drift apart.</p>
@@ -319,11 +319,11 @@
 
     <h3 id="esm-and-require-from-commonjs">ESM, and <code>require</code> from CommonJS</h3>
     <p><strong>The package is ESM only.</strong> It publishes <code>import</code> entry points and no CommonJS build:</p>
-    <div class="sample"><pre data-lang="js"><span class="tk-kw">import</span> <span class="tk-punc">{</span> loadTemplate<span class="tk-punc">,</span> render <span class="tk-punc">}</span> <span class="tk-kw">from</span> <span class="tk-str">'folio-js'</span>
-<span class="tk-kw">import</span> <span class="tk-punc">{</span> shipped <span class="tk-punc">}</span> <span class="tk-kw">from</span> <span class="tk-str">'folio-js/fonts'</span></pre></div>
+    <div class="sample"><pre data-lang="js"><span class="tk-kw">import</span> <span class="tk-punc">{</span> loadTemplate<span class="tk-punc">,</span> render <span class="tk-punc">}</span> <span class="tk-kw">from</span> <span class="tk-str">'folio8'</span>
+<span class="tk-kw">import</span> <span class="tk-punc">{</span> shipped <span class="tk-punc">}</span> <span class="tk-kw">from</span> <span class="tk-str">'folio8/fonts'</span></pre></div>
     <p>A CommonJS caller on Node 22.12 or newer reaches the same exports through <code>require</code>, which Node resolves with its support for requiring an ES module. There is no separate CommonJS entry point to name, and nothing in the package is reachable any other way:</p>
-    <div class="sample"><pre data-lang="js"><span class="tk-kw">const</span> <span class="tk-punc">{</span> loadTemplate<span class="tk-punc">,</span> render <span class="tk-punc">}</span> <span class="tk-punc">=</span> <span class="tk-fn">require</span><span class="tk-punc">(</span><span class="tk-str">'folio-js'</span><span class="tk-punc">)</span>
-<span class="tk-kw">const</span> <span class="tk-punc">{</span> shipped <span class="tk-punc">}</span> <span class="tk-punc">=</span> <span class="tk-fn">require</span><span class="tk-punc">(</span><span class="tk-str">'folio-js/fonts'</span><span class="tk-punc">)</span></pre></div>
+    <div class="sample"><pre data-lang="js"><span class="tk-kw">const</span> <span class="tk-punc">{</span> loadTemplate<span class="tk-punc">,</span> render <span class="tk-punc">}</span> <span class="tk-punc">=</span> <span class="tk-fn">require</span><span class="tk-punc">(</span><span class="tk-str">'folio8'</span><span class="tk-punc">)</span>
+<span class="tk-kw">const</span> <span class="tk-punc">{</span> shipped <span class="tk-punc">}</span> <span class="tk-punc">=</span> <span class="tk-fn">require</span><span class="tk-punc">(</span><span class="tk-str">'folio8/fonts'</span><span class="tk-punc">)</span></pre></div>
     <h3 id="node-only">Node only</h3>
     <p>Node is the only target. There is no browser build and no bundler build, which is a scope choice rather than a technical limit — the designer runs this same engine in a browser worker.</p>
   </section>
@@ -332,8 +332,8 @@
     <h2>Your first PDF</h2>
     <p>Put a template at <code>invoice.folio</code> and its data at <code>invoice.json</code>, then:</p>
     <div class="sample"><pre data-lang="js"><span class="tk-kw">import</span> { readFile, writeFile } <span class="tk-kw">from</span> <span class="tk-str">'node:fs/promises'</span>
-<span class="tk-kw">import</span> { loadTemplate, render } <span class="tk-kw">from</span> <span class="tk-str">'folio-js'</span>
-<span class="tk-kw">import</span> { shipped } <span class="tk-kw">from</span> <span class="tk-str">'folio-js/fonts'</span>
+<span class="tk-kw">import</span> { loadTemplate, render } <span class="tk-kw">from</span> <span class="tk-str">'folio8'</span>
+<span class="tk-kw">import</span> { shipped } <span class="tk-kw">from</span> <span class="tk-str">'folio8/fonts'</span>
 
 <span class="tk-kw">const</span> template = <span class="tk-kw">await</span> <span class="tk-fn">loadTemplate</span>(<span class="tk-str">'invoice.folio'</span>)
 <span class="tk-kw">const</span> data = JSON.<span class="tk-fn">parse</span>(<span class="tk-kw">await</span> <span class="tk-fn">readFile</span>(<span class="tk-str">'invoice.json'</span>, <span class="tk-str">'utf8'</span>))
@@ -353,8 +353,8 @@
     <h3 id="passing-params">Passing params</h3>
     <p>Params are the runtime values that are not report data — a run date, a branch code, a report title. They live in their own namespace, which a template reads as <code>params.branchCode</code>, and they can never be shadowed by report data. <code>documentDate</code> is the one reserved name: a template that prints a document date reads it from params, because nothing in the library reads the clock.</p>
     <p>Build the object, hand it over as the third argument, and ask the template which names it wants:</p>
-    <div class="sample"><pre data-lang="js"><span class="tk-kw">import</span> <span class="tk-punc">{</span> loadTemplate<span class="tk-punc">,</span> parameterReferences<span class="tk-punc">,</span> render <span class="tk-punc">}</span> <span class="tk-kw">from</span> <span class="tk-str">'folio-js'</span>
-<span class="tk-kw">import</span> <span class="tk-punc">{</span> shipped <span class="tk-punc">}</span> <span class="tk-kw">from</span> <span class="tk-str">'folio-js/fonts'</span>
+    <div class="sample"><pre data-lang="js"><span class="tk-kw">import</span> <span class="tk-punc">{</span> loadTemplate<span class="tk-punc">,</span> parameterReferences<span class="tk-punc">,</span> render <span class="tk-punc">}</span> <span class="tk-kw">from</span> <span class="tk-str">'folio8'</span>
+<span class="tk-kw">import</span> <span class="tk-punc">{</span> shipped <span class="tk-punc">}</span> <span class="tk-kw">from</span> <span class="tk-str">'folio8/fonts'</span>
 
 <span class="tk-kw">const</span> template <span class="tk-punc">=</span> <span class="tk-kw">await</span> <span class="tk-fn">loadTemplate</span><span class="tk-punc">(</span><span class="tk-str">'statement.folio'</span><span class="tk-punc">)</span>
 console.<span class="tk-fn">log</span><span class="tk-punc">(</span><span class="tk-kw">await</span> <span class="tk-fn">parameterReferences</span><span class="tk-punc">(</span>template<span class="tk-punc">))</span>
@@ -387,7 +387,7 @@ console.<span class="tk-fn">log</span><span class="tk-punc">(</span><span class=
     <p><strong>A warning reaches <code>diagnostics</code>; an error is thrown.</strong> A successful render never carries a diagnostic of severity error, and a thrown error never appears in <code>diagnostics</code> — the same split Go makes between <code>Result.Diagnostics</code> and a <code>RenderError</code>. The <code>diagnostics</code> array is always present, and empty rather than absent when nothing went wrong.</p>
     <p><strong><code>code</code> is the contract and <code>message</code> is not.</strong> Codes are additive: once shipped, a code's string and its meaning never change. Message text is prose for a person to read, matches the Go library's word for word for the same condition, and carries no promise beyond that.</p>
     <p>A rejection the engine raised as a known document condition is a <code>FolioRenderError</code> carrying the <code>Diagnostic</code> that caused it. Everything else — a value that is not a template, data that will not serialise, a stream that failed — rejects with an ordinary <code>TypeError</code> or <code>Error</code>:</p>
-    <div class="sample"><pre data-lang="js"><span class="tk-kw">import</span> <span class="tk-punc">{</span> FolioRenderError<span class="tk-punc">,</span> render <span class="tk-punc">}</span> <span class="tk-kw">from</span> <span class="tk-str">'folio-js'</span>
+    <div class="sample"><pre data-lang="js"><span class="tk-kw">import</span> <span class="tk-punc">{</span> FolioRenderError<span class="tk-punc">,</span> render <span class="tk-punc">}</span> <span class="tk-kw">from</span> <span class="tk-str">'folio8'</span>
 
 <span class="tk-kw">try</span> <span class="tk-punc">{</span>
   <span class="tk-kw">const</span> <span class="tk-punc">{</span> bytes<span class="tk-punc">,</span> diagnostics <span class="tk-punc">}</span> <span class="tk-punc">=</span> <span class="tk-kw">await</span> <span class="tk-fn">render</span><span class="tk-punc">(</span>template<span class="tk-punc">,</span> data<span class="tk-punc">,</span> params<span class="tk-punc">,</span> fonts<span class="tk-punc">)</span>
@@ -408,7 +408,7 @@ console.<span class="tk-fn">log</span><span class="tk-punc">(</span><span class=
 
   <section id="api-reference">
     <h2>API reference</h2>
-    <p>Six functions and <code>version</code> come from <code>folio-js</code>; <code>shipped</code> comes from <code>folio-js/fonts</code>. Everything else named here is a type, and TypeScript declarations for all of it ship with the package.</p>
+    <p>Six functions and <code>version</code> come from <code>folio8</code>; <code>shipped</code> comes from <code>folio8/fonts</code>. Everything else named here is a type, and TypeScript declarations for all of it ship with the package.</p>
 
     <h3 id="rendering-and-validation">Rendering and validation</h3>
 
@@ -445,7 +445,7 @@ console.<span class="tk-fn">log</span><span class="tk-punc">(</span><span class=
     <h4>shipped</h4>
     <div class="sample"><pre data-lang="ts"><span class="tk-fn">shipped</span>(): <span class="tk-type">Promise</span>&lt;<span class="tk-type">FontSet</span>&gt;</pre></div>
     <p>The eleven faces Go's <code>fonts.Shipped</code> returns, read from the files inside the package: Roboto and Noto Sans in regular, bold, italic and bold italic, Noto Sans Thai in regular and bold, and Noto Sans SC. Keys and bytes are the engine's own, so a document rendered from this set here and from <code>fonts.Shipped</code> in Go produces identical PDF bytes.</p>
-    <p>It is imported from the <code>folio-js/fonts</code> entry point rather than from the package root, so a caller who supplies their own faces never pays for reading these.</p>
+    <p>It is imported from the <code>folio8/fonts</code> entry point rather than from the package root, so a caller who supplies their own faces never pays for reading these.</p>
     <p>These are the keys, and a template's font chain must name one of them verbatim — the engine never derives <code>Roboto Bold</code> from <code>Roboto</code>:</p>
     <div class="tablewrap">
       <table>

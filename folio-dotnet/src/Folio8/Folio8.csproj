@@ -16,7 +16,7 @@
     No PackageReference. Ever: a third-party runtime dependency on this
     assembly is out of scope by decision, not by accident. That is also why
     the package below declares no dependency group content of its own —
-    `dotnet add package folio-dotnet` brings exactly one assembly, two native
+    `dotnet add package folio8` brings exactly one assembly, two native
     libraries and eleven font faces, and nothing else.
   -->
   <PropertyGroup>
@@ -43,10 +43,12 @@
   <!--
     PACKAGE IDENTITY.
 
-    The id is `folio-dotnet` while the assembly stays `Folio8.dll`: the
-    package is how you install it, the assembly is what the call site names.
-    Version 1.0.0 is folio-dotnet's OWN release line, independent of the
-    engine's; what ties them together is FolioEngineVersion below.
+    The id is `folio8` while the assembly stays `Folio8.dll`: the package is
+    how you install it, the assembly is what the call site names. The
+    repository directory keeps its own name, `folio-dotnet/`, which is also
+    what the release tag is prefixed with (AD-22). Version 1.0.0 is this
+    package's OWN release line, independent of the engine's; what ties them
+    together is FolioEngineVersion below.
 
     Nothing here publishes. No script, target or workflow in this repository
     pushes this package to a registry — RELEASING.md's NuGet section is the
@@ -56,7 +58,7 @@
   -->
   <PropertyGroup>
     <IsPackable>true</IsPackable>
-    <PackageId>folio-dotnet</PackageId>
+    <PackageId>folio8</PackageId>
     <Version>1.0.0</Version>
     <Authors>Panit Wechasil</Authors>
     <Company>Panit Wechasil</Company>
@@ -72,7 +74,7 @@
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
     <!--
       THE ENGINE VERSION THIS PACKAGE BINDS, recorded as assembly metadata —
-      folio-js's `folio8EngineVersion` in package.json, in the spelling .NET
+      the npm package's `folio8EngineVersion` in package.json, in the spelling .NET
       has for the same job. It is NOT the package version and must not track
       it: the two are separate release lines. PackagingTests asserts this
       equals what the loaded native library reports AND what the Go engine
@@ -152,8 +154,8 @@
     nothing.
   -->
   <ItemGroup>
-    <None Include="../../build/folio-dotnet.targets" Pack="true" PackagePath="build/folio-dotnet.targets" Visible="false" />
-    <None Include="../../build/folio-dotnet.targets" Pack="true" PackagePath="buildTransitive/folio-dotnet.targets" Visible="false" />
+    <None Include="../../build/folio-dotnet.targets" Pack="true" PackagePath="build/folio8.targets" Visible="false" />
+    <None Include="../../build/folio-dotnet.targets" Pack="true" PackagePath="buildTransitive/folio8.targets" Visible="false" />
   </ItemGroup>
 
   <!--
@@ -200,7 +202,7 @@
       <Code Type="Fragment" Language="cs"><![CDATA[
         if (!File.Exists(ParityJson))
         {
-          Log.LogError("folio-dotnet pack: the fonts.Shipped() record is missing at " + ParityJson + ", so no face can be checked for drift.");
+          Log.LogError("folio8 pack: the fonts.Shipped() record is missing at " + ParityJson + ", so no face can be checked for drift.");
           return false;
         }
         // SCOPED TO shippedFaces, AND ORDER-INDEPENDENT. A regexp over the
@@ -214,7 +216,7 @@
         int arrayEnd = arrayAt < 0 ? -1 : parity.IndexOf(']', arrayAt);
         if (arrayEnd < 0)
         {
-          Log.LogError("folio-dotnet pack: " + ParityJson + " has no shippedFaces array, so no face can be checked for drift.");
+          Log.LogError("folio8 pack: " + ParityJson + " has no shippedFaces array, so no face can be checked for drift.");
           return false;
         }
         var recorded = new Dictionary<string, long>(StringComparer.Ordinal);
@@ -224,18 +226,18 @@
           Match length = Regex.Match(entry.Value, "\"byteLength\"\\s*:\\s*(\\d+)");
           if (!name.Success || !length.Success)
           {
-            Log.LogError("folio-dotnet pack: a shippedFaces entry in " + ParityJson + " has no name or no byteLength: " + entry.Value);
+            Log.LogError("folio8 pack: a shippedFaces entry in " + ParityJson + " has no name or no byteLength: " + entry.Value);
             continue;
           }
           recorded[name.Groups[1].Value] = long.Parse(length.Groups[1].Value);
         }
         if (recorded.Count != 11)
         {
-          Log.LogError("folio-dotnet pack: " + ParityJson + " records " + recorded.Count + " shipped faces; fonts.Shipped() ships eleven. Refusing to pack a font set that cannot be checked.");
+          Log.LogError("folio8 pack: " + ParityJson + " records " + recorded.Count + " shipped faces; fonts.Shipped() ships eleven. Refusing to pack a font set that cannot be checked.");
         }
         if (Faces.Length != 11)
         {
-          Log.LogError("folio-dotnet pack: this project embeds " + Faces.Length + " faces; fonts.Shipped() ships eleven. The package must carry the engine's whole set.");
+          Log.LogError("folio8 pack: this project embeds " + Faces.Length + " faces; fonts.Shipped() ships eleven. The package must carry the engine's whole set.");
         }
         foreach (var face in Faces)
         {
@@ -243,19 +245,19 @@
           string path = face.GetMetadata("FullPath");
           if (!File.Exists(path))
           {
-            Log.LogError("folio-dotnet pack: the face '" + name + "' is missing from the engine's tree at " + path + ".");
+            Log.LogError("folio8 pack: the face '" + name + "' is missing from the engine's tree at " + path + ".");
             continue;
           }
           long actual = new FileInfo(path).Length;
           long want;
           if (!recorded.TryGetValue(name, out want))
           {
-            Log.LogError("folio-dotnet pack: the face '" + name + "' is not in " + ParityJson + "'s shippedFaces — fonts.Shipped() does not ship it.");
+            Log.LogError("folio8 pack: the face '" + name + "' is not in " + ParityJson + "'s shippedFaces — fonts.Shipped() does not ship it.");
             continue;
           }
           if (actual != want)
           {
-            Log.LogError("folio-dotnet pack: the face '" + name + "' is " + actual + " bytes at " + path + ", but fonts.Shipped() records " + want + ". The embedded set has drifted from the engine's.");
+            Log.LogError("folio8 pack: the face '" + name + "' is " + actual + " bytes at " + path + ", but fonts.Shipped() records " + want + ". The embedded set has drifted from the engine's.");
           }
         }
         foreach (var native in Natives)
@@ -264,7 +266,7 @@
           string path = native.GetMetadata("FullPath");
           if (!File.Exists(path))
           {
-            Log.LogError("folio-dotnet pack: the " + rid + " native library is missing at " + path + ". Run folio-dotnet/build/build-native.sh win-x64 win-x86 (or build-native.ps1 on Windows) before packing; a package with one architecture makes BadImageFormatException the normal first experience.");
+            Log.LogError("folio8 pack: the " + rid + " native library is missing at " + path + ". Run folio-dotnet/build/build-native.sh win-x64 win-x86 (or build-native.ps1 on Windows) before packing; a package with one architecture makes BadImageFormatException the normal first experience.");
             continue;
           }
           int machine = -1;
@@ -285,11 +287,11 @@
           int wanted = rid == "win-x64" ? 0x8664 : 0x014C;
           if (machine < 0)
           {
-            Log.LogError("folio-dotnet pack: " + path + " is not a Windows PE file, so it cannot be the " + rid + " native library.");
+            Log.LogError("folio8 pack: " + path + " is not a Windows PE file, so it cannot be the " + rid + " native library.");
           }
           else if (machine != wanted)
           {
-            Log.LogError("folio-dotnet pack: " + path + " has PE machine 0x" + machine.ToString("X4") + ", but " + rid + " needs 0x" + wanted.ToString("X4") + ". The two architectures have been swapped or one was built twice.");
+            Log.LogError("folio8 pack: " + path + " has PE machine 0x" + machine.ToString("X4") + ", but " + rid + " needs 0x" + wanted.ToString("X4") + ". The two architectures have been swapped or one was built twice.");
           }
         }
       ]]></Code>

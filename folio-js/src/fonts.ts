@@ -47,8 +47,8 @@ async function read(): Promise<readonly (readonly [string, Uint8Array])[]> {
   try {
     manifest = JSON.parse(await readFile(manifestUrl, 'utf8')) as Manifest
   } catch (error) {
-    throw new Error(`folio-js: the packaged font manifest at ${manifestUrl.pathname} could not be read — run npm run build:fonts`, { cause: error })
+    throw new Error(`folio8: the packaged font manifest at ${manifestUrl.pathname} could not be read — run npm run build:fonts`, { cause: error })
   }
-  if (!Array.isArray(manifest.faces)) throw new Error(`folio-js: the packaged font manifest at ${manifestUrl.pathname} declares no faces — run npm run build:fonts`)
+  if (!Array.isArray(manifest.faces)) throw new Error(`folio8: the packaged font manifest at ${manifestUrl.pathname} declares no faces — run npm run build:fonts`)
   return Promise.all(manifest.faces.map(async (face) => [face.name, new Uint8Array(await readFile(new URL(face.file, fontsDir)))] as const))
 }

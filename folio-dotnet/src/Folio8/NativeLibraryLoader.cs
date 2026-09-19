@@ -35,7 +35,7 @@ using System.Text;
 /// RID, the filename and every path probed.
 /// </para>
 /// <para>
-/// Off Windows this does nothing at all. folio-dotnet ships Windows natives
+/// Off Windows this does nothing at all. The folio8 package ships Windows natives
 /// only; the macOS and Linux host libraries are a development aid that plain
 /// <c>DllImport</c> probing already finds beside the test assembly.
 /// </para>
@@ -46,7 +46,7 @@ internal static class NativeLibraryLoader
     internal const string WindowsFileName = "folio8_native.dll";
 
     /// <summary>
-    /// The subdirectory <c>build/folio-dotnet.targets</c> stages both
+    /// The subdirectory <c>build/folio8.targets</c> stages both
     /// architectures into beside a .NET Framework consumer's output.
     /// <c>runtimes/</c> is a modern-.NET mechanism and a 4.6 project's build
     /// does nothing with it, so that delivery needs a path of its own.
@@ -163,7 +163,7 @@ internal static class NativeLibraryLoader
 
         throw Failure(
             pointerSize, rid, probed, null,
-            "no " + WindowsFileName + " for " + rid + " was found. The folio-dotnet package carries a native library for each supported architecture; if the one this process needs is absent, the package's assets did not reach this output directory — check that the PackageReference restored, and that a publish or a deployment step did not drop runtimes/ or " + FrameworkNativeFolder + "/.",
+            "no " + WindowsFileName + " for " + rid + " was found. The folio8 package carries a native library for each supported architecture; if the one this process needs is absent, the package's assets did not reach this output directory — check that the PackageReference restored, and that a publish or a deployment step did not drop runtimes/ or " + FrameworkNativeFolder + "/.",
             null);
     }
 
@@ -181,7 +181,7 @@ internal static class NativeLibraryLoader
     {
         // 1. The NuGet RID layout, as modern .NET stages it.
         yield return Path.Combine(Path.Combine(Path.Combine(Path.Combine(directory, "runtimes"), rid), "native"), WindowsFileName);
-        // 2. What folio-dotnet.targets stages for a .NET Framework consumer.
+        // 2. What the package's build/folio8.targets stages for a .NET Framework consumer.
         yield return Path.Combine(Path.Combine(Path.Combine(directory, FrameworkNativeFolder), rid), WindowsFileName);
         // 3. Flat beside the assembly: a self-contained publish, or a build
         //    that staged the library by hand. LAST, because it carries no RID
@@ -256,7 +256,7 @@ internal static class NativeLibraryLoader
                     " process, so it needs the " + rid + " build, and the file found is not one. A " +
                     (pointerSize == 8 ? "32-bit" : "64-bit") +
                     " library cannot be loaded here at any cost — replace the file with the " + rid +
-                    " asset from the folio-dotnet package, or run the process at the other bitness.";
+                    " asset from the folio8 package, or run the process at the other bitness.";
             case ErrorModNotFound:
                 return "the file was found but one of ITS OWN dependencies was not. A folio8 native library needs only the Windows system libraries, so this usually means the file is not the folio8 engine, or is truncated.";
             case ErrorAccessDenied:

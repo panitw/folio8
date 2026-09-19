@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Packs folio-dotnet, installs it into real consumer projects covering every
+  Packs the folio8 NuGet package, installs it into real consumer projects covering every
   supported process shape on both target families, renders a corpus fixture in
   each, and forces the CAP-11 failure modes a consumer can actually produce.
 
@@ -83,7 +83,7 @@ function Fail([string] $what) { Write-Host "::error::$what"; $failures.Add($what
 Remove-Item -Recurse -Force $feed -ErrorAction SilentlyContinue
 Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
 $packages = if ($env:NUGET_PACKAGES) { $env:NUGET_PACKAGES } else { Join-Path $HOME '.nuget/packages' }
-Remove-Item -Recurse -Force (Join-Path $packages 'folio-dotnet') -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force (Join-Path $packages 'folio8') -ErrorAction SilentlyContinue
 
 Write-Host '==> dotnet pack'
 & dotnet pack (Join-Path $repo 'folio-dotnet/src/Folio8/Folio8.csproj') -c Release -o $feed
@@ -95,7 +95,7 @@ if (-not $nupkg) { throw "dotnet pack produced no .nupkg in $feed" }
 # THE VERSION IS READ OFF THE PACKAGE, never typed here. Folio8.csproj is the
 # one place it is declared; the consumer projects take it from the command
 # line, so a bump is one edit and nothing downstream reddens.
-if ($nupkg.Name -notmatch '^folio-dotnet\.(?<v>\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?)\.nupkg$') {
+if ($nupkg.Name -notmatch '^folio8\.(?<v>\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?)\.nupkg$') {
   throw "cannot read a version out of $($nupkg.Name)"
 }
 $version = $Matches['v']
@@ -110,7 +110,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $archive = [IO.Compression.ZipFile]::OpenRead($nupkg.FullName)
 try {
   $entries = @($archive.Entries.FullName)
-  $nuspec = $archive.GetEntry('folio-dotnet.nuspec')
+  $nuspec = $archive.GetEntry('folio8.nuspec')
   $nuspecText = if ($nuspec) { (New-Object IO.StreamReader($nuspec.Open())).ReadToEnd() } else { $null }
 } finally {
   $archive.Dispose()
@@ -120,15 +120,15 @@ foreach ($required in @(
     'lib/netstandard2.0/Folio8.dll',
     'runtimes/win-x64/native/folio8_native.dll',
     'runtimes/win-x86/native/folio8_native.dll',
-    'build/folio-dotnet.targets',
-    'buildTransitive/folio-dotnet.targets',
+    'build/folio8.targets',
+    'buildTransitive/folio8.targets',
     'README.md',
     'LICENSE')) {
   if ($entries -notcontains $required) { Fail "the package does not contain $required" }
 }
 
 # AD-26: a face's terms and notice travel with it. Eleven of each, counted —
-# folio-js's package test counts the same two files beside every face, and for
+# the npm package's test counts the same two files beside every face, and for
 # the same reason: dropping the glob from the csproj is invisible to every
 # other check in this suite.
 foreach ($pair in @(@('LICENSE-OFL.txt', 11), @('NOTICE.md', 11))) {
@@ -140,7 +140,7 @@ foreach ($pair in @(@('LICENSE-OFL.txt', 11), @('NOTICE.md', 11))) {
 # which is the INPUT; this is the OUTPUT, and only it can see a dependency the
 # SDK inferred.
 if (-not $nuspecText) { Fail 'the package carries no .nuspec' }
-elseif ($nuspecText -match '<dependency\s') { Fail 'the packed .nuspec declares a dependency; folio-dotnet takes none' }
+elseif ($nuspecText -match '<dependency\s') { Fail 'the packed .nuspec declares a dependency; folio8 takes none' }
 
 # ----------------------------------------------------------- the legs -----
 # Rid is what each shape MUST resolve to, and it is what the forced failure

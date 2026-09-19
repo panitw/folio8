@@ -49,7 +49,7 @@ public sealed class FolioNativeLoadException : Exception
     /// <summary>Creates the exception with a message alone.</summary>
     /// <param name="message">The diagnostic sentence.</param>
     /// <remarks>
-    /// The conventional overload. folio-dotnet itself always uses the full
+    /// The conventional overload. This library itself always uses the full
     /// constructor below, because a load failure with no RID and no probed
     /// paths is exactly the unactionable message CAP-11 exists to replace.
     /// </remarks>

@@ -126,7 +126,7 @@ public static class Fonts
             {
                 throw new InvalidOperationException(
                     "folio8: the shipped face '" + face + "' is not embedded in this assembly (resource '" + resource +
-                    "'). A folio-dotnet package always carries all eleven faces; an assembly built without them cannot serve Fonts.Shipped(). Pass your own FontSet instead, or reinstall the package.");
+                    "'). A folio8 package always carries all eleven faces; an assembly built without them cannot serve Fonts.Shipped(). Pass your own FontSet instead, or reinstall the package.");
             }
             long length = stream.Length;
             if (length < 0 || length > int.MaxValue)

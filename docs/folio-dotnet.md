@@ -1,18 +1,18 @@
 <!-- twin:begin -->
 # folio-dotnet
 
-`folio-dotnet` is the folio8 engine for .NET. It turns a `.folio` template, JSON data and runtime parameters into PDF bytes in process, with the engine itself — built as a native library and called over a C ABI — doing the rendering. There is no service to run and no rendering logic written in C#.
+folio-dotnet is the folio8 engine for .NET, published to NuGet as `folio8`. It turns a `.folio` template, JSON data and runtime parameters into PDF bytes in process, with the engine itself — built as a native library and called over a C ABI — doing the rendering. There is no service to run and no rendering logic written in C#.
 
 The same template, data, params and font set produce the same bytes here as under the Go library, the `folio8` command-line tool and the designer's preview. That is a tested property rather than a claim: the package renders the fixture corpus and compares SHA-256 against the committed expected hashes on .NET Framework and on modern .NET, in 64-bit and in 32-bit processes.
 
-**The API is synchronous, matching Go.** A render blocks the calling thread for its whole duration. `folio-js`, the same engine for Node, is promise-based instead. The two libraries cover the same surface in the same shape, each spelled the way its language spells things — `Folio8.Render` here is `render` there, `Template.Parse` is `parseTemplate`, `FolioRenderException` is `FolioRenderError` — with identical behaviour and identical diagnostics, so a caller can port between them and between both and Go.
+**The API is synchronous, matching Go.** A render blocks the calling thread for its whole duration. folio-js, the same engine for Node, is promise-based instead. The two libraries cover the same surface in the same shape, each spelled the way its language spells things — `Folio8.Render` here is `render` there, `Template.Parse` is `parseTemplate`, `FolioRenderException` is `FolioRenderError` — with identical behaviour and identical diagnostics, so a caller can port between them and between both and Go.
 
 Three companion references hold the rules this guide does not repeat: [the `.folio` format](folio-format.md) is every field of a template, [expressions](expression-reference.md) is the syntax inside the double braces, and [the rendering library guide](rendering-library.md) covers the same engine from Go, including the shared [diagnostic code registry](rendering-library.md#diagnostic-codes). [folio-js](folio-js.md) is this same library for Node.
 
 ## Install
 
 ```sh
-dotnet add package folio-dotnet
+dotnet add package folio8
 ```
 
 Nothing else is needed. No Go, no C compiler, no build step and no configuration: both Windows native libraries and all eleven shipped font faces travel inside the package, the right native library is chosen for you at load time, and the managed assembly takes no package dependencies at all.
@@ -38,7 +38,7 @@ That floor decides the implementation. It predates `Span`, `System.Text.Json` an
 
 ### Choosing the native library
 
-**By process bitness, at load time.** A .NET Framework project is AnyCPU by default, which runs as a 64-bit process on 64-bit Windows and as a 32-bit process under Prefer32Bit or on a 32-bit host, so nothing at build time can know which architecture you will need. folio-dotnet reads the size of a pointer before the first call into the engine, picks the 64-bit or the 32-bit runtime identifier, and loads that file by full path.
+**By process bitness, at load time.** A .NET Framework project is AnyCPU by default, which runs as a 64-bit process on 64-bit Windows and as a 32-bit process under Prefer32Bit or on a 32-bit host, so nothing at build time can know which architecture you will need. This library reads the size of a pointer before the first call into the engine, picks the 64-bit or the 32-bit runtime identifier, and loads that file by full path.
 
 All three process shapes work on both target framework families with no load logic written by the caller:
 

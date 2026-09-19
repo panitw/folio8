@@ -832,7 +832,7 @@ jobs:
           --results-directory folio-dotnet/TestResults
       # THE PACKAGE, PROVED FROM THE OUTSIDE (story 7). Everything above runs
       # inside a test host that staged a native library by hand, so none of it
-      # can say whether `dotnet add package folio-dotnet` works — and CAP-7 is
+      # can say whether `dotnet add package folio8` works — and CAP-7 is
       # a claim about exactly that.
       #
       # The driver packs the package, fills a local feed, and installs it into

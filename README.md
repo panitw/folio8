@@ -32,7 +32,7 @@ approximation of it.
 | [lint/](lint/) | The guardrails that fail the build: architecture/import rules, the float ban, and the third-party licence check ([MANIFEST.md](lint/MANIFEST.md)). A separate Go module. |
 | [hashmatrix/](hashmatrix/) | A deliberately-broken floating-point probe, kept out of the guards' reach, that proves the cross-target matrix can actually *detect* divergence. See its [README](hashmatrix/README.md). |
 | [tools/fontgen/](tools/fontgen/) | Derives the shipped static faces from upstream variable builds. The outputs are committed; this exists so the derivation can be replayed. |
-| [docs/](docs/) | User documentation, the source of truth: the [rendering library guide](docs/rendering-library.md), the [folio-js guide](docs/folio-js.md), the [folio-dotnet guide](docs/folio-dotnet.md), the [`.folio` format reference](docs/folio-format.md), the [expression reference](docs/expression-reference.md), and the original [MVP plan](docs/folio8-mvp-plan.md). |
+| [docs/](docs/) | User documentation, the source of truth: the [rendering library guide](docs/rendering-library.md), the [folio-js guide](docs/folio-js.md) (the npm package `folio8`), the [folio-dotnet guide](docs/folio-dotnet.md) (the NuGet package `folio8`), the [`.folio` format reference](docs/folio-format.md), the [expression reference](docs/expression-reference.md), and the original [MVP plan](docs/folio8-mvp-plan.md). |
 | [_bmad-output/](_bmad-output/) | Planning and delivery record: PRD, architecture spine, specs, epics, and [sprint status](_bmad-output/implementation-artifacts/sprint-status.yaml). |
 
 Three independent Go modules (`folio8-go`, `lint`, `hashmatrix`) with no

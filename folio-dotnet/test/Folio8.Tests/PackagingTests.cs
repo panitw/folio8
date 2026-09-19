@@ -26,7 +26,7 @@ namespace Folio8Tests
 
         /// <summary>The package's identity and metadata, as the story fixes them.</summary>
         [Theory]
-        [InlineData("<PackageId>folio-dotnet</PackageId>")]
+        [InlineData("<PackageId>folio8</PackageId>")]
         [InlineData("<PackageLicenseFile>LICENSE</PackageLicenseFile>")]
         [InlineData("<PackageReadmeFile>README.md</PackageReadmeFile>")]
         [InlineData("<PackageProjectUrl>https://github.com/panitw/folio8</PackageProjectUrl>")]
@@ -81,7 +81,7 @@ namespace Folio8Tests
         [Fact]
         public void TheFrameworkTargetsArePackedWhereNuGetImportsThem()
         {
-            Assert.Contains("PackagePath=\"build/folio-dotnet.targets\"", Project, StringComparison.Ordinal);
+            Assert.Contains("PackagePath=\"build/folio8.targets\"", Project, StringComparison.Ordinal);
         }
 
         /// <summary>
@@ -163,7 +163,7 @@ namespace Folio8Tests
         /// have to be stated, not implied.
         /// </summary>
         [Theory]
-        [InlineData("dotnet add package folio-dotnet")]
+        [InlineData("dotnet add package folio8")]
         [InlineData("Fonts.Shipped()")]
         [InlineData(".NET Framework 4.6")]
         [InlineData("Windows only")]
@@ -249,7 +249,7 @@ namespace Folio8Tests
 
         /// <summary>RELEASING.md carries the procedure, since nothing automates it.</summary>
         [Theory]
-        [InlineData("Publishing `folio-dotnet` to NuGet")]
+        [InlineData("Publishing `folio8` to NuGet")]
         [InlineData("folio-dotnet/v")]
         [InlineData("dotnet nuget push")]
         public void ReleasingDocumentsTheNuGetProcedure(string text)

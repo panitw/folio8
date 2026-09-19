@@ -1,5 +1,5 @@
 {
-  "name": "folio-js",
+  "name": "folio8",
   "version": "1.0.0",
   "description": "folio8 for Node: render and validate .folio templates with the folio8 engine compiled to WebAssembly.",
   "license": "MIT",

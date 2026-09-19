@@ -1,8 +1,8 @@
-# folio-dotnet
+# folio8 for .NET
 
-folio8 for .NET. Turn a `.folio` template plus JSON data into PDF bytes
-in-process, with the folio8 engine itself — built as a native library — doing
-the rendering.
+The folio8 engine for .NET. Turn a `.folio` template plus JSON data into PDF
+bytes in-process, with the folio8 engine itself — built as a native library —
+doing the rendering.
 
 The same template, data, params and font set produce the same PDF bytes here
 as under the Go engine, the `folio8` CLI and the designer's preview. That is a
@@ -11,7 +11,7 @@ SHA-256 against the committed expected hashes, on .NET Framework and modern
 .NET, in 64-bit and 32-bit processes.
 
 ```sh
-dotnet add package folio-dotnet
+dotnet add package folio8
 ```
 
 Nothing else is needed. No Go, no C compiler, no build step, no configuration:
@@ -79,7 +79,8 @@ SHA-256 with the committed expected hash.
 `parameters` is optional: pass `null` when the template reads none.
 
 Diagnostic codes, severities and message text are the engine's, identical
-across folio-dotnet, folio-js and Go, so a caller can port between them.
+across this package, the npm package and Go, so a caller can port between
+them.
 
 A render runs synchronously inside the native library and blocks the calling
 thread while it runs.
@@ -100,8 +101,8 @@ dependencies at all**.
 
 **Windows only**, on **x86** and **x64**. There are no Linux, macOS or ARM64
 native binaries in this package. For non-Windows hosts, use
-[folio-js](https://www.npmjs.com/package/folio-js), which is the same engine
-compiled to WebAssembly and runs wherever Node does.
+[folio8 for Node](https://www.npmjs.com/package/folio8), which is the same
+engine compiled to WebAssembly and runs wherever Node does.
 
 On an unsupported platform — or where the native library cannot be loaded for
 any other reason — the first call throws `FolioNativeLoadException`. There is
@@ -113,7 +114,7 @@ nothing to fall back to.
 By **process bitness, at load time**. A .NET Framework project is AnyCPU by
 default, which runs as a 64-bit process on 64-bit Windows and as a 32-bit one
 under `Prefer32Bit` or on a 32-bit host — so nothing at build time can know
-which native you will need. folio-dotnet reads `IntPtr.Size` before the first
+which native you will need. This package reads `IntPtr.Size` before the first
 call into the engine, picks `win-x64` or `win-x86`, and loads that file by
 full path.
 

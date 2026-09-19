@@ -36,11 +36,11 @@
   -->
   <Target Name="RequireFolioDotnetVersion" BeforeTargets="Restore;CollectPackageReferences"
           Condition="'$(FolioDotnetVersion)' == ''">
-    <Error Text="folio-dotnet consumer: pass -p:FolioDotnetVersion=&lt;version&gt;. run-consumers.ps1 supplies it from the packed .nupkg; this project deliberately hard-codes no version." />
+    <Error Text="folio8 consumer: pass -p:FolioDotnetVersion=&lt;version&gt;. run-consumers.ps1 supplies it from the packed .nupkg; this project deliberately hard-codes no version." />
   </Target>
 
   <ItemGroup>
-    <PackageReference Include="folio-dotnet" Version="$(FolioDotnetVersion)" />
+    <PackageReference Include="folio8" Version="$(FolioDotnetVersion)" />
   </ItemGroup>
 
 </Project>

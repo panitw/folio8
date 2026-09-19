@@ -4,7 +4,9 @@ This document is the procedure for cutting a folio8 release. It exists because
 **a release with no written procedure is not a release** — the same rule
 D-000.58 applies to gate procedures, one level up.
 
-It covers the Go engine module, `folio8-go`, and the npm package `folio-js`.
+It covers the Go engine module, `folio8-go`, and the two client libraries
+published as `folio8` — the npm package built in `folio-js/` and the NuGet
+package built in `folio-dotnet/`.
 The designer's own version and force-upgrade policy are at the end.
 
 **Released version:** `folio8-go/v1.0.0`
@@ -169,9 +171,10 @@ adding a `retract` directive to `folio8-go/go.mod` for the bad one if needed. Th
 directory-prefixed (AD-22) because the module lives in `folio8-go/`; Go resolves
 `go get github.com/panitw/folio8/folio8-go@v1.0.0` from it.
 
-## Publishing `folio-js` to npm
+## Publishing `folio8` to npm
 
-`folio-js` is a separate release line from `folio8-go`, published by hand.
+The npm package `folio8`, built in `folio-js/`, is a separate release line from
+`folio8-go`, published by hand.
 **`npm publish` is never run by a script, a lifecycle hook or a CI job**: no
 workflow in this repository holds an npm token, and none should. It is the
 owner's command, typed at the owner's terminal, on the owner's explicit
@@ -194,7 +197,7 @@ tarball, and cannot ship a font set that has drifted from the engine's.
 
 ### Version and engine stamp
 
-`folio-js`'s `version` is its own; it is not tied to `folio8-go`'s. What ties
+The npm package's `version` is its own; it is not tied to `folio8-go`'s. What ties
 them is `package.json`'s **`folio8EngineVersion`**, which records the engine
 version the packaged wasm was built from and must equal `src/version.ts`'s
 `version` — `test/package.test.ts` fails if they disagree. Bump both in the
@@ -231,22 +234,24 @@ npm publish --dry-run                 # last look at exactly what would be sent
 
 # TAG FIRST, so a published version always maps back to a commit. The tag is
 # directory-prefixed (AD-22), like the engine's, because the package lives in
-# folio-js/. Push it before publishing: an unpublished tag is cheap to live
-# with, an unattributable npm version is not.
+# folio-js/ — the tag names the DIRECTORY, not the published package id, so it
+# stays `folio-js/v…` even though the package publishes as `folio8`. Push it
+# before publishing: an unpublished tag is cheap to live with, an
+# unattributable npm version is not.
 git tag -a "folio-js/v$V" -m "folio-js v$V" && git push origin "folio-js/v$V"
 
 npm publish                           # the irreversible step (access comes from publishConfig)
-npm view "folio-js@$V" dist.tarball   # confirm the registry serves it
+npm view "folio8@$V" dist.tarball     # confirm the registry serves it
 ```
 
 A published version is never unpublished or overwritten, and a pushed tag is
 never moved or deleted; a bad release is fixed forward with a new patch
 version, and `npm deprecate` marks the bad one.
 
-## Publishing `folio-dotnet` to NuGet
+## Publishing `folio8` to NuGet
 
-`folio-dotnet` is a separate release line from `folio8-go` and from
-`folio-js`, published by hand. **`dotnet nuget push` is never run by a script,
+The NuGet package `folio8`, built in `folio-dotnet/`, is a separate release
+line from `folio8-go` and from the npm package, published by hand. **`dotnet nuget push` is never run by a script,
 an MSBuild target or a CI job**: no workflow in this repository holds a NuGet
 API key, and none should. It is the owner's command, typed at the owner's
 terminal, on the owner's explicit go-ahead. `PackagingTests` greps every
@@ -256,19 +261,19 @@ written down — and reddens if one acquires it.
 
 ### What the package promises
 
-`folio-dotnet.1.0.0.nupkg` is **self-contained**:
+`folio8.1.0.0.nupkg` is **self-contained**:
 
 ```
 lib/netstandard2.0/Folio8.dll          the one managed assembly, faces embedded
 runtimes/win-x64/native/folio8_native.dll
 runtimes/win-x86/native/folio8_native.dll
-build/folio-dotnet.targets             the .NET Framework delivery
-buildTransitive/folio-dotnet.targets
+build/folio8.targets                   the .NET Framework delivery
+buildTransitive/folio8.targets
 README.md, LICENSE
 third-party-notices/fonts/**           each face's OFL text and notice
 ```
 
-It declares **no dependencies**, so `dotnet add package folio-dotnet` on a
+It declares **no dependencies**, so `dotnet add package folio8` on a
 machine with no Go and no C compiler produces a project that renders — from
 .NET Framework 4.6 through modern .NET, in a 64-bit or a 32-bit process
 (CAP-7). The native asset is `folio8_native.dll`, **never** `folio8.dll`:
@@ -286,10 +291,10 @@ ship a half package.
 
 ### Version and engine stamp
 
-`folio-dotnet`'s `Version` is its own; it is not tied to `folio8-go`'s. What
+The NuGet package's `Version` is its own; it is not tied to `folio8-go`'s. What
 ties them is `Folio8.csproj`'s **`FolioEngineVersion`**, written into the
 assembly as the `folio8EngineVersion` metadata attribute — the .NET spelling
-of `folio-js`'s `package.json` field. `PackagingTests` fails if it disagrees
+of the npm package's `package.json` field. `PackagingTests` fails if it disagrees
 with what the loaded native library reports or with `go-parity.json`. Bump it
 in the release commit when the package is rebuilt against a newer engine tag.
 
@@ -323,14 +328,16 @@ this without the owner's explicit go-ahead.**
 # <Version> is the one place it is declared, and the consumer suite takes it
 # from the packed file name for the same reason.
 dotnet pack folio-dotnet/src/Folio8/Folio8.csproj -c Release -o ./artifacts/nupkg
-PKG=$(ls ./artifacts/nupkg/folio-dotnet.*.nupkg)
-V=$(basename "$PKG" .nupkg | sed 's/^folio-dotnet\.//')
+PKG=$(ls ./artifacts/nupkg/folio8.*.nupkg)
+V=$(basename "$PKG" .nupkg | sed 's/^folio8\.//')
 unzip -l "$PKG"                                  # last look at exactly what would be sent
 
 # TAG FIRST, so a published version always maps back to a commit. The tag is
-# directory-prefixed (AD-22), like the engine's and folio-js's, because the
-# package lives in folio-dotnet/. Push it before publishing: an unpublished
-# tag is cheap to live with, an unattributable NuGet version is not.
+# directory-prefixed (AD-22), like the engine's and the npm package's, because
+# the package lives in folio-dotnet/ — the tag names the DIRECTORY, not the
+# published package id, so it stays `folio-dotnet/v…` even though the package
+# publishes as `folio8`. Push it before publishing: an unpublished tag is
+# cheap to live with, an unattributable NuGet version is not.
 git tag -a "folio-dotnet/v$V" -m "folio-dotnet v$V" && git push origin "folio-dotnet/v$V"
 
 # The irreversible step. The API key is the owner's. Put it in the shell's

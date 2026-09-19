@@ -1,7 +1,7 @@
 <!-- twin:begin -->
 # folio-js
 
-`folio-js` is the folio8 engine for Node. It turns a `.folio` template, JSON data and runtime parameters into PDF bytes in process, with the engine itself — compiled to WebAssembly — doing the rendering. There is no service to run, no binary to shell out to and no rendering logic written in JavaScript.
+folio-js is the folio8 engine for Node, published to npm as `folio8`. It turns a `.folio` template, JSON data and runtime parameters into PDF bytes in process, with the engine itself — compiled to WebAssembly — doing the rendering. There is no service to run, no binary to shell out to and no rendering logic written in JavaScript.
 
 The same template, data, params and font set produce the same bytes here as under the Go library, the `folio8` command-line tool and the designer's preview. That is a tested property rather than a claim: the package renders the fixture corpus and compares SHA-256 against the committed expected hashes on every supported Node version.
 
@@ -12,7 +12,7 @@ Three companion references hold the rules this guide does not repeat: [the `.fol
 ## Install
 
 ```sh
-npm install folio-js
+npm install folio8
 ```
 
 Nothing else is needed. No Go, no C compiler, no build step, and no network access after the install: the prebuilt WebAssembly engine and all eleven shipped font faces travel inside the package, and the package declares no dependencies of its own.
@@ -28,15 +28,15 @@ Below the floor, `npm install` reports `EBADENGINE` — a warning by default, an
 **The package is ESM only.** It publishes `import` entry points and no CommonJS build:
 
 ```js
-import { loadTemplate, render } from 'folio-js'
-import { shipped } from 'folio-js/fonts'
+import { loadTemplate, render } from 'folio8'
+import { shipped } from 'folio8/fonts'
 ```
 
 A CommonJS caller on Node 22.12 or newer reaches the same exports through `require`, which Node resolves with its support for requiring an ES module. There is no separate CommonJS entry point to name, and nothing in the package is reachable any other way:
 
 ```js
-const { loadTemplate, render } = require('folio-js')
-const { shipped } = require('folio-js/fonts')
+const { loadTemplate, render } = require('folio8')
+const { shipped } = require('folio8/fonts')
 ```
 
 ### Node only
@@ -49,8 +49,8 @@ Put a template at `invoice.folio` and its data at `invoice.json`, then:
 
 ```js
 import { readFile, writeFile } from 'node:fs/promises'
-import { loadTemplate, render } from 'folio-js'
-import { shipped } from 'folio-js/fonts'
+import { loadTemplate, render } from 'folio8'
+import { shipped } from 'folio8/fonts'
 
 const template = await loadTemplate('invoice.folio')
 const data = JSON.parse(await readFile('invoice.json', 'utf8'))
@@ -78,8 +78,8 @@ Params are the runtime values that are not report data — a run date, a branch 
 Build the object, hand it over as the third argument, and ask the template which names it wants:
 
 ```js
-import { loadTemplate, parameterReferences, render } from 'folio-js'
-import { shipped } from 'folio-js/fonts'
+import { loadTemplate, parameterReferences, render } from 'folio8'
+import { shipped } from 'folio8/fonts'
 
 const template = await loadTemplate('statement.folio')
 console.log(await parameterReferences(template))
@@ -114,7 +114,7 @@ folio8 reports every problem as a `Diagnostic`, field for field the object the G
 A rejection the engine raised as a known document condition is a `FolioRenderError` carrying the `Diagnostic` that caused it. Everything else — a value that is not a template, data that will not serialise, a stream that failed — rejects with an ordinary `TypeError` or `Error`:
 
 ```js
-import { FolioRenderError, render } from 'folio-js'
+import { FolioRenderError, render } from 'folio8'
 
 try {
   const { bytes, diagnostics } = await render(template, data, params, fonts)
@@ -137,7 +137,7 @@ Every code, with its string value and its meaning, is listed under [diagnostic c
 
 ## API reference
 
-Six functions and `version` come from `folio-js`; `shipped` comes from `folio-js/fonts`. Everything else named here is a type, and TypeScript declarations for all of it ship with the package.
+Six functions and `version` come from `folio8`; `shipped` comes from `folio8/fonts`. Everything else named here is a type, and TypeScript declarations for all of it ship with the package.
 
 ### Rendering and validation
 
@@ -207,7 +207,7 @@ shipped(): Promise<FontSet>
 
 The eleven faces Go's `fonts.Shipped` returns, read from the files inside the package: Roboto and Noto Sans in regular, bold, italic and bold italic, Noto Sans Thai in regular and bold, and Noto Sans SC. Keys and bytes are the engine's own, so a document rendered from this set here and from `fonts.Shipped` in Go produces identical PDF bytes.
 
-It is imported from the `folio-js/fonts` entry point rather than from the package root, so a caller who supplies their own faces never pays for reading these.
+It is imported from the `folio8/fonts` entry point rather than from the package root, so a caller who supplies their own faces never pays for reading these.
 
 These are the keys, and a template's font chain must name one of them verbatim — the engine never derives `Roboto Bold` from `Roboto`:
 

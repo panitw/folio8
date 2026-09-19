@@ -5,7 +5,7 @@
 
     It has one PackageReference and no load logic, no RID, no targets file and
     no post-build step of its own. That is the claim: `dotnet add package
-    folio-dotnet` and the README's snippet, nothing else (CAP-7).
+    folio8` and the README's snippet, nothing else (CAP-7).
 
     net48 rather than net46 because .NET Framework 4.8 is what a Windows
     runner has installed; the FLOOR is proved separately and by the compiler,
@@ -44,11 +44,11 @@
   -->
   <Target Name="RequireFolioDotnetVersion" BeforeTargets="Restore;CollectPackageReferences"
           Condition="'$(FolioDotnetVersion)' == ''">
-    <Error Text="folio-dotnet consumer: pass -p:FolioDotnetVersion=&lt;version&gt;. run-consumers.ps1 supplies it from the packed .nupkg; this project deliberately hard-codes no version." />
+    <Error Text="folio8 consumer: pass -p:FolioDotnetVersion=&lt;version&gt;. run-consumers.ps1 supplies it from the packed .nupkg; this project deliberately hard-codes no version." />
   </Target>
 
   <ItemGroup>
-    <PackageReference Include="folio-dotnet" Version="$(FolioDotnetVersion)" />
+    <PackageReference Include="folio8" Version="$(FolioDotnetVersion)" />
   </ItemGroup>
 
 </Project>
