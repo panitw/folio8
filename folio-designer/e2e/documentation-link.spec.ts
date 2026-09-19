@@ -21,7 +21,7 @@ const titleOf = (file: string): string => {
   return raw.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&quot;', '"').replaceAll('&#39;', '\'').replaceAll('&amp;', '&')
 }
 const guideTitle = titleOf('rendering-library.html')
-const documentationStems = ['rendering-library', 'folio-js', 'folio-dotnet', 'folio-format', 'expression-reference']
+const documentationStems = ['rendering-library', 'folio-js', 'folio-dotnet', 'folio-format', 'expression-reference', 'performance']
 
 type EditorState = Readonly<{ url: string; name: string | null; status: string | null; snapshot: string | null; components: string[]; selected: string[]; undo: boolean; redo: boolean }>
 
@@ -133,7 +133,7 @@ test('the bundled guide links to every bundled sibling by emitted name', async (
     expect(crossPage.some((target) => target.startsWith(`${stem}-`)), `the guide must link to ${stem}, or that page is unreachable offline`).toBe(true)
   }
   for (const target of crossPage) {
-    expect(target, 'a cross-page link must be rewritten to a fingerprinted name').toMatch(/^(?:rendering-library|folio-js|folio-dotnet|folio-format|expression-reference)-[a-f0-9]{20}\.html(?:#.*)?$/)
+    expect(target, 'a cross-page link must be rewritten to a fingerprinted name').toMatch(/^(?:rendering-library|folio-js|folio-dotnet|folio-format|expression-reference|performance)-[a-f0-9]{20}\.html(?:#.*)?$/)
     const response = await guide.request.get(new URL(target, guide.url()).toString())
     expect(response.ok(), `${target} must be an emitted file`).toBe(true)
     expect(response.headers()['content-type']).toMatch(/text\/html/)
