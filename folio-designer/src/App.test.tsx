@@ -1288,7 +1288,7 @@ describe('application shell', () => {
   // a `role="img"` added while `aria-hidden` is still in place. Both spellings
   // are asserted: the default one says the mark is out of the tree, the
   // `hidden: true` one says it carries no role to expose in the first place.
-  it('wears the brand mark before the word FOLIO8, and the mark announces nothing', () => {
+  it('wears the brand mark before the word Folio8, and the mark announces nothing', () => {
     render(<App />)
     const lockup = screen.getByLabelText('Document bar').querySelector('.brand-lockup')
     expect(lockup, 'the document bar must carry the mark-and-word lockup').not.toBeNull()
@@ -1300,7 +1300,7 @@ describe('application shell', () => {
     // `role="img" aria-label="folio8"` placed on the LOCKUP ITSELF escapes every
     // descendant-scoped fence. That is not a hypothetical: `role="img"` makes
     // the children presentational, so on the load screen the same mutation
-    // would have AT announce "folio8" in place of "FOLIO8 / OFFLINE" — silencing
+    // would have AT announce "folio8" in place of "Folio8 / OFFLINE" — silencing
     // the offline state this screen exists to report.
     const namedNodesIn = (root: Element) => [root, ...Array.from(root.querySelectorAll('*'))]
       .filter((node) => ['aria-label', 'aria-labelledby', 'role', 'title'].some((attribute) => node.hasAttribute(attribute)) || node.tagName.toLowerCase() === 'title')
@@ -1322,7 +1322,7 @@ describe('application shell', () => {
     // second half is what an added `aria-label` reds.
     const announced = lockup!.cloneNode(true) as Element
     for (const hidden of Array.from(announced.querySelectorAll('[aria-hidden="true"]'))) hidden.remove()
-    expect(announced.textContent?.replace(/\s+/g, ' ').trim(), 'the mark and the word announce the product name once').toBe('FOLIO8')
+    expect(announced.textContent?.replace(/\s+/g, ' ').trim(), 'the mark and the word announce the product name once').toBe('Folio8')
     expect(namedNodesIn(lockup!), 'nothing in the lockup — the wrapper INCLUDED — may contribute a name of its own').toEqual([])
 
     // (AC1) the mark is drawn BEFORE the word, provable without a browser.
@@ -1330,7 +1330,7 @@ describe('application shell', () => {
     expect(svg!.compareDocumentPosition(lockup!.querySelector('.brand')!) & Node.DOCUMENT_POSITION_FOLLOWING, 'the wordmark must follow the mark in document order').toBeTruthy()
 
     // The word itself is untouched by this story.
-    expect(lockup!.querySelector('.brand')).toHaveTextContent('FOLIO8')
+    expect(lockup!.querySelector('.brand')).toHaveTextContent('Folio8')
   })
 
   it('labels the development bypass instead of claiming a verified cache', () => {

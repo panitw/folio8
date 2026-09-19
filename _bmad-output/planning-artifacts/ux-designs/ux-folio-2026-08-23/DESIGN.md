@@ -32,6 +32,11 @@ colors:
   ink-faint: '#5E666F'
   ink-ghost: '#4E565F'
   ink-disabled: '#454C55'
+  # brand — the mark's own cyan, taken from resources/logo.png and used by
+  # the brand mark alone. Deliberately NOT select: the logo is brighter than
+  # the UI's structure colour, and routing the mark through select would
+  # either dull the brand or repaint every selection in the app.
+  brand: '#87F0FF'
   # select — structure, focus, authority
   select: '#58A6C4'
   select-bright: '#8FD0E4'

@@ -28,7 +28,8 @@ button:focus-visible { outline: 2px solid var(--color-select); outline-offset: -
 .app-shell-preview { grid-template-rows: var(--doc-bar-height) minmax(0, 1fr) var(--status-bar-height-preview); }
 .document-bar { display: flex; align-items: center; gap: var(--space-3); padding: 0 var(--space-5); background: var(--color-panel); border-bottom: var(--hairline) solid var(--color-line); }
 /* STORY 14.5 — THE MARK'S COLOUR HAS EXACTLY ONE SOURCE.
-   `.brand-mark` sets `color`, and the SVG inside reads it as `currentColor`.
+   `.brand-mark` sets `color` from `--color-brand` — the logo's own cyan, not
+   the UI's `--color-select` — and the SVG inside reads it as `currentColor`.
    The token is therefore the only place the cyan is written; no literal is
    spelled in this file or in `BrandMark.tsx`.
 
@@ -51,10 +52,10 @@ button:focus-visible { outline: 2px solid var(--color-select); outline-offset: -
    `flex: none` ON BOTH RULES, because the document bar is a flex row and the
    lockup is itself one of its items. Without it on `.brand-mark` the square
    shrinks; without it on `.brand-lockup` the square holds and the whole squeeze
-   from a long document name lands on the word FOLIO8 instead. Half the rule is
+   from a long document name lands on the word Folio8 instead. Half the rule is
    not the rule. */
 .brand-lockup { display: inline-flex; align-items: center; gap: var(--space-3); flex: none; }
-.brand-mark { color: var(--color-select); flex: none; }
+.brand-mark { color: var(--color-brand); flex: none; }
 .brand { color: var(--color-ink-high); font: var(--type-brand); letter-spacing: var(--tracking-brand); }
 .document-name, .later-control { font: var(--type-mono); color: var(--color-ink); }
 .status-dot { width: var(--space-1); height: var(--space-1); border-radius: var(--radius-dot); background: var(--color-bind); }

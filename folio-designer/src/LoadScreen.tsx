@@ -25,14 +25,15 @@ export function LoadScreen({ lifecycle, payload, engineState, onRetry }: Readonl
       {/* STORY 14.5 — THE BRAND IS THERE BEFORE LOADING FINISHES.
           22px here against the document bar's 18px, from the SAME component:
           `size` is a real parameter, not a second drawing. The mark is
-          decorative, so this line still announces `FOLIO8 / OFFLINE` and nothing
-          more. The wordmark copy is untouched — the mockup draws `FOLIO8` alone
-          here, but shipped wording is not this story's to change.
+          decorative, so this line still announces `Folio8 / OFFLINE` and nothing
+          more. The case follows `resources/logo.png`, which sets the wordmark as
+          `Folio8`; the ` / OFFLINE` suffix is this screen's own and stays, since
+          the mockup's bare wordmark would drop the state the screen reports.
           NEVER on the manifest rows below: the 13px shape in the mockup there is
           the CJK row's in-progress marker, one value of a three-value status
           vocabulary (✓ → × —), and putting the mark there would make the
           product's brand read as "loading". */}
-      <p className="load-brand"><span className="brand-lockup"><BrandMark size={22} />FOLIO8 / OFFLINE</span></p><h1 id="load-title" tabIndex={-1}>Preparing folio8</h1>
+      <p className="load-brand"><span className="brand-lockup"><BrandMark size={22} />Folio8 / OFFLINE</span></p><h1 id="load-title" tabIndex={-1}>Preparing folio8</h1>
       <p className="load-copy">Preparing the offline rendering engine and fonts. This browser normally reuses its verified local cache until browser storage is cleared or evicted.</p>
       <p className="load-phase" role="status" aria-live="polite" aria-atomic="true" aria-label="Offline preparation status">{unavailable ? '× ' : engineState === 'starting' ? '→ ' : '— '}{phase}</p>
       {payload && <><div className="load-progress" role="progressbar" aria-label="Verified offline cache progress" aria-valuemin={0} aria-valuemax={total} aria-valuenow={announcedVerified} aria-valuetext={progressMessage}><span style={{ width: `${total === 0 ? 0 : (announcedVerified / total) * 100}%` }} /></div><p className="load-numeric" role="status" aria-live="polite" aria-atomic="true">{progressMessage}</p>

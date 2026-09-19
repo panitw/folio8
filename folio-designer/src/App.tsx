@@ -3592,7 +3592,7 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
           itself once, not twice. `.brand` stays byte-identical inside the
           lockup; only the wrapper is new. 18px here, 22px on the load screen,
           and nowhere else. */}
-      <span className="brand-lockup"><BrandMark size={18} /><span className="brand">FOLIO8</span></span><span className="document-name">{title}</span><span className={`status-dot${dirty ? '' : ' status-clean'}`} aria-hidden="true" /><span className="status-copy" role="status">{saveLabel}</span>
+      <span className="brand-lockup"><BrandMark size={18} /><span className="brand">Folio8</span></span><span className="document-name">{title}</span><span className={`status-dot${dirty ? '' : ' status-clean'}`} aria-hidden="true" /><span className="status-copy" role="status">{saveLabel}</span>
       {/* SIX GLYPHS IN ONE NAMED GROUP, BY OWNER RULING.
           Story 14.1 spelled this family as six words; the owner has since ruled
           the document bar and the canvas toolbar are glyph controls with a hover

@@ -101,8 +101,8 @@ describe('honest first-run load screen', () => {
   // added under a still-present `aria-hidden`, which is the mutation this
   // fence exists to catch.
   //
-  // ⚠ THE EXPECTED TEXT IS `FOLIO8 / OFFLINE`, NOT `FOLIO8`. The mockup draws
-  // `FOLIO8` alone here; shipped wording is a content decision no AC asks for,
+  // ⚠ THE EXPECTED TEXT IS `Folio8 / OFFLINE`, NOT `Folio8`. The mockup draws
+  // `Folio8` alone here; shipped wording is a content decision no AC asks for,
   // so it is left as shipped and AC4 is read as "the mark adds no SECOND
   // announcement" rather than as a copy change.
   it('wears the same mark at the load screen size, announcing nothing of its own', () => {
@@ -117,7 +117,7 @@ describe('honest first-run load screen', () => {
     // descendant-scoped query, and here it is a real regression rather than a
     // tidiness point: `role="img"` on the wrapper makes its children
     // presentational, so AT would announce "folio8" instead of the shipped
-    // `FOLIO8 / OFFLINE`, silencing the very state this screen reports.
+    // `Folio8 / OFFLINE`, silencing the very state this screen reports.
     const namedNodesIn = (root: Element) => [root, ...Array.from(root.querySelectorAll('*'))]
       .filter((node) => ['aria-label', 'aria-labelledby', 'role', 'title'].some((attribute) => node.hasAttribute(attribute)) || node.tagName.toLowerCase() === 'title')
       .map((node) => `${node.tagName.toLowerCase()}${node.getAttribute('role') ? `[role=${node.getAttribute('role')}]` : ''}`)
@@ -128,15 +128,16 @@ describe('honest first-run load screen', () => {
     expect(svg).toHaveAttribute('height', '22')
 
     // THE GEOMETRY AS RENDERED HERE, AS LITERALS. This is what a hand-written
-    // second drawing reds: transcribing the mockup's rounded 7×10 into a local
-    // `<svg>` would satisfy the size assertions above and fail here, because
-    // the shared rule gives 7.333×9.778 at this size.
+    // second drawing reds: transcribing any rounded pair into a local `<svg>`
+    // would satisfy the size assertions above and fail here, because the shared
+    // rule — the logo's own ratios — gives 8.306×10.355 at this size, over a
+    // stroke that scales to 2.245 rather than staying at the old constant 1.5.
     const rects = lockup!.querySelectorAll('rect')
     expect(rects).toHaveLength(2)
-    expect(rects[0]).toHaveAttribute('width', '20.5')
-    expect(rects[0]).toHaveAttribute('stroke-width', '1.5')
-    expect(rects[1], 'the shared rule gives 7.333 — the mockup\'s rounded 7 would be a second drawing').toHaveAttribute('width', '7.333')
-    expect(rects[1], 'the shared rule gives 9.778 — the mockup\'s rounded 10 would be a second drawing').toHaveAttribute('height', '9.778')
+    expect(rects[0]).toHaveAttribute('width', '19.755')
+    expect(rects[0], 'the logo draws the stroke as 80/784 of the box, so 22px is drawn more heavily than 18px').toHaveAttribute('stroke-width', '2.245')
+    expect(rects[1], 'the shared rule gives 8.306 at 22 — a rounded 8 would be a second drawing').toHaveAttribute('width', '8.306')
+    expect(rects[1], 'the shared rule gives 10.355 at 22 — a rounded 10 would be a second drawing').toHaveAttribute('height', '10.355')
     expect(rects[1]).toHaveAttribute('fill', 'currentColor')
 
     expect(within(lockup as HTMLElement).queryAllByRole('img')).toEqual([])
@@ -144,14 +145,14 @@ describe('honest first-run load screen', () => {
 
     const announced = lockup!.cloneNode(true) as Element
     for (const hidden of Array.from(announced.querySelectorAll('[aria-hidden="true"]'))) hidden.remove()
-    expect(announced.textContent?.replace(/\s+/g, ' ').trim(), 'the shipped wordmark, unchanged — the mark adds no second announcement').toBe('FOLIO8 / OFFLINE')
+    expect(announced.textContent?.replace(/\s+/g, ' ').trim(), 'the shipped wordmark, unchanged — the mark adds no second announcement').toBe('Folio8 / OFFLINE')
     expect(namedNodesIn(lockup!), 'nothing in the lockup — the wrapper INCLUDED — may contribute a name of its own').toEqual([])
 
     // (AC1) the mark is drawn BEFORE the word here too. The wordmark is a bare
     // text node on this screen, so document order is checked against the
     // lockup's first child rather than against a sibling element.
     expect(lockup!.firstElementChild, 'the mark is the first thing in the lockup; the word follows it').toBe(svg)
-    expect(lockup!.textContent?.trim(), 'the word is the lockup\'s only text, and it comes after the mark').toBe('FOLIO8 / OFFLINE')
+    expect(lockup!.textContent?.trim(), 'the word is the lockup\'s only text, and it comes after the mark').toBe('Folio8 / OFFLINE')
   })
 
   it('shows a keyboard retry only for a bounded failure', () => {

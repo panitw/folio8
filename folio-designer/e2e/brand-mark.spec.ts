@@ -5,7 +5,7 @@ import { openWorkspace } from './app.js'
 //
 // jsdom parses no stylesheet and computes no layout, so the unit suite can say
 // the `<svg>` carries `width="18"` but cannot say that an 18px square with a
-// 1.5px stroke actually lays out at 18×18 in a real engine. This spec is the
+// 1.837px stroke actually lays out at 18×18 in a real engine. This spec is the
 // only place that claim is checked.
 //
 // ⚠ `boundingBox()` ONLY — never `getComputedStyle` or `getBoundingClientRect`
@@ -36,7 +36,7 @@ test('the document bar wears the brand mark at its declared 18px box', async ({ 
 
   // THE ONLY ASSERTION IN THE TREE THAT RESOLVES THE COLOUR CASCADE.
   //
-  // The unit suite pins that `.brand-mark { color: var(--color-select) }` is
+  // The unit suite pins that `.brand-mark { color: var(--color-brand) }` is
   // SPELLED in App.css; it cannot say the rule WINS. jsdom parses no stylesheet,
   // so a later `.document-bar svg { color: var(--color-ink-low) }` appended to
   // App.css leaves the whole unit suite green while the mark quietly stops being
@@ -44,15 +44,18 @@ test('the document bar wears the brand mark at its declared 18px box', async ({ 
   // `toHaveCSS` reads the resolved value from the browser and is the only thing
   // that notices.
   //
-  // `--color-select: #58A6C4` (tokens.css), which the engine reports as rgb.
+  // `--color-brand: #87F0FF` (tokens.css), which the engine reports as rgb. The
+  // mark takes the LOGO's cyan, not `--color-select`'s: they are different
+  // colours on purpose, so a regression that reroutes the mark through the
+  // selection token lands here as a concrete rgb mismatch.
   // ⚠ `toHaveCSS` is NOT in the corpus prohibition list — only `getComputedStyle`
   // and `getBoundingClientRect` and friends are — so this is the permitted way
   // to ask, and neither banned spelling appears in this file.
-  await expect(mark, 'the mark paints --color-select, and no later rule outranks .brand-mark').toHaveCSS('color', 'rgb(88, 166, 196)')
+  await expect(mark, 'the mark paints --color-brand, and no later rule outranks .brand-mark').toHaveCSS('color', 'rgb(135, 240, 255)')
 
   // The mark sits BEFORE the word, and the word is unchanged.
   const word = bar.locator('.brand-lockup .brand')
-  await expect(word).toHaveText('FOLIO8')
+  await expect(word).toHaveText('Folio8')
   const wordBox = await word.boundingBox()
   expect(wordBox).not.toBeNull()
   expect(box!.x, 'the mark is drawn before the wordmark, not after it').toBeLessThan(wordBox!.x)

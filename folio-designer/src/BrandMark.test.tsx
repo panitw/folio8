@@ -50,48 +50,70 @@ const marks = (size: 18 | 22) => {
   return { svg, outer: rects[0], inner: rects[1], count: rects.length }
 }
 
-describe('Story 14.5: the product wears its own mark', () => {
-  it('draws the document bar mark at 18 with the mockup\'s own integers', () => {
+describe('the product wears its own mark, drawn from resources/logo.png', () => {
+  it('draws the document bar mark at 18 from the logo\'s own ratios', () => {
     const { svg, outer, inner, count } = marks(18)
     expect(count, 'exactly two rects — the outline and the block').toBe(2)
     expect(svg).toHaveAttribute('width', '18')
     expect(svg).toHaveAttribute('height', '18')
     expect(svg).toHaveAttribute('viewBox', '0 0 18 18')
-    expect(outer).toHaveAttribute('x', '0.75')
-    expect(outer).toHaveAttribute('y', '0.75')
-    expect(outer).toHaveAttribute('width', '16.5')
-    expect(outer).toHaveAttribute('height', '16.5')
-    expect(inner).toHaveAttribute('x', '6')
-    expect(inner).toHaveAttribute('y', '5')
-    expect(inner).toHaveAttribute('width', '6')
-    expect(inner).toHaveAttribute('height', '8')
+    // 18 × 80/784 = 1.837 stroke, inset by half of it.
+    expect(outer).toHaveAttribute('x', '0.918')
+    expect(outer).toHaveAttribute('y', '0.918')
+    expect(outer).toHaveAttribute('width', '16.163')
+    expect(outer).toHaveAttribute('height', '16.163')
+    // 18 × 244/784, 208/784, 296/784, 369/784.
+    expect(inner).toHaveAttribute('x', '5.602')
+    expect(inner).toHaveAttribute('y', '4.776')
+    expect(inner).toHaveAttribute('width', '6.796')
+    expect(inner).toHaveAttribute('height', '8.472')
   })
 
-  it('draws the load screen mark at 22 from the same rule, not the mockup\'s rounded integers', () => {
+  it('draws the load screen mark at 22 from the same rule, scaled', () => {
     const { svg, outer, inner, count } = marks(22)
     expect(count).toBe(2)
     expect(svg).toHaveAttribute('width', '22')
     expect(svg).toHaveAttribute('height', '22')
     expect(svg).toHaveAttribute('viewBox', '0 0 22 22')
-    expect(outer).toHaveAttribute('x', '0.75')
-    expect(outer).toHaveAttribute('y', '0.75')
-    expect(outer).toHaveAttribute('width', '20.5')
-    expect(outer).toHaveAttribute('height', '20.5')
-    // 7.333 / 9.778, NOT the mockup's rounded 7 / 10. The formula is the
-    // deliverable; a lookup table matching the mockup would be two drawings.
-    expect(inner, 'the rule gives 7.333 here — the mockup\'s rounded 7 would mean a per-site lookup table').toHaveAttribute('x', '7.333')
-    expect(inner).toHaveAttribute('y', '6.111')
-    expect(inner).toHaveAttribute('width', '7.333')
-    expect(inner, 'the rule gives 9.778 here — the mockup\'s rounded 10 would mean a per-site lookup table').toHaveAttribute('height', '9.778')
+    expect(outer).toHaveAttribute('x', '1.122')
+    expect(outer).toHaveAttribute('y', '1.122')
+    expect(outer).toHaveAttribute('width', '19.755')
+    expect(outer).toHaveAttribute('height', '19.755')
+    expect(inner).toHaveAttribute('x', '6.847')
+    expect(inner).toHaveAttribute('y', '5.837')
+    expect(inner).toHaveAttribute('width', '8.306')
+    expect(inner).toHaveAttribute('height', '10.355')
   })
 
-  it('holds the stroke at 1.5 at both sizes, because the mockups do not scale it', () => {
-    expect(marks(18).outer).toHaveAttribute('stroke-width', '1.5')
-    expect(marks(22).outer).toHaveAttribute('stroke-width', '1.5')
+  // THE REVERSAL OF STORY 14.5's CONSTANT STROKE, ASSERTED AS A DIFFERENCE
+  // RATHER THAN AS TWO NUMBERS. The logo draws the stroke as a fixed fraction of
+  // the box (80/784), so the two sizes MUST disagree. Pinning 1.837 and 2.245
+  // alone would stay green if someone reintroduced a per-size lookup table with
+  // those two values in it; asserting that the ratio is preserved is what says
+  // one rule produced both.
+  it('scales the stroke with the box, as the logo draws it', () => {
+    expect(marks(18).outer).toHaveAttribute('stroke-width', '1.837')
+    expect(marks(22).outer).toHaveAttribute('stroke-width', '2.245')
+    const ratio = (size: 18 | 22) => Number(marks(size).outer.getAttribute('stroke-width')) / size
+    expect(ratio(18), 'the stroke is 80/784 of the box at every size').toBeCloseTo(80 / 784, 4)
+    expect(ratio(22)).toBeCloseTo(80 / 784, 4)
+    expect(marks(18).outer.getAttribute('stroke-width'), 'a stroke that did not scale would be the mockup rule, not the logo').not.toBe(marks(22).outer.getAttribute('stroke-width'))
+  })
+
+  // THE COMPONENT'S CONSTANTS ARE THE ASSET'S OWN PIXELS, asserted against the
+  // numbers this suite independently writes above. If someone re-measures the
+  // logo and changes MARK/STROKE/INNER_*, these literals must be re-derived with
+  // them — which is the point: the asset is the authority, and a silent edit to
+  // the constants is a silent change of brand.
+  it('keeps the logo\'s measured integers as the component\'s constants', () => {
+    const source = fs.readFileSync(brandMarkPath, 'utf8')
+    for (const [name, value] of [['MARK', 784], ['STROKE', 80], ['INNER_WIDTH', 296], ['INNER_HEIGHT', 369], ['INNER_X', 244], ['INNER_Y', 208]] as const) {
+      expect(stripComments(source), `${name} is measured from resources/logo.png`).toMatch(new RegExp(`const ${name} = ${value}\\b`))
+    }
   })
 
   // THE MIDDLE LINK OF THE COLOUR CHAIN. The chain is
-  // `--color-select` → `.brand-mark { color: … }` → `currentColor`, and this
+  // `--color-brand` → `.brand-mark { color: … }` → `currentColor`, and this
   // class attribute is the join. Without this assertion the attribute can be
   // deleted and the whole unit suite stays green while the mark silently
   // inherits whatever colour its container happens to carry.
@@ -138,17 +160,17 @@ describe('Story 14.5: the product wears its own mark', () => {
     // NEGATIVE CONTROL — the file as shipped.
     expect(scan(source), 'BrandMark.tsx must spell no colour literal; the token reaches it as currentColor').toBe(false)
 
-    // THE TWO-WAY CONTROL ON ONE LITERAL. The SAME `#58A6C4` must be clean in a
+    // THE TWO-WAY CONTROL ON ONE LITERAL. The SAME `#87F0FF` must be clean in a
     // comment and red in an attribute — a scan that cannot tell those apart is
     // DW-358 rewritten, which is the defect this story criticises.
-    expect(scan(`${source}\n// the token is #58A6C4`), 'a hex NAMED IN A COMMENT is documentation, not a colour literal').toBe(false)
-    expect(scan(`${source}\n/* the token is #58A6C4 */`), 'a hex in a block comment is documentation too').toBe(false)
-    expect(scan(source.replace('stroke="currentColor"', 'stroke="#58A6C4"')), 'the same hex in an ATTRIBUTE is the violation, and must red').toBe(true)
+    expect(scan(`${source}\n// the token is #87F0FF`), 'a hex NAMED IN A COMMENT is documentation, not a colour literal').toBe(false)
+    expect(scan(`${source}\n/* the token is #87F0FF */`), 'a hex in a block comment is documentation too').toBe(false)
+    expect(scan(source.replace('stroke="currentColor"', 'stroke="#87F0FF"')), 'the same hex in an ATTRIBUTE is the violation, and must red').toBe(true)
 
     // POSITIVE CONTROLS — the scan fires on every spelling it claims to catch,
     // including the `rgba(`/`hsla(` pair the incumbent App.css regex cannot
     // match (DW-358). Injected as code, not as a comment.
-    for (const injected of ['#58A6C4', '#58a6c4', '#fff', 'rgb(', 'rgba(', 'hsl(', 'hsla(']) {
+    for (const injected of ['#87F0FF', '#87f0ff', '#fff', 'rgb(', 'rgba(', 'hsl(', 'hsla(']) {
       expect(scan(`${source}\nconst injected = "${injected}"`), `the scan must fire on ${injected} in code, or it is vacuous`).toBe(true)
     }
   })
@@ -164,9 +186,12 @@ describe('Story 14.5: the product wears its own mark', () => {
   //      inset and the two outer sizes the rule produces, plus the 22px inner
   //      block's three-decimal values. Any copy of THIS mark has to reproduce
   //      these numbers whatever element carries them. Attribute position, not
-  //      bare text: `16.5` also reads as "Story 16.5", which appears in prose
-  //      across twenty files in this codebase (measured), so a bare-number scan
-  //      would be a permanent false alarm.
+  //      bare text: the mockup rule's `16.5` also read as "Story 16.5", which
+  //      appears in prose across twenty files in this codebase (measured), so a
+  //      bare-number scan was a permanent false alarm. The logo's own values
+  //      collide with no story number, but the attribute anchor is KEPT — the
+  //      hazard was the technique, not the one number that exposed it, and the
+  //      prose control below still proves the anchor is doing the work.
   //  (2) THE TWO ELEMENTS THAT DRAW A FILLED SQUARE BLOCK. The house icon set is
   //      `<path>`/`<circle>` only (`paletteGlyphs` in App.tsx), so a `<rect>` or
   //      `<polygon>` appearing anywhere else in production is square-shaped news.
@@ -174,7 +199,7 @@ describe('Story 14.5: the product wears its own mark', () => {
   // Both arms were measured against the whole production corpus and match
   // BrandMark.tsx alone, so neither is carrying a pre-existing false positive.
   it('is the only place the mark is drawn, whatever element a copy might use', () => {
-    const geometryInMarkup = /\b(?:x|y|cx|cy|width|height|points|d)\s*=\s*["{]\s*"?\s*(?:0\.75|16\.5|20\.5|7\.333|9\.778|6\.111)\b/
+    const geometryInMarkup = /\b(?:x|y|cx|cy|width|height|points|d)\s*=\s*["{]\s*"?\s*(?:0\.918|16\.163|1\.122|19\.755|6\.796|8\.472|10\.355)\b/
     const squareElement = /<(?:rect|polygon)\b/
     const drawn = productionSources().filter((file) => {
       const code = stripComments(fs.readFileSync(file, 'utf8'))
@@ -183,8 +208,8 @@ describe('Story 14.5: the product wears its own mark', () => {
     expect(drawn.map((file) => path.relative(sourceDir, file)), 'a second drawing of the mark in production means it is two drawings, not one rule').toEqual(['BrandMark.tsx'])
     // NON-VACUITY, IN BOTH DIRECTIONS. The arms fire on a hand-written copy
     // spelled with any of the three plausible elements …
-    expect(geometryInMarkup.test('<rect x="0.75" y="0.75" width="20.5" height="20.5" />')).toBe(true)
-    expect(geometryInMarkup.test('<path d="7.333 9.778 L0 0" />'), 'a copy drawn as a path is still a copy').toBe(true)
+    expect(geometryInMarkup.test('<rect x="0.918" y="0.918" width="19.755" height="19.755" />')).toBe(true)
+    expect(geometryInMarkup.test('<path d="6.796 8.472 L0 0" />'), 'a copy drawn as a path is still a copy').toBe(true)
     expect(squareElement.test('<polygon points="0,0 18,0 18,18 0,18" />')).toBe(true)
     // … and stay quiet on the house icon set and on prose, which is what keeps
     // this guard from becoming a standing false alarm.
@@ -222,10 +247,10 @@ describe('Story 14.5: the product wears its own mark', () => {
   // only assertion that resolves the cascade, and that spec does not run here.
   it('pins the one App.css rule that is the mark\'s only source of colour', () => {
     const appCss = fs.readFileSync(appCssPath, 'utf8')
-    expect(appCss, 'the mark takes its colour from .brand-mark { color: var(--color-select) } and nowhere else').toMatch(/\.brand-mark\s*\{[^}]*color:\s*var\(--color-select\)/)
+    expect(appCss, 'the mark takes its colour from .brand-mark { color: var(--color-brand) } and nowhere else').toMatch(/\.brand-mark\s*\{[^}]*color:\s*var\(--color-brand\)/)
     expect(appCss).toMatch(/\.brand-lockup\s*\{/)
     // Case-insensitive ON PURPOSE: `tokens.css` spells the value UPPERCASE
     // today, and a later re-casing of the token file is not a colour change.
-    expect(fs.readFileSync(tokensCssPath, 'utf8'), 'compared case-insensitively: a re-cased token file is not a colour change').toMatch(/--color-select:\s*#58a6c4/i)
+    expect(fs.readFileSync(tokensCssPath, 'utf8'), 'compared case-insensitively: a re-cased token file is not a colour change').toMatch(/--color-brand:\s*#87f0ff/i)
   })
 })
