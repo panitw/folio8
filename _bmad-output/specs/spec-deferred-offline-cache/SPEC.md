@@ -20,6 +20,10 @@ full, up front, to every visitor, including the one who leaves after thirty seco
 is also growing unwatched: `spec-folio` still records the accepted first load as "~9 MB", which
 the measured release passed some time ago.
 
+That CJK font is charged twice. The engine wasm embeds its own copy of the same bytes, so
+deferring the canvas one still leaves 4.72 MiB brotli of Chinese glyphs inside the 8.11 MiB
+blocking download, for every visitor who will only ever type Latin.
+
 ## Capabilities
 
 - **CAP-1 — The designer starts on the core tier alone**
@@ -64,14 +68,45 @@ the measured release passed some time ago.
     leaves an asset untiered, or that moves an asset into the core tier without the bound
     being raised deliberately, fails verification rather than shipping.
 
+- **CAP-6 — The designer's engine carries no CJK face**
+  - **intent:** The engine wasm the designer loads embeds only the faces an ordinary Latin or
+    Thai document needs. The CJK face reaches the engine as supplied bytes, from the same
+    deferred asset the canvas already fetches — so the release stops shipping that face twice
+    and stops charging the larger of the two copies to every first load.
+  - **success:** The core tier falls from 10.82 MiB to the measured weight of an engine wasm
+    without the CJK face — projected at roughly 6.1 MiB — and a CJK document still lays out,
+    previews and renders byte-identically once its face has been fetched.
+
+- **CAP-7 — An absent face refuses the render, named and located**
+  - **intent:** Once the engine's font set can be short of a face the document declares, a
+    render that needs the missing face must fail rather than quietly produce a PDF with the
+    text gone.
+  - **success:** Rendering text that needs a face the supplied `FontSet` does not carry yields
+    a located diagnostic naming that face and no PDF; `TEXT_MISSING_GLYPH` keeps its own,
+    narrower meaning for a rune that no supplied face covers.
+
 ## Constraints
 
 - **Byte-identity survives untouched.** A missing deferred font is refused, never substituted.
   The canvas and the preview keep showing the real production output or nothing at all;
   no fallback face is ever rendered in place of the one the document declares.
-- **A ~10.82 MiB core gate is the accepted destination.** The engine wasm is 8.11 MiB of it and
-  stays whole and in the core tier; tiering roughly halves the first load and that is the win
-  this change is scoped to deliver. This supersedes `spec-folio`'s "~9 MB first load".
+- **A ~6.1 MiB core gate is the accepted destination.** The engine wasm stays in the core tier
+  and stays whole, but sheds its embedded CJK face: 4.72 MiB brotli of its 8.11 MiB sidecar is
+  that one font. Tiering plus the shed face takes the first load to roughly a third of the
+  18.63 MiB it began at. This supersedes both `spec-folio`'s "~9 MB first load" and this spec's
+  own earlier "~10.82 MiB accepted destination".
+- **The eleven-face shipped contract is untouched.** `fonts.Shipped()` keeps all eleven faces.
+  The six CJK golden fixtures, `fonts/accounting_test.go`'s NOTICE-to-bytes join, the parity
+  tests in `folio-js` and `folio-dotnet`, and the "all eleven faces" wording across three
+  READMEs and the release pack checks all stay exactly as they are. Only the designer's wasm
+  host stops taking the CJK face from that set.
+- **The engine's font input becomes explicit at the designer host.** `wasm/cmd/render/main.go`
+  already compiles in no fonts and receives the caller's set; the designer host follows that
+  shape rather than inventing a second one. The byte-orientation of the JS-to-wasm request
+  envelope does not change.
+- **A CJK family stays name-declared in a `.folio`, never byte-embedded.** Picking a catalogue
+  family embeds its bytes into the document; a shipped family writes only a name. The CJK face
+  must keep the second path, or every CJK document gains 10 MiB.
 - **pdf.js and its cmaps are core.** Preview sits close enough to the primary workflow that
   its 0.76 MiB across eleven assets does not justify a second refusal path through it.
 - **Readiness means the core tier, and says so.** `cacheReady` today asserts all 80 assets
@@ -92,22 +127,31 @@ the measured release passed some time ago.
 
 ## Non-goals
 
-- **Shrinking the engine wasm.** Compressing, splitting or streaming-compiling the 8.11 MiB
-  engine is a separate problem from tiering, and this spec does not attempt it.
+- **Compressing, splitting or streaming-compiling the engine wasm.** Taking the CJK face out of
+  it (CAP-6) is in scope; making the remaining code smaller or loadable in pieces is a separate
+  problem and this spec does not attempt it.
+- **Trimming the sibling packages.** Making the CJK face an optional download in the `folio-js`
+  npm tarball or the `folio-dotnet` NuGet package is real value and its own risk; it is not
+  this spec's business.
+- **Removing any face from `fonts.Shipped()`.** The shipped set is a library contract with its
+  own tests, fixtures and documentation in three languages. Nothing here touches it.
 - **A cache management UI.** No inspector, no eviction control, no manual sync, no "make
   available offline" button.
 - **Serving fonts from a third-party CDN.** Deferred assets come from the same origin and the
   same content-addressed release; the forbidden-font-host rules are unchanged.
-- **Changing what the release contains.** No asset is dropped, added or re-encoded by this
-  change — only when it is fetched.
+- **Changing which assets the release contains.** Tiering drops and adds nothing; it changes
+  only when an asset is fetched. CAP-6 is the one exception, and it removes a duplicate: the
+  CJK face the engine wasm embeds is byte-identical to the one the release already serves as a
+  deferred asset, so the release keeps serving exactly the same set of faces.
 - **Revising the update, pending-release or mandatory-upgrade behaviour.** Those keep working
   as they do, over whichever assets are cached.
 
 ## Success signal
 
 A first-time visitor on a cold cache reaches an editable, previewable document after
-transferring 10.82 MiB instead of 18.63 MiB and verifying 30 assets instead of 80 — and a
-session that stays on Latin text never transfers the other 7.81 MiB at all. An author who has
+transferring roughly 6.1 MiB instead of 18.63 MiB and verifying 30 assets instead of 80 — and a
+session that stays on Latin text never transfers the rest at all, nor the CJK face in either of
+the two places the release used to carry it. An author who has
 used the designer once still opens it, edits, previews and renders with the network
 disconnected, and is told precisely which asset is missing on the one occasion that is not true.
 
@@ -119,4 +163,9 @@ disconnected, and is told precisely which asset is missing on the one occasion t
   it already serves are the precedent for the deferred fetch-and-keep path, not a reason to
   build a second one.
 - `spec-folio`'s "~9 MB first load is accepted" constraint is superseded by this spec rather
-  than contradicted by it; that spec needs the corresponding update.
+  than contradicted by it; that spec needs the corresponding update, as does `epics.md`'s NFR7.
+- CAP-6's 6.1 MiB is a projection — the SC face brotli-compresses to 4.72 MiB standalone, and
+  its weight inside the wasm's data section may differ. Story 4 measures the real figure before
+  the core bound is re-pinned to it.
+- The engine wasm and the deferred canvas asset carry the same CJK bytes today
+  (sha256 `5ef5755b1ac65021…`), which is what lets one fetched copy serve both.

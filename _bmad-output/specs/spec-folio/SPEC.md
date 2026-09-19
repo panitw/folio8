@@ -171,7 +171,7 @@ resolves toward making that handoff reliable rather than toward feature breadth.
   timestamp in subset output, and subset tags derived by hash.
 - **No server, no accounts, no server-side template storage.** Templates and data never leave
   the user's machine during design.
-- **A ~10.67 MiB first load is accepted** in exchange for a designer that is genuinely offline
+- **A ~10.82 MiB first load is accepted** in exchange for a designer that is genuinely offline
   with no font-fetch failure mode. That load is the *core tier* only — the engine, the base
   Latin and Thai faces, the shell and pdf.js. The CJK font and the font catalogue are fetched
   on first use and kept, so "genuinely offline" is a claim about what this browser has actually

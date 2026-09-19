@@ -79,3 +79,67 @@
 
     No document may open and then fail mid-edit for an asset that was already absent at open.
     That is the property worth a test.
+
+- id: "4"
+  title: Refuse a render that needs a face the font set does not carry
+  description: >-
+    A render whose text needs a face absent from the supplied FontSet fails with a located
+    diagnostic naming that face, instead of skipping the chain member and dropping the runes
+    under a warning (CAP-7).
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    This story is a no-op for every caller shipping today: `fonts.Shipped()` carries all eleven
+    faces, so nothing currently reaches the new refusal. That is deliberate — it lands the
+    safety net BEFORE story 5 makes an absent face possible. Do not merge the two.
+
+    Today an absent chain member is silently skipped (folio-go/render.go:1533-1539, with the
+    comment at :1711-1713 explaining why), and only TEXT_MISSING_GLYPH (a Warning, :1831-1837)
+    fires when nothing covers a rune. Those two outcomes must stay distinguishable: "the
+    document names a face nobody supplied" is a refusal; "no supplied face covers this rune" is
+    still a warning. Conflating them would make a legitimately-unsupported rune fail a render.
+
+    `folio-go/render.go:1598` already has the sentence — "face %q is not present in the supplied
+    FontSet" — as a plain error with no diagnostic code, on a path the normal walk cannot reach.
+    Give the condition a real diagnostic code and an element id and data path, and make the
+    normal walk reach it. Reuse that wording rather than inventing a second phrasing.
+
+    Six golden fixtures contain Han text with PDF hashes pinned across three languages
+    (multi-script-fallback, shaped-text, wrapped-text, statement-1/-5/-20/-50, expected-breaks).
+    None of their bytes may move. If one does, stop and report it rather than re-pinning.
+
+- id: "5"
+  title: Take the CJK face out of the designer's engine
+  description: >-
+    The designer's wasm host stops embedding the CJK face and receives it from JS instead,
+    supplied from the deferred asset the canvas already fetches; the core tier is re-measured
+    and re-pinned to the result (CAP-6).
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    Scope fence: `fonts.Shipped()` keeps all eleven faces and folio-js, folio-dotnet, the
+    accounting tests and the "eleven faces" documentation are NOT in this story. The change is
+    the designer host's font input, and nothing else. If the work seems to want a face removed
+    from Shipped(), that is the signal to stop and ask, not to widen.
+
+    folio-go/wasm/cmd/engine/main.go takes no fonts from JS today — `wasm.NewEngine(clock)` has
+    no font parameter, and internal/wasm/engine.go calls `fonts.Shipped()` at seven sites (133,
+    164, 203, 259, 325, 349, 388). Every one of those has to read one set the host owns.
+    folio-go/wasm/cmd/render/main.go is the precedent: it compiles in no fonts and takes the
+    caller's set through `fontSet(names, faces)` at :150-157. Follow that shape.
+
+    FIRST TASK IS A MEASUREMENT. Build the wasm without the CJK face and report the real served
+    (.br) size before touching the core bound. The 6.1 MiB in SPEC.md is a projection from
+    brotli-compressing the face standalone (4.72 MiB of the 8.11 MiB sidecar); the bound gets
+    pinned to what the build actually emits, by the same derived-not-retyped reader story 1
+    established. Report the before and after cold-load numbers.
+
+    The designer already fetches this exact face as a deferred asset — same bytes, sha256
+    5ef5755b1ac65021. One fetched copy serves both the canvas and the engine; do not open a
+    second fetch path. The preflight from story 3 is what makes the face present before a CJK
+    document renders, so a CJK document must still open, preview and render byte-identically.
+
+    Picking a catalogue family embeds its bytes into the .folio; a shipped family writes only a
+    name. The CJK face must stay on the name-declared path — if it lands on the embedding path
+    every CJK document gains 10 MiB, which is the opposite of this whole spec.
+
+    After the folio-go change, `npm run build:wasm`.
