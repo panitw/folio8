@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { ASSET_TIER_RULES, ASSET_TIERS, classifyAssetTier, declaredCacheAssetBounds, declaredCacheAssetWarning, declaredCoreCacheAssetBounds, normalizePublicPath, pageIdentity, releaseIdentity } from './offline-release-contract.mjs'
+import { ASSET_TIER_RULES, ASSET_TIERS, CORE_CATALOGUE_FACE_IDS, classifyAssetTier, isCatalogueAssetUrl, declaredCacheAssetBounds, declaredCacheAssetWarning, declaredCoreCacheAssetBounds, normalizePublicPath, pageIdentity, releaseIdentity } from './offline-release-contract.mjs'
 
 describe('offline release contract', () => {
   it('normalizes the single Windows separator emitted by path.relative', () => {
@@ -148,6 +148,15 @@ describe('the release asset tier rule', () => {
     ['a document face', '/assets/noto-sans.a4c811314da2ade3b4d2-DDPrwTMs.ttf'],
     ['a Thai document face', '/assets/noto-sans-thai.c94562c15cbff8c9af93-CrLOPtlG.ttf'],
     ['a shell UI face', '/assets/ibm-plex-sans.975dcda37d80f038dcd1-Bl2SjS7V.ttf'],
+    // THE ONE CATALOGUE FACE THAT BLOCKS (story 3, owner decision 2026-09-19).
+    // `runtime-fonts.css` maps the canvas family `Roboto` to this file while
+    // `Roboto Bold`, `Roboto Italic` and `Roboto Bold Italic` map to the shipped
+    // core faces above, and the starter and all four bundled examples declare
+    // that chain — so while it was deferred the DEFAULT DOCUMENT could not paint
+    // its body text without a fetch. It is still a `font-catalogue.json` face
+    // (`isCatalogueAssetUrl` still says yes, and the generator's byte subtotal
+    // and 31-face count still count it); it is merely no longer a deferred one.
+    ['the core catalogue face', '/assets/catalogue-roboto.e688a215e0841b6e4edb-DyKMK8wb.ttf'],
   ]
   const deferred = [
     ['the CJK font', '/assets/noto-sans-cjk.5ef5755b1ac650218098-56t-E-tZ.ttf'],
@@ -156,6 +165,14 @@ describe('the release asset tier rule', () => {
     // like the core Thai document faces above: a rule that read the family name
     // rather than the catalogue prefix would put these in the blocking set.
     ['a catalogue Thai face', '/assets/catalogue-notoserifthai.538df2b3033522cd48bf-C0nStReG.ttf'],
+    // THE THREE SIBLINGS WHOSE IDS BEGIN `roboto`, and they are here because the
+    // core carve-out above is written as an id followed by a DOT: an exclusion
+    // anchored to the bare prefix would have pulled 0.4 MiB of catalogue faces
+    // nobody decided about into the blocking set, and the pin would still have
+    // read 30 while the first load grew.
+    ['a catalogue face whose id extends the core one', '/assets/catalogue-robotocondensed.8c4c429a54b4af66cd33-BcQwErTy.ttf'],
+    ['a catalogue mono face whose id extends the core one', '/assets/catalogue-robotomono.af0bff7599c3df383175-DxZaQpLm.ttf'],
+    ['a catalogue slab face whose id extends the core one', '/assets/catalogue-robotoslab.fd4d98f8403041d58d67-CnMvBxZr.ttf'],
     ['a bundled example template', '/assets/invoice.f4877f7a403af1a19f4d-DYZ03lTH.folio'],
     ['a bundled example sample', '/assets/invoice.sample.78ed96ba6433f0dca7a7-tYlOXWm3.json'],
     ['a bundled example thumbnail', '/assets/invoice.thumbnail.88abffc36556da508be8-BhF2hbER.png'],
@@ -194,6 +211,57 @@ describe('the release asset tier rule', () => {
   // A default — either way — would be the silence the rule exists to remove.
   it.each(strangers)('leaves %s unclassified rather than defaulting it', (_name, url) => {
     expect(classifyAssetTier(url)).toBeUndefined()
+  })
+
+  // THE TWO QUESTIONS ABOUT ROBOTO HAVE DIFFERENT ANSWERS, AND BOTH ARE ASKED.
+  // `classifyAssetTier` says `core` (above); `isCatalogueAssetUrl` must still say
+  // yes, because `generate-offline-release.mjs` reads it for
+  // `brotli.catalogue.totalBytes` and for the check that the emitted catalogue
+  // matches `font-catalogue.json`'s 31 faces. Collapsing the two — carving Roboto
+  // out of the predicate instead of out of the deferred RULE — would drop a face
+  // from that count and a face's bytes from that subtotal, silently.
+  it('keeps the core catalogue face a catalogue face for the generator', () => {
+    expect(isCatalogueAssetUrl('/assets/catalogue-roboto.e688a215e0841b6e4edb-DyKMK8wb.ttf')).toBe(true)
+    expect(classifyAssetTier('/assets/catalogue-roboto.e688a215e0841b6e4edb-DyKMK8wb.ttf')).toBe('core')
+  })
+
+  // THE LIST IS HELD TO THE DOCUMENT THAT MADE IT NECESSARY, AND IT READS THAT
+  // DOCUMENT RATHER THAN RESTATING IT.
+  //
+  // `catalogue-roboto` is core for one reason: `public/templates/starter.folio`
+  // — the document every visitor lands on, and the base all four bundled
+  // examples were drawn from — paints its body text in Roboto, so while that
+  // face was deferred the FIRST SCREEN substituted and corrected itself. Nothing
+  // else in the tier rules knows that. Adding a second catalogue family to the
+  // starter's chains would leave the classification rows above, the 30/30 pin
+  // and every other suite green while reintroducing exactly that regression, so
+  // the starter's own chains are the input here.
+  //
+  // It reads the CHAINS rather than the paint because this is a build-time
+  // contract with no engine to ask: a chain entry is the strongest statement
+  // available here about what the document may need, and erring towards MORE
+  // core faces is the safe direction for the first screen.
+  it('classifies every catalogue family the starter declares as core', () => {
+    const starter = JSON.parse(readFileSync(join(import.meta.dirname, '..', 'public', 'templates', 'starter.folio'), 'utf8'))
+    const catalogue = JSON.parse(readFileSync(join(import.meta.dirname, '..', 'font-catalogue.json'), 'utf8'))
+    const idOfFamily = new Map(catalogue.map((face) => [face.family, face.id]))
+    // Every face name the starter's chains reach, in the format's own two
+    // spellings: a bare string entry, and an object with `face` plus cuts.
+    const declared = new Set()
+    for (const chain of Object.values(starter.fonts ?? {})) {
+      for (const entry of chain) {
+        if (typeof entry === 'string') { declared.add(entry); continue }
+        for (const name of [entry.face, entry.bold, entry.italic, entry.boldItalic]) if (typeof name === 'string' && name !== '') declared.add(name)
+      }
+    }
+    expect(declared.size, 'read no faces out of starter.folio, so this check would be vacuous').toBeGreaterThan(0)
+    const catalogueFamilies = [...declared].filter((family) => idOfFamily.has(family))
+    expect(catalogueFamilies, 'the starter must declare at least one catalogue family, or this check is asserting over an empty set').not.toEqual([])
+    for (const family of catalogueFamilies) {
+      const id = idOfFamily.get(family)
+      expect(CORE_CATALOGUE_FACE_IDS, `starter.folio declares the catalogue family ${JSON.stringify(family)} (id ${JSON.stringify(id)}) and the core tier does not name it, so the default document would need a deferred fetch to paint and the first screen every visitor sees would substitute and then correct itself`).toContain(id)
+      expect(classifyAssetTier(`/assets/catalogue-${id}.0123456789abcdef0123-AbCdEfGh.ttf`)).toBe('core')
+    }
   })
 
   it('classifies into exactly the two declared tiers', () => {

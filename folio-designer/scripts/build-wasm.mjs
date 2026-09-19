@@ -577,11 +577,51 @@ writeFileSync(join(generatedDir, 'pdfjs-assets.ts'), `// Keep PDF.js CMaps and s
 const shippedRules = `@font-face { font-family: 'IBM Plex Sans'; src: url('./runtime/${assets.plexSans}') format('truetype'); font-display: swap; }\n@font-face { font-family: 'IBM Plex Mono'; src: url('./runtime/${assets.mono}') format('truetype'); font-display: swap; }\n@font-face { font-family: 'IBM Plex Sans Thai'; src: url('./runtime/${assets.plexSansThai}') format('truetype'); font-display: swap; }\n@font-face { font-family: 'Noto Sans'; src: url('./runtime/${assets.sans}') format('truetype'); font-display: swap; }\n@font-face { font-family: 'Noto Sans Thai'; src: url('./runtime/${assets.sansThai}') format('truetype'); font-display: swap; }\n@font-face { font-family: 'Noto Sans SC'; src: url('./runtime/${assets.sansCjk}') format('truetype'); font-display: swap; }\n@font-face { font-family: 'Noto Sans Bold'; src: url('./runtime/${assets.sansBold}') format('truetype'); font-display: swap; }\n@font-face { font-family: 'Noto Sans Italic'; src: url('./runtime/${assets.sansItalic}') format('truetype'); font-display: swap; }\n@font-face { font-family: 'Noto Sans Bold Italic'; src: url('./runtime/${assets.sansBoldItalic}') format('truetype'); font-display: swap; }\n@font-face { font-family: 'Noto Sans Thai Bold'; src: url('./runtime/${assets.sansThaiBold}') format('truetype'); font-display: swap; }\n@font-face { font-family: 'Roboto Bold'; src: url('./runtime/${assets.robotoBold}') format('truetype'); font-display: swap; }\n@font-face { font-family: 'Roboto Italic'; src: url('./runtime/${assets.robotoItalic}') format('truetype'); font-display: swap; }\n@font-face { font-family: 'Roboto Bold Italic'; src: url('./runtime/${assets.robotoBoldItalic}') format('truetype'); font-display: swap; }\n`
 for (const family of shippedFamilies) if (!shippedRules.includes(`font-family: '${family}'`)) throw new Error(`shippedFamilies names ${JSON.stringify(family)} and no hand-written @font-face rule declares it, so the catalogue's collision guard is describing a family that is not there`)
 if (shippedRules.split('@font-face').length - 1 !== shippedFamilies.length) throw new Error(`the hand-written stylesheet emits ${shippedRules.split('@font-face').length - 1} rules and shippedFamilies names ${shippedFamilies.length}, so a rule exists that the catalogue's collision guard does not know about`)
-writeFileSync(join(generatedDir, 'runtime-fonts.css'), shippedRules
+const runtimeFontRules = shippedRules
   // AND THE CATALOGUE, one rule per declared face, emitted from the manifest
   // rather than written out. Same shape as the thirteen above, deliberately: no
   // `font-weight`, no `font-style`, one static Regular per family (AC6).
-  + catalogueFaces.map((face) => `@font-face { font-family: '${face.family}'; src: url('./runtime/${face.filename}') format('truetype'); font-display: swap; }\n`).join(''))
+  + catalogueFaces.map((face) => `@font-face { font-family: '${face.family}'; src: url('./runtime/${face.filename}') format('truetype'); font-display: swap; }\n`).join('')
+writeFileSync(join(generatedDir, 'runtime-fonts.css'), runtimeFontRules)
+
+// THE CANVAS'S OWN FAMILY → FILE MAP, READ BACK OUT OF THE STYLESHEET THIS
+// SCRIPT JUST WROTE (spec-deferred-offline-cache, story 3).
+//
+// WHAT NEEDS IT. Opening a document now fetches the DEFERRED faces that
+// document declares, while the network is there, so the canvas paints in them
+// rather than substituting and correcting itself once a paint has already
+// failed. To do that the page has to turn a face NAME — what a chain entry
+// carries — into the asset URL the browser would have gone to. Nothing in
+// `src/` could: `font-catalogue.ts` knows the 31 catalogue families and
+// `offline-assets.ts` knows the shipped files under camel-case slot names that
+// are not face names at all, and neither half knows it is half of anything.
+//
+// ⚠ IT IS PARSED OUT OF `runtimeFontRules`, NOT REBUILT BESIDE IT, AND THAT IS
+// THE WHOLE POINT. The stylesheet is what the browser actually resolves a
+// family through; a map assembled from the same two sources would be a SECOND
+// derivation owing a proof that it agrees with the first, and the failure mode
+// of a disagreement is silent — a face prefetched under a URL no `@font-face`
+// rule names, and the substitution warning the prefetch existed to prevent.
+// Reading the emitted text makes agreement a property of the text rather than a
+// convention between two loops. The count is asserted for the same reason
+// `shippedRules` is asserted against `shippedFamilies` above: a regex that
+// quietly matched fewer rules would emit a SHORTER map, and a short map is a
+// prefetch that silently skips faces.
+//
+// ⚠ AND IT IS NOT A TIER CLAIM. Every family gets a row, core and deferred
+// alike; which of them is worth fetching is decided at runtime from the release
+// manifest's own `tier`, which is the one authority on that (story 1).
+const canvasFaceRules = [...runtimeFontRules.matchAll(/@font-face \{ font-family: '([^']+)'; src: url\('\.\/runtime\/([^']+)'\)/g)]
+if (canvasFaceRules.length !== shippedFamilies.length + catalogueFaces.length) throw new Error(`read ${canvasFaceRules.length} family/file pairs out of the emitted runtime-fonts.css and it declares ${shippedFamilies.length + catalogueFaces.length} rules, so the canvas face map would be emitted short and an open would silently skip prefetching the families it missed`)
+writeFileSync(join(generatedDir, 'canvas-face-assets.ts'),
+  `// GENERATED by scripts/build-wasm.mjs from the emitted runtime-fonts.css. Do not edit.\n`
+  + canvasFaceRules.map(([, , filename], index) => `import canvasFaceUrl${index} from './runtime/${filename}?url'`).join('\n')
+  + `\n\n// The CSS family the canvas asks a face for → the content-addressed URL the\n`
+  + `// stylesheet's own \`@font-face\` rule points at. One row per rule, in the\n`
+  + `// stylesheet's order: the thirteen shipped faces first, then the catalogue.\n`
+  + `export const canvasFaceAssets: ReadonlyMap<string, string> = new Map([\n`
+  + canvasFaceRules.map(([, family], index) => `  [${JSON.stringify(family)}, canvasFaceUrl${index}],`).join('\n')
+  + `\n])\n`)
 
 // THE FAMILY INDEX SNAPSHOT MODULE, emitted beside the catalogue module and
 // from committed data alone — no network, because an offline release build is a

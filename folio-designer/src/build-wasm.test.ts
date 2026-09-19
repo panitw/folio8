@@ -287,9 +287,10 @@ describe('everything the build emits into src/generated/ is ignored, except the 
     }
   })
 
-  it('extracts exactly the eight emissions the build writes, from the emitters own source', () => {
+  it('extracts exactly the nine emissions the build writes, from the emitters own source', () => {
     const emitted = emitters.flatMap(([, source]) => emittedPaths(source)).sort()
     expect(emitted, 'the emitted set is read from the emitters, so a new artifact appears here the moment it is written. If this reds with a new name, that artifact needs a .gitignore line (or a deliberate decision to track it, like pdfjs-assets.ts).').toEqual([
+      'canvas-face-assets.ts',
       'documentation-assets.ts',
       'example-assets.ts',
       'font-catalogue.ts',

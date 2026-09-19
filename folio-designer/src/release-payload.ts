@@ -127,18 +127,28 @@ export const cacheAssetApproachWarning = warnCacheAssets
 // `declaredCoreCacheAssetBounds` compares `>` and not `>=`, so an envelope with
 // equal ends is expressible and legal.
 //
-// 29 IS THE MEASURED BLOCKING SET. `asset-tiers.md` in the spec folder records
-// it as 29 assets / 10.67 MiB against a deferred tier of 51 / 7.96 MiB, under
-// its own "Corrected 2026-09-19" note: an earlier measurement counted
-// `/assets/pdf_thumbnail_view-<hash>.js` into the bundled-example group by its
-// `thumbnail` substring, and that 2.2 KiB pdf.js preview chunk is core —
-// SPEC.md puts pdf.js in the core tier. The correction moved only the COUNTS;
-// the MiB figures were right throughout, which is why the miscount survived as
-// long as it did. Whoever moves this number next: re-measure both tiers and
-// correct that companion in the same change, or the next reader inherits the
-// same mismatch.
-const minimumCoreCacheAssets = 29
-const maximumCoreCacheAssets = 29
+// THE NUMBER IS MEASURED, AND `asset-tiers.md` IN THE SPEC FOLDER IS WHERE THE
+// MEASUREMENT LIVES. It recorded 29 assets / 10.67 MiB against a deferred tier
+// of 51 / 7.96 MiB under its own "Corrected 2026-09-19" note: an earlier
+// measurement counted `/assets/pdf_thumbnail_view-<hash>.js` into the
+// bundled-example group by its `thumbnail` substring, and that 2.2 KiB pdf.js
+// preview chunk is core — SPEC.md puts pdf.js in the core tier. The correction
+// moved only the COUNTS; the MiB figures were right throughout, which is why the
+// miscount survived as long as it did. Whoever moves this number next:
+// re-measure both tiers and correct that companion in the same change, or the
+// next reader inherits the same mismatch.
+//
+// 29 → 30 AT STORY 3, AND THE ASSET IS NAMED: `catalogue-roboto`, the canvas
+// copy of Roboto, 0.152 MiB, moved from `deferred` to `core` (owner decision,
+// 2026-09-19). `runtime-fonts.css` maps the family `Roboto` to that catalogue
+// face while `Roboto Bold`, `Roboto Italic` and `Roboto Bold Italic` map to
+// shipped core files, so story 1 left one family straddling the tiers — and the
+// starter and all four bundled examples declare that chain, which meant the
+// DEFAULT DOCUMENT could not paint its body text without a deferred fetch. The
+// tiers are now 30 / 10.82 MiB core against 50 / 7.81 MiB deferred, and
+// `asset-tiers.md` was re-measured in the same change.
+const minimumCoreCacheAssets = 30
+const maximumCoreCacheAssets = 30
 // EXPORTED FOR THE REASON `cacheAssetApproachWarning` IS, AND WITH THE SAME
 // OBLIGATION: nothing in `src/` reads the `const` lines above (they are shaped
 // for a text reader in another language), so without a consumer `noUnusedLocals`

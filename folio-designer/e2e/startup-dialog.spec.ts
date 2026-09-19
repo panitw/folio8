@@ -186,9 +186,13 @@ for (const width of [720, 480]) {
 // AND WHAT FOLLOWS IT IS NAMED RATHER THAN LEFT AS "SOMETHING". After the gate
 // opens the designer asks for the starter template it opens into and the four
 // thumbnails the dialog draws — 0.14 MiB — and for nothing else in the deferred
-// tier. The CJK font (4.72 MiB), the 31 catalogue faces (3.01 MiB), the example
-// templates and samples and the bundled documentation are not touched at all,
-// which is the 7.96 MiB this spec exists to stop charging every visitor.
+// tier. The CJK font (4.72 MiB), the 30 deferred catalogue faces (2.85 MiB,
+// measured — NOT 3.01 minus Roboto's 0.15, which is two rounded figures
+// subtracted and gives a misleading 2.86; the 30 faces sum to 2.8539 MiB.
+// `catalogue-roboto` joined the core tier at story 3, because the starter and
+// every example paint their body text in it), the example templates and samples
+// and the bundled documentation are not touched at all, which is the 7.81 MiB
+// this spec exists to stop charging every visitor.
 test('the blocking load asks for the core tier alone, and the dialog\'s thumbnails follow the engine', async ({ page }) => {
   const manifest = JSON.parse(readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'dist', 'offline-release-manifest.json'), 'utf8')) as { assets: ReadonlyArray<{ url: string; tier: string }> }
   const tierOf = new Map(manifest.assets.map((asset) => [asset.url, asset.tier]))

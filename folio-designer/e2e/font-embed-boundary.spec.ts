@@ -224,7 +224,24 @@ async function placeAndSelectText(page: import('@playwright/test').Page) {
  * NOTHING IS STUBBED AND NO PRIVATE DOOR IS USED. A test that reached past the
  * worker to plant bytes would stop measuring the mechanism the product ships.
  * Repeat calls are cache hits.
+ *
+ * ⚠ IT ASKS FOR EVERY CATALOGUE ASSET AND ASSERTS THE TIER SPLIT (story 3). It
+ * used to filter the manifest by `tier === 'deferred'`, which was the same set
+ * until `catalogue-roboto` moved into the CORE tier — the canvas family
+ * `Roboto` is what the starter and all four examples paint their body text in,
+ * and it was the one family straddling the two tiers. The count below is the
+ * whole catalogue, so a tier filter here primes 30 and then fails its own
+ * control at 31. Asking for a core face costs nothing: it is already in this
+ * release's cache, so the request is a hit.
+ *
+ * ⚠ BUT DROPPING THE FILTER MUST NOT MEAN DROPPING THE CLAIM. Filtering on the
+ * URL prefix alone would assert nothing about tiers at all: five more faces
+ * crossing into `core` would still prime 31 and still pass, and the deferred
+ * tier this spec exists to keep small would shrink with nothing to say so. So
+ * the split itself is named — exactly the one core face, everything else
+ * deferred — and a move in either direction reds here with both lists.
  */
+const CORE_CATALOGUE_FACE_STEMS = ['catalogue-roboto']
 async function holdEveryCatalogueFace(page: import('@playwright/test').Page, expected: number) {
   // THE WORKER HAS TO BE IN CHARGE FIRST, OR THIS PRIMES NOTHING. A page that
   // installed the worker on its own first load is not yet CONTROLLED by it, so
@@ -236,17 +253,23 @@ async function holdEveryCatalogueFace(page: import('@playwright/test').Page, exp
   if (!(await page.evaluate(() => Boolean(navigator.serviceWorker.controller)))) await page.reload()
   const held = await page.evaluate(async () => {
     const manifest = await (await fetch('/offline-release-manifest.json')).json() as { assets: ReadonlyArray<{ url: string; tier: string }> }
-    const catalogue = manifest.assets.filter((asset) => asset.tier === 'deferred' && /\/assets\/catalogue-/.test(asset.url))
+    const catalogue = manifest.assets.filter((asset) => /\/assets\/catalogue-/.test(asset.url))
     for (const asset of catalogue) {
       const response = await fetch(asset.url)
       if (!response.ok) throw new Error(`${asset.url} responded ${response.status}`)
       await response.arrayBuffer()
     }
-    return catalogue.length
+    return { count: catalogue.length, byTier: catalogue.map((asset) => [asset.url, asset.tier] as const) }
   })
   // A HELPER THAT FETCHED NOTHING WOULD LEAVE BOTH MEASUREMENTS BELOW LOOKING
   // LIKE PRODUCT FAILURES. It is held to the population it exists to cover.
-  expect(held, 'the release must carry one deferred catalogue asset per catalogue family, or this harness is priming the wrong set').toBe(expected)
+  expect(held.count, 'the release must carry one catalogue asset per catalogue family, or this harness is priming the wrong set').toBe(expected)
+  // THE SPLIT, NAMED IN BOTH DIRECTIONS. A face leaving the core tier would put
+  // the first screen back on a deferred fetch; a face joining it would grow the
+  // blocking load with nothing here to say so.
+  const stemOf = (url: string) => url.slice('/assets/'.length).split('.')[0]
+  expect(held.byTier.filter(([, tier]) => tier === 'core').map(([url]) => stemOf(url)).sort(), 'exactly the named catalogue faces may block the first load').toEqual([...CORE_CATALOGUE_FACE_STEMS].sort())
+  expect(held.byTier.filter(([, tier]) => tier !== 'deferred').length, 'every catalogue face outside the core list must be deferred, or the first load is growing unwatched').toBe(CORE_CATALOGUE_FACE_STEMS.length)
 }
 
 async function currentRevision(page: import('@playwright/test').Page): Promise<number> {

@@ -7,10 +7,10 @@ the static-host contract — not the 55.9 MiB uncompressed total.
 | | assets | wire bytes |
 |---|---|---|
 | Whole release today (all blocking) | 80 | 18.63 MiB |
-| **Core tier** (blocking after this change) | 29 | 10.67 MiB |
-| **Deferred tier** (on demand) | 51 | 7.96 MiB |
+| **Core tier** (blocking after this change) | 30 | 10.82 MiB |
+| **Deferred tier** (on demand) | 50 | 7.81 MiB |
 
-## Core tier — 29 assets, 10.67 MiB
+## Core tier — 30 assets, 10.82 MiB
 
 Everything needed to open, edit, preview and render an ordinary Latin or Thai document.
 
@@ -25,6 +25,7 @@ Everything needed to open, edit, preview and render an ordinary Latin or Thai do
 | `roboto-bold-italic…ttf` | 0.18 |
 | `roboto-italic…ttf` | 0.18 |
 | `roboto-bold…ttf` | 0.16 |
+| `catalogue-roboto…ttf` | 0.15 |
 | `index-….js` | 0.14 |
 | `pdf-….js` | 0.10 |
 | `pdf_thumbnail_view-….js` | <0.01 |
@@ -46,16 +47,16 @@ thumbnail view, four CMaps and four Liberation faces, 0.76 MiB together — are 
 preview is close enough to the primary workflow that it does not justify a refusal path
 through it.
 
-## Deferred tier — 51 assets, 7.96 MiB
+## Deferred tier — 50 assets, 7.81 MiB
 
 | group | assets | MiB | fetched when |
 |---|---|---|---|
 | `noto-sans-cjk…ttf` | 1 | 4.72 | a document declares a CJK face |
-| Catalogue faces (`catalogue-*.ttf`) | 31 | 3.01 | that family is picked, or a document declares it |
+| Catalogue faces (`catalogue-*.ttf`), minus `catalogue-roboto` | 30 | 2.85 | that family is picked, or a document declares it |
 | Bundled examples (`.folio`, `.sample.json`, thumbnails) + starter | 13 | 0.14 | the examples gallery is opened |
 | Bundled documentation HTML | 6 | 0.10 | a documentation page is opened |
 
-The CJK font alone is 59% of the deferred tier and 25% of today's whole first load.
+The CJK font alone is 60% of the deferred tier and 25% of today's whole first load.
 
 ## What the numbers came from
 
@@ -84,3 +85,11 @@ re-derived by pattern:
 ```
 python3 -c "import json,collections; m=json.load(open('folio-designer/dist/offline-release-manifest.json')); print(collections.Counter(a['tier'] for a in m['assets']))"
 ```
+
+**Re-measured 2026-09-19 (story 3).** `catalogue-roboto` — the canvas copy of Roboto, 0.152 MiB
+— moved from `deferred` to `core`, taking the tiers from 29 / 10.67 and 51 / 7.96 to 30 / 10.82
+and 50 / 7.81. `runtime-fonts.css` maps the family `Roboto` to that catalogue face while
+`Roboto Bold`, `Roboto Italic` and `Roboto Bold Italic` map to the shipped core files, so story
+1 left one family straddling the two tiers — and the starter and all four bundled examples
+declare that chain, which meant the default document needed a deferred fetch to paint its body
+text. The figures above are read from a `npm run build` manifest, not re-derived by pattern.

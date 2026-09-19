@@ -75,9 +75,56 @@ const SHELL_OR_DOCUMENT_FONT_ASSET = new RegExp(String.raw`^/assets/(?!${CATALOG
 // pdf.js ships its CMaps and standard fonts as whole directories fingerprinted
 // once, so the files inside them are not individually content-addressed.
 const PDFJS_COLLECTION_ASSET = /^\/assets\/pdfjs-(?:cmaps|standard-fonts)-[a-f0-9]{20}\/[A-Za-z0-9_-]+\.(?:bcmap|ttf)$/
+// ONE CATALOGUE FACE IS CORE, BY ID, AND THE TIER IS WRITTEN HERE RATHER THAN
+// DERIVED FROM ANYTHING (spec-deferred-offline-cache story 3, owner decision
+// 2026-09-19).
+//
+// `src/generated/runtime-fonts.css` maps the canvas family `Roboto` to
+// `catalogue-roboto` while `Roboto Bold`, `Roboto Italic` and `Roboto Bold
+// Italic` map to the shipped core files, so story 1 left ONE FAMILY STRADDLING
+// THE TWO TIERS — and the starter and all four bundled examples declare that
+// chain, which made the DEFAULT DOCUMENT need a deferred asset to paint its
+// body text. 0.152 MiB moves the pin 29 → 30 and the blocking load 10.67 →
+// 10.82 MiB, which is the price of the first screen being right.
+//
+// ⚠ THIS IS NOT `isCatalogueAssetUrl` AND MUST NOT BECOME IT. That predicate
+// answers "is this one of the 31 faces `font-catalogue.json` declares", which
+// `generate-offline-release.mjs` asks for `brotli.catalogue.totalBytes` and for
+// the emitted-versus-declared face count; Roboto is still such a face and still
+// answers yes. This one answers "which of them blocks the first load", and the
+// two questions have different answers for exactly one asset.
+// Exported so `offline-release-contract.test.mjs` can hold this list to the
+// STARTER'S OWN CHAINS rather than restate it: the whole reason Roboto crossed
+// over is that the default document paints in it, and a second catalogue family
+// added to `public/templates/starter.folio` would otherwise leave every suite
+// and the 30/30 pin green while the first screen every visitor sees regressed
+// to substitute-then-correct.
+export const CORE_CATALOGUE_FACE_IDS = ['roboto']
+// ⚠ EVERY ID IS HELD TO `font-catalogue.json`, AT MODULE LOAD, BECAUSE IT IS
+// INTERPOLATED INTO A RegExp. A typo — `robto` — is not a syntax error and not
+// a match either: it would compile to a rule that recognises nothing, leave
+// every catalogue face deferred, and red only the core-asset PIN in another
+// module, with a message naming neither this list nor the typo. Named here
+// instead, at the declaration, in the shape of the catalogue guards in
+// `build-wasm.mjs`. The ids are also checked to be the shape the regex assumes,
+// so a value carrying regex syntax cannot silently widen the rule.
+const catalogueIds = new Set(JSON.parse(readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'font-catalogue.json'), 'utf8')).map((face) => face.id))
+for (const id of CORE_CATALOGUE_FACE_IDS) {
+  if (!/^[a-z0-9]+$/.test(id)) throw new Error(`CORE_CATALOGUE_FACE_IDS carries ${JSON.stringify(id)}, which is not the lower-case alphanumeric shape build-wasm.mjs holds every catalogue id to; it is interpolated into a regular expression, so a value outside that shape could widen the core tier rather than name one face`)
+  if (!catalogueIds.has(id)) throw new Error(`CORE_CATALOGUE_FACE_IDS names ${JSON.stringify(id)} and font-catalogue.json declares no such face (it declares ${[...catalogueIds].join(', ')}). The name is interpolated into the core-tier rule, so a typo matches nothing, leaves every catalogue face deferred, and reds only the core cache-asset pin in src/release-payload.ts — a message naming neither this list nor the mistake.`)
+}
+const CORE_CATALOGUE_FACE_ASSET = new RegExp(String.raw`^/assets/${CATALOGUE_ASSET_PREFIX}(?:${CORE_CATALOGUE_FACE_IDS.join('|')})\.${contentAddressed}\.ttf$`)
+// MUTUALLY EXCLUSIVE BY CONSTRUCTION, on the CJK carve-out's precedent:
+// `classifyAssetTier` throws on any overlap at all, so the deferred rule is
+// written as the catalogue MINUS the core ids rather than as the catalogue with
+// a core rule listed after it. The `\.` after the id is what keeps
+// `catalogue-robotocondensed`, `catalogue-robotomono` and `catalogue-robotoslab`
+// out of the core arm — three siblings whose ids all begin with `roboto`.
+const isCoreCatalogueAssetUrl = (url) => CORE_CATALOGUE_FACE_ASSET.test(url)
 
 export const ASSET_TIER_RULES = [
-  { name: 'catalogue face', tier: 'deferred', matches: isCatalogueAssetUrl },
+  { name: 'catalogue face', tier: 'deferred', matches: (url) => isCatalogueAssetUrl(url) && !isCoreCatalogueAssetUrl(url) },
+  { name: 'core catalogue face', tier: 'core', matches: isCoreCatalogueAssetUrl },
   { name: 'CJK font', tier: 'deferred', matches: (url) => CJK_FONT_ASSET.test(url) },
   { name: 'bundled example', tier: 'deferred', matches: (url) => BUNDLED_EXAMPLE_ASSET.test(url) },
   { name: 'bundled documentation page', tier: 'deferred', matches: (url) => BUNDLED_DOCUMENTATION_ASSET.test(url) },

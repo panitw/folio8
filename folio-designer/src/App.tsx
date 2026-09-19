@@ -27,6 +27,7 @@ import { catalogueFaces, scriptFallbackFaces } from './generated/font-catalogue'
 import { familyIsInstalled, indexRowFor, offeredFamilies, type FamilySource } from './font-index'
 import { initialHeldLocalFamilies, readHeldLocalFamilies } from './held-local-faces'
 import { watchCanvasFaceMisses } from './canvas-face-misses'
+import { deferredFaceAssets, prefetchDeferredFaces } from './document-face-prefetch'
 import { isShippedFamily, shippedFamilyEntry } from './shipped-face-cuts'
 import { browserRows } from './font-browser-model'
 import { fetchWebFamily } from './font-source'
@@ -135,17 +136,76 @@ const engineFileStep = (run: (signal: AbortSignal) => Promise<EngineResult>): Pr
 // credentials — the startup sequence fetches `starter.folio` the same way.
 // It carries the file bar's deadline: a fetch that never settles would
 // otherwise hold the dialog busy, with Escape and every action ignored, for ever.
-const fetchExampleFile = async (url: string): Promise<ArrayBuffer> => {
+//
+// THE FAILURE NAMES WHICH FILE, AND WHY (spec-deferred-offline-cache, story 3).
+// It used to say `its bundled file` for BOTH halves of an open, so an author
+// whose example refused could not tell whether the template or the sample data
+// was the one that never came — and since story 2 the bundled examples are
+// DEFERRED, which means an open can fail for a reason the old sentences had no
+// spelling for at all: the file is simply not on this machine and there is no
+// network to get it from. `Failed to fetch`, the browser's own words, is what
+// reached the dialog in that case.
+//
+// REFUSAL IS FOR THE DOCUMENT'S OWN BYTES ONLY (owner decision, 2026-09-19).
+// These two files ARE the document — without them there is nothing to open. A
+// canvas FACE that cannot be fetched is a different matter entirely and never
+// reaches here: the engine holds its own embedded copies, so the document is
+// correct in every way the product promises, and story 2's dismissible
+// substitution warning is the settled answer.
+type ExampleFileRole = 'bundled template' | 'sample data'
+// A CAUSE THIS MODULE WROTE, AND THE TAG IS WHAT MAKES THAT KNOWABLE LATER.
+// `startupRefusal` speaks these in the designer's own voice and QUOTES anything
+// else, so the class is not decoration: it is the only thing that separates a
+// sentence written for an author from a string the platform or another module
+// happened to throw.
+class ExampleFileCause extends Error {}
+// THE DIAGNOSIS FOR A REJECTED REQUEST, AND ONLY FOR A REJECTED ONE. It is
+// reached from the two awaits that can reject — the request and the body read —
+// and never from the HTTP-status arm below, which is the bug this shape fixes:
+// with `if (!response.ok) throw` inside a `try`, an offline browser's `catch`
+// replaced a real 404 or 503 with "not on this machine", losing the status code
+// and contradicting the rule stated here.
+//
+// A rejected same-origin fetch for a deferred asset is, in practice, the offline
+// case: the release does not hold it and there is nowhere to get it. `onLine ===
+// false` is the one state the platform states positively; anything else keeps
+// the throw's own words, which is the evidence the boundary produced.
+const exampleFetchRejection = (error: unknown, role: ExampleFileRole, signal: AbortSignal): Error => {
+  if (signal.aborted) return new ExampleFileCause(`its ${role} did not arrive in time`)
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return new ExampleFileCause(`its ${role} is not on this machine and this browser is offline`)
+  return error instanceof Error ? error : new Error(String(error))
+}
+const fetchExampleFile = async (url: string, role: ExampleFileRole): Promise<ArrayBuffer> => {
   const deadline = new AbortController()
   const handle = setTimeout(() => deadline.abort(), ENGINE_FILE_STEP_TIMEOUT_MS)
   try {
-    const response = await fetch(url, { credentials: 'omit', signal: deadline.signal })
-    if (!response.ok) throw new Error(`its bundled file could not be read (HTTP ${response.status})`)
-    return await response.arrayBuffer()
-  } catch (error) {
-    if (deadline.signal.aborted) throw new Error('its bundled file did not arrive in time')
-    throw error
+    const response = await fetch(url, { credentials: 'omit', signal: deadline.signal }).catch((error: unknown) => { throw exampleFetchRejection(error, role, deadline.signal) })
+    // OUTSIDE THE REJECTION PATH ON PURPOSE: a server that answered is not a
+    // network that did not, whatever `navigator.onLine` says about the radio.
+    if (!response.ok) throw new ExampleFileCause(`its ${role} could not be read (HTTP ${response.status})`)
+    return await response.arrayBuffer().catch((error: unknown) => { throw exampleFetchRejection(error, role, deadline.signal) })
   } finally { clearTimeout(handle) }
+}
+// THE REFUSAL SENTENCE, IN THE HOUSE VOICE: subject first, past tense for what
+// did not happen, the concrete cause, then what was left untouched — the shape
+// `${family} was not used: the designer was busy with another change.` already
+// set.
+//
+// ⚠ A CAUSE THIS MODULE DID NOT AUTHOR IS QUOTED, NEVER SPOKEN. The generic arm
+// receives whatever the engine, the sample reader or the platform threw, and
+// splicing `Failed to fetch` into the middle of a designed sentence puts the
+// browser's words in the product's mouth — in the very change whose purpose is
+// the house voice. Quoting is the honest form: the designer says it could not
+// open the file, and attributes the report to whoever made it.
+//
+// Trailing sentence punctuation is stripped from either kind before it is
+// joined, so the result never reads `… offline.. The` or `… already…. The`.
+// One `.` was not enough: an ellipsis, a `!` and a `?` all reach here.
+const refusalClause = (text: string) => text.replace(/[.!?\u2026\s]+$/u, '')
+const startupRefusal = (name: string, error: unknown): string => {
+  const reported = error instanceof Error && error.message ? error.message : componentDiagnostic(error)
+  const cause = error instanceof ExampleFileCause ? refusalClause(reported) : `the designer could not open it, and the report was “${refusalClause(reported)}”`
+  return `${name} was not opened: ${cause}. The document you had open is unchanged.`
 }
 
 const paletteItems: ReadonlyArray<readonly [string, PaletteKind]> = [['Text', 'text'], ['Image', 'image'], ['Table', 'table'], ['Line', 'line'], ['Rectangle', 'rect'], ['Barcode', 'barcode'], ['QR Code', 'qrcode']]
@@ -3019,6 +3079,33 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
     const canonical = await engineFileStep((signal) => client.request('serialize', undefined, signal))
     if (!canonical.bytes) throw new Error('Local file could not be serialized')
     const inputWasCanonical = equalBytes(source, canonical.bytes)
+    // THE DOCUMENT'S DEFERRED CANVAS FACES, FETCHED BEFORE IT IS PAINTED
+    // (spec-deferred-offline-cache, story 3 — CAP-3). This is the shared
+    // installer for TEMPLATE BYTES — a local file from the picker and a bundled
+    // example from the startup dialog — so both get the preflight.
+    //
+    // ⚠ `startBlank` AND THE LAUNCH STARTER DO NOT COME THROUGH HERE, AND THEY
+    // ARE EXEMPT RATHER THAN OVERLOOKED. Both install the one document this
+    // build ships, `public/templates/starter.folio`, whose every face is in the
+    // CORE tier — `catalogue-roboto` was moved there by this same story for
+    // exactly that reason, and `offline-release-contract.test.mjs` holds the
+    // starter's own chains to it. A preflight there would have nothing to fetch
+    // by construction; routing them through it would add an await to the first
+    // screen in exchange for an empty list.
+    //
+    // ⚠ IT IS AWAITED, AND THAT IS THE WHOLE POINT OF DOING IT HERE. The faces
+    // are knowable only once Go has projected the chains for THESE bytes, and
+    // the canvas draws the moment `setCurrentSnapshot` below runs; fetching
+    // after that would reproduce the very sequence this story removes — a paint
+    // in a substitute, a warning, and a correction once the bytes land.
+    //
+    // ⚠ AND IT NEVER FAILS THE OPEN. `prefetchDeferredFaces` swallows every
+    // error by contract: a canvas face is not the document's own bytes, the
+    // engine's embedded copies keep layout, pagination, preview and the PDF
+    // exact, and story 2's substitution warning is the settled answer for the
+    // glyphs. Nothing between here and `installDocumentIdentity` may start
+    // throwing for a font.
+    await prefetchDeferredFaces(deferredFaceAssets(loaded.snapshot.canvas, payload), ENGINE_FILE_STEP_TIMEOUT_MS)
     installDocumentIdentity()
     setCurrentSnapshot(loaded.snapshot, false, true)
     setBaselineRevision(loaded.snapshot.revision)
@@ -3111,7 +3198,7 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
     if (!engine || !card || !asset || fileBusy) return
     setStartupBusy(card.name); setStartupError(undefined)
     try {
-      const [template, sampleBytes] = await Promise.all([fetchExampleFile(asset.template), fetchExampleFile(asset.sample)])
+      const [template, sampleBytes] = await Promise.all([fetchExampleFile(asset.template, 'bundled template'), fetchExampleFile(asset.sample, 'sample data')])
       // Parsed before any engine request or state change, so a sample that is
       // refused fails with nothing replaced.
       const accepted = acceptSampleData(card.sample ?? `${card.id}.sample.json`, sampleBytes)
@@ -3131,7 +3218,7 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
       setStartupOpen(false)
       enterPreview()
     } catch (error) {
-      setStartupError(`Could not open ${card.name}: ${error instanceof Error && error.message ? error.message : componentDiagnostic(error)}`)
+      setStartupError(startupRefusal(card.name, error))
     } finally { setStartupBusy(undefined) }
   }
 

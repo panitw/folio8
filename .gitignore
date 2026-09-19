@@ -125,6 +125,10 @@ folio-designer/src/generated/runtime-fonts.css
 folio-designer/src/generated/font-catalogue.ts
 folio-designer/src/generated/documentation-assets.ts
 folio-designer/src/generated/example-assets.ts
+# spec-deferred-offline-cache story 3: the canvas family -> asset URL map, parsed
+# back out of the runtime-fonts.css this same script has just emitted so the two
+# cannot disagree about which file a family resolves through.
+folio-designer/src/generated/canvas-face-assets.ts
 # Story 16.1's family-index module is GENERATED from the COMMITTED
 # folio-designer/font-index.json by scripts/build-font-index.mjs, with no
 # network and no second input. The snapshot is committed; its projection is not.

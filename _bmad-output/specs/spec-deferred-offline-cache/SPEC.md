@@ -27,7 +27,7 @@ the measured release passed some time ago.
     preview and render an ordinary Latin or Thai document are cached and verified — not once
     the whole release is.
   - **success:** With a cold cache, the designer is interactive after the core tier
-    (29 assets, 10.67 MiB — see `asset-tiers.md`) verifies and no later; the deferred tier is
+    (30 assets, 10.82 MiB — see `asset-tiers.md`) verifies and no later; the deferred tier is
     provably not requested during that first load.
 
 - **CAP-2 — Deferred assets are fetched the first time they are needed, then kept**
@@ -69,7 +69,7 @@ the measured release passed some time ago.
 - **Byte-identity survives untouched.** A missing deferred font is refused, never substituted.
   The canvas and the preview keep showing the real production output or nothing at all;
   no fallback face is ever rendered in place of the one the document declares.
-- **A ~10.67 MiB core gate is the accepted destination.** The engine wasm is 8.11 MiB of it and
+- **A ~10.82 MiB core gate is the accepted destination.** The engine wasm is 8.11 MiB of it and
   stays whole and in the core tier; tiering roughly halves the first load and that is the win
   this change is scoped to deliver. This supersedes `spec-folio`'s "~9 MB first load".
 - **pdf.js and its cmaps are core.** Preview sits close enough to the primary workflow that
@@ -106,8 +106,8 @@ the measured release passed some time ago.
 ## Success signal
 
 A first-time visitor on a cold cache reaches an editable, previewable document after
-transferring 10.67 MiB instead of 18.63 MiB and verifying 29 assets instead of 80 — and a
-session that stays on Latin text never transfers the other 7.96 MiB at all. An author who has
+transferring 10.82 MiB instead of 18.63 MiB and verifying 30 assets instead of 80 — and a
+session that stays on Latin text never transfers the other 7.81 MiB at all. An author who has
 used the designer once still opens it, edits, previews and renders with the network
 disconnected, and is told precisely which asset is missing on the one occasion that is not true.
 

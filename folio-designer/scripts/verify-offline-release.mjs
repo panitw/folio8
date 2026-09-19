@@ -310,7 +310,7 @@ export function verifyOfflineRelease(outputDir = dist, { wasmWitness = false, re
   // page reads `s1.cacheAssets[].tier` out of the bootstrap in index.html, and
   // `generate-offline-release.mjs` stamps both. A disagreement is the one fault
   // that produces a designer whose gate and whose progress screen are about
-  // different sets: the worker completing on 29 assets while the page counts a
+  // different sets: the worker completing on the core tier alone while the page counts a
   // denominator of 80, or worse, a page reporting ready over a set the worker
   // never waited for. Red-proved as `s1-tier-drift`.
   //
@@ -408,6 +408,49 @@ export function verifyOfflineRelease(outputDir = dist, { wasmWitness = false, re
   if (catalogue.length === 0) fail('brotli-record-drift: the release carries no Story 8.5 catalogue face at all, so its recorded catalogue weight describes nothing')
   if (brotli.catalogue.familyCount !== catalogue.length) fail(`brotli-record-drift: the Brotli record counts ${brotli.catalogue.familyCount} catalogue faces and the release carries ${catalogue.length}`)
   if (brotli.catalogue.totalBytes !== catalogue.reduce((total, asset) => total + asset.brotliBytes, 0)) fail('brotli-record-drift: the recorded catalogue Brotli total is not the catalogue rows\' arithmetic')
+  // THE CANVAS FACE MAP IS TIED TO THE RELEASE HERE, AND IT HAS TO BE HERE
+  // (spec-deferred-offline-cache, story 3).
+  //
+  // `src/document-face-prefetch.ts` turns a face name into an asset URL through
+  // `src/generated/canvas-face-assets.ts`, then looks that URL up among the S1
+  // payload's `cacheAssets` to read its tier. Both sides are Vite-emitted
+  // strings, and they agree today only because Vite emits ONE hashed copy per
+  // file. If they ever diverge the lookup misses, every open prefetches nothing,
+  // and the substitute-then-correct flash comes back silently.
+  //
+  // ⚠ NO UNIT TEST CAN ASSERT THIS. Under Vitest a `?url` import resolves to a
+  // dev-server path (`/src/generated/runtime/…`) and never to the
+  // `/assets/<stem>-<hash>.<ext>` a build emits, so a fixture comparing the two
+  // would either be comparing dev paths to dev paths or building the tier table
+  // out of the map itself — true by construction, green over a dead prefetch.
+  // The claim is a property of the BUILD, so it is checked against the built
+  // release, where both halves are real.
+  //
+  // The generated module is read as SOURCE TEXT for the reason every other
+  // cross-language derivation here is: this is a plain-ESM script with no
+  // TypeScript program around it. Each row names `./runtime/<file>`; Vite
+  // re-hashes that into `/assets/<file minus extension>-<vite hash><extension>`,
+  // and EXACTLY ONE emitted asset must carry it — zero means the page would ask
+  // for a URL the release does not serve, and two would mean the map and the
+  // manifest could name different copies of one face.
+  const canvasFaceModule = join(root, 'src', 'generated', 'canvas-face-assets.ts')
+  if (!existsSync(canvasFaceModule)) fail('canvas-face-map-drift: src/generated/canvas-face-assets.ts is absent, so the open-time face prefetch has no name-to-URL map at all')
+  const canvasFaceFiles = [...readFileSync(canvasFaceModule, 'utf8').matchAll(/^import canvasFaceUrl\d+ from '\.\/runtime\/([^'?]+)\?url'$/gm)].map((row) => row[1])
+  if (canvasFaceFiles.length === 0) fail('canvas-face-map-drift: read no rows out of src/generated/canvas-face-assets.ts, so this check would pass over an empty map and a prefetch that asks for nothing')
+  const canvasFaceAssets = canvasFaceFiles.map((file) => {
+    const extension = file.slice(file.lastIndexOf('.'))
+    const stem = file.slice(0, file.lastIndexOf('.'))
+    const emitted = release.assets.filter((asset) => new RegExp(`^/assets/${stem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-[A-Za-z0-9_-]+${extension.replace('.', '\\.')}$`).test(asset.url))
+    if (emitted.length !== 1) fail(`canvas-face-map-drift: the canvas face map names ${file} and the release carries ${emitted.length} assets for it, so the open-time prefetch would look up a URL the release does not serve under that exact name`)
+    return emitted[0]
+  })
+  // AND AT LEAST ONE OF THEM MUST BE DEFERRED, or the prefetch is dead code
+  // dressed as a feature: a release that tiered every canvas face `core` would
+  // satisfy every check above while `deferredFaceAssets` returned `[]` for every
+  // document ever opened. This is the vacuous green the catalogue-of-nothing
+  // check above refuses for the same reason.
+  if (!canvasFaceAssets.some((asset) => classifyAssetTier(asset.url) === 'deferred')) fail('canvas-face-map-drift: no face in the canvas face map is in the deferred tier, so the open-time prefetch can never have anything to fetch and is dead code')
+  if (!canvasFaceAssets.some((asset) => classifyAssetTier(asset.url) === 'core')) fail('canvas-face-map-drift: every face in the canvas face map is deferred, so the starter could not paint on a cold cache')
   if (wasmWitness) {
     const glue = release.assets.find((asset) => asset.url.includes('/wasm-exec.'))
     if (!glue) fail('wasm runtime glue is absent from the release')

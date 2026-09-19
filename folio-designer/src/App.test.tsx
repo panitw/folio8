@@ -14,13 +14,15 @@ import { FileAccessCancelled, FileAccessFailure, folioFileFormat, jsonSampleFile
 import { FileSystemAccess } from './file/file-system-access'
 import { InputDownloadAccess } from './file/input-download'
 import type { EngineClient } from './engine-client'
-import { LOCALE_TAGS, type CanvasProjection } from './engine-protocol'
+import { LOCALE_TAGS, type CanvasProjection, type EngineSnapshot } from './engine-protocol'
 import { acceptSampleData } from './sample-data'
 import { MAX_CANVAS_SHEETS } from './sheet-stack'
 import { catalogueFaces } from './generated/font-catalogue'
+import { canvasFaceAssets } from './generated/canvas-face-assets'
 import { documentationAssetUrls } from './generated/documentation-assets'
 import { PDF_FIXTURE_DIGEST, RENDER_ELAPSED_MS, RENDER_ENGINE_VERSION } from './test/pdf-fixture'
 import { startBlankFromNew } from './test/new-document'
+import { tieredCanvasFacePayload } from './test/tiered-payload'
 import { IDBFactory as FakeIndexedDBFactory } from 'fake-indexeddb'
 
 // STORY 16.5 — SOME OF THESE TESTS NEED A MACHINE THAT CAN KEEP A FACE.
@@ -11848,10 +11850,12 @@ describe('the startup dialog at launch', () => {
 
   // The starter at revision 1, and an engine that loads an example at revision 2
   // and renders it.
-  const launch = (props: Partial<Parameters<typeof App>[0]> = {}) => {
+  const launch = (props: Partial<Parameters<typeof App>[0]> = {}, openedCanvas: CanvasProjection = canvas) => {
     const starter = { documentState: 'loaded' as const, revision: 1, byteLength: 3, canvas }
-    const opened = { documentState: 'loaded' as const, revision: 2, byteLength: 3, canvas }
-    let current = starter
+    const opened = { documentState: 'loaded' as const, revision: 2, byteLength: 3, canvas: openedCanvas }
+    // Widened since the opened canvas became a caller's choice: without it the
+    // starter's own literal types narrow `current` to the starter's shape alone.
+    let current: EngineSnapshot = starter
     const request = vi.fn(async (operation: string) => {
       if (operation === 'load') { current = opened; return { snapshot: opened } }
       if (operation === 'serialize') return { snapshot: current, bytes: TEMPLATE }
@@ -11948,8 +11952,7 @@ describe('the startup dialog at launch', () => {
     fireEvent.click(card('Bank Statement'))
     fireEvent.click(within(dialog()).getByRole('button', { name: 'Open example' }))
     const alert = await within(dialog()).findByRole('alert')
-    expect(alert).toHaveTextContent('Could not open Bank Statement')
-    expect(alert).toHaveTextContent('HTTP 404')
+    expect(alert).toHaveTextContent('Bank Statement was not opened: its bundled template could not be read (HTTP 404). The document you had open is unchanged.')
     expect(request).not.toHaveBeenCalled()
     expect(screen.getByText('Untitled template')).toBeInTheDocument()
     fireEvent.keyDown(card('Bank Statement'), { key: 'Escape' })
@@ -11964,23 +11967,155 @@ describe('the startup dialog at launch', () => {
     expect(screen.getByTestId('engine-snapshot')).toHaveTextContent('REVISION 1')
   }
 
+  // spec-deferred-offline-cache STORY 3 — THE OPEN PREFLIGHTS THE DOCUMENT
+  // (CAP-3), AND THE REFUSAL NAMES THE ASSET.
+  //
+  // The canvas fixture's chains declare `Noto Sans` and `Noto Sans Thai`, so a
+  // payload that tiers the Thai face `deferred` gives these tests a face THIS
+  // document declares and this browser does not hold — the state the prefetch
+  // exists for. The URL is read out of the generated canvas face map rather
+  // than typed, because that map is what the page itself resolves through.
+  const thaiFaceUrl = canvasFaceAssets.get('Noto Sans Thai') as string
+  const tieringPayload = tieredCanvasFacePayload
+  // THE PREFETCH READS THE PAINT REPORT, NOT THE CHAINS, so a document that
+  // needs a face is one whose text Go measured IN that face. The chain fixture
+  // above reaches `Noto Sans Thai` either way; what makes it needed here is a
+  // fragment attributed to it.
+  const paintedIn = (face: string): CanvasProjection => ({ ...canvas, components: [{ id: 'painted', type: 'text' as const, band: 'content' as const, x: 0, y: 0, width: 100000, height: 20000, resizable: true, textPaint: { overflow: false, truncated: false, lines: [{ top: 0, baseline: 10000, advance: 10000, width: 10000, fragments: [{ text: 'sample', x: 0, face }] }] } }] })
+
+  it('fetches the deferred faces the example declares before the canvas paints in them', async () => {
+    let releaseFace = () => {}
+    const faceHeld = new Promise<void>((resolve) => { releaseFace = resolve })
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === thaiFaceUrl) { await faceHeld; return answer(new ArrayBuffer(8)) }
+      return url.endsWith('.json') ? answer(new TextEncoder().encode(SAMPLE).buffer) : answer(TEMPLATE)
+    })
+    launch({ payload: tieringPayload(['Noto Sans Thai']) }, paintedIn('Noto Sans Thai'))
+    fireEvent.click(card('Invoice'))
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Open example' }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(thaiFaceUrl, expect.objectContaining({ credentials: 'omit' })))
+    // THE OPEN IS STILL WAITING ON IT, which is the whole claim: were the face
+    // fetched after the install, the canvas would paint in a substitute now and
+    // correct itself later — the sequence this story removes.
+    expect(screen.queryByText('Invoice', { selector: '.document-name' })).not.toBeInTheDocument()
+    act(() => releaseFace())
+    await waitFor(() => expect(screen.getByText('Invoice', { selector: '.document-name' })).toBeInTheDocument())
+  })
+
+  // REFUSAL IS FOR THE DOCUMENT'S OWN BYTES ONLY (owner decision, 2026-09-19).
+  // The engine embeds its own copy of every shipped face, so layout, pagination,
+  // preview and the PDF are byte-identical whatever the canvas can paint with;
+  // story 2's dismissible substitution warning is the settled answer, and a
+  // refusal here would block a document that is correct in every way promised.
+  it('opens the example even when a face it declares cannot be fetched', async () => {
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url === thaiFaceUrl) throw new TypeError('Failed to fetch')
+      return url.endsWith('.json') ? answer(new TextEncoder().encode(SAMPLE).buffer) : answer(TEMPLATE)
+    })
+    launch({ payload: tieringPayload(['Noto Sans Thai']) }, paintedIn('Noto Sans Thai'))
+    fireEvent.click(card('Invoice'))
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Open example' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'New template' })).not.toBeInTheDocument())
+    expect(screen.getByText('Invoice', { selector: '.document-name' })).toBeInTheDocument()
+    expect(screen.getByTestId('engine-snapshot')).toHaveTextContent('REVISION 2')
+    expect(screen.queryByText(/was not opened/)).not.toBeInTheDocument()
+  })
+
+  // CORE FACES AND UNREACHED FALLBACKS ALIKE. The document paints in `Noto Sans
+  // Thai`, which this payload tiers core; its CHAIN still ends in `Noto Sans
+  // SC`, which this payload defers and whose real weight is 4.72 MiB. Neither is
+  // asked for, and the second is the one that would hurt.
+  it('asks for nothing outside what the document paints in', async () => {
+    launch({ payload: tieringPayload(['Noto Sans SC', 'Lora', 'Inter']) }, paintedIn('Noto Sans Thai'))
+    fireEvent.click(card('Invoice'))
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Open example' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'New template' })).not.toBeInTheDocument())
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/examples/invoice.folio', '/examples/invoice.sample.json'])
+  })
+
+  // ⚠ AN ANSWERED REQUEST IS NOT AN UNREACHABLE ONE, WHATEVER THE RADIO SAYS.
+  // `navigator.onLine` reports the interface, not the origin, and it is false in
+  // cases where a cached or local server still answers — so a 404 or a 503
+  // arriving while it reads false must keep its status code. The first version
+  // of this change threw the HTTP error inside the `try` whose `catch` carried
+  // the offline wording, and the status was replaced by "not on this machine".
+  it('keeps a real HTTP status even while the browser reports itself offline', async () => {
+    const onLine = Object.getOwnPropertyDescriptor(navigator, 'onLine')
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false })
+    try {
+      fetchMock.mockImplementation(async (url: string) => url.includes('bank-statement.folio') ? answer(new ArrayBuffer(0), 503) : answer(TEMPLATE))
+      launch()
+      fireEvent.click(card('Bank Statement'))
+      fireEvent.click(within(dialog()).getByRole('button', { name: 'Open example' }))
+      expect(await within(dialog()).findByRole('alert')).toHaveTextContent('Bank Statement was not opened: its bundled template could not be read (HTTP 503). The document you had open is unchanged.')
+    } finally {
+      if (onLine) Object.defineProperty(navigator, 'onLine', onLine); else Reflect.deleteProperty(navigator, 'onLine')
+    }
+  })
+
+  // AN EXAMPLE NEVER OPENED, WITH NO NETWORK. The bundled template and the
+  // sample ARE the document: without them there is nothing to open, so this is
+  // the one thing a refusal is for — and it names which of the two, because
+  // since story 2 both are deferred and either can be the one that is missing.
+  it.each([
+    ['its bundled template', '/examples/bank-statement.folio'],
+    ['its sample data', '/examples/bank-statement.sample.json'],
+  ])('refuses an example whose %s is not on this machine while offline, with nothing replaced', async (role, missing) => {
+    const onLine = Object.getOwnPropertyDescriptor(navigator, 'onLine')
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false })
+    try {
+      fetchMock.mockImplementation(async (url: string) => {
+        if (url === missing) throw new TypeError('Failed to fetch')
+        return url.endsWith('.json') ? answer(new TextEncoder().encode(SAMPLE).buffer) : answer(TEMPLATE)
+      })
+      const request = launch()
+      fireEvent.click(card('Bank Statement'))
+      fireEvent.click(within(dialog()).getByRole('button', { name: 'Open example' }))
+      expect(await within(dialog()).findByRole('alert')).toHaveTextContent(`Bank Statement was not opened: ${role} is not on this machine and this browser is offline. The document you had open is unchanged.`)
+      expect(request).not.toHaveBeenCalled()
+      expect(screen.getByText('Untitled template')).toBeInTheDocument()
+      await expectDismissedOnStarter()
+    } finally {
+      if (onLine) Object.defineProperty(navigator, 'onLine', onLine); else Reflect.deleteProperty(navigator, 'onLine')
+    }
+  })
+
   it('refuses an example whose sample is not valid JSON with nothing replaced', async () => {
     fetchMock.mockImplementation(async (url: string) => url.endsWith('.json') ? answer(new TextEncoder().encode('{"customer":').buffer) : answer(TEMPLATE))
     const request = launch()
     fireEvent.click(card('Invoice'))
     fireEvent.click(within(dialog()).getByRole('button', { name: 'Open example' }))
-    expect(await within(dialog()).findByRole('alert')).toHaveTextContent('Could not open Invoice')
+    expect(await within(dialog()).findByRole('alert')).toHaveTextContent('Invoice was not opened:')
     expect(request).not.toHaveBeenCalled()
     expect(screen.getByText('Untitled template')).toBeInTheDocument()
     await expectDismissedOnStarter()
     expect(request).not.toHaveBeenCalled()
   })
 
+  // ⚠ A CAUSE THE REFUSAL DID NOT AUTHOR IS QUOTED, NOT SPOKEN, AND THE TRAILING
+  // STOP IS ITS OWN. `Failed to fetch.` is the platform's wording, not the
+  // product's, and splicing it bare into a designed sentence would put the
+  // browser's words in the designer's mouth — in the change whose whole purpose
+  // is the house voice. The full stop the thrower supplied is stripped before
+  // the clause is joined, so the sentence never reads `\u2026 fetch.. The`; the same
+  // strip covers `!`, `?` and an ellipsis, which one `.replace(/\.$/)` did not.
+  it.each([
+    ['a platform rejection with its own full stop', 'Failed to fetch.'],
+    ['an exclamation', 'The worker gave up!'],
+    ['an ellipsis', 'The worker is still starting\u2026'],
+  ])('quotes %s rather than speaking it, and ends the sentence once', async (_name, thrown) => {
+    launch({ engine: engine(vi.fn(async (operation: string) => { if (operation === 'load') throw new Error(thrown); return { snapshot: snapshot(1) } }) as never) })
+    fireEvent.click(card('Invoice'))
+    fireEvent.click(within(dialog()).getByRole('button', { name: 'Open example' }))
+    expect(await within(dialog()).findByRole('alert')).toHaveTextContent(`Invoice was not opened: the designer could not open it, and the report was \u201c${thrown.replace(/[.!?\u2026]+$/u, '')}\u201d. The document you had open is unchanged.`)
+    await expectDismissedOnStarter()
+  })
+
   it('keeps the dialog usable when the engine rejects the example\'s template', async () => {
     launch({ engine: engine(vi.fn(async (operation: string) => { if (operation === 'load') throw new Error('engine refused'); return { snapshot: snapshot(1) } }) as never) })
     fireEvent.click(card('Invoice'))
     fireEvent.click(within(dialog()).getByRole('button', { name: 'Open example' }))
-    expect(await within(dialog()).findByRole('alert')).toHaveTextContent('Could not open Invoice')
+    expect(await within(dialog()).findByRole('alert')).toHaveTextContent('Invoice was not opened: the designer could not open it, and the report was \u201cengine refused\u201d. The document you had open is unchanged.')
     expect(screen.getByRole('button', { name: 'PREVIEW' })).toHaveAttribute('aria-pressed', 'false')
     expect(screen.getByText('Untitled template')).toBeInTheDocument()
     expect(screen.queryByText(/Opening example/)).not.toBeInTheDocument()
@@ -11996,7 +12131,7 @@ describe('the startup dialog at launch', () => {
       fireEvent.click(within(dialog()).getByRole('button', { name: 'Open example' }))
       expect(dialog()).toHaveAttribute('aria-busy', 'true')
       await act(async () => { await vi.advanceTimersByTimeAsync(20_000) })
-      expect(within(dialog()).getByRole('alert')).toHaveTextContent('Could not open Invoice: its bundled file did not arrive in time')
+      expect(within(dialog()).getByRole('alert')).toHaveTextContent('Invoice was not opened: its bundled template did not arrive in time. The document you had open is unchanged.')
       fireEvent.keyDown(card('Invoice'), { key: 'Escape' })
       expect(screen.queryByRole('dialog', { name: 'New template' })).not.toBeInTheDocument()
     } finally { vi.useRealTimers() }
@@ -12260,7 +12395,7 @@ describe('New… and the startup dialog reopened', () => {
   it('an example that fails to load after Discard keeps the dialog open with an alert', async () => {
     await discardedOverEdits({}, true)
     openInvoice()
-    expect(await within(dialog()).findByRole('alert')).toHaveTextContent('Could not open Invoice')
+    expect(await within(dialog()).findByRole('alert')).toHaveTextContent('Invoice was not opened:')
     expect(queryDialog()).toBeInTheDocument()
   })
 
