@@ -64,11 +64,11 @@
     <Company>Panit Wechasil</Company>
     <Product>folio8</Product>
     <Copyright>Copyright (c) folio8 contributors</Copyright>
-    <Description>folio8 for .NET: render and validate .folio templates with the folio8 engine as a native library. Byte-identical to the Go engine, from .NET Framework 4.6 through modern .NET, on Windows x86 and x64. Ships both native architectures and the eleven shipped font faces.</Description>
+    <Description>folio8 for .NET: render and validate .folio templates with the folio8 engine as a native library. Byte-identical to the Go engine, from .NET Framework 4.6 through modern .NET, on Windows x86 and x64. Ships both native architectures and the eleven shipped font faces. Design templates at https://folio8.report.</Description>
     <PackageTags>pdf;reporting;folio8;rendering;documents;invoice;statement</PackageTags>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
     <PackageReadmeFile>README.md</PackageReadmeFile>
-    <PackageProjectUrl>https://github.com/panitw/folio8</PackageProjectUrl>
+    <PackageProjectUrl>https://folio8.report</PackageProjectUrl>
     <RepositoryUrl>https://github.com/panitw/folio8.git</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>

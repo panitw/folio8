@@ -1,10 +1,10 @@
 {
   "name": "folio8",
   "version": "1.0.0",
-  "description": "folio8 for Node: render and validate .folio templates with the folio8 engine compiled to WebAssembly.",
+  "description": "folio8 for Node: render and validate .folio templates with the folio8 engine compiled to WebAssembly. Design templates at https://folio8.report.",
   "license": "MIT",
   "author": "Panit Wechasil",
-  "homepage": "https://github.com/panitw/folio8/tree/main/folio-js#readme",
+  "homepage": "https://folio8.report",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/panitw/folio8.git",

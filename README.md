@@ -18,6 +18,10 @@ The core workflow the project exists to prove is **Design → Bind → Preview �
 Render**, with the preview being the *actual* production document rather than an
 approximation of it.
 
+The designer is live at **<https://folio8.report>** — design a `.folio` template
+there, then render it from Go, Node (`npm install folio8`) or .NET
+(`dotnet add package folio8`).
+
 ---
 
 ## Repository layout

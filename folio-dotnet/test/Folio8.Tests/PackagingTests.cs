@@ -29,7 +29,7 @@ namespace Folio8Tests
         [InlineData("<PackageId>folio8</PackageId>")]
         [InlineData("<PackageLicenseFile>LICENSE</PackageLicenseFile>")]
         [InlineData("<PackageReadmeFile>README.md</PackageReadmeFile>")]
-        [InlineData("<PackageProjectUrl>https://github.com/panitw/folio8</PackageProjectUrl>")]
+        [InlineData("<PackageProjectUrl>https://folio8.report</PackageProjectUrl>")]
         [InlineData("<RepositoryUrl>https://github.com/panitw/folio8.git</RepositoryUrl>")]
         [InlineData("<IsPackable>true</IsPackable>")]
         public void ThePackageDeclaresItsMetadata(string declaration)

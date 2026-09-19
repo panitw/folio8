@@ -18,6 +18,22 @@ Nothing else is needed. No Go, no C compiler, no build step, no configuration:
 both Windows native libraries and all eleven shipped font faces are in the
 package, and the right native is chosen for you at load time.
 
+## Where templates come from
+
+A `.folio` template is plain text. It diffs, it reviews, and it lives in your
+repository next to the code that renders it.
+
+**Design one in the browser at <https://folio8.report>.** The folio8 designer
+runs entirely client-side — nothing is uploaded — previews with this same
+engine, and saves a `.folio` file you drop into your project. The format
+reference and the expression reference are linked from inside the designer, and
+their sources are in the repository under
+[`docs/`](https://github.com/panitw/folio8/tree/main/docs): start with
+[the folio format reference](https://github.com/panitw/folio8/blob/main/docs/folio-format.md).
+
+Because the format is text and documented, a person or an agent can also write
+and edit a template by hand, with no designer involved.
+
 ## Your first PDF
 
 Put a template at `invoice.folio` and its data at `invoice.json`, then:
