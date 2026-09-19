@@ -57,10 +57,30 @@ button:focus-visible { outline: 2px solid var(--color-select); outline-offset: -
 .brand-lockup { display: inline-flex; align-items: center; gap: var(--space-3); flex: none; }
 .brand-mark { color: var(--color-brand); flex: none; }
 .brand { color: var(--color-ink-high); font: var(--type-brand); letter-spacing: var(--tracking-brand); }
-.document-name, .later-control { font: var(--type-mono); color: var(--color-ink); }
+/* THE DOCUMENT BAR'S TEXT IS ONE SIZE, 11px, AND THAT IS AN ALIGNMENT FIX.
+   `.brand` is 11px (`--type-brand`) and these two were 10px, which put three
+   cap heights on one row. Nothing was misaligned in layout terms — measured,
+   all three share a baseline at 23.5 and all three boxes centre at 20 — but
+   text of different sizes sharing a baseline necessarily disagrees at the TOP,
+   and the smaller labels read as sitting low. Matching the size is the only
+   fix: with a shared baseline, equal cap height requires equal font size.
+
+   It only became visible when the wordmark went from `FOLIO8` to `Folio8`. The
+   all-caps block read as its own register and invited no comparison; a
+   mixed-case word reads as a word among words, and the eye then measures it
+   against its neighbours.
+
+   `--type-mono-em` and `--type-body-em` ALREADY EXIST at 11px — this needs no
+   new token and no DESIGN.md change, and the weight and colour still separate
+   the wordmark (white, 500) from the labels (grey, 400).
+
+   `.later-control` KEEPS `--type-mono`: it lives in the status bar beside
+   `.mode-switch`, not in this row, so it is not part of this alignment. */
+.document-name { font: var(--type-mono-em); color: var(--color-ink); }
+.later-control { font: var(--type-mono); color: var(--color-ink); }
 .status-dot { width: var(--space-1); height: var(--space-1); border-radius: var(--radius-dot); background: var(--color-bind); }
 .status-dot.status-clean { background: var(--color-select); }
-.status-copy { color: var(--color-ink); font: var(--type-body); }
+.status-copy { color: var(--color-ink); font: var(--type-body-em); }
 /* `position: relative` is here ONLY to anchor `.bar-message` below the bar.
    The group's own box is unchanged — an absolutely positioned child
    contributes nothing to it — which is what keeps `document-bar-fit.spec.ts`
@@ -1459,3 +1479,10 @@ label.page-break-setting input[type="checkbox"] { width: 12px; min-height: 12px;
 .page-dialog { width: min(420px, calc(100vw - 48px)); padding: var(--space-6); border: var(--hairline) solid var(--color-line-strong); background: var(--color-panel); color: var(--color-ink-high); box-shadow: var(--shadow-page); }
 .page-dialog h2 { margin-top: 0; }
 .page-dialog-actions { display: flex; justify-content: flex-end; gap: var(--space-2); margin-top: var(--space-5); }
+
+/* A CANVAS SUBSTITUTION WARNING (spec-deferred-offline-cache, story 2). It sits
+   at the top of the canvas region, above the sheets, because that is where the
+   substituted glyphs are; it never overlays them and never takes focus. */
+.canvas-face-misses { list-style: none; margin: 0; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
+.canvas-face-misses li { display: flex; gap: 8px; align-items: flex-start; justify-content: space-between; padding: 8px 10px; border: var(--hairline) solid var(--color-edge); background: var(--color-raised); color: var(--color-ink-high); }
+.canvas-face-misses button { flex: none; min-height: 28px; }
