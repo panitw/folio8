@@ -46,36 +46,105 @@ Three independent Go modules (`folio-go`, `lint`, `hashmatrix`) with no
 
 ## Quick start
 
-### Render from Go
+### Install
+
+folio8 ships as three packages. They are one engine — the Go source, and that
+same source compiled to WebAssembly and to a C ABI — so the same template, data,
+params and font set produce the same PDF bytes whichever you pick.
+
+| Build | Install | Needs |
+| --- | --- | --- |
+| **folio-go** — the reference engine | `go get github.com/panitw/folio8/folio-go@v1.0.0` | Go 1.25 or newer; byte-identity is pinned to the go1.26.0 toolchain |
+| **folio-js** — npm `folio8` | `npm install folio8` | Node 22.12 or newer, ESM only |
+| **folio-dotnet** — NuGet `folio8` | `dotnet add package folio8` | .NET Framework 4.6+ or .NET Core 2.0+, **Windows x86/x64 only** |
+
+Each package carries the engine and all eleven shipped font faces, so there is
+nothing to build, no toolchain to install beside it and no network access at
+render time. On a host that is not Windows, folio-js is the portable build.
+
+### Render a PDF
+
+A template at `invoice.folio`, its data at `invoice.json`, and the same three
+steps in every language: load the template, render it with a font set, write the
+bytes out. Warnings arrive beside a successful render rather than instead of it.
+
+**Fonts are always an explicit argument.** There is no default set and no lookup
+on the machine that renders — which is half of why the output is reproducible.
+
+#### Go
 
 ```go
-tpl, err := folio8.LoadTemplate("statement.folio")
+tpl, err := folio8.LoadTemplate("invoice.folio")
 if err != nil {
 	log.Fatal(err)
 }
-res, err := folio8.Render(tpl, folio8.Data(dataJSON), folio8.Params(paramsJSON), fonts.Shipped())
+data, err := os.ReadFile("invoice.json")
+if err != nil {
+	log.Fatal(err)
+}
+res, err := folio8.Render(tpl, folio8.Data(data), nil, fonts.Shipped())
 if err != nil {
 	log.Fatal(err)
 }
 for _, d := range res.Diagnostics {
-	log.Printf("warning %s: %s", d.Code, d.Message)
+	log.Printf("%s %s: %s", d.Severity, d.Code, d.Message)
 }
-if err := os.WriteFile("statement.pdf", res.Bytes, 0o644); err != nil {
+if err := os.WriteFile("invoice.pdf", res.Bytes, 0o644); err != nil {
 	log.Fatal(err)
 }
 ```
 
-Install with `go get github.com/panitw/folio8/folio-go@v1.0.0`. The
-[rendering library guide](docs/rendering-library.md) walks through installation, a complete first
-PDF, errors and warnings, template features and the full API.
+Imports are `folio8 "github.com/panitw/folio8/folio-go"` and
+`"github.com/panitw/folio8/folio-go/fonts"`.
+
+#### Node
+
+```js
+import { readFile, writeFile } from 'node:fs/promises'
+import { loadTemplate, render } from 'folio8'
+import { shipped } from 'folio8/fonts'
+
+const template = await loadTemplate('invoice.folio')
+const data = JSON.parse(await readFile('invoice.json', 'utf8'))
+
+const { bytes, diagnostics } = await render(template, data, null, await shipped())
+
+await writeFile('invoice.pdf', bytes)
+for (const d of diagnostics) console.warn(`${d.severity} ${d.code}: ${d.message}`)
+```
+
+#### .NET
+
+```csharp
+// folio8's public types sit in the global namespace — no `using` to add.
+Template template = Template.Load("invoice.folio");
+Data data = new Data(File.ReadAllBytes("invoice.json"));
+
+RenderResult result = Folio8.Render(template, data, null, Fonts.Shipped());
+
+File.WriteAllBytes("invoice.pdf", result.Bytes);
+foreach (Diagnostic d in result.Diagnostics)
+{
+    Console.Error.WriteLine(d.Severity + " " + d.Code + ": " + d.Message);
+}
+```
+
+`Fonts.Shipped()` hands every caller its own copy of the face set, so call it
+once and hold what it returns rather than calling it per render.
+
+The third argument is params in all three, and `nil`/`null` says the template
+reads none. Each guide walks through the same ground in full — a complete first
+PDF, errors and warnings, template features and the whole API: [folio-go](docs/rendering-library.md),
+[folio-js](docs/folio-js.md), [folio-dotnet](docs/folio-dotnet.md). Measured
+throughput and memory, and how to size a host, are in the
+[performance report](docs/performance.md).
 
 `folio8.RenderTo` writes straight to an `io.Writer` for HTTP handlers and large
-documents. The font set arrives as an explicit argument — `fonts.Shipped()` gives
-you Noto Sans, Noto Sans Thai and Noto Sans SC; bring your own `FontSet` if you
-need other typography. The [folio-go README](folio-go/README.md) explains why
-`folio8` and `folio8/fonts` are separate imports (~11.3 MB of embedded faces you
-opt into), and covers `Data` vs `Params`, the `locale` field, and the known
-limitations.
+documents. Bring your own `FontSet` whenever you want typography other than the
+shipped faces. The [folio-go README](folio-go/README.md) explains why `folio8`
+and `folio8/fonts` are separate imports — the embedded faces are opt-in, and in
+your binary only if you ask for them — and covers `Data` vs `Params`, the
+`locale` field, and the known limitations.
 
 ### Render from the command line
 
