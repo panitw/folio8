@@ -489,6 +489,8 @@
     }
     <span class="tk-kw">throw</span>;
 }</pre></div>
+    <p><strong>A partial font set now refuses.</strong> If you pass a <code>fonts</code> dictionary that is short of a face a document's chain declares, a character no supplied face covers throws a <code>FolioRenderException</code> carrying <code>TEXT_FACE_ABSENT</code> and produces no PDF, where earlier releases returned a <code>TEXT_MISSING_GLYPH</code> warning and a PDF with those characters silently missing. The message names every absent face. <code>TEXT_MISSING_GLYPH</code> still means what it always did: every declared face was supplied and none of them covers the character.</p>
+
     <p>Every code, with its string value and its meaning, is listed under <a href="rendering-library.html#diagnostic-codes">diagnostic codes</a> in the rendering library guide. The registry belongs to the engine, so it reads the same from all three languages and a caller can port between them.</p>
     <p><code>Folio8.Validate</code> answers the same question without producing a document. It takes raw template bytes, checks them against data, params and fonts, and returns the diagnostic list the engine would have raised — throwing on an error exactly as <code>Folio8.Render</code> does.</p>
   </section>

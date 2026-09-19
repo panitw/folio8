@@ -372,10 +372,14 @@ fontSet["Brand Sans"] = brand // referenced by a chain such as "body": ["Brand S
 ```
 
 A character that no face in its chain covers is omitted, never drawn as a box, and reported with
-the warning `TEXT_MISSING_GLYPH`. A bold or italic request that the covering entry declares no face
-for is drawn in that entry's regular face with the warning `TEXT_STYLE_FACE_UNDECLARED`. A chain face
-missing from the `FontSet`, or bytes that are not a usable font, fail the render with an error naming the element and the chain;
-that error is not a `*folio8.RenderError`, so handle it in your fallback branch.
+the warning `TEXT_MISSING_GLYPH` — but only when every face the chain declares was supplied. If any
+declared face is missing from the `FontSet`, an uncovered character fails the render instead, with
+the error `TEXT_FACE_ABSENT`: the engine cannot know whether the absent face would have covered it,
+so it refuses rather than ship a PDF with the text silently gone. A bold or italic request that the
+covering entry declares no face for is drawn in that entry's regular face with the warning
+`TEXT_STYLE_FACE_UNDECLARED`. `TEXT_FACE_ABSENT` is a `*folio8.RenderError` naming the absent faces,
+the element and `style.fontFamily`; bytes that are not a usable font still fail as a plain error, so
+keep your fallback branch for that.
 
 ## Warnings and errors
 
@@ -1148,6 +1152,7 @@ Each constant is an untyped string constant whose value is the registry string. 
 | `DiagCodeBindingPathAbsent` | `BINDING_PATH_ABSENT` | Render error (`DataPath` = the path) | A data or `params` path an expression needs is absent from the supplied JSON. |
 | `DiagCodeContentUnlayoutable` | `CONTENT_UNLAYOUTABLE` | Render error | An ungrouped item (a text line or an image box) is taller than the content window. |
 | `DiagCodeDocumentDateInvalid` | `DOCUMENT_DATE_INVALID` | Render error (also `Validate`) | The reserved `documentDate` parameter is present but not a valid RFC 3339 timestamp. |
+| `DiagCodeTextFaceAbsent` | `TEXT_FACE_ABSENT` | Render error (also `Validate`; `ElementID`, `DataPath` = `style.fontFamily`) | A character is covered by no present face of its element's chain, and at least one face that chain declares was never supplied in the `FontSet` — including a chain no member of which was supplied. The message names every absent face. The render is refused rather than dropping the character, because whether the absent face would have covered it cannot be known. Distinct from `TEXT_MISSING_GLYPH`, which is the case where every declared face *was* supplied. |
 | `DiagCodeTextClippedWidth` | `TEXT_CLIPPED_WIDTH` | Render warning | A text element's widest line exceeds its declared width and is clipped at the box edge. |
 | `DiagCodeTextMissingGlyph` | `TEXT_MISSING_GLYPH` | Render warning | No face in the element's declared chain covers a character. The character is omitted (no glyph, no advance); the message names the rune and the chain. |
 | `DiagCodeTextStyleFaceUndeclared` | `TEXT_STYLE_FACE_UNDECLARED` | Render warning | Bold and/or italic was requested, but the chain entry covering the character declares no such face. It is drawn in that entry's base face, with no synthetic emboldening or slant. |

@@ -69,6 +69,7 @@ var publicSurfacePins = []string{
 	"folio8 const DiagCodeTemplateMalformed",
 	"folio8 const DiagCodeTextClippedWidth",
 	"folio8 const DiagCodeTextMissingGlyph",
+	"folio8 const DiagCodeTextFaceAbsent",
 	"folio8 const DiagCodeTextStyleFaceUndeclared",
 	"folio8 const LocaleTableVersion",
 	"folio8 const MaxParameterReferenceNameLength",

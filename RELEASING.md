@@ -128,7 +128,15 @@ integrators on `@main` pseudo-versions would hit:
   types and the `folio-go/wasm` package) left the public API;
 - `STYLE_COLOR_INVALID` and `STYLE_LINE_SPACING_INVALID` were retired into
   `TEMPLATE_FIELD_INVALID`;
-- an invalid colour is now refused when the template loads.
+- an invalid colour is now refused when the template loads;
+- a render that needs a face the supplied `FontSet` does not carry is now
+  refused, located, under the new `TEXT_FACE_ABSENT` code. A caller passing
+  `fonts.Shipped()` wholesale cannot reach it; a `folio-js` or `folio-dotnet`
+  caller supplying a **partial** font set previously got a
+  `TEXT_MISSING_GLYPH` warning and a PDF with those characters silently
+  missing, and now gets an error and no PDF. `TEXT_MISSING_GLYPH` keeps its
+  narrower meaning: every declared face was supplied and none covers the
+  character. There is no opt-in flag and no per-language leniency.
 
 ### The cross-target hash matrix
 

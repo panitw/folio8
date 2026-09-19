@@ -13900,3 +13900,15 @@ name that attributes it to Story 6.7, and the audit trail for 6.7 quietly descri
 - source_spec: `_bmad-output/specs/spec-deferred-offline-cache/stories/2-gate-the-designer-on-the-core-tier.md`
   summary: A core asset evicted from the release cache after install can never be refetched; the worker answers Response.error() forever.
   evidence: `serveFromRelease` refetches deferred entries only. Pre-existing rather than caused by this story — a core cache miss was `Response.error()` before it too — but the new deferred path makes the asymmetry visible and the fix (a verified refetch for core entries as well) now has an obvious shape.
+
+- source_spec: `_bmad-output/specs/spec-deferred-offline-cache/stories/4-refuse-a-render-missing-a-face.md`
+  summary: verticalModel's TEXT_FACE_ABSENT refusal carries DataPath but an empty ElementID, where the story's Boundaries asked for both.
+  evidence: verticalModel is pure arithmetic and holds no element id; threading one through its 4 production and ~30 test call sites buys a second location for a condition shapeSegments now refuses first, located at the element, on any input with drawable text. Through Render the path is reachable only where shaping has nothing to refuse — an element whose whole text is line feeds a caller consumes. Accepted with the gap recorded rather than widened.
+
+- source_spec: `_bmad-output/specs/spec-deferred-offline-cache/stories/4-refuse-a-render-missing-a-face.md`
+  summary: addCanvasTableLabelLines (folio-go/page_setup.go:1632) swallows shapeSegments errors with `if serr != nil { continue }`, so TEXT_FACE_ABSENT degrades to "this column label has no lines" on the designer canvas path instead of refusing.
+  evidence: Unreachable today — the designer's wasm host passes fonts.Shipped() wholesale, so no face is ever absent there. Story 5 is precisely what makes that host supply a partial set, so this swallow must be resolved as part of it or the canvas will silently drop CJK table labels rather than refusing.
+
+- source_spec: `_bmad-output/specs/spec-deferred-offline-cache/stories/4-refuse-a-render-missing-a-face.md`
+  summary: docs/rendering-library.{md,html} and docs/folio-format.{md,html} have no twin-equality test, so the two files can silently publish different text.
+  evidence: folio-js/test/docs.test.ts and folio-dotnet's DocsTests each police only their own guide's pair. folio-go's guideTwins in docs_examples_test.go asserts only that every exported identifier is NAMED in both files, never that their text matches. This story desynced docs/folio-format.html without any test noticing; it was found by hand. The two policed pairs show the guard's shape.

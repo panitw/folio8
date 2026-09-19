@@ -1,6 +1,7 @@
 package folio8
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -560,9 +561,15 @@ func TestNonFontAssetNeverDrawnRendersClean(t *testing.T) {
 //
 // A chain of nothing but embedded entries is now perfectly renderable, so the
 // document that used to produce this error no longer can. What still can is a
-// chain whose every entry is a face NOTHING supplies — the pre-existing
-// empty-metrics path, deliberately not widened by this story. The assertion is
-// here so that if a later story does widen it, the change is deliberate.
+// chain whose every entry is a face NOTHING supplies.
+//
+// ⚠ SPEC-DEFERRED-OFFLINE-CACHE CAP-7 MOVED WHICH LAYER ANSWERS, AND THE
+// ASSERTION MOVED WITH IT. This used to fall through shaping — every rune
+// dropped under a Warning — and fail in the vertical model with an UNCODED
+// "none of the fallback chain's faces" error. Now the first uncovered rune
+// whose chain has an absent member refuses in shapeSegments, coded
+// TEXT_FACE_ABSENT and naming the absent face. The document is refused either
+// way; what changed is that the refusal says which face to supply.
 func TestChainOfOnlyUnusableEntriesProducesTheExistingLocatedError(t *testing.T) {
 	source := embeddedChainDoc(t, `["No Such Face"]`)
 
@@ -574,10 +581,20 @@ func TestChainOfOnlyUnusableEntriesProducesTheExistingLocatedError(t *testing.T)
 	if rerr == nil {
 		t.Fatal("a chain with no usable entry must fail at Render — nothing can draw the text")
 	}
-	for _, want := range []string{"element e1", "none of the fallback chain's faces"} {
+	for _, want := range []string{"element e1", `face "No Such Face" is not present in the supplied FontSet`} {
 		if !strings.Contains(rerr.Error(), want) {
 			t.Errorf("the render error does not locate itself (%q missing): %v", want, rerr)
 		}
+	}
+	var absent *RenderError
+	if !errors.As(rerr, &absent) {
+		t.Fatalf("the refusal must reach the caller as a *RenderError: %T %v", rerr, rerr)
+	}
+	if absent.Diagnostic.Code != DiagCodeTextFaceAbsent {
+		t.Errorf("code = %q, want %q", absent.Diagnostic.Code, DiagCodeTextFaceAbsent)
+	}
+	if absent.Diagnostic.ElementID != "e1" || absent.Diagnostic.DataPath != "style.fontFamily" {
+		t.Errorf("refusal is not located: %+v", absent.Diagnostic)
 	}
 
 	diags, verr := Validate([]byte(source), Data(`{}`), nil, testShippedFontSet())

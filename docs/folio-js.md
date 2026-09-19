@@ -131,6 +131,8 @@ try {
 }
 ```
 
+**A partial font set now refuses.** If you pass a `fonts` object that is short of a face a document's chain declares, a character no supplied face covers rejects with a `FolioRenderError` carrying `TEXT_FACE_ABSENT` and produces no PDF, where earlier releases resolved with a `TEXT_MISSING_GLYPH` warning and a PDF with those characters silently missing. The message names every absent face. `TEXT_MISSING_GLYPH` still means what it always did: every declared face was supplied and none of them covers the character.
+
 Every code, with its string value and its meaning, is listed under [diagnostic codes](rendering-library.md#diagnostic-codes) in the rendering library guide. The registry belongs to the engine, so it reads the same from all three languages and a caller can port between them.
 
 `validate` answers the same question without producing a document. It takes raw template bytes, checks them against data, params and fonts, and resolves to the diagnostic list the engine would have raised — rejecting on an error exactly as `render` does.

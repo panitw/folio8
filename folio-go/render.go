@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/panitw/folio8/folio-go/internal/bind"
 	"github.com/panitw/folio8/folio-go/internal/expr"
@@ -1742,9 +1743,26 @@ func (c *fontCache) metricsFace(name string, fs FontSet) (*fontset.Font, bool, e
 // styled arm — so a declared variant is checked for coverage in exactly
 // the way a base face is, and the FontSet tolerance is asked once rather
 // than spelled twice.
-func faceCovers(name string, r rune, fs FontSet, cache *fontCache) (bool, error) {
+//
+// ⚠ IT ANSWERS IN TWO BOOLEANS, NOT ONE (spec-deferred-offline-cache
+// CAP-7). covers is "this face draws r". absent is "the caller never
+// supplied this face at all", and it is the reason covers is false
+// whenever it is true — the two used to collapse into a single false,
+// and a caller could no longer tell a face that was supplied and has no
+// glyph from one it was never given. What each caller does with absent
+// is its own rule: resolveRuneFace collects it, shapeSegments' styled
+// arm discards it.
+func faceCovers(name string, r rune, fs FontSet, cache *fontCache) (covers, absent bool, err error) {
 	if !cache.declares(name, fs) {
-		return false, nil
+		// ABSENT IS REPORTED ALONGSIDE THE MISS, NOT FOLDED INTO IT
+		// (spec-deferred-offline-cache CAP-7). Until this story the two
+		// collapsed into one `false`, and the caller could no longer tell
+		// "this face was supplied and has no glyph" from "this face was
+		// never supplied at all" — the first is a document fact the
+		// engine may act on, the second is a supply fact it may not
+		// guess about. cache.declares already computed the bit; this
+		// return stops throwing it away.
+		return false, true, nil
 	}
 	// Story 8.4: THIS is "something must actually draw from that
 	// entry". An embedded entry whose asset is not a font this build
@@ -1754,25 +1772,42 @@ func faceCovers(name string, r rune, fs FontSet, cache *fontCache) (bool, error)
 	// never decoded and never complains.
 	f, err := cache.get(name, fs)
 	if err != nil {
-		return false, err
+		return false, false, err
 	}
-	return f.HasGlyph(r), nil
+	return f.HasGlyph(r), false, nil
 }
 
 // resolveRuneFace: see the long comment above faceCovers, which is this
 // function's — AC4's coverage walk, returning the INDEX of the first
 // entry whose face draws r.
-func resolveRuneFace(chain []string, r rune, fs FontSet, cache *fontCache) (index int, found bool, err error) {
+func resolveRuneFace(chain []string, r rune, fs FontSet, cache *fontCache) (index int, found bool, absent []string, err error) {
+	// absentNames collects EVERY chain member the FontSet does not
+	// supply, in chain order, and is returned only when coverage was NOT
+	// located. A member that is absent while a LATER member draws the
+	// rune is still skipped silently — the chain did its job, and
+	// reporting the gap would fail a document that works (the format's
+	// standing tolerance of an absent member, unchanged since AD-8).
+	//
+	// ⚠ EVERY ONE OF THEM, NOT THE FIRST. The refusal's whole purpose
+	// is to say which face to supply, and the engine cannot know which of
+	// several absent faces would have covered the rune — that is the
+	// same ignorance the refusal exists to report. Naming only the first
+	// sends an author to supply a face that may have nothing to do with
+	// the script in question, and to be refused again.
+	var absentNames []string
 	for i, name := range chain {
-		covers, cerr := faceCovers(name, r, fs, cache)
+		covers, gone, cerr := faceCovers(name, r, fs, cache)
 		if cerr != nil {
-			return 0, false, cerr
+			return 0, false, nil, cerr
 		}
 		if covers {
-			return i, true, nil
+			return i, true, nil, nil
+		}
+		if gone {
+			absentNames = append(absentNames, name)
 		}
 	}
-	return 0, false, nil
+	return 0, false, absentNames, nil
 }
 
 // formatFontChain renders chain as AD-8's Rule names it for a human
@@ -1833,6 +1868,51 @@ func missingGlyphMessage(elementID string, r rune, chain []string, cache *fontCa
 		"no face in chain %s covers %U (%c) in element %s — the rune is omitted from the rendered output (no glyph, no advance); "+
 			"it is not substituted or drawn as a blank box (AD-8)",
 		formatFontChain(chain, cache), r, r, elementID,
+	)
+}
+
+// fontFamilyDataPath is the data path every font-chain refusal is
+// located at: the style field fontChain resolves the chain from. It is a
+// constant rather than a literal at each site so the two refusals this
+// story codes — shapeSegments' and the vertical model's — cannot drift
+// to two spellings of one field.
+const fontFamilyDataPath = "style.fontFamily"
+
+// faceAbsentMessage is the one construction site for
+// spec-deferred-offline-cache CAP-7's refusal message.
+//
+// IT NAMES THE ABSENT FACE, WHERE missingGlyphMessage NAMES THE CHAIN,
+// and the difference is the whole reason the two are separate. A chain
+// every one of whose faces was supplied tells its reader to edit the
+// chain; a chain with a face the CALLER never supplied tells its reader
+// to supply that face, and only naming it says which.
+//
+// The first clause is deliberately the wording fontCache.get already
+// uses for the same fact ("face %q is not present in the supplied
+// FontSet") rather than a second phrasing of it — an author who hits the
+// two conditions reads one sentence, not two that must be recognised as
+// the same.
+func faceAbsentMessage(elementID string, r rune, faces []string, chain []string, cache *fontCache) string {
+	where := "element " + elementID
+	if elementID == "" {
+		where = "the document"
+	}
+	// EVERY ABSENT FACE IS NAMED, because the engine cannot know which of
+	// them would have covered the rune. The singular reading is kept
+	// byte-identical to fontCache.get's sentence for the common case of
+	// one.
+	quoted := make([]string, len(faces))
+	for i, f := range faces {
+		quoted[i] = fmt.Sprintf("%q", f)
+	}
+	subject := "face " + quoted[0] + " is"
+	if len(quoted) > 1 {
+		subject = "faces " + strings.Join(quoted, ", ") + " are"
+	}
+	return fmt.Sprintf(
+		"%s not present in the supplied FontSet, and no present face in chain %s covers %U (%c) in %s — "+
+			"the render is refused rather than omitting the rune, because whether an absent face would have covered it cannot be known here (AD-8)",
+		subject, formatFontChain(chain, cache), r, r, where,
 	)
 }
 
@@ -2004,7 +2084,7 @@ func shapeSegments(elementID string, chain, styled []string, elementText string,
 	// shared slice would let a dropped rune silence a mis-weighted one.
 	var seenStyleFallbackRunes []rune
 	for _, r := range elementText {
-		index, found, err := resolveRuneFace(chain, r, fs, cache)
+		index, found, absentFaces, err := resolveRuneFace(chain, r, fs, cache)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -2021,7 +2101,14 @@ func shapeSegments(elementID string, chain, styled []string, elementText string,
 					// face, and the same Warning — one policy on every
 					// path, rather than a second fallback invented for
 					// this case.
-					covers, cerr := faceCovers(variant, r, fs, cache)
+					// THE ABSENCE OF A STYLED VARIANT IS NOT CAP-7's
+					// REFUSAL, and the discarded second return is that
+					// rule written down. The entry that COVERS the rune
+					// is present and draws it, at the wrong weight —
+					// Story 11.2's condition, which has its own Warning.
+					// Refusing here would fail every document that asks
+					// for bold from a chain declaring no bold face.
+					covers, _, cerr := faceCovers(variant, r, fs, cache)
 					if cerr != nil {
 						return nil, nil, cerr
 					}
@@ -2079,6 +2166,41 @@ func shapeSegments(elementID string, chain, styled []string, elementText string,
 			// gains no meaning in this story (it stays an ordinary
 			// optional whitespace break), so nothing about it changes.
 			if r != '\n' || breaks == breaksAreDrawn {
+				// THE FORK (spec-deferred-offline-cache CAP-7), stated
+				// once:
+				//
+				//   uncovered + a chain member was ABSENT -> refuse,
+				//                                            naming it
+				//   uncovered + every member PRESENT      -> the
+				//                                            Warning,
+				//                                            unchanged
+				//
+				// The second arm is FR41's fifth mode and keeps every
+				// byte of its behaviour: the rune is dropped, the render
+				// completes, a PDF ships. The first arm cannot be
+				// folded into it, because the engine cannot ask whether
+				// the face it was never given would have drawn the rune
+				// — so it refuses instead of guessing that it would not.
+				//
+				// IT SITS INSIDE THE NEWLINE GUARD DELIBERATELY. A line
+				// feed a caller consumes is absent from the output by
+				// design, not for want of a glyph, so an absent chain
+				// member must not turn a paragraph break into a refusal.
+				//
+				// AND NEVER ON A CONTROL CHARACTER. No font has ever
+				// carried U+0009 or its neighbours, so the refusal's own
+				// justification — that the absent face MIGHT have covered
+				// this rune — is false for them: they are absent from the
+				// drawn output by design, exactly as U+000A is. The
+				// WARNING's rule is untouched, control character or not,
+				// which is why this is a second condition here rather
+				// than a widening of the guard above.
+				if len(absentFaces) > 0 && !unicode.IsControl(r) {
+					return nil, nil, newRenderError(
+						DiagCodeTextFaceAbsent, elementID, fontFamilyDataPath,
+						errors.New(faceAbsentMessage(elementID, r, absentFaces, chain, cache)),
+					)
+				}
 				alreadySeen := false
 				for _, sr := range seenMissingRunes {
 					if sr == r {

@@ -144,6 +144,29 @@ const (
 	// false — which AD-14 makes a breaking change.
 	CodeTextStyleFaceUndeclared Code = "TEXT_STYLE_FACE_UNDECLARED"
 
+	// CodeTextFaceAbsent names the SUPPLY failure spec-deferred-offline-
+	// cache CAP-7 requires: a rune that no PRESENT member of its
+	// element's declared font chain covers, where at least one member of
+	// that chain was never supplied in the FontSet at all. The engine
+	// cannot ask whether the absent face would have covered the rune, so
+	// it refuses the render rather than dropping the rune and shipping a
+	// PDF with the text silently gone. The same code names the condition
+	// one level up, in the vertical model: a chain with no present member
+	// at all, from which no line height can be derived.
+	//
+	// IT IS NOT CodeTextMissingGlyph, AND THAT IS THE WHOLE POINT. That
+	// code means every declared face WAS supplied and none of them draws
+	// the rune — a document whose chain is genuinely incomplete, which
+	// stays a Warning with the rune omitted. This one means the caller's
+	// FontSet is short of a face the document declares, which is a
+	// different author action with a different remedy (supply the face,
+	// not edit the chain).
+	//
+	// IT IS ALSO NOT CodeTextStyleFaceUndeclared, which is about what the
+	// CHAIN DECLARES rather than what the CALLER SUPPLIED, and which
+	// still draws the rune.
+	CodeTextFaceAbsent Code = "TEXT_FACE_ABSENT"
+
 	// CodeInternalUnhandledCaveat names an internal/expr.Caveat whose
 	// Kind has no matching arm in diagnosticFromCaveat (render.go) —
 	// unreachable given expr.CaveatKind's current single member, but a
@@ -402,6 +425,7 @@ var allCodes = []Code{
 	CodeContentUnlayoutable,
 	CodeTextMissingGlyph,
 	CodeTextStyleFaceUndeclared,
+	CodeTextFaceAbsent,
 	CodeInternalUnhandledCaveat,
 	CodeDocumentDateInvalid,
 	CodeTableHeaderRepeatSuppressed,
@@ -447,6 +471,7 @@ var dispositions = map[Code]Disposition{
 	CodeContentUnlayoutable:            DispositionError,
 	CodeTextMissingGlyph:               DispositionWarning,
 	CodeTextStyleFaceUndeclared:        DispositionWarning,
+	CodeTextFaceAbsent:                 DispositionError,
 	CodeInternalUnhandledCaveat:        DispositionWarning,
 	CodeDocumentDateInvalid:            DispositionError,
 	CodeTableHeaderRepeatSuppressed:    DispositionWarning,

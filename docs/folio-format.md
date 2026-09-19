@@ -219,7 +219,9 @@ Each key names an **ordered fallback chain**, tried left to right per glyph. `st
 references a key of this object, never a face name directly — so a chain is declared once and
 reused, and the chain is part of the render's identity. A glyph covered by no face in the chain
 produces a diagnostic (`TEXT_MISSING_GLYPH`) naming the element and the rune; it is never silently
-blank.
+blank. That warning is the outcome only when every face the chain declares was supplied to the
+renderer — if a declared face is missing from the supplied font set, the same glyph refuses the
+render instead, with the error `TEXT_FACE_ABSENT` naming the absent faces.
 
 **A chain entry has exactly three legal shapes**, and they may be mixed in one chain, in any order:
 

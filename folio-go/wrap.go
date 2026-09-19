@@ -629,9 +629,30 @@ func chainLineMetrics(chain []string, fs FontSet, cache *fontCache) ([]fontset.L
 // and now the ratio — of nothing that is drawn.
 func verticalModel(chain []string, metrics []fontset.LineMetrics, fontSize geom.Length, lineSpacing int64) (verticalMetrics, error) {
 	if len(metrics) == 0 {
-		return verticalMetrics{}, fmt.Errorf(
-			"folio8: none of the fallback chain's faces %v is present in the supplied FontSet, so no line height can be derived from it",
-			chain,
+		// spec-deferred-offline-cache CAP-7: THE SAME AUTHOR FAULT,
+		// CAUGHT ONE LEVEL UP. shapeSegments refuses a rune no present
+		// face covers when a chain member was absent; this is the case
+		// where NO member was supplied at all, so there are no metrics
+		// to derive a line height from and the element cannot be drawn
+		// whatever its text. Giving both the one code means an author
+		// sees one diagnostic whether they omitted the only face or one
+		// of several.
+		//
+		// newRenderError preserves the message byte-for-byte —
+		// RenderError.Error() returns what it wraps — so this gains a
+		// code and a location and changes nothing a caller was reading.
+		// The location is the DATA PATH only: this function is the pure
+		// arithmetic and holds no element id, and threading one through
+		// its four production callers and thirty-odd test call sites
+		// would buy a second location for a condition shapeSegments
+		// already refuses, located at the element, on every input with
+		// text a caller draws.
+		return verticalMetrics{}, newRenderError(
+			DiagCodeTextFaceAbsent, "", fontFamilyDataPath,
+			fmt.Errorf(
+				"folio8: none of the fallback chain's faces %v is present in the supplied FontSet, so no line height can be derived from it",
+				chain,
+			),
 		)
 	}
 

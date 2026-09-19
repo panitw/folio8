@@ -88,9 +88,12 @@
     under a warning (CAP-7).
   spec_checkpoint: true
   invoke_dev_with: >-
-    This story is a no-op for every caller shipping today: `fonts.Shipped()` carries all eleven
-    faces, so nothing currently reaches the new refusal. That is deliberate — it lands the
-    safety net BEFORE story 5 makes an absent face possible. Do not merge the two.
+    This lands the safety net BEFORE story 5 makes an absent face possible. Do not merge the two.
+
+    It is a no-op for callers passing `fonts.Shipped()` wholesale — but NOT for every caller.
+    folio-js and folio-dotnet compile in no fonts, so a caller supplying a partial set gets a
+    Warning and a PDF today and a hard refusal after this. The owner accepted that break; it
+    goes in RELEASING.md's standing breaking-change list.
 
     Today an absent chain member is silently skipped (folio-go/render.go:1533-1539, with the
     comment at :1711-1713 explaining why), and only TEXT_MISSING_GLYPH (a Warning, :1831-1837)

@@ -114,6 +114,21 @@ func TestDiagnosticRegistryErrorCensus(t *testing.T) {
 			_, err := ParseTemplate([]byte(source))
 			return err
 		},
+		diag.CodeTextFaceAbsent: func(t *testing.T) error {
+			// spec-deferred-offline-cache CAP-7. A REAL production
+			// trigger on the public Render path: the document declares
+			// the chain ["Noto Sans"] and the caller supplies a FontSet
+			// that does not carry it, so the first rune of the element
+			// is uncovered by a chain whose only member was never
+			// supplied. Before CAP-7 this shipped a PDF with the text
+			// silently gone under a TEXT_MISSING_GLYPH Warning.
+			tpl, err := ParseTemplate([]byte(missingGlyphTemplateJSON))
+			if err != nil {
+				return err
+			}
+			_, err = Render(tpl, Data(`{"name":"A"}`), Params(`{}`), FontSet{"Noto Sans Thai": testShippedNotoSansThai})
+			return err
+		},
 		diag.CodeTableFooterSourceForbidden: func(t *testing.T) error {
 			source := roundTripGoldenSource(t)
 			source = strings.Replace(source, `"footer": "sum",`, "\"footer\": \"count\",\n              \"footerOf\": \"transactions.amount\",", 1)

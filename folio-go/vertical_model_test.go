@@ -1,6 +1,7 @@
 package folio8
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -346,6 +347,22 @@ func TestVerticalModelRefusesAChainWithNoPresentFace(t *testing.T) {
 	if !strings.Contains(err.Error(), "Nope") {
 		t.Errorf("the error must LOCATE the failure by naming the chain, got %q", err.Error())
 	}
+	// spec-deferred-offline-cache CAP-7: the same code as shapeSegments'
+	// refusal, and a data-path location — an author who omitted the only
+	// face and one who omitted one of several read one diagnostic, not
+	// two. The MESSAGE is pinned unchanged above: RenderError.Error()
+	// returns what it wraps, so coding this error broke nothing that was
+	// reading it.
+	var located *RenderError
+	if !errors.As(err, &located) {
+		t.Fatalf("the refusal must carry a code: %T %v", err, err)
+	}
+	if located.Diagnostic.Code != DiagCodeTextFaceAbsent {
+		t.Errorf("code = %q, want %q", located.Diagnostic.Code, DiagCodeTextFaceAbsent)
+	}
+	if located.Diagnostic.DataPath != "style.fontFamily" {
+		t.Errorf("dataPath = %q, want style.fontFamily", located.Diagnostic.DataPath)
+	}
 }
 
 func TestVerticalModelRefusesANonPositiveLineHeight(t *testing.T) {
@@ -404,6 +421,18 @@ func TestVerticalModelRefusesANonPositiveLineHeight(t *testing.T) {
 //     has validated the chain — so the widening cannot turn a
 //     previously-rendering empty element into an error.
 //
+//     AND SPEC-DEFERRED-OFFLINE-CACHE CAP-7 MOVED IT BACK. A rune
+//     uncovered because a chain member was never SUPPLIED now refuses in
+//     shapeSegments, so a chain with no present member fails there on
+//     its first drawable rune and the vertical model is not reached. The
+//     path is reachable through Render only where shaping emits nothing
+//     to refuse — an element whose whole text is line feeds a caller
+//     consumes, which CAP-7 deliberately leaves to today's newline
+//     suppression. Case (1) below therefore asserts the CAP-7 refusal;
+//     the len(metrics)==0 arithmetic stays red-proved at its own seam by
+//     TestVerticalModelRefusesAChainWithNoPresentFace, which now also
+//     pins its code.
+//
 //   - verticalModel's units <= 0 path — AC4 names it "maxUnits <= 0";
 //     the production variable is units, and there is no maxUnits
 //     anywhere in the module — is UNREACHABLE with any face this repository
@@ -420,15 +449,24 @@ func TestVerticalModelRefusesANonPositiveLineHeight(t *testing.T) {
 // through the public entry point. Neither half alone is the honest
 // statement.
 func TestVerticalModelErrorPathsAreUnreachableThroughRender(t *testing.T) {
-	// (1) Story 3.6 changed this measurement's outcome (see the doc
-	//     comment above): a chain with NO member present in the FontSet
-	//     no longer fails in resolveRuneFace (that condition is now
-	//     FR41's fifth-mode WARNING, not an error) — it now fails one
-	//     level higher, in the vertical model itself, once every rune in
-	//     the element has been omitted and no face metrics remain to
-	//     derive a line height from. Asserting WHICH error comes back is
-	//     the measurement; asserting merely that "an error came back"
-	//     would pass either way.
+	// (1) TWO STORIES HAVE NOW MOVED THIS MEASUREMENT'S OUTCOME, and the
+	//     point of asserting WHICH error comes back — rather than merely
+	//     that one did — is that each move was visible the moment it
+	//     happened.
+	//
+	//     Story 3.6 made "no face covers this rune" a Warning, so a chain
+	//     with NO member present stopped failing in resolveRuneFace and
+	//     started failing one level higher, in the vertical model, with
+	//     no metrics left to derive a line height from.
+	//
+	//     spec-deferred-offline-cache CAP-7 moved it back DOWN, and for a
+	//     different reason than 3.6 moved it up: a rune uncovered because
+	//     a chain member was never SUPPLIED is no longer the same
+	//     condition as a rune uncovered by faces that were all supplied.
+	//     The first refuses in shapeSegments, coded TEXT_FACE_ABSENT and
+	//     naming the absent face; only the second is still the Warning.
+	//     Every member of this chain is absent, so the first rune of the
+	//     element refuses before the vertical model is ever reached.
 	tpl, err := ParseTemplate([]byte(multiScriptTestTemplateJSON))
 	if err != nil {
 		t.Fatalf("parse template: %v", err)
@@ -438,10 +476,20 @@ func TestVerticalModelErrorPathsAreUnreachableThroughRender(t *testing.T) {
 		t.Fatal("presence precondition: rendering against a FontSet supplying none of the declared chain must fail, or this measurement has no subject")
 	}
 	if strings.Contains(rerr.Error(), "has a glyph for rune") {
-		t.Errorf("the render failed in resolveRuneFace (%q) — Story 3.6 made that condition a Warning, not an error, so this is no longer where a chain-with-no-present-face fails", rerr.Error())
+		t.Errorf("the render failed in resolveRuneFace's pre-3.6 shape (%q)", rerr.Error())
 	}
-	if !strings.Contains(rerr.Error(), "no line height can be derived from it") {
-		t.Errorf("expected verticalModel's located len(metrics)==0 error, got %q", rerr.Error())
+	var absent *RenderError
+	if !errors.As(rerr, &absent) {
+		t.Fatalf("the refusal must reach the caller as a *RenderError: %T %v", rerr, rerr)
+	}
+	if absent.Diagnostic.Code != DiagCodeTextFaceAbsent {
+		t.Errorf("code = %q, want %q (CAP-7); error = %v", absent.Diagnostic.Code, DiagCodeTextFaceAbsent, rerr)
+	}
+	if absent.Diagnostic.ElementID == "" || absent.Diagnostic.DataPath != "style.fontFamily" {
+		t.Errorf("the refusal is not located at the element and style.fontFamily: %+v", absent.Diagnostic)
+	}
+	if !strings.Contains(rerr.Error(), "not present in the supplied FontSet") {
+		t.Errorf("the refusal does not name the absent faces: %q", rerr.Error())
 	}
 
 	// (2) A chain with SOME members absent still renders — the model
@@ -476,7 +524,7 @@ func TestVerticalModelErrorPathsAreUnreachableThroughRender(t *testing.T) {
 	if rendered != len(baselineAcceptanceFixtures) {
 		t.Fatalf("presence precondition: %d of %d fixtures rendered", rendered, len(baselineAcceptanceFixtures))
 	}
-	t.Logf("AC4 (as amended by Story 3.6): verticalModel's units<=0 path (AC4's \"maxUnits<=0\") is UNREACHABLE through folio8.Render (no committed face is degenerate); its len(metrics)==0 path (AC4's \"present==0\") IS now reachable, when every chain member is absent from the FontSet (case 1, above) — both are PROVEN at the verticalModel seam over fabricated metrics regardless. %d fixtures re-rendered without error.", rendered)
+	t.Logf("AC4 (as amended by Story 3.6 and by spec-deferred-offline-cache CAP-7): verticalModel's units<=0 path (AC4's \"maxUnits<=0\") is UNREACHABLE through folio8.Render (no committed face is degenerate); its len(metrics)==0 path (AC4's \"present==0\") is reached through Render only where shaping has nothing to refuse, because a chain with an absent member now refuses in shapeSegments (case 1, above) — both are PROVEN at the verticalModel seam over fabricated metrics regardless. %d fixtures re-rendered without error.", rendered)
 }
 
 // TestChainVerticalModelIsOneWalkFeedingBothSpans is AC1's assertion, in

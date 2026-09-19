@@ -203,6 +203,37 @@ const DiagCodeTextMissingGlyph = string(diag.CodeTextMissingGlyph)
 // breaking change"): once shipped, this string's meaning is permanent.
 const DiagCodeTextStyleFaceUndeclared = string(diag.CodeTextStyleFaceUndeclared)
 
+// DiagCodeTextFaceAbsent names spec-deferred-offline-cache CAP-7's
+// refusal: a rune that no PRESENT member of its element's declared font
+// chain covers, where at least one member of that chain was never
+// supplied in the FontSet at all — including the case where no member
+// of the chain was supplied, which the vertical model catches one level
+// up as "no line height can be derived from it".
+//
+// It is an ERROR, and it travels on D-3.6.3's error type as a
+// *RenderError carrying this code, located at the element and at
+// `style.fontFamily`, the field the chain was resolved from. The message
+// names THE ABSENT FACE — not the whole chain — because supplying that
+// one face is the fix.
+//
+// WHY IT REFUSES RATHER THAN WARNS, and the distinction from
+// DiagCodeTextMissingGlyph is the whole reason it was minted. When every
+// declared face IS supplied and none draws the rune, the engine KNOWS
+// the document's chain is incomplete and drops the rune under
+// DiagCodeTextMissingGlyph. When a declared face was never supplied, the
+// engine cannot know whether that face would have covered the rune, so
+// dropping it would ship a PDF with text silently missing on a guess.
+// Byte-identity exists to prevent exactly that outcome.
+//
+// IT REFUSES FOR EVERY CALLER, IN EVERY LANGUAGE. A caller passing
+// fonts.Shipped() wholesale can never reach it; a caller supplying a
+// partial set gets an error where it previously got a Warning and a PDF.
+// There is no opt-in flag and no per-language leniency.
+//
+// Additive only (AD-14, verbatim: "changing a code's meaning is a
+// breaking change"): once shipped, this string's meaning is permanent.
+const DiagCodeTextFaceAbsent = string(diag.CodeTextFaceAbsent)
+
 // DiagCodeTableFooterSourceUnresolved and DiagCodeTableFooterSourceForbidden
 // are DW-6's two long-owed codes (D-1.4.2, R8), minted here now that
 // internal/diag exists and both conditions ship (R5, D-000.65: mint
