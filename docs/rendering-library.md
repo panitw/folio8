@@ -1,11 +1,5 @@
 # folio8 rendering library for Go
 
-The same engine, three published builds:
-
-- [Go](#install) `go get github.com/panitw/folio8/folio-go`
-- [Node.js](folio-js.md) `npm install folio8`
-- [.NET](folio-dotnet.md) `dotnet add package folio8`
-
 `folio-go` turns a `.folio` template, JSON data and runtime parameters into a PDF 1.7 document. It
 reads no clock, no environment, no network and no host fonts while rendering: everything a document
 needs is passed in. The same inputs rendered with the same Go toolchain produce the same bytes.
