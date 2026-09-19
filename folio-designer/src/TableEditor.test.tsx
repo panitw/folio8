@@ -1243,8 +1243,34 @@ describe('the table editor\'s Cancel discards what it counted', { timeout: 30_00
     // selection and never touches the edit count, which is why clearing the
     // sentence only where the COUNT is cleared would leave this case standing.
     fireEvent.keyDown(screen.getByLabelText('Canvas region'), { key: 'ArrowRight' })
-    await waitFor(() => expect(harness.commands.filter((text) => text.includes('"kind":"moveComponent"'))).toHaveLength(1))
-    await waitFor(() => expect(screen.queryByText(/Discarded 3 table editor edits/)).toBeNull())
+    // ⚠ THESE TWO CARRY AN EXPLICIT BUDGET, AND THE BLOCK'S `timeout: 30_000`
+    // IS NOT IT. That option bounds the TEST; `waitFor` runs on
+    // @testing-library's own default of 1000ms, which no vitest timeout widens.
+    // So the generous-looking block header says nothing about these lines.
+    //
+    // This test timed out HERE on CI at `1acc9cd` — `expected [] to have a
+    // length of 1`, the moveComponent command absent after 1000ms — while the
+    // whole file passed locally, and a re-run of the identical commit with no
+    // code change went green, which is what marks it as the clock rather than
+    // the claim.
+    //
+    // THE 1000ms WAS NEVER THE MARGIN IT LOOKED LIKE, and measuring the work
+    // alone is what hides that. Instrumented here, this wait resolves in 8ms
+    // both in isolation and under the full file — a 125x margin, which reads as
+    // untouchable until you notice that 8ms bounds the CPU work and `waitFor`
+    // budgets WALL CLOCK. A descheduled process pays wall clock for work it is
+    // not doing. The same CI run spent 206s on this file and 5115ms and 6978ms
+    // on single tests that cost about 100ms here — 50-70x — and at that factor
+    // a budget with a 125x headroom is one scheduling hiccup from red. This is
+    // `08781a6`'s finding ("the 30s was never as wide as it read") one level
+    // down, where the block's own timeout cannot reach.
+    //
+    // 15s, not 30s: it must stay clear of the block's test timeout so a REAL
+    // failure still surfaces as this assertion's diff rather than as a bare
+    // "test timed out", which would report the clock and hide the claim — the
+    // very inversion this comment exists to prevent.
+    await waitFor(() => expect(harness.commands.filter((text) => text.includes('"kind":"moveComponent"'))).toHaveLength(1), { timeout: 15_000 })
+    await waitFor(() => expect(screen.queryByText(/Discarded 3 table editor edits/)).toBeNull(), { timeout: 15_000 })
   })
 
   it('carries the count the application accumulated into the footer, over the engine\'s bound', async () => {
