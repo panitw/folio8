@@ -8,12 +8,13 @@ This guide covers installing the module, rendering your first PDF, the inputs an
 handle, the template features that change what is drawn, and every exported API of the `folio8`
 and `fonts` packages. The same engine is available outside Go: [folio-js](folio-js.md) renders from
 Node and [folio-dotnet](folio-dotnet.md) renders from .NET Framework 4.6 upwards, both producing the
-bytes this library produces. Four companion references hold the rules this guide does not repeat:
+bytes this library produces. Five companion references hold the rules this guide does not repeat:
 
 - [The `.folio` format](folio-format.md) — every field of a template, version rules and load errors.
 - [Expressions](expression-reference.md) — the syntax inside `{{ }}` and Visibility formulas.
 - [folio-js](folio-js.md) — the same engine for Node, promise-based.
 - [folio-dotnet](folio-dotnet.md) — the same engine for .NET, synchronous.
+- [Performance](performance.md) — measured throughput and memory, and how to size a publishing host.
 
 Contents: [Install](#install) · [Your first PDF](#your-first-pdf) ·
 [Writing to an `io.Writer`](#writing-to-an-iowriter) · [Inputs](#inputs) ·

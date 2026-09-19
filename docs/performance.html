@@ -1,0 +1,762 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FOLIO8 · Performance</title>
+
+<style>
+  /* Documentation site redesign: tokens from the designer's DESIGN.md.
+     Zero radius everywhere; committed dark palette; system fonts only, so the
+     page renders offline with no remote requests. Cyan = structure, amber = data. */
+  :root {
+    --ground: #0D0F12; --base: #15181C; --panel: #1A1E23; --raised: #22272D; --row-focus: #1D2228;
+    --line-faint: #191D21; --line-subtle: #22272D; --line: #272C33; --line-strong: #2F353D; --edge: #3A4048;
+    --ink-high: #E6E9EC; --ink: #AAB2BB; --ink-low: #737C86; --ink-faint: #5E666F; --ink-ghost: #4E565F;
+    --select: #58A6C4; --select-bright: #8FD0E4; --select-fill: #1E3B46; --select-tint: #16232A; --select-edge: #2F4F5C;
+    --bind: #C9A758; --bind-text: #E0C07A; --bind-muted: #8A7440; --bind-tint: #241F14; --bind-tint-warm: #1E1B13; --bind-edge: #4A3D1E; --bind-edge-soft: #3A3118;
+    --sans: system-ui, -apple-system, "Segoe UI", "Noto Sans", "Noto Sans Thai", sans-serif;
+    --thai: "Noto Sans Thai", "Thonburi", "Leelawadee UI", system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html { background: var(--ground); }
+  body {
+    margin: 0; background: var(--ground); color: var(--ink);
+    font-family: var(--sans); font-size: 15px; line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---- shell ---- */
+  .shell { display: flex; align-items: flex-start; min-height: 100vh; }
+  .sidebar {
+    position: sticky; top: 0; height: 100vh; overflow-y: auto; flex: 0 0 292px;
+    background: var(--base); border-right: 1px solid var(--line); padding-bottom: 64px;
+  }
+  .sidebar-head { padding: 22px 24px 16px; border-bottom: 1px solid var(--line-subtle); position: sticky; top: 0; background: var(--base); z-index: 2; }
+  .brand { margin: 0 0 4px; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-faint); font-weight: 500; }
+  .tagline { margin: 0 0 14px; font-size: 15px; color: var(--ink-high); font-weight: 600; line-height: 1.4; }
+  .filter {
+    width: 100%; padding: 7px 10px; background: var(--ground); border: 1px solid var(--line-strong); border-radius: 0;
+    color: var(--ink-high); font-family: var(--mono); font-size: 12px; outline: none;
+  }
+  .filter::placeholder { color: var(--ink-ghost); }
+  .filter:focus-visible { border-color: var(--select); }
+  .toc { padding: 14px 0 0; }
+  .toc-group { padding: 0 0 18px; margin: 0 0 6px; border-bottom: 1px solid var(--line-faint); }
+  .toc a { display: block; text-decoration: none; border-left: 2px solid transparent; }
+  .toc-doc { padding: 10px 24px 8px; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--select); font-weight: 600; }
+  .toc-item { padding: 7px 22px 7px 24px; font-size: 13.5px; font-weight: 500; line-height: 1.45; color: var(--ink); }
+  .toc-item.sub { padding: 3px 22px 3px 16px; margin-left: 26px; font-family: var(--mono); font-size: 12px; letter-spacing: -0.01em; color: var(--ink-faint); border-left-color: var(--line-subtle); }
+  .toc a:hover { color: var(--ink-high); background: var(--row-focus); }
+  .toc-doc[aria-current] { border-left-color: var(--select); }
+  .toc-item[aria-current] { color: var(--select-bright); border-left-color: var(--select); background: var(--select-tint); }
+  .toc a:focus-visible { outline: 2px solid var(--select); outline-offset: -2px; }
+  .toc-empty { margin: 0; padding: 10px 24px; font-size: 13px; color: var(--ink-ghost); }
+
+  main { flex: 1 1 auto; min-width: 0; }
+  .col { max-width: 920px; margin: 0 auto; padding: 52px 44px 140px; }
+  .docbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: baseline; padding-bottom: 40px; border-bottom: 1px solid var(--line-subtle); margin-bottom: 44px; }
+  main .docbar .brand { margin: 0; flex: 1 1 100%; max-width: none; }
+  .docbar a {
+    font-family: var(--mono); font-size: 13px; color: var(--bind-text); text-decoration: none;
+    padding: 4px 10px; background: var(--bind-tint-warm); border: 1px solid var(--bind-edge-soft);
+  }
+  .docbar a:hover { border-color: var(--bind); background: var(--bind-tint); }
+  .docbar a[aria-current] { color: var(--select-bright); background: var(--select-tint); border-color: var(--select-edge); }
+
+  .article-head { border-bottom: 1px solid var(--line); padding-bottom: 28px; }
+  .eyebrow { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-faint); margin: 0 0 12px; font-weight: 500; }
+  .standfirst { margin: 0 0 14px; max-width: 70ch; color: var(--ink); font-size: 16px; line-height: 1.6; }
+
+  /* ---- prose ---- */
+  main section { margin-top: 52px; scroll-margin-top: 24px; }
+  main h1, main h2, main h3, main h4 { scroll-margin-top: 24px; text-wrap: pretty; }
+  main h1 { font-size: 30px; line-height: 1.2; font-weight: 600; color: var(--ink-high); margin: 0 0 14px; letter-spacing: -0.01em; }
+  main h1 code { font-family: var(--mono); font-size: 0.92em; color: var(--bind-text); }
+  main h2 {
+    font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--select);
+    font-weight: 600; margin: 0 0 22px; padding-bottom: 10px; border-bottom: 1px solid var(--line);
+  }
+  main h2 code { font-family: var(--mono); font-size: 1.1em; text-transform: none; letter-spacing: 0; color: var(--select-bright); }
+  main h2 em { font-style: italic; border: 0; color: inherit; }
+  main h3 { font-size: 17px; font-weight: 600; color: var(--ink-high); margin: 38px 0 12px; }
+  main h3 code { font-family: var(--mono); font-size: 0.95em; color: var(--bind-text); }
+  main h4 { font-size: 15px; font-weight: 600; color: var(--ink-high); margin: 30px 0 10px; }
+  main h4 code { font-family: var(--mono); font-size: 0.95em; color: var(--bind-text); }
+  main p { margin: 0 0 14px; max-width: 72ch; }
+  main ul, main ol { margin: 0 0 16px; padding-left: 22px; max-width: 72ch; }
+  main li { margin: 0 0 8px; }
+  main li p { margin: 0 0 10px; }
+  main li > ul, main li > ol { margin: 8px 0 0; }
+  strong { color: var(--ink-high); font-weight: 600; }
+  em { color: var(--ink-high); font-style: normal; border-bottom: 1px solid var(--bind-edge); }
+  code { font-family: var(--mono); font-size: 0.9em; color: var(--bind-text); overflow-wrap: anywhere; }
+  a { color: var(--select-bright); text-decoration: underline; text-decoration-color: var(--select-edge); text-underline-offset: 2px; }
+  a:hover { text-decoration-color: var(--select-bright); }
+  a em { border-bottom: 0; color: inherit; }
+  a:focus-visible { outline: 2px solid var(--select); outline-offset: 1px; }
+
+  /* ---- samples ---- */
+  .sample { margin: 16px 0 22px; background: var(--base); border: 1px solid var(--line); overflow-x: auto; }
+  pre { margin: 0; padding: 16px 18px; font-family: var(--mono); font-size: 13px; line-height: 1.75; color: var(--bind-text); white-space: pre; }
+  pre code { font-size: inherit; color: inherit; overflow-wrap: normal; }
+  .sample pre.json, .sample .json { color: var(--ink); }
+  .sample .out { color: var(--ink-low); }
+  .sample .th { font-family: var(--thai); color: var(--ink); }
+  .sample .cmt { color: var(--ink-ghost); }
+  .sample .str { color: var(--ink-high); }
+
+  /* ---- tables ---- */
+  .tablewrap { overflow-x: auto; margin: 18px 0 22px; border: 1px solid var(--line); }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 520px; }
+  th {
+    text-align: left; font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--ink-faint); font-weight: 600; padding: 11px 16px; background: var(--panel);
+    border-bottom: 1px solid var(--line-strong); white-space: nowrap;
+  }
+  th code { text-transform: none; letter-spacing: 0; }
+  td { padding: 12px 16px; border-bottom: 1px solid var(--line-faint); vertical-align: top; color: var(--ink); }
+  td:first-child { min-width: 9em; }
+  td:first-child code { overflow-wrap: normal; }
+  tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: var(--row-focus); }
+  td .err { color: var(--ink-high); }
+  .roster td:first-child { color: var(--ink-faint); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; white-space: nowrap; }
+
+  /* ---- callouts ---- */
+  .notice { margin: 26px 0 0; padding: 16px 18px; background: var(--select-tint); border: 1px solid var(--select-edge); border-left-width: 2px; color: var(--ink); font-size: 14px; }
+  .notice strong { color: var(--select-bright); font-weight: 500; }
+  .caution { margin: 22px 0; padding: 16px 18px; background: var(--bind-tint-warm); border: 1px solid var(--bind-edge-soft); border-left: 2px solid var(--bind); font-size: 14px; }
+  .caution p { max-width: none; }
+  .caution strong { color: var(--bind-text); font-weight: 500; }
+
+  /* ---- expression reference function headings ---- */
+  .doc-expressions main h3 { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; font-family: var(--mono); font-size: 16px; font-weight: 500; }
+  h3 .args { color: var(--ink-faint); }
+  .pill { font-family: var(--sans); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; padding: 2px 8px; border: 1px solid var(--line-strong); color: var(--ink-low); font-weight: 500; white-space: nowrap; }
+  .pill.live { color: var(--select); border-color: var(--select-edge); background: var(--select-tint); }
+
+  .source-note { margin: 56px 0 0; padding-top: 20px; border-top: 1px solid var(--line); color: var(--ink-ghost); font-size: 13px; }
+  .source-note code { color: var(--ink-faint); }
+
+  /* ---- scrollbars ---- */
+  * { scrollbar-color: var(--line-strong) transparent; scrollbar-width: thin; }
+  ::-webkit-scrollbar { width: 11px; height: 11px; }
+  ::-webkit-scrollbar-track { background: var(--ground); border-left: 1px solid var(--line-faint); }
+  ::-webkit-scrollbar-thumb { background: var(--line-strong); border: 2px solid var(--ground); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--edge); }
+  ::-webkit-scrollbar-corner { background: var(--ground); }
+  .sidebar::-webkit-scrollbar-track { background: var(--base); border-left: 1px solid var(--line-subtle); }
+  .sidebar::-webkit-scrollbar-thumb { border-color: var(--base); }
+  .sample::-webkit-scrollbar-track, .tablewrap::-webkit-scrollbar-track { background: var(--base); border-left: 0; border-top: 1px solid var(--line-faint); }
+  .sample::-webkit-scrollbar-thumb, .tablewrap::-webkit-scrollbar-thumb { border-color: var(--base); }
+
+  @media (max-width: 900px) {
+    .shell { flex-wrap: wrap; }
+    .sidebar { position: static; height: auto; max-height: 44vh; flex: 1 1 100%; border-right: 0; border-bottom: 1px solid var(--line); padding-bottom: 16px; }
+    .col { padding: 36px 20px 96px; }
+  }
+  @media (max-width: 620px) {
+    main h1 { font-size: 25px; }
+    .sidebar-head { padding: 18px 16px 14px; }
+    .toc-doc, .toc-item { padding-left: 16px; }
+  }
+
+  /* ---- syntax highlighting: cyan = language structure, amber = data ---- */
+  .sample pre[data-lang] { color: var(--ink); }
+  .tk-kw { color: var(--select); }
+  .tk-type { color: var(--select-bright); }
+  .tk-fn { color: var(--ink-high); }
+  .tk-str { color: var(--bind-text); }
+  .tk-num, .tk-lit { color: var(--bind); }
+  .tk-key { color: var(--ink-high); }
+  .tk-com { color: var(--ink-ghost); }
+  .tk-punc { color: var(--ink-low); }
+
+  /* ---- performance: headline figures ---- */
+  .figures { display: flex; flex-wrap: wrap; gap: 10px; margin: 26px 0 0; }
+  .figure { flex: 1 1 200px; margin: 0; padding: 16px 18px; background: var(--panel); border: 1px solid var(--line-strong); }
+  .figure dt { font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-faint); font-weight: 600; }
+  .figure dd { margin: 10px 0 0; font-size: 26px; line-height: 1; color: var(--ink-high); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .figure dd span { font-size: 13px; font-weight: 500; color: var(--ink-low); }
+  .figure p { margin: 8px 0 0; max-width: none; font-size: 12.5px; line-height: 1.5; color: var(--ink-low); }
+  @media (max-width: 620px) { .figure { flex-basis: 100%; } }
+
+  /* ---- performance: charts. Two series only, in the page's own two accents:
+     cyan for one core, amber for ten. Every bar also carries its value as a
+     direct label, so the series are never told apart by colour alone. ---- */
+  .chart { margin: 24px 0; padding: 18px 18px 14px; background: var(--base); border: 1px solid var(--line); }
+  .chart-title { margin: 0 0 4px; font-size: 14px; font-weight: 600; color: var(--ink-high); }
+  .chart-note { margin: 0 0 14px; max-width: none; font-size: 12.5px; color: var(--ink-low); }
+  .chart svg { display: block; width: 100%; height: auto; max-width: 100%; }
+  .chart figcaption { margin: 10px 0 0; font-size: 12px; color: var(--ink-ghost); }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 0 0 12px; font-size: 12.5px; color: var(--ink-low); }
+  .key { display: inline-flex; align-items: center; gap: 7px; }
+  .swatch { width: 11px; height: 11px; flex: none; }
+
+  /* ---- performance: numeric tables ---- */
+  .metrics th, .metrics td { text-align: right; white-space: nowrap; }
+  .metrics th:first-child, .metrics td:first-child { text-align: left; }
+  .metrics td { font-family: var(--mono); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+  .metrics td:first-child { font-family: var(--sans); font-size: 14px; }
+</style>
+
+<!-- docs-shell -->
+<div class="shell doc-performance">
+
+  <aside class="sidebar" aria-label="Documentation contents">
+    <div class="sidebar-head">
+      <p class="brand">FOLIO8</p>
+      <p class="tagline">High-performance PDF<br>reporting library</p>
+      <input class="filter" type="search" placeholder="Filter sections" aria-label="Filter sections" autocomplete="off" spellcheck="false">
+    </div>
+    <nav class="toc" aria-label="Sections">
+      <div class="toc-group">
+        <a class="toc-doc" href="rendering-library.html">Rendering library</a>
+        <a class="toc-item" href="rendering-library.html#install">Install</a>
+        <a class="toc-item" href="rendering-library.html#your-first-pdf">Your first PDF</a>
+        <a class="toc-item" href="rendering-library.html#writing-to-an-iowriter">Writing to an io.Writer</a>
+        <a class="toc-item" href="rendering-library.html#inputs">Inputs</a>
+        <a class="toc-item sub" href="rendering-library.html#data-and-params">Data and params</a>
+        <a class="toc-item sub" href="rendering-library.html#fonts">Fonts</a>
+        <a class="toc-item" href="rendering-library.html#warnings-and-errors">Warnings and errors</a>
+        <a class="toc-item" href="rendering-library.html#load-time-versus-render-time">Load time versus render time</a>
+        <a class="toc-item" href="rendering-library.html#reproducible-output">Reproducible output</a>
+        <a class="toc-item" href="rendering-library.html#known-limitations">Known limitations</a>
+        <a class="toc-item" href="rendering-library.html#template-features-that-change-the-pdf">Template features that change the PDF</a>
+        <a class="toc-item sub" href="rendering-library.html#formulas">Formulas</a>
+        <a class="toc-item sub" href="rendering-library.html#barcode-and-qr-code">Barcode and QR code</a>
+        <a class="toc-item sub" href="rendering-library.html#section-break">Section break</a>
+        <a class="toc-item sub" href="rendering-library.html#designed-pages">Designed pages</a>
+        <a class="toc-item sub" href="rendering-library.html#table-frame-rules-and-minheight">Table frame, rules and minHeight</a>
+        <a class="toc-item sub" href="rendering-library.html#other-version-gated-table-features">Other version-gated table features</a>
+        <a class="toc-item" href="rendering-library.html#api-reference">API reference</a>
+        <a class="toc-item sub" href="rendering-library.html#rendering-and-validation">Rendering and validation</a>
+        <a class="toc-item sub" href="rendering-library.html#fonts-1">Fonts</a>
+        <a class="toc-item sub" href="rendering-library.html#diagnostics-and-errors">Diagnostics and errors</a>
+        <a class="toc-item sub" href="rendering-library.html#template-helpers">Template helpers</a>
+        <a class="toc-item" href="rendering-library.html#command-line-tool">Command-line tool</a>
+      </div>
+      <div class="toc-group">
+        <a class="toc-doc" href="folio-js.html">folio-js</a>
+        <a class="toc-item" href="folio-js.html#install">Install</a>
+        <a class="toc-item sub" href="folio-js.html#the-node-version-floor">The Node version floor</a>
+        <a class="toc-item sub" href="folio-js.html#esm-and-require-from-commonjs">ESM and require from CommonJS</a>
+        <a class="toc-item sub" href="folio-js.html#node-only">Node only</a>
+        <a class="toc-item" href="folio-js.html#your-first-pdf">Your first PDF</a>
+        <a class="toc-item sub" href="folio-js.html#passing-params">Passing params</a>
+        <a class="toc-item" href="folio-js.html#warnings-and-errors">Warnings and errors</a>
+        <a class="toc-item" href="folio-js.html#api-reference">API reference</a>
+        <a class="toc-item sub" href="folio-js.html#rendering-and-validation">Rendering and validation</a>
+        <a class="toc-item sub" href="folio-js.html#fonts">Fonts</a>
+        <a class="toc-item sub" href="folio-js.html#types">Types</a>
+        <a class="toc-item sub" href="folio-js.html#errors">Errors</a>
+        <a class="toc-item" href="folio-js.html#determinism">Determinism</a>
+      </div>
+      <div class="toc-group">
+        <a class="toc-doc" href="folio-dotnet.html">folio-dotnet</a>
+        <a class="toc-item" href="folio-dotnet.html#install">Install</a>
+        <a class="toc-item sub" href="folio-dotnet.html#supported-target-frameworks">Supported target frameworks</a>
+        <a class="toc-item sub" href="folio-dotnet.html#supported-platforms">Supported platforms</a>
+        <a class="toc-item sub" href="folio-dotnet.html#choosing-the-native-library">Choosing the native library</a>
+        <a class="toc-item" href="folio-dotnet.html#your-first-pdf">Your first PDF</a>
+        <a class="toc-item sub" href="folio-dotnet.html#passing-params">Passing params</a>
+        <a class="toc-item sub" href="folio-dotnet.html#calling-from-several-threads">Calling from several threads</a>
+        <a class="toc-item" href="folio-dotnet.html#warnings-and-errors">Warnings and errors</a>
+        <a class="toc-item" href="folio-dotnet.html#api-reference">API reference</a>
+        <a class="toc-item sub" href="folio-dotnet.html#rendering-and-validation">Rendering and validation</a>
+        <a class="toc-item sub" href="folio-dotnet.html#fonts">Fonts</a>
+        <a class="toc-item sub" href="folio-dotnet.html#types">Types</a>
+        <a class="toc-item sub" href="folio-dotnet.html#errors">Errors</a>
+        <a class="toc-item" href="folio-dotnet.html#determinism">Determinism</a>
+      </div>
+      <div class="toc-group">
+        <a class="toc-doc" href="expression-reference.html">Expressions</a>
+        <a class="toc-item" href="expression-reference.html#paths">Reading values</a>
+        <a class="toc-item" href="expression-reference.html#upper">Text</a>
+        <a class="toc-item" href="expression-reference.html#formulas">Formulas and visibility</a>
+        <a class="toc-item" href="expression-reference.html#if">Choosing between two values</a>
+        <a class="toc-item" href="expression-reference.html#totals">Totals</a>
+        <a class="toc-item" href="expression-reference.html#format">Dates and numbers</a>
+        <a class="toc-item" href="expression-reference.html#all">The whole list</a>
+      </div>
+      <div class="toc-group">
+        <a class="toc-doc" href="folio-format.html">The .folio format</a>
+        <a class="toc-item" href="folio-format.html#units">Units</a>
+        <a class="toc-item" href="folio-format.html#document">Document</a>
+        <a class="toc-item sub" href="folio-format.html#alignment-sets">Alignment sets</a>
+        <a class="toc-item" href="folio-format.html#versions">Versions</a>
+        <a class="toc-item sub" href="folio-format.html#compatibility-rules">Compatibility rules</a>
+        <a class="toc-item sub" href="folio-format.html#closed-sets">Closed sets</a>
+        <a class="toc-item" href="folio-format.html#load-errors">Load errors</a>
+        <a class="toc-item" href="folio-format.html#page">page</a>
+        <a class="toc-item" href="folio-format.html#fonts">fonts</a>
+        <a class="toc-item" href="folio-format.html#bands">bands</a>
+        <a class="toc-item sub" href="folio-format.html#designed-pages">Designed pages</a>
+        <a class="toc-item sub" href="folio-format.html#pagination">Pagination</a>
+        <a class="toc-item" href="folio-format.html#elements">Elements</a>
+        <a class="toc-item sub" href="folio-format.html#table">table</a>
+        <a class="toc-item sub" href="folio-format.html#expressions">Expressions</a>
+        <a class="toc-item sub" href="folio-format.html#style">style</a>
+        <a class="toc-item" href="folio-format.html#assets">assets</a>
+        <a class="toc-item sub" href="folio-format.html#a-font-asset">A font asset</a>
+        <a class="toc-item" href="folio-format.html#saving">Saving</a>
+        <a class="toc-item" href="folio-format.html#line-breaking">Line breaking</a>
+        <a class="toc-item sub" href="folio-format.html#inferred-breaks">Inferred breaks</a>
+        <a class="toc-item sub" href="folio-format.html#mandatory-breaks">Mandatory breaks</a>
+        <a class="toc-item sub" href="folio-format.html#vertical-placement">Vertical placement</a>
+        <a class="toc-item sub" href="folio-format.html#values-that-must-never-be-split">Values that must never be split</a>
+        <a class="toc-item" href="folio-format.html#what-is-not-in-the-file">What is not in the file</a>
+        <a class="toc-item" href="folio-format.html#worked-example">Worked example</a>
+      </div>
+      <div class="toc-group" data-current>
+        <a class="toc-doc" href="#top" aria-current="page">Performance</a>
+        <a class="toc-item" href="#conditions">Conditions</a>
+        <a class="toc-item" href="#what-is-measured">What is measured</a>
+        <a class="toc-item" href="#throughput">Throughput</a>
+        <a class="toc-item sub" href="#concurrency">Concurrency</a>
+        <a class="toc-item sub" href="#small-documents">Very small documents</a>
+        <a class="toc-item" href="#memory">Memory</a>
+        <a class="toc-item sub" href="#allocation">Allocation is the cost centre</a>
+        <a class="toc-item sub" href="#gogc">Trading memory for throughput</a>
+        <a class="toc-item" href="#corpus">The full corpus</a>
+        <a class="toc-item" href="#sizing">Sizing a publishing host</a>
+      </div>
+      <p class="toc-empty" hidden>No section matches.</p>
+    </nav>
+  </aside>
+
+  <main>
+    <div class="col">
+      <nav class="docbar" aria-label="Documents">
+        <p class="brand">FOLIO8 · High-performance PDF reporting library</p>
+        <a href="rendering-library.html">Rendering library</a>
+        <a href="folio-js.html">folio-js</a>
+        <a href="folio-dotnet.html">folio-dotnet</a>
+        <a href="expression-reference.html">Expressions</a>
+        <a href="folio-format.html">.folio format</a>
+        <a href="#top" aria-current="page">Performance</a>
+      </nav>
+
+      <article id="top">
+        <div class="article-head">
+          <p class="eyebrow">FOLIO8 · Engine measurements</p>
+          <h1>Performance</h1>
+          <p class="standfirst">
+            What the engine costs to run: how many documents a second it produces, and how much
+            memory a host needs to produce them. Every figure comes from the golden fixture corpus,
+            rendered through the same public <code>Render</code> entry point that the
+            <a href="rendering-library.html">rendering library guide</a> documents.
+          </p>
+          <p>Three findings shape the rest. <strong>Throughput is set by pages, not documents</strong> — one core sustains roughly 430 pages a second whatever the document size. <strong>The engine retains nothing</strong>, so peak memory is bought per concurrent worker rather than per document. <strong><code>Render</code> is safe to call concurrently</strong> against one shared template and font set, which is what makes a worker pool the natural shape for a publishing host.</p>
+        </div>
+        <!-- /article-head -->
+
+<!-- body -->
+  <dl class="figures">
+    <div class="figure">
+      <dt>Peak throughput</dt>
+      <dd>2,144<span> pages/s</span></dd>
+      <p>50-page statements, 10 workers. 436 pages/s on one.</p>
+    </div>
+    <div class="figure">
+      <dt>Peak resident set</dt>
+      <dd>235<span> MB</span></dd>
+      <p>Heaviest fixture at 10 workers. 37 MB at one.</p>
+    </div>
+    <div class="figure">
+      <dt>Live heap after the run</dt>
+      <dd>12.5<span> MB</span></dd>
+      <p>The engine retains nothing between documents.</p>
+    </div>
+  </dl>
+
+  <div class="notice">
+    <strong>These are measurements, not a guarantee.</strong> They come from one machine under the
+    conditions below. Read the ratios — pages per second per core, megabytes per worker — rather than
+    the absolute numbers, and re-measure on the hardware you intend to run.
+  </div>
+
+  <section id="conditions">
+    <h2>Conditions</h2>
+    <div class="tablewrap"><table class="roster"><tbody>
+      <tr><td>Machine</td><td>Apple M4 — 4 performance + 6 efficiency cores, 24 GB</td></tr>
+      <tr><td>Operating system</td><td>macOS 26.6.2</td></tr>
+      <tr><td>Toolchain</td><td>go1.26.0 darwin/arm64</td></tr>
+      <tr><td>Engine</td><td>folio-go at <code>1559227</code>, <code>fonts.Shipped()</code> — 11 embedded faces</td></tr>
+      <tr><td>GOGC</td><td>100 (Go's default) unless a figure says otherwise</td></tr>
+    </tbody></table></div>
+    <p>Measured on a shared desktop at load average 2–3.6, not an isolated host.</p>
+  </section>
+
+  <section id="what-is-measured">
+    <h2>What is measured</h2>
+    <p>Every fixture that carries a <code>data.json</code> — twelve documents that exercise the real
+      bind path, from a four-kilobyte Thai bill-payment slip to a fifty-page account statement.</p>
+    <p>The template is parsed once, <em>outside</em> the measured loop, because that is how a
+      publishing server works. <code>ParseTemplate</code> costs 0.15 ms for the statement template
+      against a 4.7 ms render, and a server pays it at startup rather than per document. What is
+      inside the loop is everything that varies per document: the data JSON decode, binding, layout,
+      pagination, shaping and PDF serialization.</p>
+    <p>Two harnesses produce the numbers. <code>folio-go/render_throughput_bench_test.go</code> gives
+      per-document time and allocation. Peak resident set comes from a separate probe process,
+      because <code>ru_maxrss</code> is a process-wide high-water mark and two workloads in one
+      process cannot be told apart.</p>
+    <div class="sample"><pre data-lang="sh"><span class="tk-kw">cd</span> folio-go
+go test -run <span class="tk-str">'^$'</span> -bench <span class="tk-str">'BenchmarkRenderThroughput$'</span>       -benchmem -count <span class="tk-num">5</span> -cpu <span class="tk-num">1</span> .
+go test -run <span class="tk-str">'^$'</span> -bench <span class="tk-str">'BenchmarkRenderThroughputParallel'</span> -benchmem -count <span class="tk-num">5</span> .
+go test -run <span class="tk-str">'^$'</span> -bench <span class="tk-str">'BenchmarkLoadTemplate'</span>             -benchmem -count <span class="tk-num">3</span> -cpu <span class="tk-num">1</span> .</pre></div>
+    <div class="caution">
+      <p><strong>Under <code>RunParallel</code>, Go's <code>ns/op</code> is not latency.</strong> It
+        is wall time divided by total iterations — the reciprocal of aggregate throughput. The
+        latency figures on this page come from the serial runs.</p>
+    </div>
+  </section>
+
+  <section id="throughput">
+    <h2>Throughput</h2>
+    <p>The <code>statement-N</code> family is one template over 1, 5, 20 and 50 statements' worth of
+      rows, so it separates per-document cost from per-page cost. Documents per second falls steeply
+      across it, 212 down to 8.7. Pages per second climbs and then flattens.</p>
+
+    <figure class="chart">
+      <p class="chart-title">Pages per second, by document size</p>
+      <p class="chart-note">Serial is one goroutine. Parallel is ten goroutines sharing one
+        <code>*Template</code> and one font set.</p>
+      <div class="legend">
+        <span class="key"><span class="swatch" style="background:#58A6C4"></span>1 worker</span>
+        <span class="key"><span class="swatch" style="background:#C9A758"></span>10 workers</span>
+      </div>
+      <svg viewBox="0 0 720 268" role="img" aria-label="Grouped bar chart of pages per second for statement fixtures of 1, 5, 20 and 50 pages, at 1 worker and 10 workers. One worker: 212, 350, 415, 436. Ten workers: 881, 1668, 1985, 2144.">
+        <g stroke="#272C33" stroke-width="1">
+          <line x1="100" y1="34" x2="100" y2="250"></line>
+          <line x1="247.5" y1="34" x2="247.5" y2="250"></line>
+          <line x1="395" y1="34" x2="395" y2="250"></line>
+          <line x1="542.5" y1="34" x2="542.5" y2="250"></line>
+          <line x1="690" y1="34" x2="690" y2="250"></line>
+        </g>
+        <g fill="#5E666F" font-family="ui-monospace, Menlo, monospace" font-size="11" text-anchor="middle">
+          <text x="100" y="26">0</text>
+          <text x="247.5" y="26">600</text>
+          <text x="395" y="26">1,200</text>
+          <text x="542.5" y="26">1,800</text>
+          <text x="690" y="26">2,400</text>
+        </g>
+        <g fill="#AAB2BB" font-family="ui-monospace, Menlo, monospace" font-size="12" text-anchor="end">
+          <text x="88" y="64">statement-1</text>
+          <text x="88" y="120">statement-5</text>
+          <text x="88" y="176">statement-20</text>
+          <text x="88" y="232">statement-50</text>
+        </g>
+        <g fill="#5E666F" font-family="ui-monospace, Menlo, monospace" font-size="10" text-anchor="end">
+          <text x="88" y="77">1 page</text>
+          <text x="88" y="133">5 pages</text>
+          <text x="88" y="189">20 pages</text>
+          <text x="88" y="245">50 pages</text>
+        </g>
+        <g fill="#58A6C4">
+          <rect x="100" y="42" width="52.1" height="17"><title>statement-1, 1 worker: 212 pages/s</title></rect>
+          <rect x="100" y="98" width="86.0" height="17"><title>statement-5, 1 worker: 350 pages/s</title></rect>
+          <rect x="100" y="154" width="102.0" height="17"><title>statement-20, 1 worker: 415 pages/s</title></rect>
+          <rect x="100" y="210" width="107.2" height="17"><title>statement-50, 1 worker: 436 pages/s</title></rect>
+        </g>
+        <g fill="#C9A758">
+          <rect x="100" y="61" width="216.6" height="17"><title>statement-1, 10 workers: 881 pages/s</title></rect>
+          <rect x="100" y="117" width="410.0" height="17"><title>statement-5, 10 workers: 1,668 pages/s</title></rect>
+          <rect x="100" y="173" width="487.9" height="17"><title>statement-20, 10 workers: 1,985 pages/s</title></rect>
+          <rect x="100" y="229" width="527.0" height="17"><title>statement-50, 10 workers: 2,144 pages/s</title></rect>
+        </g>
+        <g fill="#8FD0E4" font-family="ui-monospace, Menlo, monospace" font-size="11">
+          <text x="158.1" y="55">212</text>
+          <text x="192.0" y="111">350</text>
+          <text x="208.0" y="167">415</text>
+          <text x="213.2" y="223">436</text>
+        </g>
+        <g fill="#E0C07A" font-family="ui-monospace, Menlo, monospace" font-size="11">
+          <text x="322.6" y="74">881</text>
+          <text x="516.0" y="130">1,668</text>
+          <text x="593.9" y="186">1,985</text>
+          <text x="633.0" y="242">2,144</text>
+        </g>
+      </svg>
+      <figcaption>Median of five runs. Pages per second is documents per second times the golden
+        PDF's <code>/Count</code>.</figcaption>
+    </figure>
+
+    <p>That flat line is the capacity number worth planning against. A one-page document is not ten
+      times cheaper than a ten-page one; it is about four times cheaper, because roughly half of a
+      small document's cost is fixed.</p>
+    <p>Per-document time is linear in page count — <strong>2.25 ms per page plus 2.5 ms of fixed
+      cost</strong>. Nothing about pagination degrades as documents grow, which is the property that
+      matters for a corpus with a long tail of large statements.</p>
+
+    <figure class="chart">
+      <p class="chart-title">Render time against page count</p>
+      <p class="chart-note">One core, median of five runs.</p>
+      <svg viewBox="0 0 720 296" role="img" aria-label="Line chart of render time in milliseconds against page count: 1 page 4.7 milliseconds, 5 pages 14.3, 20 pages 48.2, 50 pages 114.7.">
+        <g stroke="#272C33" stroke-width="1">
+          <line x1="70" y1="250" x2="690" y2="250"></line>
+          <line x1="70" y1="195" x2="690" y2="195"></line>
+          <line x1="70" y1="140" x2="690" y2="140"></line>
+          <line x1="70" y1="85" x2="690" y2="85"></line>
+          <line x1="70" y1="30" x2="690" y2="30"></line>
+        </g>
+        <g fill="#5E666F" font-family="ui-monospace, Menlo, monospace" font-size="11" text-anchor="end">
+          <text x="60" y="254">0</text>
+          <text x="60" y="199">30</text>
+          <text x="60" y="144">60</text>
+          <text x="60" y="89">90</text>
+          <text x="60" y="34">120</text>
+        </g>
+        <text x="70" y="16" fill="#737C86" font-family="system-ui, sans-serif" font-size="11.5">milliseconds per document</text>
+        <g fill="#5E666F" font-family="ui-monospace, Menlo, monospace" font-size="11" text-anchor="middle">
+          <text x="70" y="270">0</text>
+          <text x="194" y="270">10</text>
+          <text x="318" y="270">20</text>
+          <text x="442" y="270">30</text>
+          <text x="566" y="270">40</text>
+          <text x="690" y="270">50</text>
+        </g>
+        <text x="380" y="289" fill="#737C86" font-family="system-ui, sans-serif" font-size="11.5" text-anchor="middle">pages in the document</text>
+        <polyline points="82.4,241.4 132,223.8 318,161.7 690,39.7" fill="none" stroke="#58A6C4" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></polyline>
+        <g fill="#58A6C4" stroke="#15181C" stroke-width="2">
+          <circle cx="82.4" cy="241.4" r="5"><title>1 page: 4.71 ms</title></circle>
+          <circle cx="132" cy="223.8" r="5"><title>5 pages: 14.27 ms</title></circle>
+          <circle cx="318" cy="161.7" r="5"><title>20 pages: 48.15 ms</title></circle>
+          <circle cx="690" cy="39.7" r="6"><title>50 pages: 114.69 ms</title></circle>
+        </g>
+        <g fill="#E6E9EC" font-family="ui-monospace, Menlo, monospace" font-size="11">
+          <text x="92" y="238">4.7 ms</text>
+          <text x="142" y="220">14.3 ms</text>
+          <text x="328" y="158">48.2 ms</text>
+          <text x="686" y="28" text-anchor="end">114.7 ms</text>
+        </g>
+      </svg>
+      <figcaption>Fitted slope 2.25 ms per page, intercept 2.5 ms.</figcaption>
+    </figure>
+
+    <h3 id="concurrency">Concurrency</h3>
+    <p>Ten goroutines rendering against the same <code>*Template</code> and the same
+      <code>FontSet</code> give a <strong>4.8× speedup</strong> on the heavier fixtures and pass
+      under the race detector. On a machine with four performance cores that is close to the ceiling
+      the hardware allows rather than evidence of contention — the six efficiency cores contribute
+      the remainder.</p>
+    <p>Latency degrades under that load. A one-page statement that takes 4.1 ms alone takes 10.6 ms
+      when ten workers compete. Throughput and latency are separate budgets: a synchronous request
+      path wants fewer workers than a batch run does.</p>
+
+    <h3 id="small-documents">Very small documents</h3>
+    <p><code>barcode-thai-bill-payment</code> renders in 25 µs and does <em>not</em> speed up with
+      more workers (0.95×). A CPU profile of that run puts over 70% of samples in
+      <code>runtime.usleep</code>, <code>madvise</code> and thread parking — the Go scheduler and
+      scavenger, not the engine — and repeated runs varied between 37,000 and 58,000 documents a
+      second. Documents under about 100 µs are below this harness's resolution; do not read a
+      capacity number out of that row.</p>
+  </section>
+
+  <section id="memory">
+    <h2>Memory</h2>
+    <p>The engine retains nothing between documents. After rendering four hundred documents, live
+      heap sits at 5–12 MB whichever fixture ran, the same order as an idle process. Everything a
+      render allocates is short-lived garbage, so peak resident set is <strong>GC headroom under
+      concurrency</strong> and it scales with worker count far more than with document size.</p>
+
+    <figure class="chart">
+      <p class="chart-title">Peak resident set of the rendering process</p>
+      <p class="chart-note">400 documents each (120 for <code>statement-50</code>), read from
+        <code>ru_maxrss</code> after a warm-up render.</p>
+      <div class="legend">
+        <span class="key"><span class="swatch" style="background:#58A6C4"></span>1 worker</span>
+        <span class="key"><span class="swatch" style="background:#C9A758"></span>10 workers</span>
+      </div>
+      <svg viewBox="0 0 720 268" role="img" aria-label="Grouped bar chart of peak resident set in megabytes at 1 worker and 10 workers: 24.0 and 113.0, 27.6 and 124.4, 28.8 and 158.6, 36.9 and 234.6.">
+        <g stroke="#272C33" stroke-width="1">
+          <line x1="100" y1="34" x2="100" y2="250"></line>
+          <line x1="218" y1="34" x2="218" y2="250"></line>
+          <line x1="336" y1="34" x2="336" y2="250"></line>
+          <line x1="454" y1="34" x2="454" y2="250"></line>
+          <line x1="572" y1="34" x2="572" y2="250"></line>
+          <line x1="690" y1="34" x2="690" y2="250"></line>
+        </g>
+        <g fill="#5E666F" font-family="ui-monospace, Menlo, monospace" font-size="11" text-anchor="middle">
+          <text x="100" y="26">0</text>
+          <text x="218" y="26">50</text>
+          <text x="336" y="26">100</text>
+          <text x="454" y="26">150</text>
+          <text x="572" y="26">200</text>
+          <text x="690" y="26">250 MB</text>
+        </g>
+        <g fill="#AAB2BB" font-family="ui-monospace, Menlo, monospace" font-size="12" text-anchor="end">
+          <text x="88" y="54">statement-1</text>
+          <text x="88" y="110">statement-5</text>
+          <text x="88" y="166">statement-20</text>
+          <text x="88" y="222">statement-50</text>
+        </g>
+        <g fill="#58A6C4">
+          <rect x="100" y="42" width="56.6" height="17"><title>statement-1, 1 worker: 24.0 MB</title></rect>
+          <rect x="100" y="98" width="65.1" height="17"><title>statement-5, 1 worker: 27.6 MB</title></rect>
+          <rect x="100" y="154" width="68.0" height="17"><title>statement-20, 1 worker: 28.8 MB</title></rect>
+          <rect x="100" y="210" width="87.1" height="17"><title>statement-50, 1 worker: 36.9 MB</title></rect>
+        </g>
+        <g fill="#C9A758">
+          <rect x="100" y="61" width="266.7" height="17"><title>statement-1, 10 workers: 113.0 MB</title></rect>
+          <rect x="100" y="117" width="293.6" height="17"><title>statement-5, 10 workers: 124.4 MB</title></rect>
+          <rect x="100" y="173" width="374.3" height="17"><title>statement-20, 10 workers: 158.6 MB</title></rect>
+          <rect x="100" y="229" width="553.6" height="17"><title>statement-50, 10 workers: 234.6 MB</title></rect>
+        </g>
+        <g fill="#8FD0E4" font-family="ui-monospace, Menlo, monospace" font-size="11">
+          <text x="162.6" y="55">24.0</text>
+          <text x="171.1" y="111">27.6</text>
+          <text x="174.0" y="167">28.8</text>
+          <text x="193.1" y="223">36.9</text>
+        </g>
+        <g fill="#E0C07A" font-family="ui-monospace, Menlo, monospace" font-size="11">
+          <text x="372.7" y="74">113.0</text>
+          <text x="399.6" y="130">124.4</text>
+          <text x="480.3" y="186">158.6</text>
+          <text x="658" y="242">234.6</text>
+        </g>
+      </svg>
+      <figcaption>Baseline after warm-up is 18–34 MB, most of it the eleven embedded font faces.</figcaption>
+    </figure>
+
+    <p>A sizing rule that fits these numbers: <strong>about 10 MB of resident set per concurrent
+      worker per 10 pages of document</strong>, on top of a ~20 MB floor. Ten workers on fifty-page
+      statements is the 235 MB case; the same ten workers on one-page documents is 113 MB.</p>
+
+    <h3 id="allocation">Allocation is the cost centre</h3>
+    <p>Per document the engine allocates roughly <strong>2.2 MB and 20,000 objects per page</strong>,
+      plus about 4.5 MB and 64,000 objects of fixed cost. A fifty-page statement churns 112 MB across
+      1.06 million allocations to produce a 542 KB PDF, a ratio of about 200:1. None of it is
+      retained, so it costs GC time rather than footprint — but it is what caps the per-core page
+      rate.</p>
+    <p>The contrast inside the corpus locates that cost precisely.
+      <code>barcode-thai-bill-payment</code> lays out no text and allocates 95 KB in 192 objects.
+      <code>qrcode-payments</code>, also one page, allocates 1.8 MB in 320. The moment a document
+      shapes text, allocation counts rise by three orders of magnitude.</p>
+
+    <h3 id="gogc">Trading memory for throughput</h3>
+    <p>Because the workload is nearly pure garbage, raising <code>GOGC</code> trades resident set for
+      throughput directly. The trade stops paying at 400.</p>
+    <div class="tablewrap"><table class="metrics">
+      <thead><tr><th>GOGC</th><th>Docs/s</th><th>vs default</th><th>Peak RSS</th><th>vs default</th></tr></thead>
+      <tbody>
+        <tr><td>100 (default)</td><td>340.6</td><td>—</td><td>114.5 MB</td><td>—</td></tr>
+        <tr><td>400</td><td>438.1</td><td>+29%</td><td>409.4 MB</td><td>3.6×</td></tr>
+        <tr><td>800</td><td>444.3</td><td>+30%</td><td>723.3 MB</td><td>6.3×</td></tr>
+      </tbody>
+    </table></div>
+    <p><code>statement-5</code>, 400 documents, 10 workers. On one worker the same change is worth
+      only +8% (79.9 → 86.6 docs/s) for 43 MB instead of 27 MB. <code>GOGC=400</code> is worth
+      setting on a batch host with memory to spare; on a memory-capped container it is not, and
+      <code>GOMEMLIMIT</code> is the better lever.</p>
+  </section>
+
+  <section id="corpus">
+    <h2>The full corpus</h2>
+    <p>Median of five runs. Serial is <code>-cpu 1</code>; parallel is <code>GOMAXPROCS=10</code>.
+      Allocation figures are per document and are identical in both modes.</p>
+    <div class="tablewrap"><table class="metrics">
+      <thead><tr>
+        <th>Fixture</th><th>Pages</th><th>ms/doc</th><th>Docs/s<br>1 core</th><th>Docs/s<br>10 cores</th>
+        <th>Speed-up</th><th>Alloc/doc</th><th>Allocs/doc</th><th>PDF</th>
+      </tr></thead>
+      <tbody>
+        <tr><td><code>statement-1</code></td><td>1</td><td>4.71</td><td>212.2</td><td>881.0</td><td>4.15×</td><td>6.74 MB</td><td>83,544</td><td>74 KB</td></tr>
+        <tr><td><code>statement-5</code></td><td>5</td><td>14.27</td><td>70.1</td><td>333.5</td><td>4.76×</td><td>15.50 MB</td><td>165,494</td><td>124 KB</td></tr>
+        <tr><td><code>statement-20</code></td><td>20</td><td>48.15</td><td>20.8</td><td>99.3</td><td>4.78×</td><td>47.11 MB</td><td>464,929</td><td>263 KB</td></tr>
+        <tr><td><code>statement-50</code></td><td>50</td><td>114.69</td><td>8.7</td><td>42.9</td><td>4.92×</td><td>112.30 MB</td><td>1,064,269</td><td>542 KB</td></tr>
+        <tr><td><code>multi-page-statement</code></td><td>4</td><td>19.42</td><td>51.5</td><td>234.3</td><td>4.55×</td><td>19.81 MB</td><td>222,335</td><td>127 KB</td></tr>
+        <tr><td><code>multi-page-flow</code></td><td>4</td><td>14.01</td><td>71.4</td><td>322.6</td><td>4.52×</td><td>14.78 MB</td><td>170,639</td><td>107 KB</td></tr>
+        <tr><td><code>section-break-statement</code></td><td>2</td><td>11.55</td><td>86.6</td><td>429.2</td><td>4.96×</td><td>9.39 MB</td><td>121,822</td><td>94 KB</td></tr>
+        <tr><td><code>section-break-unanchored</code></td><td>1</td><td>10.57</td><td>94.6</td><td>461.3</td><td>4.88×</td><td>8.81 MB</td><td>116,206</td><td>91 KB</td></tr>
+        <tr><td><code>alternating-rows</code></td><td>1</td><td>2.39</td><td>417.7</td><td>1,616</td><td>3.87×</td><td>3.81 MB</td><td>68,137</td><td>54 KB</td></tr>
+        <tr><td><code>colour-strokes</code></td><td>1</td><td>2.92</td><td>342.9</td><td>1,354</td><td>3.95×</td><td>3.97 MB</td><td>79,755</td><td>40 KB</td></tr>
+        <tr><td><code>qrcode-payments</code></td><td>1</td><td>1.25</td><td>799.7</td><td>2,195</td><td>2.74×</td><td>1.82 MB</td><td>320</td><td>90 KB</td></tr>
+        <tr><td><code>barcode-thai-bill-payment</code></td><td>1</td><td>0.025</td><td>39,422</td><td>37,484</td><td>0.95×</td><td>95 KB</td><td>192</td><td>4 KB</td></tr>
+      </tbody>
+    </table></div>
+    <p>Template parsing, which a server pays once rather than per document, ranges from 0.023 ms
+      (<code>barcode-thai-bill-payment</code>, an 18 KB template) to 0.36 ms
+      (<code>multi-page-flow</code>, 258 KB). It never belongs in a per-document budget.</p>
+  </section>
+
+  <section id="sizing">
+    <h2>Sizing a publishing host</h2>
+    <ul>
+      <li><strong>Size in pages.</strong> One core sustains about 430 pages a second on dense
+        statement work; ten threads sustain about 2,100. Document counts alone will mislead you by an
+        order of magnitude between a one-page slip and a fifty-page statement.</li>
+      <li><strong>Parse once, share the template.</strong> <code>Render</code> is race-clean against a
+        shared <code>*Template</code> and <code>FontSet</code>. Re-parsing per request adds about 3%
+        to a small document for nothing.</li>
+      <li><strong>Budget about 20 MB per concurrent worker</strong> for ordinary documents and about
+        25 MB for fifty-page ones, on top of a ~20 MB floor. Nothing accumulates across
+        documents.</li>
+      <li><strong>Separate the two budgets.</strong> Full-concurrency throughput costs about 2.5× the
+        per-document latency. Size a request path for latency and a batch path for throughput.</li>
+      <li><strong>The optimisation target is allocation.</strong> Twenty thousand objects per page is
+        what sets the per-core ceiling. Reducing it would move throughput more than any other single
+        change; <code>GOGC</code> is the cheap version of that lever today.</li>
+    </ul>
+  </section>
+
+        <p class="source-note">Source of truth: <code>docs/performance.md</code>. Colours and the
+    two-accent grammar are the designer's own tokens — cyan for structure, amber for data.</p>
+      </article>
+      </article>
+    </div>
+  </main>
+
+</div>
+
+<script>
+(() => {
+  const filter = document.querySelector('.filter')
+  const groups = [...document.querySelectorAll('.toc-group')]
+  const empty = document.querySelector('.toc-empty')
+  filter.addEventListener('input', () => {
+    const query = filter.value.trim().toLowerCase()
+    let shown = 0
+    for (const group of groups) {
+      let hits = 0
+      for (const item of group.querySelectorAll('.toc-item')) {
+        const hit = query === '' || item.textContent.toLowerCase().includes(query)
+        item.hidden = !hit
+        if (hit) hits++
+      }
+      group.hidden = hits === 0
+      shown += hits
+    }
+    empty.hidden = shown !== 0
+  })
+  filter.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && filter.value !== '') { filter.value = ''; filter.dispatchEvent(new Event('input')) }
+  })
+
+  const local = [...document.querySelectorAll('.toc-group[data-current] .toc-item')]
+    .map((item) => ({ item, target: document.getElementById(item.getAttribute('href').slice(1)) }))
+    .filter(({ target }) => target !== null)
+  let active = null
+  let queued = false
+  const update = () => {
+    queued = false
+    let next = null
+    for (const entry of local) {
+      if (entry.target.getBoundingClientRect().top <= 96) next = entry
+      else break
+    }
+    if (next === active) return
+    if (active) active.item.removeAttribute('aria-current')
+    active = next
+    if (active) {
+      active.item.setAttribute('aria-current', 'location')
+      const sidebar = document.querySelector('.sidebar')
+      const box = active.item.getBoundingClientRect()
+      const frame = sidebar.getBoundingClientRect()
+      if (box.top < frame.top + 120 || box.bottom > frame.bottom) sidebar.scrollTop += box.top - frame.top - frame.height / 3
+    }
+  }
+  addEventListener('scroll', () => { if (!queued) { queued = true; requestAnimationFrame(update) } }, { passive: true })
+  update()
+})()
+</script>

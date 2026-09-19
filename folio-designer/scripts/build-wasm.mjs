@@ -460,12 +460,13 @@ writeFileSync(join(generatedDir, 'font-catalogue.ts'),
   + catalogueFaces.map((face, index) => `  { id: ${JSON.stringify(face.id)}, family: ${JSON.stringify(face.family)}, style: "Regular", licence: ${JSON.stringify(face.licence)}, licenceText: ${JSON.stringify(licenceTextOf(face))}, copyright: ${JSON.stringify(faceCopyright(join(designerRoot, 'public', 'fonts', face.directory, face.file)))}, source: ${JSON.stringify(committedFaceSource(face))}, scripts: [${face.scripts.map((script) => JSON.stringify(script)).join(', ')}], url: catalogueUrl${index} },`).join('\n')
   + `\n]\n`)
 
-// THE BUNDLED DOCUMENTATION: three hand-written HTML pages from the repository's
-// `docs/` tree — the rendering library guide, the `.folio` format reference and
-// the expression reference — copied into the same immutable runtime tree as the
+// THE BUNDLED DOCUMENTATION: six hand-written HTML pages from the repository's
+// `docs/` tree — the rendering library, folio-js and folio-dotnet guides, the
+// `.folio` format reference, the expression reference and the engine
+// performance report — copied into the same immutable runtime tree as the
 // engine, so Vite emits them under `/assets/` and the
-// offline release precaches them. ONE PAGE IS ONE CACHE SLOT: these three take
-// the release up by three.
+// offline release precaches them. ONE PAGE IS ONE CACHE SLOT: these six take
+// the release up by six.
 //
 // THE PAGES LINK TO EACH OTHER, SO THEIR FINGERPRINTS WOULD FORM A CYCLE if each
 // hashed its own rewritten bytes (A's bytes name B's fingerprint, which depends
@@ -484,7 +485,7 @@ writeFileSync(join(generatedDir, 'font-catalogue.ts'),
 // verbatim rather than appending a second hash, because relative links between
 // the pages must name exactly the files that exist beside them.
 const documentationDir = join(designerRoot, '..', 'docs')
-const documentationPages = [['guide', 'rendering-library'], ['js', 'folio-js'], ['dotnet', 'folio-dotnet'], ['format', 'folio-format'], ['expressions', 'expression-reference']]
+const documentationPages = [['guide', 'rendering-library'], ['js', 'folio-js'], ['dotnet', 'folio-dotnet'], ['format', 'folio-format'], ['expressions', 'expression-reference'], ['performance', 'performance']]
 const documentationLink = new RegExp(`(\\bhref\\s*=\\s*)(["'])(?:\\./)?(${documentationPages.map(([, stem]) => stem).join('|')})\\.(?:html|md)(#[^"']*)?\\2`, 'g')
 const canonicalDocumentation = documentationPages.map(([key, stem]) => {
   const source = join(documentationDir, `${stem}.html`)

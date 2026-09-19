@@ -298,6 +298,19 @@
         <a class="toc-item" href="folio-format.html#what-is-not-in-the-file">What is not in the file</a>
         <a class="toc-item" href="folio-format.html#worked-example">Worked example</a>
       </div>
+      <div class="toc-group">
+        <a class="toc-doc" href="performance.html">Performance</a>
+        <a class="toc-item" href="performance.html#conditions">Conditions</a>
+        <a class="toc-item" href="performance.html#what-is-measured">What is measured</a>
+        <a class="toc-item" href="performance.html#throughput">Throughput</a>
+        <a class="toc-item sub" href="performance.html#concurrency">Concurrency</a>
+        <a class="toc-item sub" href="performance.html#small-documents">Very small documents</a>
+        <a class="toc-item" href="performance.html#memory">Memory</a>
+        <a class="toc-item sub" href="performance.html#allocation">Allocation is the cost centre</a>
+        <a class="toc-item sub" href="performance.html#gogc">Trading memory for throughput</a>
+        <a class="toc-item" href="performance.html#corpus">The full corpus</a>
+        <a class="toc-item" href="performance.html#sizing">Sizing a publishing host</a>
+      </div>
       <p class="toc-empty" hidden>No section matches.</p>
     </nav>
   </aside>
@@ -311,6 +324,7 @@
         <a href="folio-dotnet.html">folio-dotnet</a>
         <a href="expression-reference.html">Expressions</a>
         <a href="folio-format.html">.folio format</a>
+        <a href="performance.html">Performance</a>
       </nav>
 
       <article id="top">
@@ -323,12 +337,13 @@
           <p class="eyebrow">FOLIO8 · Rendering library</p>
           <h1 id="folio8-rendering-library-for-go">folio8 rendering library for Go</h1>
           <p class="standfirst"><code>folio-go</code> turns a <code>.folio</code> template, JSON data and runtime parameters into a PDF 1.7 document. It reads no clock, no environment, no network and no host fonts while rendering: everything a document needs is passed in. The same inputs rendered with the same Go toolchain produce the same bytes.</p>
-          <p>This guide covers installing the module, rendering your first PDF, the inputs and failures you have to handle, the template features that change what is drawn, and every exported API of the <code>folio8</code> and <code>fonts</code> packages. The same engine is available outside Go: <a href="folio-js.html">folio-js</a> renders from Node and <a href="folio-dotnet.html">folio-dotnet</a> renders from .NET Framework 4.6 upwards, both producing the bytes this library produces. Four companion references hold the rules this guide does not repeat:</p>
+          <p>This guide covers installing the module, rendering your first PDF, the inputs and failures you have to handle, the template features that change what is drawn, and every exported API of the <code>folio8</code> and <code>fonts</code> packages. The same engine is available outside Go: <a href="folio-js.html">folio-js</a> renders from Node and <a href="folio-dotnet.html">folio-dotnet</a> renders from .NET Framework 4.6 upwards, both producing the bytes this library produces. Five companion references hold the rules this guide does not repeat:</p>
           <ul>
             <li><a href="folio-format.html">The <code>.folio</code> format</a> — every field of a template, version rules and load errors.</li>
             <li><a href="expression-reference.html">Expressions</a> — the syntax inside <code>{{ }}</code> and Visibility formulas.</li>
             <li><a href="folio-js.html">folio-js</a> — the same engine for Node, promise-based.</li>
             <li><a href="folio-dotnet.html">folio-dotnet</a> — the same engine for .NET, synchronous.</li>
+            <li><a href="performance.html">Performance</a> — measured throughput and memory, and how to size a publishing host.</li>
           </ul>
         </div>
         <!-- /article-head -->
