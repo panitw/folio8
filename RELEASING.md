@@ -306,10 +306,70 @@ and it holds only because the release commit is the tagged one. Cut the
 package from the commit the engine tag points at, or from a descendant whose
 engine sources are unchanged; nothing in the build enforces it for you.
 
+### The build machine
+
+Everything below runs anywhere, but **step 1 does not**: `build-native.ps1`
+shells out to a Go toolchain and to a mingw-w64 gcc **per architecture**, and a
+machine that has never cut a release has none of them. What the CI runner
+carries preinstalled, an owner's laptop has to be given.
+
+| Needed | Why |
+| --- | --- |
+| Go | `go build -buildmode=c-shared` builds the engine |
+| mingw-w64 gcc, `x86_64` | cgo's C compiler for `win-x64` |
+| mingw-w64 gcc, `i686` | a SEPARATE toolchain, for `win-x86` |
+
+The Go version does not matter beyond the module's floor. The script pins
+`GOTOOLCHAIN = 'go1.26.0'`, so whichever Go is installed fetches and builds with
+that exact toolchain — which is the point, and why a newer local Go is not the
+AD-22 drift hazard it looks like.
+
+```powershell
+winget install --id GoLang.Go
+winget install --id MSYS2.MSYS2
+```
+
+Take MSYS2's default `C:\msys64`: that is where `Resolve-Cc`'s candidate list
+looks, and installing it elsewhere means editing the script.
+
+```powershell
+# Twice on purpose: the first pass can update pacman itself and end the
+# transaction before the toolchains are reached.
+C:\msys64\usr\bin\pacman.exe -Syuu --noconfirm
+C:\msys64\usr\bin\pacman.exe -Syuu --noconfirm
+C:\msys64\usr\bin\pacman.exe -S --noconfirm --needed mingw-w64-x86_64-gcc mingw-w64-i686-gcc
+```
+
+**If every mirror fails with `error adding trust anchors from file:
+/usr/ssl/certs/ca-bundle.crt`, the network is not the problem.** That file is
+MSYS2's trust store, and a `-Syuu` that updated `ca-certificates` and ended
+mid-transaction can leave it ZERO BYTES — which fails every TLS handshake
+identically, on every mirror, while plain HTTP downloads in the same run
+succeed and make it look like a flaky remote. It is rebuilt offline, from
+material already on disk:
+
+```powershell
+C:\msys64\usr\bin\bash.exe -lc update-ca-trust
+```
+
+Then open a NEW terminal. The Go installer edits PATH, and a shell started
+before it reports `go` missing while every other shell builds fine.
+
+**`win-x86` is not optional.** CAP-7 promises a 32-bit process, and
+`FolioPackageCheck` refuses the pack when a native is missing or its PE header
+names the wrong architecture — so a machine carrying only the 64-bit toolchain
+cannot produce a publishable package, only a later and less legible failure.
+MSYS2 has been phasing out its 32-bit environment since December 2023 and
+treats MINGW32 as legacy; `mingw-w64-i686-gcc` is still published. If that ever
+stops, the script's second `win-x86` candidate is `C:\mingw32\bin\gcc.exe`, and
+a standalone i686 mingw-w64 build unpacked there resolves with no code change.
+
 ### Before publishing
 
 1. The natives are built from the release commit, on Windows, with the pinned
-   toolchain: `folio-dotnet\build\build-native.ps1 win-x64 win-x86`.
+   toolchain: `folio-dotnet\build\build-native.ps1 win-x64 win-x86`. On a
+   machine that has not built them before, satisfy *The build machine* above
+   first — the script needs Go and a mingw-w64 gcc for each architecture.
 2. `dotnet test folio-dotnet/test/Folio8.Tests/Folio8.Tests.csproj -c Release`
    is green, and so is the 32-bit leg. `ci.yml`'s `folio-dotnet` job runs both
    plus the consumer suite — the pack, the install into all three process
