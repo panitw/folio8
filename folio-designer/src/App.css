@@ -808,7 +808,8 @@ textarea.property-value-lines { min-height: 0; resize: none; font: var(--type-bo
 /* The fx marker: a field the engine reads as an expression carries it, in the
    same accent the canvas paints a placeholder run with, and it brightens once
    the field actually holds one. */
-.property-fx { flex: none; padding: 0 3px; border: var(--hairline) solid var(--color-line-strong); color: var(--color-ink-ghost); font: var(--type-mono); font-style: italic; }
+.property-fx { flex: none; padding: 0 3px; border: var(--hairline) solid var(--color-line-strong); color: var(--color-ink-ghost); font: var(--type-mono); font-style: italic; text-decoration: none; cursor: pointer; }
+.property-fx:hover, .property-fx:focus-visible { border-color: var(--color-select); color: var(--color-select-bright); outline: none; }
 .property-fx-active { border-color: var(--color-bind); color: var(--color-bind); }
 /* The swatch IS the picker: a native colour input trimmed back to the chip the
    design draws, so the row keeps one line while the value stays typeable. */

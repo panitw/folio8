@@ -4002,6 +4002,9 @@ type FieldExpression = 'placeholder' | 'condition'
 // from a literal in this file.
 type FieldSpec = Readonly<{ field: PropertyField; label: string; affix?: string; unit?: string; swatch?: true; prose?: true; lines?: number; empty?: string; shown?: true; fx?: FieldExpression }>
 const fxHint: Readonly<Record<FieldExpression, string>> = { placeholder: 'Accepts literal text, or {{ }} expressions', condition: 'Accepts a boolean or null formula, e.g. loanAmount > 20000, written without {{ }}' }
+// Where the fx cue sends a reader: the section of the expression reference
+// that governs THIS kind of field, not the top of the page.
+const fxAnchor: Readonly<Record<FieldExpression, string>> = { placeholder: 'paths', condition: 'formulas' }
 // A condition field IS the expression, so any text in it is one; a text field
 // holds an expression only where a placeholder is spelled.
 function holdsExpression(fx: FieldExpression, text: string): boolean { return fx === 'placeholder' ? containsPlaceholder(text) : text !== '' }
@@ -4743,10 +4746,11 @@ function PropertyDraft({ spec, components, ids, onCommit, documentGeneration, li
   const canClear = field !== 'x' && field !== 'y' && field !== 'width' && field !== 'height' && field !== 'value' && field !== 'expression' && (!same || (live ?? draft) !== '' || components.some((component) => propertyPresent(component, field)))
   const canNull = field === 'background'
   const errorId = error ? `property-error-${field}` : undefined
-  // The fx cue is a marker, not a control: it states, in the row itself, that
-  // this field is read as an expression. The same sentence reaches a screen
-  // reader through the input's description, so the cue is never colour- or
-  // sight-only.
+  // The fx cue states, in the row itself, that this field is read as an
+  // expression, AND opens the expression reference at the section that governs
+  // this kind of field. The same sentence still reaches a screen reader through
+  // the input's description, so the cue is never colour- or sight-only; the
+  // link carries its own name rather than relying on the two letters.
   const description = [same ? undefined : 'Mixed value', fx ? fxHint[fx] : undefined].filter((part) => part !== undefined).join('. ') || undefined
   // Enter COMMITS in a single-line field and INSERTS A LINE FEED in a prose
   // one — the one behaviour that differs between the two controls. Escape
@@ -4927,7 +4931,7 @@ function PropertyDraft({ spec, components, ids, onCommit, documentGeneration, li
     // A `lines` field commits as prose does — debounced while typing, queued on
     // blur — over that many rows; each new line is stored as `\r` (see keyDown).
     : lines ? <textarea ref={proseField} className="property-value property-value-lines" rows={lines} {...shared} onChange={(event) => { touched.current = true; holdDraft(true); writeDraft(event.target.value); scheduleProseCommit() }} />
-    : <input className="property-value" {...shared} inputMode={numeric ? 'decimal' : undefined} onChange={(event) => { touched.current = true; writeDraft(event.target.value) }} />}{fx && <span className={`property-fx${holdsExpression(fx, live ?? draft) ? ' property-fx-active' : ''}`} title={fxHint[fx]} aria-hidden="true">fx</span>}{swatch && <input type="color" className={`property-swatch${isHexColour(live ?? draft) ? '' : ' property-swatch-unset'}`} aria-label={`Pick ${label}`} aria-description={same ? undefined : 'Mixed value; choose a colour'} value={swatchColor(live ?? draft)} disabled={pending || live !== undefined} onChange={(event) => { writeDraft(event.target.value); void submit({ field, operation: 'set', value: event.target.value }, true) }} />}{unit && <span className="property-unit">{unit}</span>}{canClear && <button type="button" className="property-inline-action" aria-label={`Clear ${label}`} title={`Clear ${label}`} disabled={pending} onMouseDown={(event) => event.preventDefault()} onClick={() => void submit({ field, operation: 'clear' }, true)}>×</button>}{canNull && <button type="button" className="property-inline-action" aria-label={`Set ${label} null`} title={`Set ${label} null`} disabled={pending} onMouseDown={(event) => event.preventDefault()} onClick={() => void submit({ field, operation: 'null' }, true)}>∅</button>}{prose && <span className="property-prose-resize" aria-hidden="true" onPointerDown={beginProseResize} onPointerMove={moveProseResize} onPointerUp={endProseResize} onPointerCancel={endProseResize} />}</div>{error && <p id={errorId} role="alert" className="property-error">{error.elementId ? `${error.elementId}: ` : ''}{printsDataPath(error) ? `${error.dataPath}: ` : ''}{error.message}</p>}</div>
+    : <input className="property-value" {...shared} inputMode={numeric ? 'decimal' : undefined} onChange={(event) => { touched.current = true; writeDraft(event.target.value) }} />}{fx && <a className={`property-fx${holdsExpression(fx, live ?? draft) ? ' property-fx-active' : ''}`} href={`${documentationAssetUrls.expressions}#${fxAnchor[fx]}`} target="_blank" rel="noopener noreferrer" title={`${fxHint[fx]}. Opens the expression reference`} aria-label={`${label}: open the expression reference`} onMouseDown={(event) => event.preventDefault()}>fx</a>}{swatch && <input type="color" className={`property-swatch${isHexColour(live ?? draft) ? '' : ' property-swatch-unset'}`} aria-label={`Pick ${label}`} aria-description={same ? undefined : 'Mixed value; choose a colour'} value={swatchColor(live ?? draft)} disabled={pending || live !== undefined} onChange={(event) => { writeDraft(event.target.value); void submit({ field, operation: 'set', value: event.target.value }, true) }} />}{unit && <span className="property-unit">{unit}</span>}{canClear && <button type="button" className="property-inline-action" aria-label={`Clear ${label}`} title={`Clear ${label}`} disabled={pending} onMouseDown={(event) => event.preventDefault()} onClick={() => void submit({ field, operation: 'clear' }, true)}>×</button>}{canNull && <button type="button" className="property-inline-action" aria-label={`Set ${label} null`} title={`Set ${label} null`} disabled={pending} onMouseDown={(event) => event.preventDefault()} onClick={() => void submit({ field, operation: 'null' }, true)}>∅</button>}{prose && <span className="property-prose-resize" aria-hidden="true" onPointerDown={beginProseResize} onPointerMove={moveProseResize} onPointerUp={endProseResize} onPointerCancel={endProseResize} />}</div>{error && <p id={errorId} role="alert" className="property-error">{error.elementId ? `${error.elementId}: ` : ''}{printsDataPath(error) ? `${error.dataPath}: ` : ''}{error.message}</p>}</div>
 }
 // D-14.2.Q2b, AS AMENDED. THE RULE IS *NEVER PRINT A FIELD NAME THAT MAY BE
 // WRONG* — NOT *NEVER PRINT ANYTHING*.

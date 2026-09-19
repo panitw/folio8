@@ -3836,6 +3836,24 @@ describe('application shell', () => {
     expect(marker(visible)).toHaveClass('property-fx-active')
   })
 
+  it('opens the expression reference from the fx cue, at the section for that kind of field', () => {
+    const componentCanvas = { ...canvas, components: [{ id: 'e1', type: 'text' as const, band: 'content' as const, x: 0, y: 0, width: 72_000, height: 24_000, resizable: true, value: 'Hello' }] }
+    render(<App engine={engine()} initialSnapshot={{ documentState: 'loaded', revision: 1, byteLength: 3, canvas: componentCanvas }} />)
+    fireEvent.click(screen.getByLabelText('text component e1'))
+    const cue = (name: string) => screen.getByRole('link', { name: `${name}: open the expression reference` })
+    // A placeholder field reads values out of the data, so it lands on Reading
+    // values; a condition is a formula, so it lands on Formulas and visibility.
+    expect(cue('Text').getAttribute('href')).toMatch(/expression-reference-[0-9a-f]+\.html#paths$/)
+    expect(cue('Visible if').getAttribute('href')).toMatch(/expression-reference-[0-9a-f]+\.html#formulas$/)
+    // A new tab, and never one that can reach back into the designer.
+    expect(cue('Text')).toHaveAttribute('target', '_blank')
+    expect(cue('Text')).toHaveAttribute('rel', 'noopener noreferrer')
+    // The cue is reachable and named; it is no longer aria-hidden.
+    expect(cue('Text')).not.toHaveAttribute('aria-hidden')
+    // A field the engine reads literally still carries no cue to click.
+    expect(screen.getByRole('textbox', { name: 'X (pt)' }).parentElement!.querySelector('.property-fx')).toBeNull()
+  })
+
   it('authors BOX colours through the picker, states pt on an empty size, and drops the padding rows', async () => {
     const componentCanvas = { ...canvas, components: [{ id: 'e1', type: 'text' as const, band: 'content' as const, x: 0, y: 0, width: 72_000, height: 24_000, resizable: true, value: 'Hello' }] }
     const sent: ArrayBuffer[] = []
