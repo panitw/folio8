@@ -20,7 +20,7 @@ func repoRootFromTest(t *testing.T) string {
 		t.Fatalf("getwd: %v", err)
 	}
 	for {
-		folio8Go, err1 := os.Stat(filepath.Join(dir, "folio8-go"))
+		folio8Go, err1 := os.Stat(filepath.Join(dir, "folio-go"))
 		lintDir, err2 := os.Stat(filepath.Join(dir, "lint"))
 		if err1 == nil && folio8Go.IsDir() && err2 == nil && lintDir.IsDir() {
 			return dir
@@ -74,7 +74,7 @@ func TestDesignerManifestClassifiesRuntimeAndBuildDependencies(t *testing.T) {
 	for module, shippedBy := range want {
 		found := false
 		for _, row := range rows {
-			if row.Serves == "folio8-designer" && row.Module == module {
+			if row.Serves == "folio-designer" && row.Module == module {
 				found = true
 				if row.ShippedBy != shippedBy {
 					t.Errorf("%s classification = %q, want %q", module, row.ShippedBy, shippedBy)
@@ -88,7 +88,7 @@ func TestDesignerManifestClassifiesRuntimeAndBuildDependencies(t *testing.T) {
 }
 
 // TestResolveAssetsIncludesWordlist is Story 2.1's addition (AC9): the
-// CC0 wordlist at folio8-go/internal/text/wordlist/ must appear in
+// CC0 wordlist at folio-go/internal/text/wordlist/ must appear in
 // ResolveAssets' output — a font-extension-only walk would never see
 // it (that gap is exactly what motivated AC9's separate guard); this
 // asserts the manifest generator ALSO accounts for it, not just the
@@ -99,7 +99,7 @@ func TestResolveAssetsIncludesWordlist(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResolveAssets: %v", err)
 	}
-	const wantPath = "folio8-go/internal/text/wordlist/words_th.txt"
+	const wantPath = "folio-go/internal/text/wordlist/words_th.txt"
 	var found *AssetRow
 	for i := range rows {
 		if rows[i].Path == wantPath {
@@ -155,7 +155,7 @@ func gitAdd(t *testing.T, dir string, paths ...string) {
 //
 // A second, TRACKED and fully compliant font directory sits alongside
 // the untracked one — the real repository's own shape (`.font-sources`
-// untracked, `folio8-go/fonts/*` tracked) and, since the D-3.6.5
+// untracked, `folio-go/fonts/*` tracked) and, since the D-3.6.5
 // amendment (Finding 1, QA review, Blocker), a REQUIRED precondition:
 // "candidates exist and every one is untracked" is now its own scan
 // error (see TestResolveAssetsAllDirectoriesUntrackedIsAScanError),
@@ -997,8 +997,8 @@ func TestCommittedAssetPopulationClassifiesCleanly(t *testing.T) {
 	// shippedFontsPrefix is the REACH assertion, and it is here because
 	// lint/internal/rules' licence/notice red-proofs no longer carry it.
 	// Those proofs used to delete a LICENSE/NOTICE file from the real
-	// folio8-go/fonts/<face>/ and assert ResolveAssets went red — which,
-	// incidentally, also proved that folio8-go/fonts/ is INSIDE this
+	// folio-go/fonts/<face>/ and assert ResolveAssets went red — which,
+	// incidentally, also proved that folio-go/fonts/ is INSIDE this
 	// resolver's walk. They now run against a throwaway copy (they raced
 	// this package's own tests, and an interrupted run left a committed
 	// licence artifact deleted), and a throwaway copy cannot prove
@@ -1009,7 +1009,7 @@ func TestCommittedAssetPopulationClassifiesCleanly(t *testing.T) {
 	// shipped fonts from the walk, every assertion below would still pass
 	// on the wordlist row alone, and the gate would be enforcing licence
 	// policy over a population that no longer contains the fonts.
-	const shippedFontsPrefix = "folio8-go/fonts/"
+	const shippedFontsPrefix = "folio-go/fonts/"
 	sawWordlist := false
 	sawShippedFont := false
 	for _, row := range rows {

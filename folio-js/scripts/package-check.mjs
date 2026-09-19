@@ -3,7 +3,7 @@
 // `prepack` rebuilds the wasm, the fonts and dist/ and then runs this, which
 // re-reads what is actually on disk and refuses the pack if anything the
 // `files` allowlist promises is missing, or if a packaged face's BYTES differ
-// from folio8-go/fonts/. build-fonts.mjs checks sizes as it copies; this
+// from folio-go/fonts/. build-fonts.mjs checks sizes as it copies; this
 // checks the bytes, after the fact, on the tree that is about to be packed.
 import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
@@ -22,7 +22,7 @@ const digest = (bytes) => createHash('sha256').update(bytes).digest('hex')
  * Everything wrong with the tree at `packageRoot`, as sentences naming what is
  * missing or what drifted. An empty array means the tree is packable.
  */
-export function packageProblems({ packageRoot, goFontsRoot = join(packageRoot, '..', 'folio8-go', 'fonts'), parityPath = join(packageRoot, 'test', 'data', 'go-parity.json') }) {
+export function packageProblems({ packageRoot, goFontsRoot = join(packageRoot, '..', 'folio-go', 'fonts'), parityPath = join(packageRoot, 'test', 'data', 'go-parity.json') }) {
   const problems = []
   const read = (path) => {
     try {
@@ -66,7 +66,7 @@ export function packageProblems({ packageRoot, goFontsRoot = join(packageRoot, '
     if (!source) {
       problems.push(`cannot check "${face.name}" against its source: ${join(goFontsRoot, face.dir, face.file)} is unreadable`)
     } else if (digest(bytes) !== digest(source)) {
-      problems.push(`the packaged face "${face.name}" (${face.dir}/${face.file}) differs from folio8-go/fonts/ — rebuild with npm run build:fonts`)
+      problems.push(`the packaged face "${face.name}" (${face.dir}/${face.file}) differs from folio-go/fonts/ — rebuild with npm run build:fonts`)
     }
   }
 

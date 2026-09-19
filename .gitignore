@@ -53,28 +53,28 @@ go.work.sum
 #
 # `vendor/` above is the Go convention and is spelled WITHOUT a leading slash,
 # so it matches a directory named `vendor` at ANY depth — including
-# folio8-designer/src/vendor/, where Story 13.6 vendors two PDF.js source files
+# folio-designer/src/vendor/, where Story 13.6 vendors two PDF.js source files
 # that MUST be committed (the designer imports them, so an ignored tree is a
 # build that only works on the machine that fetched them). Measured while
-# staging this story: `git check-ignore -v folio8-designer/src/vendor/pdfjs/
+# staging this story: `git check-ignore -v folio-designer/src/vendor/pdfjs/
 # pdf_thumbnail_view.js` named `.gitignore:48 vendor/`.
 #
 # ⚠ THE DIRECTORY ALONE IS NEGATED, AND THERE IS DELIBERATELY NO `/**` LINE.
 # Re-including a DIRECTORY only lets git descend into it; every file inside is
 # then still tested against every pattern above, so `.env`, `*.key`, `*.pem`,
 # `node_modules/`, `dist/`, `coverage/` and `*.tsbuildinfo` all keep applying in
-# there. A `!folio8-designer/src/vendor/**` line would re-include the files
+# there. A `!folio-designer/src/vendor/**` line would re-include the files
 # themselves and defeat all of them at once — measured: with that line present,
 # `git check-ignore` reported planted `.env`, `id_rsa.key`, `x.pem` and
-# `sub/.env` under folio8-designer/src/vendor/pdfjs/ as NOT ignored, i.e.
+# `sub/.env` under folio-designer/src/vendor/pdfjs/ as NOT ignored, i.e.
 # committable. With the directory line alone, all four are ignored and all six
 # real vendored files are not. Story 1.3's `example.test/` carve-out above needs
 # its second line because `*.test` matches FILES; `vendor/` matches only a
 # directory, so this one does not.
-!folio8-designer/src/vendor/
+!folio-designer/src/vendor/
 
 # ── Cross-target matrix harness build output (Story 1.2, AC12/F-7) ─
-folio8-go/.matrix-build/
+folio-go/.matrix-build/
 
 # ── Story 1.3's licence-check fixture module paths deliberately live
 # under `example.test/` (D-1.3.8 — RFC 2606's reserved TLD, used so a
@@ -89,7 +89,7 @@ folio8-go/.matrix-build/
 # ── WASM build output ─────────────────────────────────────────────
 #
 # THESE ARE IGNORED ONE FILE AT A TIME ON PURPOSE, NOT BY FOLDER. It is what
-# lets folio8-designer/src/generated/pdfjs-assets.ts — the one generated artifact
+# lets folio-designer/src/generated/pdfjs-assets.ts — the one generated artifact
 # that is COMMITTED, so Vite keeps the PDF.js CMaps and standard fonts in its
 # immutable asset graph — stay tracked while everything beside it stays out.
 #
@@ -99,11 +99,11 @@ folio8-go/.matrix-build/
 # reach them while it was untracked. They now also read
 # `git ls-files --others --exclude-standard`, so a generated artifact with no
 # line here walks straight into the scan and reds a guard its author never
-# touched. `folio8-designer/src/generated/font-index.ts` is the concrete case:
+# touched. `folio-designer/src/generated/font-index.ts` is the concrete case:
 # its generated header comment carries a scanned font host, and only the line
 # below keeps it out of the population.
 #
-# folio8-designer/src/build-wasm.test.ts IS WHAT ENFORCES THIS. It globs the
+# folio-designer/src/build-wasm.test.ts IS WHAT ENFORCES THIS. It globs the
 # scripts that write into src/generated/, reads the set of paths they emit off
 # their own source, and asserts every one of them is git-ignored — except
 # pdfjs-assets.ts, which it asserts is tracked and names as the deliberate
@@ -111,7 +111,7 @@ folio8-go/.matrix-build/
 #
 # ⚠ THE runtime/ ENTRY BELOW IS A DIRECTORY PATTERN, AND THAT CHANGES HOW IT IS
 # PROBED. Measured 2026-09-05: with the directory absent from disk,
-# `git check-ignore -q -- folio8-designer/src/generated/runtime` exits 1 (NOT
+# `git check-ignore -q -- folio-designer/src/generated/runtime` exits 1 (NOT
 # ignored) while the same path with a trailing slash exits 0 — a `dir/` pattern
 # only ever matches a directory, and git has nothing to tell it this path is one
 # until it exists. The test therefore probes directory emissions with a trailing
@@ -119,16 +119,16 @@ folio8-go/.matrix-build/
 # reports runtime/ as an unignored offender.
 *.wasm
 wasm_exec.js
-folio8-designer/src/generated/runtime/
-folio8-designer/src/generated/offline-assets.ts
-folio8-designer/src/generated/runtime-fonts.css
-folio8-designer/src/generated/font-catalogue.ts
-folio8-designer/src/generated/documentation-assets.ts
-folio8-designer/src/generated/example-assets.ts
+folio-designer/src/generated/runtime/
+folio-designer/src/generated/offline-assets.ts
+folio-designer/src/generated/runtime-fonts.css
+folio-designer/src/generated/font-catalogue.ts
+folio-designer/src/generated/documentation-assets.ts
+folio-designer/src/generated/example-assets.ts
 # Story 16.1's family-index module is GENERATED from the COMMITTED
-# folio8-designer/font-index.json by scripts/build-font-index.mjs, with no
+# folio-designer/font-index.json by scripts/build-font-index.mjs, with no
 # network and no second input. The snapshot is committed; its projection is not.
-folio8-designer/src/generated/font-index.ts
+folio-designer/src/generated/font-index.ts
 
 # ── Rendering / test output ───────────────────────────────────────
 tmp/
@@ -152,8 +152,8 @@ _bmad/config.user.toml
 /.fontgen-venv/
 # Playwright output is disposable; Story 6.7 attaches a bounded JSON manifest
 # to its run rather than retaining PDFs or platform binaries in this tree.
-folio8-designer/test-results/
-folio8-designer/playwright-report/
+folio-designer/test-results/
+folio-designer/playwright-report/
 
 # Python bytecode from the BMAD skill scripts, regenerated on every run.
 __pycache__/
@@ -177,7 +177,7 @@ TestResults/
 !/folio-dotnet/build/*.targets
 # The native library and the cgo-generated header build-native.sh writes.
 # NEVER committed: the host library is a development aid and the Windows
-# DLLs are CI artifacts, both rebuilt from folio8-go/cshared on demand.
+# DLLs are CI artifacts, both rebuilt from folio-go/cshared on demand.
 /folio-dotnet/build/native/
 # Story 7's pack output and the consumer workspace run-consumers.ps1 builds
 # into: a .nupkg, six consumer builds and their copies. All rebuilt on demand
@@ -187,3 +187,7 @@ TestResults/
 # And a .nupkg anywhere: the documented pack command can be pointed elsewhere,
 # and a 42 MB package is never something this repository should carry.
 *.nupkg
+
+# Local `go build` output of the c-shared entry point; the real artifacts
+# are built into folio-dotnet/build/native by build-native.sh.
+/folio-go/cshared/cmd/folio8/folio8

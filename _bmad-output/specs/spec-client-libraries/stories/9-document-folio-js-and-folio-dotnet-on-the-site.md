@@ -61,13 +61,13 @@ context:
 
 - `docs/rendering-library.html`: the skeleton to copy — charset/viewport/title, one inline `<style>` with the design tokens and the "system fonts only" note, `.shell` → `aside.sidebar` (`.sidebar-head`, `nav.toc` with one `.toc-group[data-current]` plus a group per sibling page), `main > .col` with `nav.docbar` listing every page, `article#top` with `.article-head`, one `section` per `##`, and the closing inline table-of-contents script. Samples are `<div class="sample"><pre data-lang="…">` with `tk-kw tk-fn tk-type tk-str tk-num tk-key tk-punc tk-com` spans; API tables are plain tables.
 - `docs/rendering-library.md`: house style and scope — second person, bold lead-ins, `#`/`##`/`###`/`####`, a `## Warnings and errors` section (:375-417) with a field table, the warning-versus-error split and a worked error example, and a diagnostic-code table (:1128). About 1,200 lines and 8,300 words; the new pages need not match that length.
-- `folio8-go/docs_examples_test.go:254,271,283,291,397,419`: `guideTwins` is the hardcoded Go pair, `guideText`/`guideWords` strip tags for comparison, the identifier test parses `folio8` and `fonts` with `go/doc` and floors at 58. **Do not extend this file** — it owns the Go guide and `docs/examples/`. The new tests live in each binding's own suite and follow its shape.
-- `folio8-designer/scripts/build-wasm.mjs:486-509`: `documentationPages` (key, stem) is the list to extend; a missing file throws; pages share one group digest, so adding pages re-fingerprints all of them; the emitted `documentation-assets.ts` exports one URL per key.
-- `folio8-designer/vite.config.ts:28`: the filename regex that keeps hashed page names verbatim — extend it or the new pages get double-hashed and their links break.
-- `folio8-designer/scripts/verify-offline-release.mjs:82,117-119,152-163`: the stem list, the exactly-once immutable asset check, the cross-page link check, and the font-host scan over shipped page bytes.
-- `folio8-designer/e2e/documentation-link.spec.ts:24,126`: the stems and fingerprint shape the browser test asserts.
-- `folio8-designer/src/release-payload.ts:41,48,67`: `minimumCacheAssets` 10, `warnCacheAssets` 82, `maximumCacheAssets` 90; the current build carries 77 assets, so two pages bring it to 79.
-- `folio8-designer/src/App.tsx:3662,3678` and `src/App.test.tsx:1215-1240`: the single documentation link and the test asserting exactly one. Leaving that alone keeps the new pages reachable through the document bar without touching the designer's UI tests.
+- `folio-go/docs_examples_test.go:254,271,283,291,397,419`: `guideTwins` is the hardcoded Go pair, `guideText`/`guideWords` strip tags for comparison, the identifier test parses `folio8` and `fonts` with `go/doc` and floors at 58. **Do not extend this file** — it owns the Go guide and `docs/examples/`. The new tests live in each binding's own suite and follow its shape.
+- `folio-designer/scripts/build-wasm.mjs:486-509`: `documentationPages` (key, stem) is the list to extend; a missing file throws; pages share one group digest, so adding pages re-fingerprints all of them; the emitted `documentation-assets.ts` exports one URL per key.
+- `folio-designer/vite.config.ts:28`: the filename regex that keeps hashed page names verbatim — extend it or the new pages get double-hashed and their links break.
+- `folio-designer/scripts/verify-offline-release.mjs:82,117-119,152-163`: the stem list, the exactly-once immutable asset check, the cross-page link check, and the font-host scan over shipped page bytes.
+- `folio-designer/e2e/documentation-link.spec.ts:24,126`: the stems and fingerprint shape the browser test asserts.
+- `folio-designer/src/release-payload.ts:41,48,67`: `minimumCacheAssets` 10, `warnCacheAssets` 82, `maximumCacheAssets` 90; the current build carries 77 assets, so two pages bring it to 79.
+- `folio-designer/src/App.tsx:3662,3678` and `src/App.test.tsx:1215-1240`: the single documentation link and the test asserting exactly one. Leaving that alone keeps the new pages reachable through the document bar without touching the designer's UI tests.
 - `folio-js/README.md` and `folio-dotnet/README.md`: the first-PDF snippets; folio-js's is extracted and executed by `folio-js/test/package.test.ts`, and folio-dotnet's is the consumer program's shape.
 - `_bmad-output/specs/spec-client-libraries/api-surface.md`: the row-by-row contract each API reference must cover.
 
@@ -77,10 +77,10 @@ context:
 - [x] `docs/folio-js.md` + `docs/folio-js.html` -- installation, first PDF, warnings and errors, full API reference -- CAP-8
 - [x] `docs/folio-dotnet.md` + `docs/folio-dotnet.html` -- the same, plus target frameworks, both architectures and unsupported-platform behaviour -- CAP-9
 - [x] `docs/rendering-library.html`, `docs/folio-format.html`, `docs/expression-reference.html` -- add both pages to every sidebar and document bar -- one navigable set
-- [x] `folio8-designer/scripts/build-wasm.mjs`, `vite.config.ts`, `scripts/verify-offline-release.mjs`, `e2e/documentation-link.spec.ts` -- register both pages -- CAP-10
+- [x] `folio-designer/scripts/build-wasm.mjs`, `vite.config.ts`, `scripts/verify-offline-release.mjs`, `e2e/documentation-link.spec.ts` -- register both pages -- CAP-10
 - [x] `folio-js/test/docs.test.ts` -- twins agree, every public entry point and `shipped()` named, the first-PDF snippet equals the tested README snippet, with a floor -- the page cannot drift from the library
 - [x] `folio-dotnet/test/Folio8.Tests/DocsTests.cs` -- the same against the public managed surface -- likewise
-- [x] `folio8-designer` -- run the production build and `verify:offline` -- both pages precached and under budget
+- [x] `folio-designer` -- run the production build and `verify:offline` -- both pages precached and under budget
 
 **Acceptance Criteria:**
 - Given `docs/folio-js.*` and `docs/folio-dotnet.*`, when each language's docs test runs, then every public item of that library appears in both twins and the twins agree.
@@ -120,7 +120,7 @@ context:
 | The new pages' sidebars carried abridged copies of the other pages' section lists | All five sidebars are now generated from one list of verbatim groups; every page carries the same 83 entries |
 | Only the HTML twins were cross-linked | `rendering-library.md`, `folio-format.md` and `expression-reference.md` (and their HTML twins) now link both new guides; the Go guide's companion sentence names four references and says the same engine renders from Node and .NET |
 | folio-js's three load-bearing install rules were unanchored run-in paragraphs | They are `###` sections with ids, in every sidebar, and the floor section now says what a reader below 22.12 sees |
-| folio-dotnet never answered whether the API is thread-safe | A "Calling from several threads" section states it, from `folio8-go/cshared/README.md` and the mutex-guarded allocation table in `cshared/cmd/folio8/main.go` |
+| folio-dotnet never answered whether the API is thread-safe | A "Calling from several threads" section states it, from `folio-go/cshared/README.md` and the mutex-guarded allocation table in `cshared/cmd/folio8/main.go` |
 | "the two libraries carry the same names" was false | Reworded to the same surface in the same shape, each spelled its language's way, with the three renamings shown |
 | No worked params example | Both guides gained a "Passing params" section building and passing one, with `documentDate` and `parameterReferences` |
 | `FontSet` was twelve members of prose while its neighbours got signatures | It now carries the same signature block, constructors included |
@@ -195,9 +195,9 @@ all five pages.
 **Commands:**
 - `cd folio-js && npm test` -- expected: green, including the new docs test
 - `cd folio-dotnet && dotnet test -c Release` -- expected: green, including the new docs test
-- `cd folio8-designer && npm run build && npm run verify:offline` -- expected: both pages precached and immutable, asset count under the warning threshold
-- `cd folio8-designer && npx playwright test e2e/documentation-link.spec.ts` -- expected: green
-- `cd folio8-go && go test -count=1 -run 'Docs' ./...` -- expected: the Go guide's tests unaffected
+- `cd folio-designer && npm run build && npm run verify:offline` -- expected: both pages precached and immutable, asset count under the warning threshold
+- `cd folio-designer && npx playwright test e2e/documentation-link.spec.ts` -- expected: green
+- `cd folio-go && go test -count=1 -run 'Docs' ./...` -- expected: the Go guide's tests unaffected
 - `grep -nE "https?://" docs/folio-js.html docs/folio-dotnet.html` -- expected: matches only inside code samples
 
 **Manual checks:**

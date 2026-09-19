@@ -18,7 +18,7 @@ sources: []
 
 `fonts.Shipped()` embeds 14 MB of typefaces, and **10 MB of that — 71% — is a single face, Noto Sans SC**, which only matters to documents that render Chinese or Japanese. Measured, ~27,500 of its 31,036 glyphs are CJK ideographs, so the weight is irreducible without choosing which characters to drop — the tier boundary is the whole face. See [weight-analysis.md](./weight-analysis.md). Every Go caller pays it, and under [SPEC-client-libraries](../spec-client-libraries/SPEC.md) every npm and NuGet install would pay it too. That is the **opportunity**: a 71% cut to the default dependency weight that costs nothing to anyone who is not rendering Chinese or Japanese, and costs one explicit dependency to anyone who is.
 
-This originally carried a deadline — land before `folio8-go/v1.0.0` or wait for a major version — because removing a face from `fonts.Shipped()` after the tag is a breaking change. That deadline **no longer applies**: the owner deferred the work and accepted that `Shipped()` keeps all eleven faces for the life of v1. The route afterwards is **additive and semver-safe**: add a `fonts/cjk` sub-package and a `fonts.ShippedCore()` beside an **unchanged** `Shipped()`, so existing callers are untouched and no `/v2` is needed.
+This originally carried a deadline — land before `folio-go/v1.0.0` or wait for a major version — because removing a face from `fonts.Shipped()` after the tag is a breaking change. That deadline **no longer applies**: the owner deferred the work and accepted that `Shipped()` keeps all eleven faces for the life of v1. The route afterwards is **additive and semver-safe**: add a `fonts/cjk` sub-package and a `fonts.ShippedCore()` beside an **unchanged** `Shipped()`, so existing callers are untouched and no `/v2` is needed.
 
 A second route needs no engine change at all: the client libraries construct their own `FontSet` and need not call `Shipped()`, so binding-side tiering can capture the same install saving independently. It was declined for now in favour of matching the engine's face list exactly.
 
@@ -46,7 +46,7 @@ A second route needs no engine change at all: the client libraries construct the
 - **Byte-identity is not negotiable.** Non-CJK fixtures must render identically after the retiering, and CJK fixtures identically with the opt-in package added. A moved hash is a defect until someone proves it was intended.
 - **Nothing that renders today may stop rendering.** This is a packaging change, not a capability reduction — every face remains obtainable.
 - **Noto Sans Thai stays in core.** It costs 124 KB (0.9%) and carries a first-class concern: the Thai bill-payment barcode fixture, the `thai_words.trie` dictionary embedded in the engine, and Thai line-breaking.
-- **Noto Sans (Latin) stays in core** despite overlapping Roboto. [fonts.go](../../../folio8-go/fonts/fonts.go) keeps the three original Noto names for every document that already names them, `body` chains from before Story 16.8 included; removing it breaks authored templates.
+- **Noto Sans (Latin) stays in core** despite overlapping Roboto. [fonts.go](../../../folio-go/fonts/fonts.go) keeps the three original Noto names for every document that already names them, `body` chains from before Story 16.8 included; removing it breaks authored templates.
 - **The starter template and the core tier must agree.** `starter_template_test.go` intersects the face names the starter declares with the `Shipped()` keys — a core tier that drops a face the starter names reds that test.
 - **The tier is named for Chinese *and Japanese*.** Measured, Japanese depends on this same face — kana and kanji are all present — so "CJK" understates who the opt-in package is for. Wherever the tier is named, the caveat travels with it: Japanese and Traditional Chinese render with **Simplified Chinese regional glyph variants**, so coverage is complete but regional typographic correctness is not.
 - **Korean is not covered by the shipped set at all** (Hangul Jamo 0/256, Hangul Syllables 0/11,172) and this work must not appear to change that. A pre-existing gap, recorded where the coverage evidence lives.
@@ -68,7 +68,7 @@ A second route needs no engine change at all: the client libraries construct the
 ## Assumptions
 
 - The ~4.2 MB core figure is the measured sum of Roboto (4 cuts), Noto Sans (4 cuts) and Noto Sans Thai (2 cuts); see [weight-analysis.md](./weight-analysis.md).
-- Whenever this is picked up, the measured weights still hold; they were taken against `folio8-go/fonts/` at the time of deferral and no font work has landed since.
+- Whenever this is picked up, the measured weights still hold; they were taken against `folio-go/fonts/` at the time of deferral and no font work has landed since.
 
 ## Open Questions
 

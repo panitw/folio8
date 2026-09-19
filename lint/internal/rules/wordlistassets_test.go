@@ -7,7 +7,7 @@ import (
 )
 
 // TestWordlistAssetsProductionScan is AC9's production caller: at the
-// real repo root, folio8-go/internal/text/wordlist/ exists (Story 2.1
+// real repo root, folio-go/internal/text/wordlist/ exists (Story 2.1
 // created it) and contains exactly the three expected files, so this
 // must report zero findings today.
 func TestWordlistAssetsProductionScan(t *testing.T) {
@@ -35,7 +35,7 @@ func TestWordlistAssetsProductionScan(t *testing.T) {
 // files, so deleting a required one stayed silent).
 func TestWordlistAssetsFixtureScan(t *testing.T) {
 	root := repoRootFromTest(t)
-	base := filepath.Join(root, "folio8-go", "testdata", "lint", "wordlist-assets")
+	base := filepath.Join(root, "folio-go", "testdata", "lint", "wordlist-assets")
 
 	t.Run("violating", func(t *testing.T) {
 		got, stats, err := ScanWordlistAssets(filepath.Join(base, "violating"))

@@ -14,7 +14,7 @@ context:
 
 ## Intent
 
-**Problem:** No golden fixture declares text `color` or a `border`, so the four-target byte-identity check has never rendered coloured ink or strokes (DW-147). The public codes `STYLE_COLOR_INVALID` and `STYLE_LINE_SPACING_INVALID` are specific codes that no consumer branches on (D-7.8.2). Both gaps must close before story 2 freezes the API at `folio8-go/v1.0.0`.
+**Problem:** No golden fixture declares text `color` or a `border`, so the four-target byte-identity check has never rendered coloured ink or strokes (DW-147). The public codes `STYLE_COLOR_INVALID` and `STYLE_LINE_SPACING_INVALID` are specific codes that no consumer branches on (D-7.8.2). Both gaps must close before story 2 freezes the API at `folio-go/v1.0.0`.
 
 **Approach:**
 - Add a signed golden fixture, `fixtures/colour-strokes/`, registered everywhere a golden must be.
@@ -68,10 +68,10 @@ context:
 
 ## Code Map
 
-- `folio8-go/internal/diag/diag.go`: constants at :165-173 and :259-301; `allCodes` :438-468 (ours :452, :457); `dispositions` :490-520 (:499, :504); notes at :311-314 and :360-364. `diag_test.go:42,47,81-102`.
-- `folio8-go/diagnostic.go:261-288`: the root constants. `diag_bridge_test.go:44,49,133`; `diagnostic_registry_census_test.go:78-97,107,151` (size check derived).
-- `folio8-go/internal/template/parse_bands.go:994-1000`: the line-spacing site. Compare `newLoadError` at :912 and `errors.go:21,257-268`. `render_error.go:94` ("four overriding specific codes" becomes three). `errors_test.go:112-118` needs a different specific code, e.g. `TABLE_FOOTER_SOURCE_FORBIDDEN`.
-- `folio8-go/internal/template/linespacing.go:1-25`: the precedent for a load-time predicate inside `internal/template` (AD-1: this package cannot import root).
+- `folio-go/internal/diag/diag.go`: constants at :165-173 and :259-301; `allCodes` :438-468 (ours :452, :457); `dispositions` :490-520 (:499, :504); notes at :311-314 and :360-364. `diag_test.go:42,47,81-102`.
+- `folio-go/diagnostic.go:261-288`: the root constants. `diag_bridge_test.go:44,49,133`; `diagnostic_registry_census_test.go:78-97,107,151` (size check derived).
+- `folio-go/internal/template/parse_bands.go:994-1000`: the line-spacing site. Compare `newLoadError` at :912 and `errors.go:21,257-268`. `render_error.go:94` ("four overriding specific codes" becomes three). `errors_test.go:112-118` needs a different specific code, e.g. `TABLE_FOOTER_SOURCE_FORBIDDEN`.
+- `folio-go/internal/template/linespacing.go:1-25`: the precedent for a load-time predicate inside `internal/template` (AD-1: this package cannot import root).
 - Colour render sites: `element_box.go:269-271`, `table_frame.go:91-96`, `table_render.go:585-611,711-725`. Command-door checks: `component_commands.go:1754,3760-3770`, `page_setup.go:1688-1711`.
 - Colour load fields: `parse_bands.go:525-560` (`altRowBackground`, `headerStyle`, `rules`), :619-623 (`rules.color`), `decodeStyle` :866+ (`color`, `background`, `border.color` at :626, :934, :946, :1072).
 - Tests asserting the colour code: `element_ink_test.go:88,219`; `element_box_test.go:341,619`; `table_render_test.go:454-471`; `table_ruled_form_test.go:867`; `table_alternating_row_test.go:169`. Line-spacing tests: `line_spacing_test.go:280,311`; `wasm/cmd/engine/main_test.go:207-217`.
@@ -83,13 +83,13 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [x] `fixtures/colour-strokes/` + `folio8-go/colour_strokes_{template,fixture_test,signoff_matrix_test}.go` + all registration points above -- the new signed-pending golden -- DW-147
+- [x] `fixtures/colour-strokes/` + `folio-go/colour_strokes_{template,fixture_test,signoff_matrix_test}.go` + all registration points above -- the new signed-pending golden -- DW-147
 - [x] Record the golden with `CGO_ENABLED=0 GOWORK=off GOTOOLCHAIN=go1.26.0 go run ./cmd/folio8 render …` and write the sha to `expected.json`, the README and the second literal -- one digest, every declared site
 - [x] `internal/diag`, `diagnostic.go`, pin and census tests -- remove both codes -- D-7.8.2
 - [x] `parse_bands.go:1000` + `errors.go` / `render_error.go` comments + `errors_test.go` -- collapse line spacing
 - [x] Colour sites + their tests -- move validation to load, with a table-driven load test covering every colour field; rewrite the render-code tests as load tests
 - [x] `docs/folio-format.{md,html}`, `docs/rendering-library.{md,html}`, `fixtures/line-spacing/README.md` -- remove both codes; describe where colour now fails
-- [x] `folio8-designer`: `npm run build:wasm` -- the engine was rebuilt
+- [x] `folio-designer`: `npm run build:wasm` -- the engine was rebuilt
 
 **Acceptance Criteria:**
 - Given the retired codes, when you grep the repo for `STYLE_COLOR_INVALID|STYLE_LINE_SPACING_INVALID|StyleColorInvalid|StyleLineSpacingInvalid` outside `_bmad-output/`, then there are no matches.
@@ -132,10 +132,10 @@ context:
 ## Verification
 
 **Commands:**
-- `cd folio8-go && go vet ./... && go test -count=1 ./...` -- expected: green
+- `cd folio-go && go vet ./... && go test -count=1 ./...` -- expected: green
 - `cd lint && go test -count=1 ./...` -- expected: green (stage-rank and manifest rules)
-- `cd folio8-go && FOLIO8_MATRIX_TARGET=darwin/arm64 GOTOOLCHAIN=go1.26.0 CGO_ENABLED=0 go test -tags=matrix -run TestTargetRenderHash -count=1 .` -- expected: the colour-strokes hash equals `expected.json`
-- `cd folio8-designer && npm run build:wasm && npm test` -- expected: green
+- `cd folio-go && FOLIO8_MATRIX_TARGET=darwin/arm64 GOTOOLCHAIN=go1.26.0 CGO_ENABLED=0 go test -tags=matrix -run TestTargetRenderHash -count=1 .` -- expected: the colour-strokes hash equals `expected.json`
+- `cd folio-designer && npm run build:wasm && npm test` -- expected: green
 
 **Manual checks:**
 - The four-target agreement runs only in CI `matrix.yml`. It runs after push, and pushing needs the owner's confirmation.

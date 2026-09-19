@@ -43,13 +43,13 @@ short of a whole window, so the group is not over-tall; it does not fit window o
 slides to the group's *earliest* top and all three members move to page 2, each at its own declared
 position. The body text does not move. No gap is invented and no page is left empty.
 
-This table is the **single copy** of the fixture's arithmetic. `folio8-go/keep_together_template.go`
+This table is the **single copy** of the fixture's arithmetic. `folio-go/keep_together_template.go`
 used to restate it beside the template const, and the two drifted apart — and away from the
 fixture — so that doc comment now points here instead of repeating the numbers.
 
 ## The twin
 
-`folio8-go/keep_together_template.go` ships this document as `keepTogetherTemplateJSON`,
+`folio-go/keep_together_template.go` ships this document as `keepTogetherTemplateJSON`,
 byte-identical to `input.folio`, **and a second const identical except that the three tags are
 absent**. `TestKeepTogetherTwinDiffersOnlyByTheTags` asserts mechanically that the pair differs in
 exactly that one respect, so "the two renders differ" cannot quietly become evidence about something
@@ -67,7 +67,7 @@ window two begins at the group's earliest top, **706.000 pt** (706000 millipoint
 projection carries and what the tests assert), and not at **734.000 pt**, where the untagged twin's
 ruled line falls out of window one.
 
-`folio8-go/canvas_window_count_test.go`'s
+`folio-go/canvas_window_count_test.go`'s
 `TestCanvasWindowsAgreeWithTheRenderPathForAGroupedDocument` asserts that equality against a real
 pagination of this very document, rather than against a flag.
 
@@ -97,7 +97,7 @@ never joins a group the author has no way to see or remove.
 
 `expected.pdf` — 82,825 bytes, sha256
 `6ed495b4c22d7473d82c536c40dce8ca6f2a2fa4bf38efff44b2207929137640` — is the golden. It is recorded
-in `expected.json` beside it and in `folio8-go/byte_neutrality_test.go`'s `goldenDigestRecord`, whose
+in `expected.json` beside it and in `folio-go/byte_neutrality_test.go`'s `goldenDigestRecord`, whose
 completeness half fails on any *undeclared* occurrence of that digest, which is why this README's
 mention of it is a declared site rather than a stray quotation.
 

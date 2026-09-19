@@ -17,11 +17,11 @@ const RuleFontsAssetUnaccounted = "fonts-asset-unaccounted"
 
 // RuleFontsAssetMissing is this guard's stable rule id for an EXPECTED
 // artifact being absent — either fontsAssetLocation itself, or a face
-// that folio8-go/fonts/fonts.go declares it embeds (AC5).
+// that folio-go/fonts/fonts.go declares it embeds (AC5).
 //
 // This is the deliberate polarity FLIP from the "absence-fonts-dir"
 // tripwire it replaces (Story 1.3, D-1.3.4): that guard required
-// folio8-go/fonts/ to be ABSENT until Story 2.2 shipped faces. Story 2.2
+// folio-go/fonts/ to be ABSENT until Story 2.2 shipped faces. Story 2.2
 // has now shipped them, so the fail-closed direction inverts — the
 // declared location and every declared face are now REQUIRED, and their
 // absence is itself the violation, mirroring wordlistassets.go's
@@ -41,15 +41,15 @@ const RuleFontsAssetMissing = "fonts-asset-missing"
 const RuleFontsAssetNotSfnt = "fonts-asset-not-a-font"
 
 // fontsAssetLocation is the declared shipped-fonts location this guard
-// scans (AC1, AC5, AC9 of Story 2.2): folio8-go/fonts/, at the module
+// scans (AC1, AC5, AC9 of Story 2.2): folio-go/fonts/, at the module
 // root, NOT under internal/ (AD-8 scopes "no package under internal/
 // embeds font data" to internal/ packages only).
-const fontsAssetLocation = "folio8-go/fonts"
+const fontsAssetLocation = "folio-go/fonts"
 
 // fontsAssetEmbedSource is the file whose //go:embed directives DEFINE
 // which faces ship. It is the source of truth for the expected set, and
 // deliberately not a list maintained here — see expectedShippedFaces.
-const fontsAssetEmbedSource = "folio8-go/fonts/fonts.go"
+const fontsAssetEmbedSource = "folio-go/fonts/fonts.go"
 
 // fontsAssetFontExtensions are the binary font formats a shipped face
 // under fontsAssetLocation may carry — matching
@@ -76,7 +76,7 @@ type FontsAssetsStats struct {
 }
 
 // expectedShippedFaces derives the expected face set from the //go:embed
-// directives in folio8-go/fonts/fonts.go, returning slash-relative paths
+// directives in folio-go/fonts/fonts.go, returning slash-relative paths
 // under fontsAssetLocation.
 //
 // WHY DERIVED RATHER THAN LISTED. A hand-maintained list here would be a
@@ -165,7 +165,7 @@ func looksLikeSfnt(data []byte) bool {
 // IT CHECKS BOTH DIRECTIONS, which the first version did not:
 //
 //  1. EVERY EXPECTED FACE IS PRESENT AND IS REALLY A FONT. The expected
-//     set is derived from folio8-go/fonts/fonts.go's //go:embed
+//     set is derived from folio-go/fonts/fonts.go's //go:embed
 //     directives (expectedShippedFaces), each file must exist, and each
 //     must begin with an sfnt magic number.
 //  2. EVERY FILE PRESENT IS ACCOUNTED FOR. Recursively; anything that is

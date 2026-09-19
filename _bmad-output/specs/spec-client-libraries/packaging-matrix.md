@@ -73,7 +73,7 @@ validate are the entire library, so there is nothing to fall back to.
 
 Both libraries embed the whole `fonts.Shipped()` set — eleven faces, ~14 MB:
 Roboto ×4 cuts, Noto Sans ×4, Noto Sans Thai ×2, Noto Sans SC ×1. The face list
-is identical to the engine's, so a template that renders under `folio8-go`
+is identical to the engine's, so a template that renders under `folio-go`
 renders under either binding with no packaging caveat.
 
 That weight is dominated by one face: **Noto Sans SC is 10 MB of the 14 MB**,
@@ -88,7 +88,7 @@ the network dependency the determinism commitments rule out.
 
 ## Engine version
 
-Both bindings build against the **`folio8-go/v1.0.0` tag**, never `main`.
+Both bindings build against the **`folio-go/v1.0.0` tag**, never `main`.
 Cutting that tag is a prerequisite of this spec, carries its own RELEASING.md
 checklist, and irreversibly fixes the public API under D-1.1.c.
 
@@ -96,10 +96,10 @@ The tag is **`v1.0.0`**, not the `v0.1.0` that RELEASING.md and D-1.1.c name —
 an owner decision, and a stronger commitment than those documents assume. Under
 Go module semantics `v0.x` permits breaking changes freely; `v1.0.0` commits to
 semver compatibility and pushes any later breaking change onto a
-`github.com/panitw/folio8/folio8-go/v2` import path that every caller must edit.
+`github.com/panitw/folio8/folio-go/v2` import path that every caller must edit.
 Both documents need rewording.
 
-`folio8-go v1.0.0` and `folio8-designer 1.0.0` are **independent version lines**
+`folio-go v1.0.0` and `folio-designer 1.0.0` are **independent version lines**
 that happen to coincide. Nothing couples them.
 
 ## Conformance

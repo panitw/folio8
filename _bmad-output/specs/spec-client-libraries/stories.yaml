@@ -1,7 +1,7 @@
 - id: "1"
-  title: Move the designer surface out of folio8-go's public API
+  title: Move the designer surface out of folio-go's public API
   description: >-
-    Move the canvas/designer functions, types and constants of package folio8, and the whole folio8-go/wasm
+    Move the canvas/designer functions, types and constants of package folio8, and the whole folio-go/wasm
     package, behind internal/ so v1.0.0 freezes render and validate only. No render output may change.
   spec_checkpoint: true
   invoke_dev_with: >-
@@ -9,7 +9,7 @@
     TableColumns, SnapToGrid, PreviewIdentity, AssetBytes, StandInData; types AuthoredProperty, CanvasAuthoredProperties
     and the other 14 Canvas* types, ComponentCommandError, ComponentMove, TableColumnProjection, TableColumnsProjection;
     consts MaxCanvasMillipoints, GridIncrement, MaxStandInDataBytes, MaxStandInDataPaths, StandInInstant;
-    and all of package folio8-go/wasm. KEEP PUBLIC: LoadTemplate, ParseTemplate, Render, RenderTo, Validate,
+    and all of package folio-go/wasm. KEEP PUBLIC: LoadTemplate, ParseTemplate, Render, RenderTo, Validate,
     ParameterReferences, SerializeTemplate (owner kept it); Template, Data, Params, FontSet, Result, Diagnostic,
     Severity, RenderError; all DiagCode* and Severity* consts, Version, LocaleTableVersion, MaxParameterReferenceNameLength;
     fonts.Shipped. Target is about 59 public items, down from 313 across folio8, fonts and wasm. The only
@@ -26,12 +26,12 @@
   description: >-
     Land a golden fixture declaring style.color and element box strokes with a recorded human sign-off
     (DW-147), and retire the public codes STYLE_COLOR_INVALID and STYLE_LINE_SPACING_INVALID (D-7.8.2).
-    Both must land before story 2 cuts folio8-go/v1.0.0.
+    Both must land before story 2 cuts folio-go/v1.0.0.
   spec_checkpoint: true
   done_checkpoint: true
   invoke_dev_with: >-
     Two independent halves the owner asked to keep in one story; a split offer at planning is expected.
-    FIXTURE (DW-147, deferred-work.md ~7003): no fixture in fixtures/ or folio8-go/testdata/ declares
+    FIXTURE (DW-147, deferred-work.md ~7003): no fixture in fixtures/ or folio-go/testdata/ declares
     any colour, so style.color and element box strokes sit outside the byte-identity witness. A new golden
     needs its recorded digest AND a human semantic acceptance step following the statement-signoff.json
     precedent - an unsigned golden is a worse artifact than a stated gap, so do NOT record the digest
@@ -49,7 +49,7 @@
     must not move.
 
 - id: "2"
-  title: Cut folio8-go/v1.0.0
+  title: Cut folio-go/v1.0.0
   description: >-
     Tag the engine at v1.0.0 once story 1 has shrunk the public surface and story 3 has landed the signed-off
     colour fixture and retired both style codes, replacing deprecated backlog Story 15.3. Both bindings
@@ -79,8 +79,8 @@
     A promise-based Node API over the wasm engine covering CAP-1 and CAP-2: parseTemplate, loadTemplate,
     render, renderTo, validate and parameterReferences, with diagnostics matching the Go Result.
   invoke_dev_with: >-
-    folio8-go/wasm is the DESIGNER engine - a Load/Apply command loop - NOT a render entry point, so this
-    story includes a new render-oriented wasm entry in folio8-go. Build the js/wasm target and reuse Go's
+    folio-go/wasm is the DESIGNER engine - a Load/Apply command loop - NOT a render entry point, so this
+    story includes a new render-oriented wasm entry in folio-go. Build the js/wasm target and reuse Go's
     wasm_exec.js shim, as the designer does; wasip1 was considered and declined. The API is promise-based
     throughout, which keeps a large render offloadable to a worker thread later so it cannot block a Node
     server's event loop. renderTo takes a Node Writable, mirroring Go's RenderTo(w io.Writer, ...). Warnings
@@ -104,7 +104,7 @@
     The c-shared engine build and its C ABI, plus the netstandard2.0 managed surface over it, covering
     CAP-3 and CAP-4 with diagnostics identical to Go's.
   invoke_dev_with: >-
-    Build folio8-go with -buildmode=c-shared for BOTH win-x86 and win-x64; Go supports cgo on windows/386
+    Build folio-go with -buildmode=c-shared for BOTH win-x86 and win-x64; Go supports cgo on windows/386
     and windows/amd64, and the 32-bit build needs a 32-bit mingw-w64 toolchain in CI. Bind with plain
     DllImport over a C ABI: .NET Framework 4.6 predates Span<T>, System.Text.Json, NativeLibrary and DllImportResolver,
     so none of those are available in the binding itself. One netstandard2.0 assembly serves net46 through
@@ -146,7 +146,7 @@
     reference (CAP-8, CAP-9), each precached for offline reading like the existing three guides (CAP-10).
   invoke_dev_with: >-
     Author BOTH docs/<name>.md, the source of truth, and docs/<name>.html, the published page, and keep
-    them in agreement. Register each .html in folio8-designer/scripts/build-wasm.mjs so it precaches offline;
+    them in agreement. Register each .html in folio-designer/scripts/build-wasm.mjs so it precaches offline;
     the pages must use SYSTEM FONTS ONLY, because the forbidden-font-hosts scan fails the build on a remote
     font host. Each page spends a cache-asset slot against maximumCacheAssets = 90. Every item in ./api-surface.md
     must appear in its language's reference section. The folio-dotnet page must state the .NET Framework

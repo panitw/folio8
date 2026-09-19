@@ -61,10 +61,10 @@ context:
 ## Code Map
 
 - `fixtures/`: **37 directories** (the Intent's "38" was a miscount, corrected here rather than inside the frozen block), of which **25** render from files plus `fonts.Shipped()` — `page-count-20` has both a template and a golden and is included, so the Intent's `page-count-*` exclusion covers 1, 5 and 50 only; `statement-1/5/20/50` are the only ones with `params.json`; `image-embed` and `component-asset-import` render with a nil font set in Go and must be checked to yield the same bytes with the shipped set before inclusion.
-- `folio8-go/wasm/cmd/render/parity_test.go:33-97,222-236`: the generator precedent — case structs, the `FOLIO8_UPDATE_JS_PARITY=1` regeneration gate, and the drift failure. The corpus generator belongs beside it, writing its own file.
+- `folio-go/wasm/cmd/render/parity_test.go:33-97,222-236`: the generator precedent — case structs, the `FOLIO8_UPDATE_JS_PARITY=1` regeneration gate, and the drift failure. The corpus generator belongs beside it, writing its own file.
 - `folio-js/test/data/go-parity.json`: shape to mirror (`comment`, `folio8Version`, `shippedFaces`, `cases`). The corpus manifest is a sibling; the .NET tests already read this directory.
-- `folio8-go/byte_neutrality_test.go:84-121`: `goldenDigestRecord` and its declared-site kinds. A file carrying a golden digest must be declared there — which is why the manifest carries none.
-- `folio8-go/testfont_embed_test.go:138`: `testShippedFontSet()` is byte-equal to `fonts.Shipped()`. `folio8-go/render_test.go:511-513`: the test-only `Roboto-Regular` that keeps `font-text` out.
+- `folio-go/byte_neutrality_test.go:84-121`: `goldenDigestRecord` and its declared-site kinds. A file carrying a golden digest must be declared there — which is why the manifest carries none.
+- `folio-go/testfont_embed_test.go:138`: `testShippedFontSet()` is byte-equal to `fonts.Shipped()`. `folio-go/render_test.go:511-513`: the test-only `Roboto-Regular` that keeps `font-text` out.
 - `folio-js/test/golden.test.ts:12` and `helpers.ts:8-36`: the five-fixture list and the shipped-font loader to generalise.
 - `folio-dotnet/test/Folio8.Tests/GoldenTests.cs:21-25` and `Repo.cs:88-101`: the same five, and the font-set builder.
 - `.github/workflows/ci.yml:370` (`folio-js`, ubuntu, Node 24.16.0), `:516` (`folio-dotnet`, windows-2022, 64- and 32-bit legs), `:743` (`folio-dotnet-host`, ubuntu). Neither workflow uses `strategy: matrix` anywhere yet.
@@ -74,7 +74,7 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [x] `folio8-go/wasm/cmd/render/corpus_test.go` -- the generator: classify every fixture directory, render each included one with `fonts.Shipped()`, verify its committed hash, record diagnostics, refuse to shrink, and fail on drift unless regeneration is requested -- one manifest, derived not authored
+- [x] `folio-go/wasm/cmd/render/corpus_test.go` -- the generator: classify every fixture directory, render each included one with `fonts.Shipped()`, verify its committed hash, record diagnostics, refuse to shrink, and fail on drift unless regeneration is requested -- one manifest, derived not authored
 - [x] `folio-js/test/data/go-corpus.json` -- the generated manifest -- the shared conformance input
 - [x] `folio-js/test/golden.test.ts` (+ helpers) -- drive the whole manifest, compare each hash against `expected.json` and each diagnostic sequence -- CAP-5 for folio-js
 - [x] `folio-dotnet/test/Folio8.Tests/GoldenTests.cs` (+ `Repo.cs`) -- the same, driven by the same manifest -- CAP-5 for folio-dotnet
@@ -172,10 +172,10 @@ CRLF checkout, so no byte-identity hazard came with the new platforms.
 ## Verification
 
 **Commands:**
-- `cd folio8-go && go test -count=1 ./wasm/cmd/render/...` -- expected: green, and the manifest matches the tree
+- `cd folio-go && go test -count=1 ./wasm/cmd/render/...` -- expected: green, and the manifest matches the tree
 - `cd folio-js && npm run build && npm test` -- expected: the whole corpus renders and matches
 - `cd folio-dotnet && ./build/build-native.sh host && dotnet test -c Release` -- expected: the same
-- `cd folio8-go && go test -count=1 -skip '^TestCorpusMeetsP6ExerciseFloors$' ./...` -- expected: green, no golden moved
+- `cd folio-go && go test -count=1 -skip '^TestCorpusMeetsP6ExerciseFloors$' ./...` -- expected: green, no golden moved
 - CI -- expected: every folio-js matrix leg and every folio-dotnet leg renders the full corpus
 
 **Negative check (the acceptance criterion that no green command covers):**

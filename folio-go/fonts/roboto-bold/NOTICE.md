@@ -1,0 +1,71 @@
+# Roboto-Bold.ttf — shipped production face (Latin, Story 11.1)
+
+**Copyright 2011 The Roboto Project Authors (https://github.com/googlefonts/roboto-classic)**
+
+Licensed under the SIL Open Font License, Version 1.1 (see `LICENSE-OFL.txt`
+in this directory, the unmodified upstream licence text).
+
+> **NO DERIVATION APPLIES.** This file is the upstream file itself, byte for byte — the upstream
+> project publishes a **static** TTF instance, so there is no instancing step to replay and no
+> toolchain to pin. The SOURCE and SHIPPED digests below are therefore the same value, and that
+> identity IS the provenance record.
+
+This is one of Story 11.1's seven new shipped production faces: folio-go's bundled `FontSet`, keyed as
+`"Roboto Bold"`.
+
+**THIS FILE IS BYTE-IDENTICAL TO `folio-designer/public/fonts/roboto-bold/Roboto-Bold.ttf` ON
+PURPOSE, AND THE BROWSER'S COPY DOES NOT FOLLOW THIS ONE AUTOMATICALLY.** Neither copy is generated
+— both are hand-copied from the same extracted upstream file, so nothing carries a change from one
+of them to the other. Whoever moves the bytes here must move the browser's copy in the same commit:
+the canvas paints the face the engine resolved, and AD-17 makes the browser a rasterizer only, so a
+same-named different cut renders a document differently in the designer and in the engine and fails
+SILENTLY rather than loudly. `folio-designer/src/font-binary-identity.test.ts` digest-ties the two
+copies. `folio-go/fonts/fonts_test.go`'s `TestShippedRobotoMatchesDesignerCatalogue` checks this
+same pair from this side, reading the browser's committed file fresh.
+
+It is a **static** TrueType font — `glyf` outlines, **no** `fvar`/`gvar`/`avar`, no `CFF2`.
+
+## Provenance — the source
+
+| item | value |
+|---|---|
+| Upstream project | `github.com/googlefonts/roboto-3-classic`, release `v3.016` |
+| Download URL | https://github.com/googlefonts/roboto-3-classic/releases/download/v3.016/Roboto_v3.016.zip |
+| Path inside the archive | `android/static/Roboto-Bold.ttf` |
+| sha256 of the release archive | `1653dbe12f248da8fb0b9920db7b9496cd677ed3981154f6f15285c8bd4e334f` (29,162,959 bytes) |
+| Fetched | 2026-09-06 |
+| **sha256 of the SOURCE (upstream) file** | `9aa793ad5e12c3b2486464ec6f047f16ac6d30bb06c8b4d162ba313459794968` |
+
+## Provenance — the shipped artifact
+
+| item | value |
+|---|---|
+| **Shipped file** | `Roboto-Bold.ttf` |
+| **sha256 of the SHIPPED (produced) file** | `9aa793ad5e12c3b2486464ec6f047f16ac6d30bb06c8b4d162ba313459794968` |
+| Size | 358,188 bytes |
+| Instance | Bold — `OS/2.usWeightClass` 700, upstream static build |
+| Declared PostScript name (`name[6]`) | `Roboto-Bold` |
+| Relation to source | **copied unmodified, no derivation** — the two digests above are the same value |
+
+## The licence text beside this file
+
+`LICENSE-OFL.txt` in this directory is copied unmodified from
+`folio-designer/public/fonts/roboto/LICENSE-OFL.txt` — itself `OFL.txt` at tag `v3.016` of
+`github.com/googlefonts/roboto-3-classic`, taken from the TAG because **the release archive
+this face's binary came out of carries no licence file at all**. That is why the licence text
+and the binary have different provenance lines: it is recorded, not overlooked.
+
+**The two upstream URLs in this NOTICE are both correct, and neither is a typo to reconcile.** The
+copyright line at the top names `github.com/googlefonts/roboto-classic` because that is the string the
+upstream OFL header itself carries, verbatim, and this NOTICE reproduces the licence's own attribution
+rather than rewriting it. The provenance table names `github.com/googlefonts/roboto-3-classic` because
+that is the repository the `v3.016` release and its archive actually live in, and it is the URL a
+reader must use to re-fetch the bytes. Editing either one to match the other would make this NOTICE
+disagree with the licence text beside it, or with the download it records.
+`folio-go/fonts/roboto/NOTICE.md` has carried this same pair since Story 16.8 and explains it the
+same way.
+
+AD-26, verbatim: "Redistributed non-code assets keep their own terms and their notices." This
+directory's `LICENSE-OFL.txt` and this NOTICE together satisfy that for the shipped file, and are what
+`lint/internal/manifest.ResolveAssets` reads to attribute the face in `lint/MANIFEST.md`'s
+redistributed non-code assets table.

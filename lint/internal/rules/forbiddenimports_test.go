@@ -11,7 +11,7 @@ import (
 )
 
 // TestForbiddenImportsProductionScan is the AC1 production caller: it
-// scans the real folio8-go/internal/ tree and asserts zero findings,
+// scans the real folio-go/internal/ tree and asserts zero findings,
 // failing on a scan error separately from, and before, the zero-findings
 // assertion (AC5, RP-3b). Non-vacuous per AC12's requirement that "the
 // production scan over the real tree is green on the shipped suite" —
@@ -26,11 +26,11 @@ import (
 // old way.
 func TestForbiddenImportsProductionScan(t *testing.T) {
 	root := repoRootFromTest(t)
-	internalDir := filepath.Join(root, "folio8-go", "internal")
+	internalDir := filepath.Join(root, "folio-go", "internal")
 
 	findings, stats, err := ScanForbiddenImports(internalDir)
 	if err != nil {
-		t.Fatalf("scan folio8-go/internal/: %v", err)
+		t.Fatalf("scan folio-go/internal/: %v", err)
 	}
 
 	if stats.FilesSeen == 0 {
@@ -69,8 +69,8 @@ func countFilesImporting(t *testing.T, root, importPath string) int {
 }
 
 // TestForbiddenImportsFixtureScan is the AC1 fixture caller, red-proving
-// AC13's ten fixtures at folio8-go/testdata/lint/forbidden-imports/
-// (never under folio8-go/internal/, F-10): a non-test file and a
+// AC13's ten fixtures at folio-go/testdata/lint/forbidden-imports/
+// (never under folio-go/internal/, F-10): a non-test file and a
 // `_test.go` file each importing time (D-1.3.1: two, not one); a call to
 // a math function outside the seven; a reference to math.Pi; a file
 // importing subpackages of three banned paths (Finding 6, this story's
@@ -85,7 +85,7 @@ func countFilesImporting(t *testing.T, root, importPath string) int {
 // shape) — none reported.
 func TestForbiddenImportsFixtureScan(t *testing.T) {
 	root := repoRootFromTest(t)
-	fixtureRoot := filepath.Join(root, "folio8-go", "testdata", "lint", "forbidden-imports")
+	fixtureRoot := filepath.Join(root, "folio-go", "testdata", "lint", "forbidden-imports")
 
 	got, _, err := ScanForbiddenImports(fixtureRoot)
 	if err != nil {
@@ -114,7 +114,7 @@ func TestForbiddenImportsFixtureScan(t *testing.T) {
 // the instrument closing it, not a coincidental second hit.
 func TestForbiddenImportsDotImportEvadesMathSelectorAloneButNotDotImport(t *testing.T) {
 	root := repoRootFromTest(t)
-	fixtureRoot := filepath.Join(root, "folio8-go", "testdata", "lint", "forbidden-imports")
+	fixtureRoot := filepath.Join(root, "folio-go", "testdata", "lint", "forbidden-imports")
 
 	got, _, err := ScanForbiddenImports(fixtureRoot)
 	if err != nil {
@@ -156,7 +156,7 @@ func TestForbiddenImportsMessageContent(t *testing.T) {
 	}
 
 	root := repoRootFromTest(t)
-	fixtureRoot := filepath.Join(root, "folio8-go", "testdata", "lint", "forbidden-imports")
+	fixtureRoot := filepath.Join(root, "folio-go", "testdata", "lint", "forbidden-imports")
 
 	got, _, err := ScanForbiddenImports(fixtureRoot)
 	if err != nil {
@@ -214,14 +214,14 @@ func TestForbiddenImportsMessageContent(t *testing.T) {
 // (D-1.6.3): "the file declaring Render and RenderTo imports none of
 // os, time, net, math/rand" is asserted here by REUSING
 // ScanForbiddenImports — never a newly invented scanner (AC13) —
-// pointed at whichever files under folio8-go/ this guard's target set
+// pointed at whichever files under folio-go/ this guard's target set
 // names (findFolio8GoScanTargets below), not at a hard-coded path
 // (filepath.WalkDir, which ScanForbiddenImports/walkGoFiles are built
 // on, visits a non-directory root exactly once, so this is the
 // existing checker at file scope, not a second checker).
 //
 // QA Finding 1 (Story 1.7's review, Blocker): the original version
-// hard-coded folio8-go/render_entry.go as the target. Moving func Render
+// hard-coded folio-go/render_entry.go as the target. Moving func Render
 // back into folio8.go (which imports "os"), leaving render_entry.go in
 // place holding only type Data and a doc comment, left this test
 // PASSING — the guard asserted a filename, never that the file
@@ -238,7 +238,7 @@ func TestForbiddenImportsMessageContent(t *testing.T) {
 // and passed every test, because nothing scans a file until its
 // declared name is added to the literal set first. The engineering
 // lead's ruling: do NOT widen the name set further; INVERT the
-// population. Every non-test .go file directly under folio8-go/ is now
+// population. Every non-test .go file directly under folio-go/ is now
 // scanned UNLESS it is named in allowedWorldReadingFiles below, each
 // entry carrying its reason — so a brand-new file (Preview or
 // anything else) is fenced THE DAY IT IS CREATED, by default, with no
@@ -248,7 +248,7 @@ func TestForbiddenImportsMessageContent(t *testing.T) {
 //
 // Vacuity guard (AC25/D-000.9, sharpened by D-000.13 — Finding 1):
 // findFolio8GoScanTargets itself fails the test if every non-test file
-// under folio8-go/ is allowlisted, so a run that finds nothing to scan
+// under folio-go/ is allowlisted, so a run that finds nothing to scan
 // cannot read as "zero findings, pass". For each target file,
 // filesSeen == 1 is asserted explicitly, and a missing file is already
 // a walk error surfaced by ScanForbiddenImports itself (D-1.3.3
@@ -261,7 +261,7 @@ func TestRenderEntryFileHasNoForbiddenImports(t *testing.T) {
 	for _, target := range targets {
 		findings, stats, err := ScanForbiddenImports(target)
 		if err != nil {
-			t.Fatalf("scan %s: %v (AC12: every non-allowlisted file under folio8-go/ must exist and be readable)", target, err)
+			t.Fatalf("scan %s: %v (AC12: every non-allowlisted file under folio-go/ must exist and be readable)", target, err)
 		}
 		if stats.FilesSeen != 1 {
 			t.Fatalf("vacuity guard: expected exactly 1 file seen (%s itself), got %d — stats: %+v", target, stats.FilesSeen, stats)
@@ -300,7 +300,7 @@ func TestFindRenderDeclaringFilesExcludesFolio8Go(t *testing.T) {
 
 // allowedWorldReadingFiles is the test-owned EXCEPTION list D-3.7.9(b)
 // requires (QA Finding 4): every non-test .go file directly under
-// folio8-go/ is forbidden os/time/net/math/rand UNLESS it is named
+// folio-go/ is forbidden os/time/net/math/rand UNLESS it is named
 // here, WITH its reason. This is the closed set today; adding a
 // second entry is a deliberate, reviewable edit, exactly as adding to
 // the old pureEntryPointNames literal was — the difference is that an
@@ -312,7 +312,7 @@ var allowedWorldReadingFiles = map[string]string{
 }
 
 // findFolio8GoScanTargets locates every non-test .go file directly
-// under folio8-go/ (the module-root package) that is NOT named in
+// under folio-go/ (the module-root package) that is NOT named in
 // allowedWorldReadingFiles — D-3.7.9(b)'s inverted anchor, replacing
 // Story 3.7's name-driven findRenderDeclaringFiles (QA Finding 4): the
 // population is now "everything, minus a reviewed exception list",
@@ -324,7 +324,7 @@ var allowedWorldReadingFiles = map[string]string{
 // result as "the property holds".
 func findFolio8GoScanTargets(t *testing.T, root string) []string {
 	t.Helper()
-	folio8GoDir := filepath.Join(root, "folio8-go")
+	folio8GoDir := filepath.Join(root, "folio-go")
 	entries, err := os.ReadDir(folio8GoDir)
 	if err != nil {
 		t.Fatalf("read %s: %v", folio8GoDir, err)

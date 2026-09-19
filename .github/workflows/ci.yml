@@ -4,7 +4,7 @@ name: Build, vet, and guardrails
 # re-implements any part of them (D-1.2.6, Story 1.2 Finding 8). Each
 # job below is exactly the command a developer runs locally, with no
 # CI-only logic — go build/go vet/gofmt for each of the three Go
-# modules, folio8-go's untagged test suite (which is where the two
+# modules, folio-go's untagged test suite (which is where the two
 # existing guards — internal/arch_test.go's no-float64 check and
 # internal/pdf/emit_source_test.go's numeric-formatting check — and
 # DW-1's fixture-shape red-proof live), and lint's own test suite (which
@@ -53,7 +53,7 @@ env:
   #
   # The red is TestCorpusMeetsP6ExerciseFloors — P6g's opaque-name floor,
   # mandated unmet by D-000.17 / D-2.1.14 / D-000.57 and never to be "fixed",
-  # amended or ratcheted. It runs, visibly, in the folio8-go-known-red job below.
+  # amended or ratcheted. It runs, visibly, in the folio-go-known-red job below.
   #
   # THE ANCHORS ARE LOAD-BEARING. Go's -run/-skip take UNANCHORED regexps, so
   # the unanchored form silently also skips TestCorpusMeetsP6ExerciseFloorsFoo:
@@ -64,7 +64,7 @@ env:
 
   # DW-268. The three tests below are NOT expected reds and are NOT
   # tolerated failures. They are tests whose INPUTS a GitHub-hosted runner
-  # does not have, so the folio8-go-matrix job below is scoped to what a
+  # does not have, so the folio-go-matrix job below is scoped to what a
   # runner can actually reproduce rather than shipping a job that fails on
   # every push (which teaches everyone to ignore it) or one that tolerates
   # any failure (which is worse than no job at all — D-000.74's mechanism
@@ -92,7 +92,7 @@ env:
   #     rather than skips when its sources are absent — deliberately, per
   #     its own doc comment — so it must be named here or the job is red
   #     forever. What it guards stays guarded per-commit by the untagged
-  #     accounting test in folio8-go/fonts (Story 16.11).
+  #     accounting test in folio-go/fonts (Story 16.11).
   MATRIX_TEST_NEEDING_FONT_SOURCES: "^TestShippedFacesReproduceFromUpstream$"
   # (2) and (3) are the harness's two SINGLE-MACHINE entry points: each
   #     loops over all four targets in one process, so it needs a host that
@@ -112,7 +112,7 @@ env:
   MATRIX_TEST_NEEDING_ALL_FOUR_TARGETS_PROBE: "^TestFMAProbeDiverges$"
 
 jobs:
-  folio8-go:
+  folio-go:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -120,33 +120,33 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
       - name: go build
-        working-directory: folio8-go
+        working-directory: folio-go
         run: go build ./...
       - name: go vet
-        working-directory: folio8-go
+        working-directory: folio-go
         run: go vet ./...
       # DW-268: this step still only COMPILES the tagged code. It is kept
       # because it is the cheap, early signal, and because it covers the
       # non-test tagged files too — but it is no longer the only thing CI
-      # does with the tag: the folio8-go-matrix job below RUNS the tagged
+      # does with the tag: the folio-go-matrix job below RUNS the tagged
       # suite. The old parenthetical here ("does not run the matrix") was
       # true of the whole repository until DW-268 and is now true only of
       # this step.
-      - name: go build -tags=matrix (this step compiles only; folio8-go-matrix runs it)
-        working-directory: folio8-go
+      - name: go build -tags=matrix (this step compiles only; folio-go-matrix runs it)
+        working-directory: folio-go
         run: go build -tags=matrix ./...
       - name: go vet -tags=matrix
-        working-directory: folio8-go
+        working-directory: folio-go
         run: go vet -tags=matrix ./...
       - name: gofmt -l (must be empty)
-        working-directory: folio8-go
+        working-directory: folio-go
         run: test -z "$(gofmt -l .)"
       # D-000.74 (3): the green job asks ONE question — "is anything NEW
       # broken?" — so the single sanctioned red is excluded from it and
       # nothing else is. No continue-on-error on this job, ever: that would
       # make EVERY failure here non-fatal, which is the mechanism that grows.
       - name: go test -count=1 -skip "$KNOWN_RED_TEST" ./... (must be GREEN)
-        working-directory: folio8-go
+        working-directory: folio-go
         run: go test -count=1 -skip "$KNOWN_RED_TEST" ./...
 
   # RED BY DESIGN. The job name is the disclosure: this job going GREEN is the
@@ -163,9 +163,9 @@ jobs:
   #
   # What guards the NUMBERS rather than the colour is
   # TestCorpusP6StatsMatchDeclaredBaseline, which is green and runs in the
-  # folio8-go job above, NOT here — D-000.57's third clause, executed instead of
+  # folio-go job above, NOT here — D-000.57's third clause, executed instead of
   # narrated. Without it, a green job would stay green through P6g:7 -> 3.
-  folio8-go-known-red:
+  folio-go-known-red:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -185,7 +185,7 @@ jobs:
       # the signal that the quarantine should be deleted, and which the previous
       # form could never have delivered.
       - name: "go test -count=1 -run \"$KNOWN_RED_TEST\" (EXPECTED RED, asserted — D-000.17/D-2.1.14/D-000.57)"
-        working-directory: folio8-go
+        working-directory: folio-go
         run: |
           if go test -count=1 -run "$KNOWN_RED_TEST" ./internal/text/; then
             echo "::error::$KNOWN_RED_TEST PASSED, but this job exists because it is expected to FAIL. Either the known-red has been fixed — in which case delete this job and the KNOWN_RED_TEST env var — or the exercise floor it guards has been lowered. Do not silence this by widening the filter."
@@ -196,7 +196,7 @@ jobs:
   # DW-268. THE TAGGED SUITE, RUN — not built, not vetted, RUN.
   #
   # Until this job existed, `-tags=matrix` code was compiled on every push
-  # (folio8-go, above) and executed nowhere: matrix.yml runs only
+  # (folio-go, above) and executed nowhere: matrix.yml runs only
   # `-run TestTargetRenderHash` and `-run TestTargetProbeHex`, eight legs of
   # a suite of thirteen tagged tests. Everything else under the tag —
   # including all five HUMAN SIGN-OFF gates — ran only when a person typed
@@ -207,16 +207,16 @@ jobs:
   # live under the tag. The owner priced this job's minutes against that and
   # decided it is worth them.
   #
-  # It is a JOB and not a step in folio8-go for the reason folio8-go-known-red
-  # is a job: its name is the disclosure. "folio8-go-matrix ran and was green"
+  # It is a JOB and not a step in folio-go for the reason folio-go-known-red
+  # is a job: its name is the disclosure. "folio-go-matrix ran and was green"
   # is a claim a reader can see in the checks list without opening a log.
   #
-  # SEPARATE JOB, SEPARATE RUNNER, and deliberately NOT `needs: folio8-go` —
+  # SEPARATE JOB, SEPARATE RUNNER, and deliberately NOT `needs: folio-go` —
   # the two ask different questions and a reader is entitled to both answers
   # on a run where one of them is red.
   #
   # No continue-on-error. Same reason as everywhere else in this file.
-  folio8-go-matrix:
+  folio-go-matrix:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -237,7 +237,7 @@ jobs:
       # ALLOWLIST, not a tolerance: a fifth failure — anything at all, in any
       # package, under the tag or not — reddens this job.
       - name: "go test -count=1 -tags=matrix (UNFILTERED but for four NAMED tests; must be GREEN)"
-        working-directory: folio8-go
+        working-directory: folio-go
         run: |
           go test -count=1 -tags=matrix \
             -skip "$KNOWN_RED_TEST|$MATRIX_TEST_NEEDING_FONT_SOURCES|$MATRIX_TEST_NEEDING_ALL_FOUR_TARGETS_RENDER|$MATRIX_TEST_NEEDING_ALL_FOUR_TARGETS_PROBE" \
@@ -290,11 +290,11 @@ jobs:
       - name: "go mod download all (D-1.3.11: populates the module cache for lint's WHOLE module graph, not just the packages it imports directly, so the GOPROXY=off step below can resolve every dependency's LICENSE file offline)"
         working-directory: lint
         run: go mod download all
-      # D-000.75. lint's packages.Load type-checks the SIBLING module folio8-go
+      # D-000.75. lint's packages.Load type-checks the SIBLING module folio-go
       # (bigfloattype, floattyped, maprange, licencegraph, visibilitysignature,
-      # glyphidcensus). lint/go.mod does not require folio8-go and there is no
-      # go.work, so the download above populates LINT's graph only — folio8-go's
-      # own require (boxesandglue/textshape, folio8-go/go.mod:20) stays absent
+      # glyphidcensus). lint/go.mod does not require folio-go and there is no
+      # go.work, so the download above populates LINT's graph only — folio-go's
+      # own require (boxesandglue/textshape, folio-go/go.mod:20) stays absent
       # and, under GOPROXY=off below, every type-checking rule degrades.
       #
       # Measured A/B in two freshly-created empty GOMODCACHE directories, not
@@ -306,8 +306,8 @@ jobs:
       # D-1.3.11's deliberate offline licence check, and removing it trades a
       # loud failure for a silent dependency on the network (D-000.58's
       # declined shape).
-      - name: go mod download all (folio8-go's graph — lint type-checks it across the module boundary)
-        working-directory: folio8-go
+      - name: go mod download all (folio-go's graph — lint type-checks it across the module boundary)
+        working-directory: folio-go
         run: go mod download all
       - name: go test -count=1 ./... (AD-1 lint, map-range, fonts-assets, licence check + manifest — production and fixture scans, AC1)
         working-directory: lint
@@ -315,7 +315,7 @@ jobs:
           GOPROXY: "off"
         run: go test -count=1 ./...
 
-  folio8-designer:
+  folio-designer:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -323,9 +323,9 @@ jobs:
         with:
           node-version: "24.16.0"
           cache: npm
-          cache-dependency-path: folio8-designer/package-lock.json
+          cache-dependency-path: folio-designer/package-lock.json
       - name: npm ci (committed lockfile only)
-        working-directory: folio8-designer
+        working-directory: folio-designer
         run: npm ci
       # STORY 17.6 (discharging DW-171 and DW-152). `npm run test` is
       # `npm run build:wasm && vitest run`; the wasm build is kept because
@@ -340,31 +340,31 @@ jobs:
       # No continue-on-error, here or anywhere: that would make every failure
       # in this job non-fatal, which is the mechanism that grows.
       - name: unit and contract tests (must be GREEN; the WHOLE suite, no name filter)
-        working-directory: folio8-designer
+        working-directory: folio-designer
         run: |
           npm run build:wasm
           npx vitest run
       - name: TypeScript check
-        working-directory: folio8-designer
+        working-directory: folio-designer
         run: npm run typecheck
       - name: lint
-        working-directory: folio8-designer
+        working-directory: folio-designer
         run: npm run lint
       - name: production build
-        working-directory: folio8-designer
+        working-directory: folio-designer
         run: npm run build
       - name: offline release red controls (D-000.81)
-        working-directory: folio8-designer
+        working-directory: folio-designer
         run: npm run verify:offline:red
       - name: emitted wasm dictionary witness
-        working-directory: folio8-designer
+        working-directory: folio-designer
         run: npm run verify:offline:wasm
       - name: compile deferred browser smoke suite (D-000.4)
-        working-directory: folio8-designer
+        working-directory: folio-designer
         run: npm run test:e2e:compile
 
   # folio-js (client-libraries story 4): the Node binding over
-  # folio8-go/wasm/cmd/render. `npm run build` compiles that wasm with the
+  # folio-go/wasm/cmd/render. `npm run build` compiles that wasm with the
   # pinned Go toolchain, so setup-go is required, and the tests assert golden
   # hashes and diagnostic parity against the Go engine.
   #
@@ -416,7 +416,7 @@ jobs:
           cache: npm
           cache-dependency-path: folio-js/package-lock.json
       - name: vet the render wasm entry under js/wasm
-        working-directory: folio8-go
+        working-directory: folio-go
         env:
           GOOS: js
           GOARCH: wasm
@@ -465,7 +465,7 @@ jobs:
       # a developer runs the same proof locally with the same command.
       #
       # Story 8: `npm test` now also renders THE WHOLE CORPUS — every fixture
-      # in folio-js/test/data/go-corpus.json, which folio8-go derives and holds
+      # in folio-js/test/data/go-corpus.json, which folio-go derives and holds
       # equal to itself — comparing each SHA-256 against the fixture's own
       # expected.json and each diagnostic sequence against the manifest. That
       # is the CAP-5 leg, and it is why this step is worth running six times.
@@ -517,7 +517,7 @@ jobs:
   # ran in NO workflow at all. Do not maintain that count here: it moved 52 ->
   # 55 -> 58 in a single day (2026-09-10) as two stories added specs, so any
   # integer written down is stale within hours. Measure it instead:
-  #   git grep -cE '^ *test\(' -- 'folio8-designer/e2e/*.spec.ts'
+  #   git grep -cE '^ *test\(' -- 'folio-designer/e2e/*.spec.ts'
   # The only e2e-shaped thing CI did was `test:e2e:compile`, which is
   # `tsc --noEmit` over the spec files: it proves the specs still typecheck,
   # which is not the same claim as the specs still passing, and the
@@ -528,16 +528,16 @@ jobs:
   # stays — it is seconds, it covers the specs' types, and it fails earlier
   # and more legibly than a browser run does.
   #
-  # A SEPARATE JOB, not more steps on folio8-designer, for three reasons that
+  # A SEPARATE JOB, not more steps on folio-designer, for three reasons that
   # are about this suite specifically and not about tidiness: it needs a
   # browser download the other job has no use for; it needs the GO toolchain
   # (see below), which the other job does not install; and at ~36 serial
   # browser tests it is by some distance the longest thing here, so hanging
-  # it off the end of folio8-designer would delay every fast signal in that
+  # it off the end of folio-designer would delay every fast signal in that
   # job behind it.
   #
   # WHY setup-go IS HERE. This is not a browser-only suite.
-  # browser-native-roundtrip.spec.ts builds folio8-go/cmd/folio8, runs it over
+  # browser-native-roundtrip.spec.ts builds folio-go/cmd/folio8, runs it over
   # the template the browser just authored, asserts the native PDF is
   # BYTE-EQUAL to the wasm-rendered one, and then shells into
   # `go test -run ^TestBrowserAuthoredRoundTripWitness$`. Without a pinned
@@ -559,7 +559,7 @@ jobs:
   #
   # No continue-on-error. A flaky-looking browser test is a defect report,
   # not a reason to make this job advisory.
-  folio8-designer-e2e:
+  folio-designer-e2e:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
@@ -568,21 +568,21 @@ jobs:
         with:
           node-version: "24.16.0"
           cache: npm
-          cache-dependency-path: folio8-designer/package-lock.json
+          cache-dependency-path: folio-designer/package-lock.json
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
       - name: npm ci (committed lockfile only)
-        working-directory: folio8-designer
+        working-directory: folio-designer
         run: npm ci
       # --with-deps installs the shared libraries headless Chromium needs on
       # a bare ubuntu image; chromium alone, because playwright.config.ts
       # declares no projects and so runs the default browser only.
       - name: install the pinned Playwright Chromium
-        working-directory: folio8-designer
+        working-directory: folio-designer
         run: npx playwright install --with-deps chromium
       - name: "browser end-to-end suite (npm run test:e2e; the config builds and previews the app itself)"
-        working-directory: folio8-designer
+        working-directory: folio-designer
         run: npm run test:e2e
       # Only on failure, and only the report: a green run's traces are noise
       # and cost storage, while a red run's are the difference between a
@@ -591,7 +591,7 @@ jobs:
         if: failure()
         with:
           name: playwright-report
-          path: folio8-designer/playwright-report/
+          path: folio-designer/playwright-report/
           retention-days: 7
           # `error`, not `ignore` (changed 2026-09-08, DW-297). This step spent
           # five red runs uploading a directory that playwright.config.ts never

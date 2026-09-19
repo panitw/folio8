@@ -22,7 +22,7 @@ context:
 ## Boundaries & Constraints
 
 **Always:**
-- Example sources live in `folio8-designer/public/templates/examples/`; the list of example ids is one array in the build stage (story 2 appends to it).
+- Example sources live in `folio-designer/public/templates/examples/`; the list of example ids is one array in the build stage (story 2 appends to it).
 - Sample JSON stays a separate file; the `.folio` never embeds data or a path.
 - Thumbnail comes only from the engine's PDF of that exact template+sample; never hand-drawn or committed.
 - Any render diagnostic (warning or error), missing file, or non-zero CLI exit fails `build:wasm` with a message naming the example id and the CLI's stderr.
@@ -34,7 +34,7 @@ context:
 - No UI, dialog, or change to startup behaviour (stories 3–4).
 - No other examples (story 2).
 - No new entry in `offline-assets.ts` (the engine worker imports it) and no S1 load-screen row.
-- No new `dependencies` entry; no rasterizer in `folio8-go` non-test code (`nocompressor` lint).
+- No new `dependencies` entry; no rasterizer in `folio-go` non-test code (`nocompressor` lint).
 - Do not place examples in `docs/examples/` (that triggers the guide-embedding test).
 
 ## I/O & Edge-Case Matrix
@@ -50,39 +50,39 @@ context:
 
 ## Code Map
 
-- `folio8-designer/scripts/build-wasm.mjs` -- emits `runtime/`; `fingerprint()` (~:77) content-addresses files; starter handling (~:74) and `documentation-assets.ts` emission (~:500) are the patterns to follow; Go is already required (`execFileSync('go', …)`).
-- `folio8-go/cmd/folio8/main.go` -- `folio8 render -data <json> -o <pdf> -strict <tpl>`; `-strict` exits 1 on any warning; diagnostics on stderr as `SEV CODE element=ID: msg`.
+- `folio-designer/scripts/build-wasm.mjs` -- emits `runtime/`; `fingerprint()` (~:77) content-addresses files; starter handling (~:74) and `documentation-assets.ts` emission (~:500) are the patterns to follow; Go is already required (`execFileSync('go', …)`).
+- `folio-go/cmd/folio8/main.go` -- `folio8 render -data <json> -o <pdf> -strict <tpl>`; `-strict` exits 1 on any warning; diagnostics on stderr as `SEV CODE element=ID: msg`.
 - `node_modules/pdfjs-dist/legacy/build/pdf.mjs` -- Node-side PDF rendering; uses `@napi-rs/canvas` for its canvas factory.
-- `folio8-designer/src/release-payload.ts:41-57` -- `minimumCacheAssets`/`maximumCacheAssets`/`warnCacheAssets`; each must stay `const <name> = <digits>` on its own line (read by `scripts/offline-release-contract.mjs`).
-- `folio8-designer/src/build-wasm.test.ts:~290` -- pins the seven generated emissions; add `example-assets.ts`.
-- `folio8-designer/.gitignore:146-154` -- `src/generated/*` entries; add `example-assets.ts`.
-- `folio8-designer/src/font-store.test.ts:~412-470` -- `fake-indexeddb` admission tests to mirror for `@napi-rs/canvas` (devDependencies only, not imported under `src/` shipping modules, LICENSE text checked).
-- `folio8-designer/public/templates/starter.folio` -- font chain to reuse.
+- `folio-designer/src/release-payload.ts:41-57` -- `minimumCacheAssets`/`maximumCacheAssets`/`warnCacheAssets`; each must stay `const <name> = <digits>` on its own line (read by `scripts/offline-release-contract.mjs`).
+- `folio-designer/src/build-wasm.test.ts:~290` -- pins the seven generated emissions; add `example-assets.ts`.
+- `folio-designer/.gitignore:146-154` -- `src/generated/*` entries; add `example-assets.ts`.
+- `folio-designer/src/font-store.test.ts:~412-470` -- `fake-indexeddb` admission tests to mirror for `@napi-rs/canvas` (devDependencies only, not imported under `src/` shipping modules, LICENSE text checked).
+- `folio-designer/public/templates/starter.folio` -- font chain to reuse.
 - `fixtures/statement-5/input.folio`, `fixtures/qrcode-payments/input.folio`, `docs/examples/ruled-table.folio` -- shapes for table with footer sum, qrcode, text.
-- `folio8-go/docs_examples_test.go:47,83` -- `docsExamplePages` / `requireNoDiagnostics` helpers to reuse.
-- `folio8-go/serialize_template.go:15` -- `SerializeTemplate(ParseTemplate(bytes))` for the canonical-form assertion.
+- `folio-go/docs_examples_test.go:47,83` -- `docsExamplePages` / `requireNoDiagnostics` helpers to reuse.
+- `folio-go/serialize_template.go:15` -- `SerializeTemplate(ParseTemplate(bytes))` for the canonical-form assertion.
 
 ## Tasks & Acceptance
 
 **Execution:**
-- [x] `folio8-designer/public/templates/examples/invoice.folio`, `invoice.sample.json` -- author the Invoice per Boundaries -- the proving example.
-- [x] `folio8-go/designer_examples_test.go` -- for each file in `../folio8-designer/public/templates/examples/*.folio`: bytes equal `SerializeTemplate(ParseTemplate)` output, and render with its `.sample.json` has zero diagnostics -- canonical form and render health checked in `go test`, not only in the build.
-- [x] `folio8-designer/scripts/build-examples.mjs` (new, called from `build-wasm.mjs`) -- build the CLI once to a temp dir, render each example strict, rasterize page 1 at 264 px wide, fingerprint template/sample/thumbnail into `runtime/`, emit `src/generated/example-assets.ts` exporting `exampleAssets` as `readonly { id, template, sample, thumbnail }[]` of `?url` imports -- the pipeline.
-- [x] `folio8-designer/scripts/build-examples.test.mjs` -- failure paths from the I/O matrix (warning, missing sample, invalid template) each reject naming the example -- guards the build gate.
-- [x] `folio8-designer/src/release-payload.ts` -- raise bounds as stated, update comments -- room for four examples.
-- [x] `folio8-designer/package.json`, `package-lock.json` -- add `@napi-rs/canvas` devDependency `1.0.8` -- rasterizer.
-- [x] `folio8-designer/src/font-store.test.ts` (or a sibling test) -- admission tests for `@napi-rs/canvas` -- AD-26 policy.
-- [x] `folio8-designer/src/build-wasm.test.ts`, `.gitignore` -- register `example-assets.ts` -- generated-tree contract.
+- [x] `folio-designer/public/templates/examples/invoice.folio`, `invoice.sample.json` -- author the Invoice per Boundaries -- the proving example.
+- [x] `folio-go/designer_examples_test.go` -- for each file in `../folio-designer/public/templates/examples/*.folio`: bytes equal `SerializeTemplate(ParseTemplate)` output, and render with its `.sample.json` has zero diagnostics -- canonical form and render health checked in `go test`, not only in the build.
+- [x] `folio-designer/scripts/build-examples.mjs` (new, called from `build-wasm.mjs`) -- build the CLI once to a temp dir, render each example strict, rasterize page 1 at 264 px wide, fingerprint template/sample/thumbnail into `runtime/`, emit `src/generated/example-assets.ts` exporting `exampleAssets` as `readonly { id, template, sample, thumbnail }[]` of `?url` imports -- the pipeline.
+- [x] `folio-designer/scripts/build-examples.test.mjs` -- failure paths from the I/O matrix (warning, missing sample, invalid template) each reject naming the example -- guards the build gate.
+- [x] `folio-designer/src/release-payload.ts` -- raise bounds as stated, update comments -- room for four examples.
+- [x] `folio-designer/package.json`, `package-lock.json` -- add `@napi-rs/canvas` devDependency `1.0.8` -- rasterizer.
+- [x] `folio-designer/src/font-store.test.ts` (or a sibling test) -- admission tests for `@napi-rs/canvas` -- AD-26 policy.
+- [x] `folio-designer/src/build-wasm.test.ts`, `.gitignore` -- register `example-assets.ts` -- generated-tree contract.
 
 **Acceptance Criteria:**
 - Given a clean checkout, when `npm run build` runs, then it succeeds, `dist/offline-release-manifest.json` lists the three Invoice assets, and `verify:offline` passes.
 - Given the built thumbnail, when it is opened, then it is a PNG 264 px wide showing the Invoice's first page as rendered by the engine.
 - Given `exampleAssets` is imported in a test, when read, then it has exactly one entry with id `invoice` and three URLs.
-- Given `go test ./...` in `folio8-go`, when run, then the designer-examples test passes for Invoice.
+- Given `go test ./...` in `folio-go`, when run, then the designer-examples test passes for Invoice.
 
 ## Implementation Notes
 
-- The `example-assets.ts` ignore line lives in the repository-root `.gitignore` (where every `src/generated/*` entry is), not `folio8-designer/.gitignore` as the Code Map said.
+- The `example-assets.ts` ignore line lives in the repository-root `.gitignore` (where every `src/generated/*` entry is), not `folio-designer/.gitignore` as the Code Map said.
 - `src/main.tsx` gained a side-effect-only `import './generated/example-assets.ts'`: without an application importer Vite does not emit the three files and the release manifest omits them. No behaviour; story 3 replaces it with the dialog's real import.
 - Asset-bound literals pinned elsewhere were updated with the bounds: `src/font-store.test.ts` (65 → 90), the over-bound payload in `src/release-payload.test.ts` (66 → 91), `src/vendor/pdfjs/PROVENANCE.md`.
 - Invoice totals block moved down 24 pt after the first render overlapped the table's sum row; positions are fixed, so far longer sample data would overlap (the engine never pushes elements).
@@ -128,11 +128,11 @@ Why raise the asset bound: epics.md records `maximumCacheAssets` as a defensive 
 ## Verification
 
 **Commands:**
-- `cd folio8-go && go test ./...` -- expected: pass, including the designer-examples test.
-- `cd folio8-designer && npm run build:wasm` -- expected: exits 0; `src/generated/example-assets.ts` and three `invoice.*` files under `src/generated/runtime/`.
-- `cd folio8-designer && npx vitest run` -- expected: pass.
-- `cd folio8-designer && npm run build` -- expected: exits 0 including `verify:offline`.
-- `cd folio8-designer && npm run lint && npm run typecheck` -- expected: pass.
+- `cd folio-go && go test ./...` -- expected: pass, including the designer-examples test.
+- `cd folio-designer && npm run build:wasm` -- expected: exits 0; `src/generated/example-assets.ts` and three `invoice.*` files under `src/generated/runtime/`.
+- `cd folio-designer && npx vitest run` -- expected: pass.
+- `cd folio-designer && npm run build` -- expected: exits 0 including `verify:offline`.
+- `cd folio-designer && npm run lint && npm run typecheck` -- expected: pass.
 
 **Manual checks (if no CLI):**
 - Open the emitted Invoice thumbnail PNG and confirm it matches the rendered Invoice page 1.

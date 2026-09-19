@@ -5,11 +5,11 @@
 # Local toolchains and generated output
 .fontgen-venv
 .font-sources
-folio8-go/.matrix-build
-folio8-designer/dist
-folio8-designer/src/generated
-folio8-designer/test-results
-folio8-designer/playwright-report
+folio-go/.matrix-build
+folio-designer/dist
+folio-designer/src/generated
+folio-designer/test-results
+folio-designer/playwright-report
 
 # Planning record and agent tooling — not build inputs
 _bmad

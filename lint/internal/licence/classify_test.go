@@ -144,7 +144,7 @@ func TestClassifyOFL(t *testing.T) {
 // assert on the artifact). A synthetic fixture that drifts from the real
 // text would keep passing while the real classification broke.
 func TestCommittedOFLTextClassifiesAsOFL11(t *testing.T) {
-	const rel = "../../../folio8-go/fonts/notosans/LICENSE-OFL.txt"
+	const rel = "../../../folio-go/fonts/notosans/LICENSE-OFL.txt"
 	data, err := os.ReadFile(rel)
 	if err != nil {
 		t.Fatalf("read committed OFL text %s: %v", rel, err)

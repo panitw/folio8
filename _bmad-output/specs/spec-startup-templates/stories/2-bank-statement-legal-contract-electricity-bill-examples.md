@@ -17,7 +17,7 @@ context:
 
 **Problem:** Story 1 ships only the Invoice; the startup dialog needs the other three examples from `example-templates.md`, each showing the engine features its document type needs.
 
-**Approach:** Author `bank-statement`, `legal-contract` and `electricity-bill` as `.folio` + `.sample.json` in `folio8-designer/public/templates/examples/`, append their ids to `exampleIds` in dialog order, and let story 1's pipeline render-gate, thumbnail and bundle them.
+**Approach:** Author `bank-statement`, `legal-contract` and `electricity-bill` as `.folio` + `.sample.json` in `folio-designer/public/templates/examples/`, append their ids to `exampleIds` in dialog order, and let story 1's pipeline render-gate, thumbnail and bundle them.
 
 ## Boundaries & Constraints
 
@@ -47,11 +47,11 @@ context:
 
 ## Code Map
 
-- `folio8-designer/scripts/build-examples.mjs:31` -- `exampleIds`; the only line to change in this script.
-- `folio8-designer/public/templates/examples/invoice.folio` -- story 1's example: font chain, canonical layout, table/footer/qrcode shapes to follow.
-- `folio8-go/designer_examples_test.go` -- canonical + zero-diagnostic check per `*.folio`; extend with per-example page-count expectations.
-- `folio8-designer/src/example-assets.test.ts:6` -- pins `['invoice']`; update to the four ids.
-- `folio8-designer/scripts/build-examples.test.mjs:106` -- directory ↔ `exampleIds` check; must pass unchanged.
+- `folio-designer/scripts/build-examples.mjs:31` -- `exampleIds`; the only line to change in this script.
+- `folio-designer/public/templates/examples/invoice.folio` -- story 1's example: font chain, canonical layout, table/footer/qrcode shapes to follow.
+- `folio-go/designer_examples_test.go` -- canonical + zero-diagnostic check per `*.folio`; extend with per-example page-count expectations.
+- `folio-designer/src/example-assets.test.ts:6` -- pins `['invoice']`; update to the four ids.
+- `folio-designer/scripts/build-examples.test.mjs:106` -- directory ↔ `exampleIds` check; must pass unchanged.
 - `fixtures/section-break-statement/input.folio:8-29` -- paginating table, `sectionBreak`, `Page {{page}} of {{pages}}`.
 - `fixtures/alternating-rows/input.folio` -- `altRowBackground`.
 - `fixtures/keep-together/input.folio:6-9` -- `keepTogether` tag (not allowed on tables).
@@ -62,12 +62,12 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [x] `folio8-designer/public/templates/examples/bank-statement.folio`, `bank-statement.sample.json` -- author per Boundaries -- statement example.
-- [x] `folio8-designer/public/templates/examples/legal-contract.folio`, `legal-contract.sample.json` -- author per Boundaries -- contract example.
-- [x] `folio8-designer/public/templates/examples/electricity-bill.folio`, `electricity-bill.sample.json` -- author per Boundaries -- bill example.
-- [x] `folio8-designer/scripts/build-examples.mjs` -- append the three ids in dialog order -- ship them.
-- [x] `folio8-go/designer_examples_test.go` -- assert page counts (`bank-statement` ≥2, `legal-contract` ≥2, `electricity-bill` 1, `invoice` 1) and, for `legal-contract`, that both signatory names land on the same page -- verifies pagination is actually exercised.
-- [x] `folio8-designer/src/example-assets.test.ts` -- expect the four ids in order -- generated module contract.
+- [x] `folio-designer/public/templates/examples/bank-statement.folio`, `bank-statement.sample.json` -- author per Boundaries -- statement example.
+- [x] `folio-designer/public/templates/examples/legal-contract.folio`, `legal-contract.sample.json` -- author per Boundaries -- contract example.
+- [x] `folio-designer/public/templates/examples/electricity-bill.folio`, `electricity-bill.sample.json` -- author per Boundaries -- bill example.
+- [x] `folio-designer/scripts/build-examples.mjs` -- append the three ids in dialog order -- ship them.
+- [x] `folio-go/designer_examples_test.go` -- assert page counts (`bank-statement` ≥2, `legal-contract` ≥2, `electricity-bill` 1, `invoice` 1) and, for `legal-contract`, that both signatory names land on the same page -- verifies pagination is actually exercised.
+- [x] `folio-designer/src/example-assets.test.ts` -- expect the four ids in order -- generated module contract.
 
 **Acceptance Criteria:**
 - Given `npm run build`, when it finishes, then it exits 0, `verify:offline` passes, and the manifest carries 12 example assets.
@@ -80,7 +80,7 @@ context:
 - Signatories are bound as `partyA.signatory{name, role}` / `partyB.signatory{name, role}` rather than a top-level `signatories[]`: the expression language has no index syntax, so a collection cannot feed two fixed signature blocks.
 - The Go page-text check uses `statementPageRuns` (per-resource ToUnicode); `pageTextsOf` refuses multi-face documents.
 - Step-03 matrix audit: the "Overdue notice" row had no covering assertion (only page count and zero diagnostics). Added `"electricity-bill": {{"PAYMENT OVERDUE"}}` to `designerExampleSamePage`; confirmed it fails with `overdue: false` and passes as committed, both with `go test -count=1`.
-- Review patches (triage rows 1, 4, 9), all in `folio8-go/designer_examples_test.go`: `bank-statement` and `legal-contract` pinned to exactly 2 pages; the contract same-page group widened to "Signed by the authorised representatives" plus both names; `requireTextsOnOnePage` now counts occurrences across all pages (any total other than 1 fails) and names the text that set the reference page. Removing every `keepTogether` still passes: the unanchored section break already moves the signature block as one unit, so the tag is redundant in this layout.
+- Review patches (triage rows 1, 4, 9), all in `folio-go/designer_examples_test.go`: `bank-statement` and `legal-contract` pinned to exactly 2 pages; the contract same-page group widened to "Signed by the authorised representatives" plus both names; `requireTextsOnOnePage` now counts occurrences across all pages (any total other than 1 fails) and names the text that set the reference page. Removing every `keepTogether` still passes: the unanchored section break already moves the signature block as one unit, so the tag is redundant in this layout.
 - Post-patch verification: `go test -count=1 ./...` only the pre-existing `TestCorpusMeetsP6ExerciseFloors`; `npm run build` 0 incl. `verify:offline` (77 assets, 12 example); `npx vitest run` 1804/1804; `typecheck` 0; `lint` 0.
 - Caveat: `go test` caches this test's result without tracking the example files (they live outside the Go module), so after editing an example run `go test -count=1 -run DesignerExample .` locally; CI runs uncached.
 - `example-templates.md` lists `signatories[]{name, role}` for the contract; the implemented shape (`partyA.signatory` / `partyB.signatory`) is the companion's to update, since no index syntax can feed two fixed signature blocks.
@@ -118,10 +118,10 @@ Bold clause headings are not possible inside one table cell (one style per colum
 ## Verification
 
 **Commands:**
-- `cd folio8-go && go test ./...` -- expected: pass except the pre-existing `internal/text` `TestCorpusMeetsP6ExerciseFloors`.
-- `cd folio8-designer && npm run build` -- expected: exits 0 including `verify:offline`.
-- `cd folio8-designer && npx vitest run` -- expected: pass.
-- `cd folio8-designer && npm run typecheck && npm run lint` -- expected: pass.
+- `cd folio-go && go test ./...` -- expected: pass except the pre-existing `internal/text` `TestCorpusMeetsP6ExerciseFloors`.
+- `cd folio-designer && npm run build` -- expected: exits 0 including `verify:offline`.
+- `cd folio-designer && npx vitest run` -- expected: pass.
+- `cd folio-designer && npm run typecheck && npm run lint` -- expected: pass.
 
 **Manual checks (if no CLI):**
 - Open the four emitted thumbnails and confirm each is the right document's page 1.

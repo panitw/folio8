@@ -7,7 +7,7 @@ import type { Diagnostic, FontSet } from '../src/types.js'
 
 export const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
-/** One renderable fixture, as folio8-go recorded it. Carries no hash by design. */
+/** One renderable fixture, as folio-go recorded it. Carries no hash by design. */
 export interface CorpusFixture {
   slug: string
   /** Whether the render passes the fixture's own data.json (`{}` when false). */
@@ -28,7 +28,7 @@ export interface CorpusManifest {
 
 /**
  * The corpus conformance manifest, derived from Go by
- * folio8-go/wasm/cmd/render/corpus_test.go and held equal to it there. Both
+ * folio-go/wasm/cmd/render/corpus_test.go and held equal to it there. Both
  * bindings drive their byte-identity suites from this one file, so neither can
  * quietly narrow its fixture list.
  *

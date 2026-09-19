@@ -1,0 +1,19 @@
+words_th.txt
+
+Source: PyThaiNLP project (https://github.com/PyThaiNLP/pythainlp),
+        pythainlp/corpus/words_th.txt, fetched from the `dev` branch.
+Licence: CC0-1.0 (see LICENSE-CC0-1.0.txt beside this file) — a public
+         domain dedication; no copyright is asserted over this data.
+
+Copyright: none asserted (CC0-1.0 public domain dedication). Original
+compilation and maintenance by the PyThaiNLP Project.
+
+This file is a Thai wordlist used, per AD-25 and AD-26, to compile the
+BytesTrie dictionary embedded in folio-go/internal/text (Story 2.1: the
+Thai break-opportunity spike). It is redistributed unmodified from its
+upstream source.
+
+Measured at the revision fetched for this story: 62,107 lines, 62,106
+DISTINCT words (one duplicate line, "โรม่า") — the distinct-word count
+matches the 62,106 figure carried in the epic's acceptance criteria
+exactly (see the Story 2.1 spike report).

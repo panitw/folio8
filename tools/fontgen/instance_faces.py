@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Derive folio8-go's derived shipped STATIC faces from their upstream variable builds.
+"""Derive folio-go's derived shipped STATIC faces from their upstream variable builds.
 
-Story 2.2 / D-2.2.4 (binding). folio8-go ships static instances — not the
+Story 2.2 / D-2.2.4 (binding). folio-go ships static instances — not the
 upstream variable builds — for three reasons, each measured. STORY 11.1 ENDED
 THE "REGULAR-ONLY" HALF OF THAT SENTENCE, which used to stand here: the derived
 set now also carries Noto Sans Bold, Noto Sans Italic, Noto Sans Bold Italic and
@@ -26,12 +26,12 @@ set being Regular-only; only the weight and slope coverage changed.
 
 CORRECTION, D-2.2.4 (correction, amended) / Story 2.3a Finding 1. Reason 3 above
 used to read: "Reaching the vendor's `PinAxisLocation` requires the identifier
-`float32`, which `folio8-go/internal/arch_test.go:54` bans under `internal/` and
+`float32`, which `folio-go/internal/arch_test.go:54` bans under `internal/` and
 the module root (AD-23). Deleting the seam satisfies the guard rather than
 fighting it". THAT MECHANISM WAS FALSE. `arch_test.go` matches the SPELLING of a
 type identifier and the KIND of a literal; an untyped integer constant handed to
 a float parameter writes no identifier and is a BasicLit of kind INT, so it
-passes untouched. `folio8-go/internal/fontset/fontset_test.go:515` calls
+passes untouched. `folio-go/internal/fontset/fontset_test.go:515` calls
 `in.PinAxisLocation(ot.MakeTag('w','g','h','t'), 700)` today with that guard
 green. The identifier was never required and AD-23 never fenced this door. The
 conclusion is unchanged — it rests on reasons 1 and 2 and on the payload and
@@ -52,12 +52,12 @@ build environment — a different fontTools produces a different font, which
 produces a different PDF. That is AD-22's drift class reintroduced at the asset
 layer. The .ttf files this script writes are committed; this script exists so a
 third party can REPLAY the derivation and get the same bytes, and so the
-regeneration test (folio8-go/fontgen_matrix_test.go, //go:build matrix) can prove
+regeneration test (folio-go/fontgen_matrix_test.go, //go:build matrix) can prove
 they still reproduce.
 
 Why Python and not Go: `lint`'s `absence-source-date-epoch` content check keys on
 the literal string "SOURCE_DATE_EPOCH" appearing in any .go file under
-`folio8-go/` (D-2.1.5). A Go generator would make that tripwire fire on
+`folio-go/` (D-2.1.5). A Go generator would make that tripwire fire on
 legitimate work — the guard is keyed on its purpose (AD-7's params-date wiring,
 DW-10), and a font generator is not that purpose.
 
@@ -86,7 +86,7 @@ Usage:
 `--sources DIR` must hold the upstream variable builds under the exact filenames
 in UPSTREAM below. They are NOT committed: as of Story 11.1 that is FOUR source
 files totalling 22,362,688 bytes, for the 13,314,992 bytes of derived output this
-script writes (the whole shipped set under folio8-go/fonts/ is 14,782,604 bytes
+script writes (the whole shipped set under folio-go/fonts/ is 14,782,604 bytes
 once the four upstream-static Roboto cuts, which this script does not touch, are
 counted). Each entry records the release URL and the sha256 to fetch them by.
 Story 11.1 added a FOURTH source file, `NotoSans-Italic-VF.ttf`, from the SAME
@@ -317,7 +317,7 @@ def main() -> int:
         "--out",
         type=Path,
         default=None,
-        help="write produced faces here instead of folio8-go/fonts/<dir>/ "
+        help="write produced faces here instead of folio-go/fonts/<dir>/ "
         "(used by the regeneration test, which must not touch the tree)",
     )
     ap.add_argument(
@@ -404,11 +404,11 @@ def main() -> int:
             dest_dir = (
                 args.out
                 if args.out is not None
-                else args.repo_root / "folio8-go" / "fonts" / face["dir"]
+                else args.repo_root / "folio-go" / "fonts" / face["dir"]
             )
             if args.verify_only:
                 committed = (
-                    args.repo_root / "folio8-go" / "fonts" / face["dir"] / face["out"]
+                    args.repo_root / "folio-go" / "fonts" / face["dir"] / face["out"]
                 )
                 if not committed.is_file():
                     failures.append(

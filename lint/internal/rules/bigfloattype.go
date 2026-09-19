@@ -62,7 +62,7 @@ type BigFloatTypeStats struct {
 
 // ScanBigFloatTypes is Layer 2 (D-3.1a.1): a narrow type-identity
 // DENYLIST forbidding math/big.Float and math/big.Rat anywhere under
-// root — scoped to the folio8-go MODULE ROOT (D-3.1a.1 correction,
+// root — scoped to the folio-go MODULE ROOT (D-3.1a.1 correction,
 // verified against ScanFloatTypedValues' own shipped production caller,
 // which scans the module root and asserts the public root package
 // visited BY NAME), never the repository root: hashmatrix/ is
@@ -200,7 +200,7 @@ func ScanBigFloatTypes(root string, includeTests bool) ([]Finding, BigFloatTypeS
 					Message: fmt.Sprintf(
 						"%s:%d:%d: this expression has type %s.%s (resolved by go/types, never by source "+
 							"text — an alias, a dot-import or a renamed import all resolve the same) — "+
-							"AD-23 forbids it under folio8-go: it is binary floating point implemented over "+
+							"AD-23 forbids it under folio-go: it is binary floating point implemented over "+
 							"integers with no float field to detect structurally (Float), or it dodges "+
 							"AD-23's defined division scale and round-half-to-even rule (Rat). %s",
 						rel, pos.Line, pos.Column, key[0], key[1], BigFloatTypeCoverageStatement,

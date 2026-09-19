@@ -4,7 +4,7 @@ The four bundled examples (CAP-4). Data is fictional and English: invented compa
 addresses and account numbers — no real organization, and account/meter numbers that cannot be
 mistaken for real ones. Currency is neutral (two decimals via `formatNumber`, no locale-specific
 symbol); dates are RFC 3339 strings formatted with `formatDate`. Each example is `<id>.folio` +
-`<id>.sample.json` in `folio8-designer/public/templates/examples/`, listed in `exampleIds` in dialog
+`<id>.sample.json` in `folio-designer/public/templates/examples/`, listed in `exampleIds` in dialog
 order: `invoice`, `bank-statement`, `legal-contract`, `electricity-bill`.
 
 "Must exercise" is the load-bearing column: the example exists to show an author that feature

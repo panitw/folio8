@@ -186,7 +186,7 @@ describe('an offline install renders the README snippet', () => {
 describe('prepack refuses an incomplete package', () => {
   const check = (root: string, extra: string[] = []) => {
     try {
-      run('node', [join(packageRoot, 'scripts', 'package-check.mjs'), '--root', root, '--go-fonts', join(repoRoot, 'folio8-go', 'fonts'), '--parity', join(packageRoot, 'test', 'data', 'go-parity.json'), ...extra], workspace)
+      run('node', [join(packageRoot, 'scripts', 'package-check.mjs'), '--root', root, '--go-fonts', join(repoRoot, 'folio-go', 'fonts'), '--parity', join(packageRoot, 'test', 'data', 'go-parity.json'), ...extra], workspace)
       return ''
     } catch (error) {
       return String((error as { stderr?: Buffer | string }).stderr ?? '')
@@ -203,7 +203,7 @@ describe('prepack refuses an incomplete package', () => {
     rmSync(empty, { recursive: true, force: true })
   })
 
-  it('names a face whose bytes drifted from folio8-go/fonts/', () => {
+  it('names a face whose bytes drifted from folio-go/fonts/', () => {
     const drifted = mkdtempSync(join(tmpdir(), 'folio-js-drift-'))
     const manifest = JSON.parse(readFileSync(join(packageRoot, 'fonts', 'manifest.json'), 'utf8')) as { faces: { name: string; file: string }[] }
     for (const path of requiredFiles.filter((file) => file !== 'fonts/manifest.json')) {
@@ -216,14 +216,14 @@ describe('prepack refuses an incomplete package', () => {
       mkdirSync(join(drifted, 'fonts', dirname(face.file)), { recursive: true })
       // Everything is in place; only "Roboto Bold" differs from the Go source.
       const source = join(packageRoot, 'fonts', face.file)
-      if (face.name === 'Roboto Bold') writeFileSync(join(drifted, 'fonts', face.file), 'not the face folio8-go embeds')
+      if (face.name === 'Roboto Bold') writeFileSync(join(drifted, 'fonts', face.file), 'not the face folio-go embeds')
       else cpSync(source, join(drifted, 'fonts', face.file))
       for (const licence of ['LICENSE-OFL.txt', 'NOTICE.md']) cpSync(join(packageRoot, 'fonts', dirname(face.file), licence), join(drifted, 'fonts', dirname(face.file), licence))
     }
 
     const stderr = check(drifted)
     expect(stderr).toContain('the packaged face "Roboto Bold"')
-    expect(stderr).toContain('differs from folio8-go/fonts/')
+    expect(stderr).toContain('differs from folio-go/fonts/')
     expect(stderr).not.toContain('"Noto Sans SC"')
     rmSync(drifted, { recursive: true, force: true })
   }, timeout)

@@ -22,7 +22,7 @@ The first MVP should include four core components:
 
 1. **folio8 Designer**
 2. **folio8 Template Format**
-3. **folio8-go Rendering Library**
+3. **folio-go Rendering Library**
 4. **PDF Output**
 
 ```text
@@ -40,7 +40,7 @@ The first MVP should include four core components:
                    │
                    ▼
         ┌─────────────────────┐
-        │      folio8-go       │
+        │      folio-go       │
         │                     │
         │ Expression Engine   │
         │ Layout Engine       │
@@ -232,7 +232,7 @@ Templates should be:
 
 ---
 
-# 4. folio8-go Rendering Library
+# 4. folio-go Rendering Library
 
 The Go rendering library should be a **core MVP deliverable**, not a later SDK.
 
@@ -247,7 +247,7 @@ github.com/folio8-reports/folio8
 or:
 
 ```text
-github.com/folio8-reports/folio8-go
+github.com/folio8-reports/folio-go
 ```
 
 ## Primary API
@@ -326,12 +326,12 @@ This avoids temporary files and supports server-side report generation efficient
 
 ---
 
-# 5. folio8-go Internal Architecture
+# 5. folio-go Internal Architecture
 
 Recommended internal modules:
 
 ```text
-folio8-go
+folio-go
 │
 ├── template
 │   ├── parser
@@ -560,11 +560,11 @@ For example:
 ```text
 Developer Laptop
       │
-      ├── folio8-go v0.1
+      ├── folio-go v0.1
       │
 Production Linux Container
       │
-      ├── folio8-go v0.1
+      ├── folio-go v0.1
       │
       ▼
 Identical Pagination
@@ -603,7 +603,7 @@ Purpose:
 Purpose:
 
 - Exact production rendering
-- Generated using folio8-go
+- Generated using folio-go
 - Same semantics as production output
 
 Recommended flow:
@@ -616,7 +616,7 @@ Designer
 Preview API
    │
    ▼
-folio8-go
+folio-go
    │
    ▼
 PDF
@@ -806,7 +806,7 @@ Build:
 
 ## Phase 6 — Production Preview
 
-Integrate the designer with folio8-go so that final preview uses the real production renderer.
+Integrate the designer with folio-go so that final preview uses the real production renderer.
 
 ---
 
@@ -891,4 +891,4 @@ pdf, err := folio8.Render(template, data)
 
 The first release should optimize for reliability rather than feature breadth.
 
-> **If folio8 v0.1 can reliably generate a professional 20–50 page enterprise statement from JSON using a `.folio` template and `folio8-go`, the MVP has proven its core value.**
+> **If folio8 v0.1 can reliably generate a professional 20–50 page enterprise statement from JSON using a `.folio` template and `folio-go`, the MVP has proven its core value.**

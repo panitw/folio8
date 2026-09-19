@@ -20,7 +20,7 @@ import (
 // immediate parent is named "testdata". The exclusion is deliberate and
 // correct: those are lint's own evading-shape fixtures, .ttf-extensioned
 // files with no real font content, which exist to test detection and are
-// not redistributed. But folio8-go/testdata/ SHIPS INSIDE THE MODULE ZIP,
+// not redistributed. But folio-go/testdata/ SHIPS INSIDE THE MODULE ZIP,
 // so a REAL font binary placed there would be redistributed under AD-26
 // with NO manifest row and nothing said.
 //
@@ -36,7 +36,7 @@ import (
 // font; extension-matching fixt…".
 //
 // NO SECOND SFNT READER IS INTRODUCED (D-8.4i.4, explicit prohibition).
-// D-8.4.12's checkSfnt is at folio8-go/internal/template/fontasset.go and
+// D-8.4.12's checkSfnt is at folio-go/internal/template/fontasset.go and
 // is genuinely unreachable from here — unexported, and in a different Go
 // module with no go.work and no root go.mod. But the lint module already
 // owns an sfnt reader: looksLikeSfnt, in this very package. This test
@@ -96,7 +96,7 @@ func TestNoRealFontHidesUnderAnExcludedPath(t *testing.T) {
 					rel = path
 				}
 				t.Errorf("%s: a REAL font program (sfnt magic number) is committed under a path the AD-26 "+
-					"asset gate excludes from its walk (manifest.go's %q-under-%q SkipDir). folio8-go/testdata "+
+					"asset gate excludes from its walk (manifest.go's %q-under-%q SkipDir). folio-go/testdata "+
 					"ships inside the module zip, so this font is REDISTRIBUTED with no licence row in "+
 					"lint/MANIFEST.md and nothing said (DW-123, D-8.4i.4). Either move it somewhere the gate "+
 					"assesses, or replace it with a non-font stub as the fixtures beside it are — do NOT "+
@@ -117,7 +117,7 @@ func TestNoRealFontHidesUnderAnExcludedPath(t *testing.T) {
 	// indistinguishable from a tripwire that cannot fire, so the same
 	// detector is run over a REAL committed font and must say yes. If
 	// this arm ever goes quiet, the arm above proves nothing.
-	const realFont = "folio8-go/fonts/notosans/NotoSans-Regular.ttf"
+	const realFont = "folio-go/fonts/notosans/NotoSans-Regular.ttf"
 	control, err := readFirstBytes(filepath.Join(root, filepath.FromSlash(realFont)), 12)
 	if err != nil {
 		t.Fatalf("read control font %s: %v", realFont, err)

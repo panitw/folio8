@@ -16,7 +16,7 @@ interface Manifest {
 }
 
 // scripts/build-fonts.mjs writes both the manifest and the faces beside it,
-// from folio8-go/fonts/. Resolving through import.meta.url rather than
+// from folio-go/fonts/. Resolving through import.meta.url rather than
 // process.cwd() is what makes this work from inside node_modules.
 const fontsDir = new URL('../fonts/', import.meta.url)
 

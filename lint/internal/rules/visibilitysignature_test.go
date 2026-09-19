@@ -24,12 +24,12 @@ func TestVisibilityComputationSignatureCoverageStatementWording(t *testing.T) {
 }
 
 // TestVisibilityComputationSignatureProductionScan is AC9's real
-// anchor: the real folio8-go package's computeVisibility, asserted to
+// anchor: the real folio-go package's computeVisibility, asserted to
 // report zero findings against the literal four-parameter list this
 // test owns.
 func TestVisibilityComputationSignatureProductionScan(t *testing.T) {
 	root := repoRootFromTest(t)
-	folio8Dir := filepath.Join(root, "folio8-go")
+	folio8Dir := filepath.Join(root, "folio-go")
 
 	findings, stats, err := ScanVisibilityComputationSignature(folio8Dir)
 	if err != nil {

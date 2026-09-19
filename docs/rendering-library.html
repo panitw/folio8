@@ -300,7 +300,7 @@
         <div class="article-head">
           <p class="eyebrow">FOLIO8 · Rendering library</p>
           <h1 id="folio8-rendering-library-for-go">folio8 rendering library for Go</h1>
-          <p class="standfirst"><code>folio8-go</code> turns a <code>.folio</code> template, JSON data and runtime parameters into a PDF 1.7 document. It reads no clock, no environment, no network and no host fonts while rendering: everything a document needs is passed in. The same inputs rendered with the same Go toolchain produce the same bytes.</p>
+          <p class="standfirst"><code>folio-go</code> turns a <code>.folio</code> template, JSON data and runtime parameters into a PDF 1.7 document. It reads no clock, no environment, no network and no host fonts while rendering: everything a document needs is passed in. The same inputs rendered with the same Go toolchain produce the same bytes.</p>
           <p>This guide covers installing the module, rendering your first PDF, the inputs and failures you have to handle, the template features that change what is drawn, and every exported API of the <code>folio8</code> and <code>fonts</code> packages. The same engine is available outside Go: <a href="folio-js.html">folio-js</a> renders from Node and <a href="folio-dotnet.html">folio-dotnet</a> renders from .NET Framework 4.6 upwards, both producing the bytes this library produces. Four companion references hold the rules this guide does not repeat:</p>
           <ul>
             <li><a href="folio-format.html">The <code>.folio</code> format</a> — every field of a template, version rules and load errors.</li>
@@ -314,17 +314,17 @@
 <!-- body -->
   <section id="install">
     <h2>Install</h2>
-    <p>Install the released module, <code>folio8-go/v1.0.0</code>. From your application's directory:</p>
+    <p>Install the released module, <code>folio-go/v1.0.0</code>. From your application's directory:</p>
     <div class="sample"><pre data-lang="shell"><span class="tk-fn">go</span> mod init example.com/folio8-demo
-<span class="tk-fn">go</span> get github.com/panitw/folio8/folio8-go@v1.0.0
+<span class="tk-fn">go</span> get github.com/panitw/folio8/folio-go@v1.0.0
 <span class="tk-fn">go</span> mod tidy</pre></div>
-    <p><code>go get</code> records <code>github.com/panitw/folio8/folio8-go v1.0.0</code> in your <code>go.mod</code>. The public API is frozen at <code>v1.0.0</code> under semver: later <code>v1</code> releases make no breaking API change, and a breaking change would need a new <code>/v2</code> import path. If you previously installed a pseudo-version from <code>@main</code>, read the GitHub release notes for <code>folio8-go/v1.0.0</code>, which list what changed.</p>
+    <p><code>go get</code> records <code>github.com/panitw/folio8/folio-go v1.0.0</code> in your <code>go.mod</code>. The public API is frozen at <code>v1.0.0</code> under semver: later <code>v1</code> releases make no breaking API change, and a breaking change would need a new <code>/v2</code> import path. If you previously installed a pseudo-version from <code>@main</code>, read the GitHub release notes for <code>folio-go/v1.0.0</code>, which list what changed.</p>
     <p>Import the module root as <code>folio8</code>. The shipped fonts are a separate, opt-in package:</p>
     <div class="sample"><pre data-lang="go"><span class="tk-kw">import</span> (
-	folio8 <span class="tk-str">"github.com/panitw/folio8/folio8-go"</span>
-	<span class="tk-str">"github.com/panitw/folio8/folio8-go/fonts"</span>
+	folio8 <span class="tk-str">"github.com/panitw/folio8/folio-go"</span>
+	<span class="tk-str">"github.com/panitw/folio8/folio-go/fonts"</span>
 )</pre></div>
-    <p><strong>Toolchain.</strong> <code>folio8-go/go.mod</code> declares <code>go 1.25.0</code> as the minimum language version and <code>toolchain go1.26.0</code>. A dependency's <code>toolchain</code> line does not choose the compiler for your application: your own <code>go.mod</code> <code>toolchain</code> line, or your <code>GOTOOLCHAIN</code> setting, does. If you record PDF hashes in your own tests and expect them to hold, pin your own toolchain as well as your inputs.</p>
+    <p><strong>Toolchain.</strong> <code>folio-go/go.mod</code> declares <code>go 1.25.0</code> as the minimum language version and <code>toolchain go1.26.0</code>. A dependency's <code>toolchain</code> line does not choose the compiler for your application: your own <code>go.mod</code> <code>toolchain</code> line, or your <code>GOTOOLCHAIN</code> setting, does. If you record PDF hashes in your own tests and expect them to hold, pin your own toolchain as well as your inputs.</p>
     <p><strong>Binary size.</strong> <code>fonts</code> embeds its faces with <code>go:embed</code>, about 14.8 MB of raw font data. Package <code>folio8</code> never imports <code>fonts</code>, so the data is in your binary only if you import <code>fonts</code> yourself.</p>
   </section>
 
@@ -379,8 +379,8 @@
 	<span class="tk-str">"log"</span>
 	<span class="tk-str">"os"</span>
 
-	folio8 <span class="tk-str">"github.com/panitw/folio8/folio8-go"</span>
-	<span class="tk-str">"github.com/panitw/folio8/folio8-go/fonts"</span>
+	folio8 <span class="tk-str">"github.com/panitw/folio8/folio-go"</span>
+	<span class="tk-str">"github.com/panitw/folio8/folio-go/fonts"</span>
 )
 
 <span class="tk-kw">func</span> <span class="tk-fn">main</span>() {
@@ -447,8 +447,8 @@
 	<span class="tk-str">"log"</span>
 	<span class="tk-str">"os"</span>
 
-	folio8 <span class="tk-str">"github.com/panitw/folio8/folio8-go"</span>
-	<span class="tk-str">"github.com/panitw/folio8/folio8-go/fonts"</span>
+	folio8 <span class="tk-str">"github.com/panitw/folio8/folio-go"</span>
+	<span class="tk-str">"github.com/panitw/folio8/folio-go/fonts"</span>
 )
 
 <span class="tk-kw">func</span> <span class="tk-fn">main</span>() {
@@ -915,15 +915,15 @@ fontSet[<span class="tk-str">"Brand Sans"</span>] = brand <span class="tk-com">/
 
   <section id="api-reference">
     <h2>API reference</h2>
-    <p>This section lists every exported identifier in the two packages of the <code>github.com/panitw/folio8/folio8-go</code> module:</p>
+    <p>This section lists every exported identifier in the two packages of the <code>github.com/panitw/folio8/folio-go</code> module:</p>
     <div class="tablewrap"><table>
       <thead><tr><th>Import path</th><th>Package</th><th>Role</th></tr></thead>
       <tbody>
-        <tr><td><code>github.com/panitw/folio8/folio8-go</code></td><td><code>folio8</code></td><td>Parsing, rendering, validation, diagnostics and template helpers.</td></tr>
-        <tr><td><code>github.com/panitw/folio8/folio8-go/fonts</code></td><td><code>fonts</code></td><td>The shipped font faces, as a ready-made <code>folio8.FontSet</code>. Opt-in: package <code>folio8</code> never imports it.</td></tr>
+        <tr><td><code>github.com/panitw/folio8/folio-go</code></td><td><code>folio8</code></td><td>Parsing, rendering, validation, diagnostics and template helpers.</td></tr>
+        <tr><td><code>github.com/panitw/folio8/folio-go/fonts</code></td><td><code>fonts</code></td><td>The shipped font faces, as a ready-made <code>folio8.FontSet</code>. Opt-in: package <code>folio8</code> never imports it.</td></tr>
       </tbody>
     </table></div>
-    <p><strong>Stability.</strong> The API is frozen at <code>folio8-go/v1.0.0</code>: <code>folio8.Version</code> is <code>"1.0.0"</code>. The rendering and validation entry points, the font input and the diagnostic types are the whole public surface. The canvas and authoring engine behind folio8 Designer is internal to the module and is not part of this API.</p>
+    <p><strong>Stability.</strong> The API is frozen at <code>folio-go/v1.0.0</code>: <code>folio8.Version</code> is <code>"1.0.0"</code>. The rendering and validation entry points, the font input and the diagnostic types are the whole public surface. The canvas and authoring engine behind folio8 Designer is internal to the module and is not part of this API.</p>
     <p><strong>Concurrency.</strong> Nothing in these packages documents or tests concurrent use. Do not share a <code>*folio8.Template</code> across goroutines without your own locking.</p>
     <h3 id="rendering-and-validation">Rendering and validation</h3>
     <h4 id="parsetemplate"><code>ParseTemplate</code></h4>
@@ -1013,7 +1013,7 @@ fontSet[<span class="tk-str">"Brand Sans"</span>] = brand <span class="tk-com">/
     <p>The engine's only font input. It maps a <strong>face name</strong>, as written in a document's <code>fonts</code> fallback chains (for example <code>"Noto Sans"</code>), to that face's raw OpenType/TrueType bytes. Rendering resolves faces only from this map and never queries the host system. Faces a document embeds in its own <code>assets</code> are resolved from the document. The map and its byte slices are read, not modified.</p>
     <h4 id="fontsshipped"><code>fonts.Shipped</code></h4>
     <div class="sample"><pre data-lang="go"><span class="tk-kw">func</span> <span class="tk-fn">Shipped</span>() folio8.<span class="tk-type">FontSet</span></pre></div>
-    <p>Returns a new <code>folio8.FontSet</code> map holding the eleven faces embedded in the <code>fonts</code> package. Each face ships with its OFL-1.1 licence text and NOTICE under <code>folio8-go/fonts/</code>. The keys are exactly:</p>
+    <p>Returns a new <code>folio8.FontSet</code> map holding the eleven faces embedded in the <code>fonts</code> package. Each face ships with its OFL-1.1 licence text and NOTICE under <code>folio-go/fonts/</code>. The keys are exactly:</p>
     <div class="tablewrap"><table>
       <thead><tr><th>Family</th><th>Face names (map keys)</th></tr></thead>
       <tbody>
@@ -1139,12 +1139,12 @@ _ = res</pre></div>
     <h4 id="localetableversion-and-version"><code>LocaleTableVersion</code> and <code>Version</code></h4>
     <div class="sample"><pre data-lang="go"><span class="tk-kw">const</span> <span class="tk-type">LocaleTableVersion</span> = expr.<span class="tk-type">LocaleTableVersion</span> <span class="tk-com">// currently 1 (untyped integer)</span>
 <span class="tk-kw">const</span> <span class="tk-type">Version</span> = <span class="tk-str">"1.0.0"</span></pre></div>
-    <p><code>LocaleTableVersion</code> identifies the built-in locale formatting table; its current value is <code>1</code>. <code>Version</code> is the library version string, <code>"1.0.0"</code> for the <code>folio8-go/v1.0.0</code> release.</p>
+    <p><code>LocaleTableVersion</code> identifies the built-in locale formatting table; its current value is <code>1</code>. <code>Version</code> is the library version string, <code>"1.0.0"</code> for the <code>folio-go/v1.0.0</code> release.</p>
   </section>
 
   <section id="command-line-tool">
     <h2>Command-line tool</h2>
-    <p>The module also contains a <code>folio8</code> command with <code>validate</code> and <code>render</code> subcommands (<code>go run github.com/panitw/folio8/folio8-go/cmd/folio8@v1.0.0 render -data data.json -o out.pdf template.folio</code>). It is a thin wrapper over <code>Validate</code> and <code>Render</code>; its flags are described in the repository README.</p>
+    <p>The module also contains a <code>folio8</code> command with <code>validate</code> and <code>render</code> subcommands (<code>go run github.com/panitw/folio8/folio-go/cmd/folio8@v1.0.0 render -data data.json -o out.pdf template.folio</code>). It is a thin wrapper over <code>Validate</code> and <code>Render</code>; its flags are described in the repository README.</p>
   </section>
 <!-- /body -->
 

@@ -3,7 +3,7 @@
 // map-range check. Each checker is a pure function over a target
 // directory returning (findings, error) — no *testing.T parameter, no
 // hard-coded root, no repo-root discovery inside it (AC1) — so the same
-// function can be pointed at the real folio8-go/internal/ tree (asserting
+// function can be pointed at the real folio-go/internal/ tree (asserting
 // zero) and at a retained fixture tree (asserting exactly the named
 // findings, by file and rule).
 package rules

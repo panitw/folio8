@@ -1,10 +1,10 @@
 // Command probe is the retained FMA-contraction demonstration for
-// Story 1.2 (AC8). It is deliberately outside folio8-go: the module it
-// lives in, hashmatrix/, has no dependency on folio8-go (no require, no
+// Story 1.2 (AC8). It is deliberately outside folio-go: the module it
+// lives in, hashmatrix/, has no dependency on folio-go (no require, no
 // replace, no go.work) and is never imported by it, so its float64 is
 // outside AD-2/AD-23's scope by construction — that module's guards
-// (folio8-go/internal/arch_test.go's TestNoFloat64UnderInternal and Story
-// 1.3's AD-1 import lint) bind folio8-go/internal/ positively and never
+// (folio-go/internal/arch_test.go's TestNoFloat64UnderInternal and Story
+// 1.3's AD-1 import lint) bind folio-go/internal/ positively and never
 // mention hashmatrix/, so there is nothing for either of them to exempt.
 //
 // Two design constraints are load-bearing, not stylistic:

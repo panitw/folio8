@@ -8,7 +8,7 @@ name: Cross-target byte identity
 # this is redundant defence, not the only pin.
 #
 # No job computes or compares a hash in YAML: each job calls
-# `go test -tags=matrix` in folio8-go, the same code path AC1 requires the
+# `go test -tags=matrix` in folio-go, the same code path AC1 requires the
 # local entry point to use, and the compare jobs below do plain file
 # equality checks over the harness's own output files, never hash logic.
 #
@@ -40,7 +40,7 @@ jobs:
         with:
           go-version: "1.26.0"
       - name: Render + hash (darwin/arm64)
-        working-directory: folio8-go
+        working-directory: folio-go
         env:
           CGO_ENABLED: "0"
           GOTOOLCHAIN: go1.26.0
@@ -50,38 +50,38 @@ jobs:
         with:
           name: hash-darwin-arm64
           path: |
-            folio8-go/.matrix-build/hash.darwin-arm64.minimal-rect.txt
-            folio8-go/.matrix-build/hash.darwin-arm64.font-text.txt
-            folio8-go/.matrix-build/hash.darwin-arm64.image-embed.txt
-            folio8-go/.matrix-build/hash.darwin-arm64.multi-script-fallback.txt
-            folio8-go/.matrix-build/hash.darwin-arm64.shaped-text.txt
-            folio8-go/.matrix-build/hash.darwin-arm64.wrapped-text.txt
-            folio8-go/.matrix-build/hash.darwin-arm64.three-band-page.txt
-            folio8-go/.matrix-build/hash.darwin-arm64.multi-page.txt
-            folio8-go/.matrix-build/hash.darwin-arm64.page-count-20.txt
-            folio8-go/.matrix-build/hash.darwin-arm64.hidden-image.txt
-            folio8-go/.matrix-build/hash.darwin-arm64.statement-1.txt
-            folio8-go/.matrix-build/hash.darwin-arm64.statement-5.txt
-            folio8-go/.matrix-build/hash.darwin-arm64.statement-20.txt
-            folio8-go/.matrix-build/hash.darwin-arm64.statement-50.txt
-            folio8-go/.matrix-build/hash.darwin-arm64.alternating-rows.txt
-            folio8-go/.matrix-build/hash.darwin-arm64.component-asset-import.txt
-            folio8-go/.matrix-build/hash.darwin-arm64.mandatory-break.txt
-            folio8-go/.matrix-build/hash.darwin-arm64.line-spacing.txt
-            folio8-go/.matrix-build/hash.darwin-arm64.justified-text.txt
-            folio8-go/.matrix-build/hash.darwin-arm64.justified-thai.txt
-            folio8-go/.matrix-build/hash.darwin-arm64.alignment-rounding.txt
-            folio8-go/.matrix-build/hash.darwin-arm64.thai-stacked-marks.txt
-            folio8-go/.matrix-build/hash.darwin-arm64.keep-together.txt
-            folio8-go/.matrix-build/hash.darwin-arm64.embedded-font.txt
-            folio8-go/.matrix-build/hash.darwin-arm64.declared-variants.txt
-            folio8-go/.matrix-build/hash.darwin-arm64.barcode-thai-bill-payment.txt
-            folio8-go/.matrix-build/hash.darwin-arm64.qrcode-payments.txt
-            folio8-go/.matrix-build/hash.darwin-arm64.section-break-statement.txt
-            folio8-go/.matrix-build/hash.darwin-arm64.section-break-unanchored.txt
-            folio8-go/.matrix-build/hash.darwin-arm64.multi-page-statement.txt
-            folio8-go/.matrix-build/hash.darwin-arm64.multi-page-flow.txt
-            folio8-go/.matrix-build/hash.darwin-arm64.colour-strokes.txt
+            folio-go/.matrix-build/hash.darwin-arm64.minimal-rect.txt
+            folio-go/.matrix-build/hash.darwin-arm64.font-text.txt
+            folio-go/.matrix-build/hash.darwin-arm64.image-embed.txt
+            folio-go/.matrix-build/hash.darwin-arm64.multi-script-fallback.txt
+            folio-go/.matrix-build/hash.darwin-arm64.shaped-text.txt
+            folio-go/.matrix-build/hash.darwin-arm64.wrapped-text.txt
+            folio-go/.matrix-build/hash.darwin-arm64.three-band-page.txt
+            folio-go/.matrix-build/hash.darwin-arm64.multi-page.txt
+            folio-go/.matrix-build/hash.darwin-arm64.page-count-20.txt
+            folio-go/.matrix-build/hash.darwin-arm64.hidden-image.txt
+            folio-go/.matrix-build/hash.darwin-arm64.statement-1.txt
+            folio-go/.matrix-build/hash.darwin-arm64.statement-5.txt
+            folio-go/.matrix-build/hash.darwin-arm64.statement-20.txt
+            folio-go/.matrix-build/hash.darwin-arm64.statement-50.txt
+            folio-go/.matrix-build/hash.darwin-arm64.alternating-rows.txt
+            folio-go/.matrix-build/hash.darwin-arm64.component-asset-import.txt
+            folio-go/.matrix-build/hash.darwin-arm64.mandatory-break.txt
+            folio-go/.matrix-build/hash.darwin-arm64.line-spacing.txt
+            folio-go/.matrix-build/hash.darwin-arm64.justified-text.txt
+            folio-go/.matrix-build/hash.darwin-arm64.justified-thai.txt
+            folio-go/.matrix-build/hash.darwin-arm64.alignment-rounding.txt
+            folio-go/.matrix-build/hash.darwin-arm64.thai-stacked-marks.txt
+            folio-go/.matrix-build/hash.darwin-arm64.keep-together.txt
+            folio-go/.matrix-build/hash.darwin-arm64.embedded-font.txt
+            folio-go/.matrix-build/hash.darwin-arm64.declared-variants.txt
+            folio-go/.matrix-build/hash.darwin-arm64.barcode-thai-bill-payment.txt
+            folio-go/.matrix-build/hash.darwin-arm64.qrcode-payments.txt
+            folio-go/.matrix-build/hash.darwin-arm64.section-break-statement.txt
+            folio-go/.matrix-build/hash.darwin-arm64.section-break-unanchored.txt
+            folio-go/.matrix-build/hash.darwin-arm64.multi-page-statement.txt
+            folio-go/.matrix-build/hash.darwin-arm64.multi-page-flow.txt
+            folio-go/.matrix-build/hash.darwin-arm64.colour-strokes.txt
           if-no-files-found: error
 
   render-linux-amd64:
@@ -92,7 +92,7 @@ jobs:
         with:
           go-version: "1.26.0"
       - name: Render + hash (linux/amd64)
-        working-directory: folio8-go
+        working-directory: folio-go
         env:
           CGO_ENABLED: "0"
           GOTOOLCHAIN: go1.26.0
@@ -102,38 +102,38 @@ jobs:
         with:
           name: hash-linux-amd64
           path: |
-            folio8-go/.matrix-build/hash.linux-amd64.minimal-rect.txt
-            folio8-go/.matrix-build/hash.linux-amd64.font-text.txt
-            folio8-go/.matrix-build/hash.linux-amd64.image-embed.txt
-            folio8-go/.matrix-build/hash.linux-amd64.multi-script-fallback.txt
-            folio8-go/.matrix-build/hash.linux-amd64.shaped-text.txt
-            folio8-go/.matrix-build/hash.linux-amd64.wrapped-text.txt
-            folio8-go/.matrix-build/hash.linux-amd64.three-band-page.txt
-            folio8-go/.matrix-build/hash.linux-amd64.multi-page.txt
-            folio8-go/.matrix-build/hash.linux-amd64.page-count-20.txt
-            folio8-go/.matrix-build/hash.linux-amd64.hidden-image.txt
-            folio8-go/.matrix-build/hash.linux-amd64.statement-1.txt
-            folio8-go/.matrix-build/hash.linux-amd64.statement-5.txt
-            folio8-go/.matrix-build/hash.linux-amd64.statement-20.txt
-            folio8-go/.matrix-build/hash.linux-amd64.statement-50.txt
-            folio8-go/.matrix-build/hash.linux-amd64.alternating-rows.txt
-            folio8-go/.matrix-build/hash.linux-amd64.component-asset-import.txt
-            folio8-go/.matrix-build/hash.linux-amd64.mandatory-break.txt
-            folio8-go/.matrix-build/hash.linux-amd64.line-spacing.txt
-            folio8-go/.matrix-build/hash.linux-amd64.justified-text.txt
-            folio8-go/.matrix-build/hash.linux-amd64.justified-thai.txt
-            folio8-go/.matrix-build/hash.linux-amd64.alignment-rounding.txt
-            folio8-go/.matrix-build/hash.linux-amd64.thai-stacked-marks.txt
-            folio8-go/.matrix-build/hash.linux-amd64.keep-together.txt
-            folio8-go/.matrix-build/hash.linux-amd64.embedded-font.txt
-            folio8-go/.matrix-build/hash.linux-amd64.declared-variants.txt
-            folio8-go/.matrix-build/hash.linux-amd64.barcode-thai-bill-payment.txt
-            folio8-go/.matrix-build/hash.linux-amd64.qrcode-payments.txt
-            folio8-go/.matrix-build/hash.linux-amd64.section-break-statement.txt
-            folio8-go/.matrix-build/hash.linux-amd64.section-break-unanchored.txt
-            folio8-go/.matrix-build/hash.linux-amd64.multi-page-statement.txt
-            folio8-go/.matrix-build/hash.linux-amd64.multi-page-flow.txt
-            folio8-go/.matrix-build/hash.linux-amd64.colour-strokes.txt
+            folio-go/.matrix-build/hash.linux-amd64.minimal-rect.txt
+            folio-go/.matrix-build/hash.linux-amd64.font-text.txt
+            folio-go/.matrix-build/hash.linux-amd64.image-embed.txt
+            folio-go/.matrix-build/hash.linux-amd64.multi-script-fallback.txt
+            folio-go/.matrix-build/hash.linux-amd64.shaped-text.txt
+            folio-go/.matrix-build/hash.linux-amd64.wrapped-text.txt
+            folio-go/.matrix-build/hash.linux-amd64.three-band-page.txt
+            folio-go/.matrix-build/hash.linux-amd64.multi-page.txt
+            folio-go/.matrix-build/hash.linux-amd64.page-count-20.txt
+            folio-go/.matrix-build/hash.linux-amd64.hidden-image.txt
+            folio-go/.matrix-build/hash.linux-amd64.statement-1.txt
+            folio-go/.matrix-build/hash.linux-amd64.statement-5.txt
+            folio-go/.matrix-build/hash.linux-amd64.statement-20.txt
+            folio-go/.matrix-build/hash.linux-amd64.statement-50.txt
+            folio-go/.matrix-build/hash.linux-amd64.alternating-rows.txt
+            folio-go/.matrix-build/hash.linux-amd64.component-asset-import.txt
+            folio-go/.matrix-build/hash.linux-amd64.mandatory-break.txt
+            folio-go/.matrix-build/hash.linux-amd64.line-spacing.txt
+            folio-go/.matrix-build/hash.linux-amd64.justified-text.txt
+            folio-go/.matrix-build/hash.linux-amd64.justified-thai.txt
+            folio-go/.matrix-build/hash.linux-amd64.alignment-rounding.txt
+            folio-go/.matrix-build/hash.linux-amd64.thai-stacked-marks.txt
+            folio-go/.matrix-build/hash.linux-amd64.keep-together.txt
+            folio-go/.matrix-build/hash.linux-amd64.embedded-font.txt
+            folio-go/.matrix-build/hash.linux-amd64.declared-variants.txt
+            folio-go/.matrix-build/hash.linux-amd64.barcode-thai-bill-payment.txt
+            folio-go/.matrix-build/hash.linux-amd64.qrcode-payments.txt
+            folio-go/.matrix-build/hash.linux-amd64.section-break-statement.txt
+            folio-go/.matrix-build/hash.linux-amd64.section-break-unanchored.txt
+            folio-go/.matrix-build/hash.linux-amd64.multi-page-statement.txt
+            folio-go/.matrix-build/hash.linux-amd64.multi-page-flow.txt
+            folio-go/.matrix-build/hash.linux-amd64.colour-strokes.txt
           if-no-files-found: error
 
   render-linux-arm64:
@@ -144,7 +144,7 @@ jobs:
         with:
           go-version: "1.26.0"
       - name: Render + hash (linux/arm64)
-        working-directory: folio8-go
+        working-directory: folio-go
         env:
           CGO_ENABLED: "0"
           GOTOOLCHAIN: go1.26.0
@@ -154,38 +154,38 @@ jobs:
         with:
           name: hash-linux-arm64
           path: |
-            folio8-go/.matrix-build/hash.linux-arm64.minimal-rect.txt
-            folio8-go/.matrix-build/hash.linux-arm64.font-text.txt
-            folio8-go/.matrix-build/hash.linux-arm64.image-embed.txt
-            folio8-go/.matrix-build/hash.linux-arm64.multi-script-fallback.txt
-            folio8-go/.matrix-build/hash.linux-arm64.shaped-text.txt
-            folio8-go/.matrix-build/hash.linux-arm64.wrapped-text.txt
-            folio8-go/.matrix-build/hash.linux-arm64.three-band-page.txt
-            folio8-go/.matrix-build/hash.linux-arm64.multi-page.txt
-            folio8-go/.matrix-build/hash.linux-arm64.page-count-20.txt
-            folio8-go/.matrix-build/hash.linux-arm64.hidden-image.txt
-            folio8-go/.matrix-build/hash.linux-arm64.statement-1.txt
-            folio8-go/.matrix-build/hash.linux-arm64.statement-5.txt
-            folio8-go/.matrix-build/hash.linux-arm64.statement-20.txt
-            folio8-go/.matrix-build/hash.linux-arm64.statement-50.txt
-            folio8-go/.matrix-build/hash.linux-arm64.alternating-rows.txt
-            folio8-go/.matrix-build/hash.linux-arm64.component-asset-import.txt
-            folio8-go/.matrix-build/hash.linux-arm64.mandatory-break.txt
-            folio8-go/.matrix-build/hash.linux-arm64.line-spacing.txt
-            folio8-go/.matrix-build/hash.linux-arm64.justified-text.txt
-            folio8-go/.matrix-build/hash.linux-arm64.justified-thai.txt
-            folio8-go/.matrix-build/hash.linux-arm64.alignment-rounding.txt
-            folio8-go/.matrix-build/hash.linux-arm64.thai-stacked-marks.txt
-            folio8-go/.matrix-build/hash.linux-arm64.keep-together.txt
-            folio8-go/.matrix-build/hash.linux-arm64.embedded-font.txt
-            folio8-go/.matrix-build/hash.linux-arm64.declared-variants.txt
-            folio8-go/.matrix-build/hash.linux-arm64.barcode-thai-bill-payment.txt
-            folio8-go/.matrix-build/hash.linux-arm64.qrcode-payments.txt
-            folio8-go/.matrix-build/hash.linux-arm64.section-break-statement.txt
-            folio8-go/.matrix-build/hash.linux-arm64.section-break-unanchored.txt
-            folio8-go/.matrix-build/hash.linux-arm64.multi-page-statement.txt
-            folio8-go/.matrix-build/hash.linux-arm64.multi-page-flow.txt
-            folio8-go/.matrix-build/hash.linux-arm64.colour-strokes.txt
+            folio-go/.matrix-build/hash.linux-arm64.minimal-rect.txt
+            folio-go/.matrix-build/hash.linux-arm64.font-text.txt
+            folio-go/.matrix-build/hash.linux-arm64.image-embed.txt
+            folio-go/.matrix-build/hash.linux-arm64.multi-script-fallback.txt
+            folio-go/.matrix-build/hash.linux-arm64.shaped-text.txt
+            folio-go/.matrix-build/hash.linux-arm64.wrapped-text.txt
+            folio-go/.matrix-build/hash.linux-arm64.three-band-page.txt
+            folio-go/.matrix-build/hash.linux-arm64.multi-page.txt
+            folio-go/.matrix-build/hash.linux-arm64.page-count-20.txt
+            folio-go/.matrix-build/hash.linux-arm64.hidden-image.txt
+            folio-go/.matrix-build/hash.linux-arm64.statement-1.txt
+            folio-go/.matrix-build/hash.linux-arm64.statement-5.txt
+            folio-go/.matrix-build/hash.linux-arm64.statement-20.txt
+            folio-go/.matrix-build/hash.linux-arm64.statement-50.txt
+            folio-go/.matrix-build/hash.linux-arm64.alternating-rows.txt
+            folio-go/.matrix-build/hash.linux-arm64.component-asset-import.txt
+            folio-go/.matrix-build/hash.linux-arm64.mandatory-break.txt
+            folio-go/.matrix-build/hash.linux-arm64.line-spacing.txt
+            folio-go/.matrix-build/hash.linux-arm64.justified-text.txt
+            folio-go/.matrix-build/hash.linux-arm64.justified-thai.txt
+            folio-go/.matrix-build/hash.linux-arm64.alignment-rounding.txt
+            folio-go/.matrix-build/hash.linux-arm64.thai-stacked-marks.txt
+            folio-go/.matrix-build/hash.linux-arm64.keep-together.txt
+            folio-go/.matrix-build/hash.linux-arm64.embedded-font.txt
+            folio-go/.matrix-build/hash.linux-arm64.declared-variants.txt
+            folio-go/.matrix-build/hash.linux-arm64.barcode-thai-bill-payment.txt
+            folio-go/.matrix-build/hash.linux-arm64.qrcode-payments.txt
+            folio-go/.matrix-build/hash.linux-arm64.section-break-statement.txt
+            folio-go/.matrix-build/hash.linux-arm64.section-break-unanchored.txt
+            folio-go/.matrix-build/hash.linux-arm64.multi-page-statement.txt
+            folio-go/.matrix-build/hash.linux-arm64.multi-page-flow.txt
+            folio-go/.matrix-build/hash.linux-arm64.colour-strokes.txt
           if-no-files-found: error
 
   render-js-wasm:
@@ -196,7 +196,7 @@ jobs:
         with:
           go-version: "1.26.0"
       - name: Render + hash (js/wasm)
-        working-directory: folio8-go
+        working-directory: folio-go
         env:
           CGO_ENABLED: "0"
           GOTOOLCHAIN: go1.26.0
@@ -206,38 +206,38 @@ jobs:
         with:
           name: hash-js-wasm
           path: |
-            folio8-go/.matrix-build/hash.js-wasm.minimal-rect.txt
-            folio8-go/.matrix-build/hash.js-wasm.font-text.txt
-            folio8-go/.matrix-build/hash.js-wasm.image-embed.txt
-            folio8-go/.matrix-build/hash.js-wasm.multi-script-fallback.txt
-            folio8-go/.matrix-build/hash.js-wasm.shaped-text.txt
-            folio8-go/.matrix-build/hash.js-wasm.wrapped-text.txt
-            folio8-go/.matrix-build/hash.js-wasm.three-band-page.txt
-            folio8-go/.matrix-build/hash.js-wasm.multi-page.txt
-            folio8-go/.matrix-build/hash.js-wasm.page-count-20.txt
-            folio8-go/.matrix-build/hash.js-wasm.hidden-image.txt
-            folio8-go/.matrix-build/hash.js-wasm.statement-1.txt
-            folio8-go/.matrix-build/hash.js-wasm.statement-5.txt
-            folio8-go/.matrix-build/hash.js-wasm.statement-20.txt
-            folio8-go/.matrix-build/hash.js-wasm.statement-50.txt
-            folio8-go/.matrix-build/hash.js-wasm.alternating-rows.txt
-            folio8-go/.matrix-build/hash.js-wasm.component-asset-import.txt
-            folio8-go/.matrix-build/hash.js-wasm.mandatory-break.txt
-            folio8-go/.matrix-build/hash.js-wasm.line-spacing.txt
-            folio8-go/.matrix-build/hash.js-wasm.justified-text.txt
-            folio8-go/.matrix-build/hash.js-wasm.justified-thai.txt
-            folio8-go/.matrix-build/hash.js-wasm.alignment-rounding.txt
-            folio8-go/.matrix-build/hash.js-wasm.thai-stacked-marks.txt
-            folio8-go/.matrix-build/hash.js-wasm.keep-together.txt
-            folio8-go/.matrix-build/hash.js-wasm.embedded-font.txt
-            folio8-go/.matrix-build/hash.js-wasm.declared-variants.txt
-            folio8-go/.matrix-build/hash.js-wasm.barcode-thai-bill-payment.txt
-            folio8-go/.matrix-build/hash.js-wasm.qrcode-payments.txt
-            folio8-go/.matrix-build/hash.js-wasm.section-break-statement.txt
-            folio8-go/.matrix-build/hash.js-wasm.section-break-unanchored.txt
-            folio8-go/.matrix-build/hash.js-wasm.multi-page-statement.txt
-            folio8-go/.matrix-build/hash.js-wasm.multi-page-flow.txt
-            folio8-go/.matrix-build/hash.js-wasm.colour-strokes.txt
+            folio-go/.matrix-build/hash.js-wasm.minimal-rect.txt
+            folio-go/.matrix-build/hash.js-wasm.font-text.txt
+            folio-go/.matrix-build/hash.js-wasm.image-embed.txt
+            folio-go/.matrix-build/hash.js-wasm.multi-script-fallback.txt
+            folio-go/.matrix-build/hash.js-wasm.shaped-text.txt
+            folio-go/.matrix-build/hash.js-wasm.wrapped-text.txt
+            folio-go/.matrix-build/hash.js-wasm.three-band-page.txt
+            folio-go/.matrix-build/hash.js-wasm.multi-page.txt
+            folio-go/.matrix-build/hash.js-wasm.page-count-20.txt
+            folio-go/.matrix-build/hash.js-wasm.hidden-image.txt
+            folio-go/.matrix-build/hash.js-wasm.statement-1.txt
+            folio-go/.matrix-build/hash.js-wasm.statement-5.txt
+            folio-go/.matrix-build/hash.js-wasm.statement-20.txt
+            folio-go/.matrix-build/hash.js-wasm.statement-50.txt
+            folio-go/.matrix-build/hash.js-wasm.alternating-rows.txt
+            folio-go/.matrix-build/hash.js-wasm.component-asset-import.txt
+            folio-go/.matrix-build/hash.js-wasm.mandatory-break.txt
+            folio-go/.matrix-build/hash.js-wasm.line-spacing.txt
+            folio-go/.matrix-build/hash.js-wasm.justified-text.txt
+            folio-go/.matrix-build/hash.js-wasm.justified-thai.txt
+            folio-go/.matrix-build/hash.js-wasm.alignment-rounding.txt
+            folio-go/.matrix-build/hash.js-wasm.thai-stacked-marks.txt
+            folio-go/.matrix-build/hash.js-wasm.keep-together.txt
+            folio-go/.matrix-build/hash.js-wasm.embedded-font.txt
+            folio-go/.matrix-build/hash.js-wasm.declared-variants.txt
+            folio-go/.matrix-build/hash.js-wasm.barcode-thai-bill-payment.txt
+            folio-go/.matrix-build/hash.js-wasm.qrcode-payments.txt
+            folio-go/.matrix-build/hash.js-wasm.section-break-statement.txt
+            folio-go/.matrix-build/hash.js-wasm.section-break-unanchored.txt
+            folio-go/.matrix-build/hash.js-wasm.multi-page-statement.txt
+            folio-go/.matrix-build/hash.js-wasm.multi-page-flow.txt
+            folio-go/.matrix-build/hash.js-wasm.colour-strokes.txt
           if-no-files-found: error
 
   compare-render-hashes:
@@ -290,7 +290,7 @@ jobs:
           # This hand-maintained list drifting from matrixDocuments is
           # exactly Finding 8's hazard recurring;
           # TestMatrixDocumentSlugsAreRegisteredInCI
-          # (folio8-go/matrix_registration_test.go) now asserts the two agree.
+          # (folio-go/matrix_registration_test.go) now asserts the two agree.
           # That file is deliberately UNTAGGED — it carries no //go:build
           # matrix line, so the guard runs in every story's plain
           # `go test ./...` and not only at the epic boundary gate. Running
@@ -348,7 +348,7 @@ jobs:
         with:
           go-version: "1.26.0"
       - name: FMA probe (darwin/arm64)
-        working-directory: folio8-go
+        working-directory: folio-go
         env:
           CGO_ENABLED: "0"
           GOTOOLCHAIN: go1.26.0
@@ -357,7 +357,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: probe-darwin-arm64
-          path: folio8-go/.matrix-build/probe.darwin-arm64.txt
+          path: folio-go/.matrix-build/probe.darwin-arm64.txt
           if-no-files-found: error
 
   fma-probe-linux-amd64:
@@ -368,7 +368,7 @@ jobs:
         with:
           go-version: "1.26.0"
       - name: FMA probe (linux/amd64)
-        working-directory: folio8-go
+        working-directory: folio-go
         env:
           CGO_ENABLED: "0"
           GOTOOLCHAIN: go1.26.0
@@ -377,7 +377,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: probe-linux-amd64
-          path: folio8-go/.matrix-build/probe.linux-amd64.txt
+          path: folio-go/.matrix-build/probe.linux-amd64.txt
           if-no-files-found: error
 
   fma-probe-linux-arm64:
@@ -388,7 +388,7 @@ jobs:
         with:
           go-version: "1.26.0"
       - name: FMA probe (linux/arm64)
-        working-directory: folio8-go
+        working-directory: folio-go
         env:
           CGO_ENABLED: "0"
           GOTOOLCHAIN: go1.26.0
@@ -397,7 +397,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: probe-linux-arm64
-          path: folio8-go/.matrix-build/probe.linux-arm64.txt
+          path: folio-go/.matrix-build/probe.linux-arm64.txt
           if-no-files-found: error
 
   fma-probe-js-wasm:
@@ -408,7 +408,7 @@ jobs:
         with:
           go-version: "1.26.0"
       - name: FMA probe (js/wasm)
-        working-directory: folio8-go
+        working-directory: folio-go
         env:
           CGO_ENABLED: "0"
           GOTOOLCHAIN: go1.26.0
@@ -417,7 +417,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: probe-js-wasm
-          path: folio8-go/.matrix-build/probe.js-wasm.txt
+          path: folio-go/.matrix-build/probe.js-wasm.txt
           if-no-files-found: error
 
   assert-fma-probe-diverges:
@@ -434,7 +434,7 @@ jobs:
           path: probes
           merge-multiple: true
       # This job's shell logic mirrors TestFMAProbeDiverges's AC9 relation
-      # check in folio8-go/matrix_test.go (allEqual /
+      # check in folio-go/matrix_test.go (allEqual /
       # bothArm64DifferFromWasm). AC13 requires a job asserting AC9's
       # partition, so re-deriving the relation here (rather than a hash
       # comparison) is compliant, not a violation — but the two

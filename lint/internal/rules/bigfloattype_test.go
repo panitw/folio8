@@ -41,25 +41,25 @@ func TestBigFloatTypeCoverageStatementWording(t *testing.T) {
 	}
 }
 
-// TestBigFloatTypeProductionScan is AC21: the real folio8-go module
+// TestBigFloatTypeProductionScan is AC21: the real folio-go module
 // root, asserted to report zero findings — expected to pass on the
 // first run (F1 measured big.Float/big.Rat at zero sites repo-wide),
 // with the AC16 vacuity witness making that green mean something.
 func TestBigFloatTypeProductionScan(t *testing.T) {
 	root := repoRootFromTest(t)
-	moduleRoot := filepath.Join(root, "folio8-go")
+	moduleRoot := filepath.Join(root, "folio-go")
 
 	findings, stats, err := ScanBigFloatTypes(moduleRoot, false)
 	if err != nil {
-		t.Fatalf("scan folio8-go module root %s: %v", moduleRoot, err)
+		t.Fatalf("scan folio-go module root %s: %v", moduleRoot, err)
 	}
 
 	assertBigFloatVisited(t, stats, ".", "internal/bind")
 	if stats.FilesParsed == 0 {
-		t.Fatal("vacuity guard: checker's own stats report 0 files parsed under the folio8-go module root")
+		t.Fatal("vacuity guard: checker's own stats report 0 files parsed under the folio-go module root")
 	}
 	if stats.TypedExprs == 0 {
-		t.Fatal("vacuity guard: checker's own stats report 0 expressions successfully typed under the folio8-go module root")
+		t.Fatal("vacuity guard: checker's own stats report 0 expressions successfully typed under the folio-go module root")
 	}
 
 	if len(findings) > 0 {
@@ -71,7 +71,7 @@ func TestBigFloatTypeProductionScan(t *testing.T) {
 			}
 		}
 		t.Fatalf(
-			"math/big.Float or math/big.Rat found under the folio8-go module root (AD-23) — this is a "+
+			"math/big.Float or math/big.Rat found under the folio-go module root (AD-23) — this is a "+
 				"defect found, not a guard problem:\n%s",
 			strings.Join(msgs, "\n"))
 	}
@@ -79,7 +79,7 @@ func TestBigFloatTypeProductionScan(t *testing.T) {
 
 // TestBigFloatTypeTestScopeInventory is AC15's file-scope clause,
 // verified rather than merely stated (QA review Finding 2, Blocker):
-// _test.go files under the folio8-go module root are IN SCOPE, matching
+// _test.go files under the folio-go module root are IN SCOPE, matching
 // ScanFloatTypedValues' own TestFloatTypedTestScopeInventory
 // (floattyped_test.go) — "a type-aware rule that did not [walk
 // _test.go files] would be strictly weaker in file scope than the
@@ -98,19 +98,19 @@ func TestBigFloatTypeProductionScan(t *testing.T) {
 // silently absorbed.
 func TestBigFloatTypeTestScopeInventory(t *testing.T) {
 	root := repoRootFromTest(t)
-	moduleRoot := filepath.Join(root, "folio8-go")
+	moduleRoot := filepath.Join(root, "folio-go")
 
 	got, stats, err := ScanBigFloatTypes(moduleRoot, true)
 	if err != nil {
-		t.Fatalf("scan folio8-go module root %s with tests: %v", moduleRoot, err)
+		t.Fatalf("scan folio-go module root %s with tests: %v", moduleRoot, err)
 	}
 
 	assertBigFloatVisited(t, stats, ".", "internal/bind")
 	if stats.FilesParsed == 0 {
-		t.Fatal("vacuity guard: checker's own stats report 0 files parsed under the folio8-go module root (tests included)")
+		t.Fatal("vacuity guard: checker's own stats report 0 files parsed under the folio-go module root (tests included)")
 	}
 	if stats.TypedExprs == 0 {
-		t.Fatal("vacuity guard: checker's own stats report 0 expressions successfully typed under the folio8-go module root (tests included)")
+		t.Fatal("vacuity guard: checker's own stats report 0 expressions successfully typed under the folio-go module root (tests included)")
 	}
 	for _, d := range stats.DirsVisited {
 		if strings.HasPrefix(d, "..") {
@@ -124,7 +124,7 @@ func TestBigFloatTypeTestScopeInventory(t *testing.T) {
 			msgs = append(msgs, f.Rule+": "+f.Message)
 		}
 		t.Fatalf(
-			"math/big.Float or math/big.Rat found under a _test.go file in the folio8-go module root "+
+			"math/big.Float or math/big.Rat found under a _test.go file in the folio-go module root "+
 				"(AD-23, AC15) — this is a defect found, not a guard problem; add the sanctioned site to "+
 				"this inventory deliberately if it is intentional:\n%s",
 			strings.Join(msgs, "\n"))
@@ -137,7 +137,7 @@ func TestBigFloatTypeTestScopeInventory(t *testing.T) {
 // rule), never by count (D-1.3.3 amended).
 func TestBigFloatTypeFixtureScan(t *testing.T) {
 	root := repoRootFromTest(t)
-	fixtureRoot := filepath.Join(root, "folio8-go", "testdata", "lint", "no-bigfloat-type")
+	fixtureRoot := filepath.Join(root, "folio-go", "testdata", "lint", "no-bigfloat-type")
 
 	got, stats, err := ScanBigFloatTypes(fixtureRoot, false)
 	if err != nil {
@@ -165,7 +165,7 @@ func TestBigFloatTypeFixtureScan(t *testing.T) {
 // denylist rather than AD-23's whole enforcement.
 func TestBigFloatTypeFindingNamesResolvedTypeAndCoverage(t *testing.T) {
 	root := repoRootFromTest(t)
-	fixtureRoot := filepath.Join(root, "folio8-go", "testdata", "lint", "no-bigfloat-type")
+	fixtureRoot := filepath.Join(root, "folio-go", "testdata", "lint", "no-bigfloat-type")
 
 	got, _, err := ScanBigFloatTypes(fixtureRoot, false)
 	if err != nil {
@@ -221,14 +221,14 @@ func TestBigFloatTypeScanFailsLoudlyOnAnUnloadableTree(t *testing.T) {
 // second loud-failure path (D-1.3.11: packages.Load's nil top-level
 // error is not sufficient — the per-package Errors sweep is what must
 // catch this). Reuses the existing float-typed-untypecheckable fixture
-// (folio8-go/testdata/lint/float-typed-untypecheckable) rather than
+// (folio-go/testdata/lint/float-typed-untypecheckable) rather than
 // duplicating it: the fixture's job — "a tree that parses but does not
 // type-check" — is identical for both rules, and TestFloatTypedScanFailsLoudlyOnATreeThatDoesNotTypeCheck
 // already asserts its two preconditions (parses cleanly; still carries
 // the undefined symbol) independently.
 func TestBigFloatTypeScanFailsLoudlyOnATreeThatDoesNotTypeCheck(t *testing.T) {
 	root := repoRootFromTest(t)
-	fixture := filepath.Join(root, "folio8-go", "testdata", "lint", "float-typed-untypecheckable")
+	fixture := filepath.Join(root, "folio-go", "testdata", "lint", "float-typed-untypecheckable")
 
 	findings, stats, err := ScanBigFloatTypes(fixture, false)
 	if err == nil {

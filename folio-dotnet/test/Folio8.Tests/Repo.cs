@@ -29,7 +29,7 @@ namespace Folio8Tests
             while (dir != null)
             {
                 if (Directory.Exists(Path.Combine(dir.FullName, "fixtures")) &&
-                    Directory.Exists(Path.Combine(dir.FullName, "folio8-go")))
+                    Directory.Exists(Path.Combine(dir.FullName, "folio-go")))
                 {
                     return dir.FullName;
                 }
@@ -60,7 +60,7 @@ namespace Folio8Tests
         }
 
         /// <summary>
-        /// One renderable fixture as <c>folio8-go</c> recorded it into
+        /// One renderable fixture as <c>folio-go</c> recorded it into
         /// <c>folio-js/test/data/go-corpus.json</c>. It carries NO hash by
         /// design: <c>expected.json</c> stays the single source for every
         /// digest, and <see cref="ExpectedSha256"/> is what reads it.
@@ -86,7 +86,7 @@ namespace Folio8Tests
 
         /// <summary>
         /// The corpus conformance manifest, derived from Go by
-        /// <c>folio8-go/wasm/cmd/render/corpus_test.go</c> and held equal to it
+        /// <c>folio-go/wasm/cmd/render/corpus_test.go</c> and held equal to it
         /// there. Both bindings drive their byte-identity suites from this one
         /// file, so neither can quietly narrow its fixture list.
         /// </summary>
@@ -209,7 +209,7 @@ namespace Folio8Tests
 
         /// <summary>
         /// The eleven faces <c>fonts.Shipped()</c> returns, as
-        /// <c>folio8-go/fonts/fonts.go</c> names them — the same table
+        /// <c>folio-go/fonts/fonts.go</c> names them — the same table
         /// folio-js keeps in <c>scripts/faces.mjs</c>, read straight from the
         /// Go tree rather than from a package that does not exist yet
         /// (embedding is story 7).
@@ -247,7 +247,7 @@ namespace Folio8Tests
             foreach (KeyValuePair<string, string> face in ShippedFaceFiles)
             {
                 string[] segments = face.Value.Split('/');
-                set.Add(face.Key, File_("folio8-go", "fonts", segments[0], segments[1]));
+                set.Add(face.Key, File_("folio-go", "fonts", segments[0], segments[1]));
             }
             return set;
         }

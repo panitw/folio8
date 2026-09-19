@@ -1,6 +1,6 @@
 # `fixtures/colour-strokes/` — text colour and coloured strokes
 
-The golden for **DW-147**, landed before the `folio8-go/v1.0.0` tag (SPEC-client-libraries story 3).
+The golden for **DW-147**, landed before the `folio-go/v1.0.0` tag (SPEC-client-libraries story 3).
 Until it, no committed fixture declared a text `color` or a stroke colour, so the four-target
 byte-identity check had never rendered coloured ink or coloured strokes.
 

@@ -10,16 +10,16 @@ import (
 )
 
 // TestFloatTypedProductionScan is the AC2 production caller: the real
-// folio8-go tree, Tests false, asserted to report zero findings.
+// folio-go tree, Tests false, asserted to report zero findings.
 //
 // MEASURED TRANSITION, RECORDED WITH BOTH NUMBERS (AC5's red-proof).
 // Before Story 2.3a's fix to internal/fontset/fontset.go, this exact
-// invocation — ScanFloatTypedValues(<repo>/folio8-go, false) — reported
+// invocation — ScanFloatTypedValues(<repo>/folio-go, false) — reported
 // FOUR findings in ONE file: fontset.go:328 and :329 (AdvanceForRune's
 // vendor call and the read of its result) and :565 and :566 (the same
 // pair inside Subset, which builds the PDF /W width table on every
 // render that draws text). After the fix it reports ZERO. The syntactic
-// guard in folio8-go/internal/arch_test.go reported zero on BOTH sides of
+// guard in folio-go/internal/arch_test.go reported zero on BOTH sides of
 // that transition, which is the gap D-000.25 named.
 //
 // The vacuity guard reads the checker's OWN returned stats (Major 5 of
@@ -29,23 +29,23 @@ import (
 // untouched but zeroes every assertion below.
 func TestFloatTypedProductionScan(t *testing.T) {
 	root := repoRootFromTest(t)
-	moduleRoot := filepath.Join(root, "folio8-go")
+	moduleRoot := filepath.Join(root, "folio-go")
 
 	findings, stats, err := ScanFloatTypedValues(moduleRoot, false)
 	if err != nil {
-		t.Fatalf("scan folio8-go module root %s: %v", moduleRoot, err)
+		t.Fatalf("scan folio-go module root %s: %v", moduleRoot, err)
 	}
 
 	assertVisited(t, stats, ".", "internal/fontset")
 	if stats.FilesParsed == 0 {
-		t.Fatal("vacuity guard: checker's own stats report 0 files parsed under the folio8-go module root")
+		t.Fatal("vacuity guard: checker's own stats report 0 files parsed under the folio-go module root")
 	}
 	// The statistic that would make "a checker that resolved nothing"
 	// visible: a loader that produced no type information reports zero
 	// findings exactly as a clean tree does, and reports zero typed
 	// expressions, which a clean tree never does.
 	if stats.TypedExprs == 0 {
-		t.Fatal("vacuity guard: checker's own stats report 0 expressions successfully typed under the folio8-go module root")
+		t.Fatal("vacuity guard: checker's own stats report 0 expressions successfully typed under the folio-go module root")
 	}
 
 	if len(findings) > 0 {
@@ -57,7 +57,7 @@ func TestFloatTypedProductionScan(t *testing.T) {
 			}
 		}
 		t.Fatalf(
-			"float-typed value expression(s) found under the folio8-go module root (AD-23) — this is a defect found, "+
+			"float-typed value expression(s) found under the folio-go module root (AD-23) — this is a defect found, "+
 				"not a guard problem; decline the accessor, do not narrow the scan:\n%s",
 			strings.Join(msgs, "\n"))
 	}
@@ -68,7 +68,7 @@ func TestFloatTypedProductionScan(t *testing.T) {
 //
 // THIS IS AN INVENTORY, NOT AN EXEMPTION, AND THE DIFFERENCE IS THE
 // POINT. Nothing is excused by name. Adding a float-typed expression to
-// any _test.go file under folio8-go fails this test; removing one fails
+// any _test.go file under folio-go fails this test; removing one fails
 // it too. D-2.1.3's and D-000.15's rotting-list objection does not
 // attach, because a named exemption grows silently while an enumeration
 // on the page cannot.
@@ -140,19 +140,19 @@ func TestFloatTypedProductionScan(t *testing.T) {
 // thing they agree on is the stronger of the two readings.
 func TestFloatTypedTestScopeInventory(t *testing.T) {
 	root := repoRootFromTest(t)
-	moduleRoot := filepath.Join(root, "folio8-go")
+	moduleRoot := filepath.Join(root, "folio-go")
 
 	got, stats, err := ScanFloatTypedValues(moduleRoot, true)
 	if err != nil {
-		t.Fatalf("scan folio8-go module root %s with tests: %v", moduleRoot, err)
+		t.Fatalf("scan folio-go module root %s with tests: %v", moduleRoot, err)
 	}
 
 	assertVisited(t, stats, ".", "internal/fontset")
 	if stats.FilesParsed == 0 {
-		t.Fatal("vacuity guard: checker's own stats report 0 files parsed under the folio8-go module root (tests included)")
+		t.Fatal("vacuity guard: checker's own stats report 0 files parsed under the folio-go module root (tests included)")
 	}
 	if stats.TypedExprs == 0 {
-		t.Fatal("vacuity guard: checker's own stats report 0 expressions successfully typed under the folio8-go module root (tests included)")
+		t.Fatal("vacuity guard: checker's own stats report 0 expressions successfully typed under the folio-go module root (tests included)")
 	}
 
 	// Five SITES across three files. Each is sanctioned for the reason
@@ -180,13 +180,13 @@ func TestFloatTypedTestScopeInventory(t *testing.T) {
 // checker, pointed at the retained fixture tree, reports EXACTLY the
 // violating file and NOT the compliant one — by file and rule.
 //
-// The second half lives in folio8-go's own suite, where the syntactic
-// scanner lives: folio8-go/internal/arch_blindspot_test.go points
+// The second half lives in folio-go's own suite, where the syntactic
+// scanner lives: folio-go/internal/arch_blindspot_test.go points
 // findFloatOccurrences at this same violating fixture file and asserts
 // it reports zero.
 func TestFloatTypedFixtureScan(t *testing.T) {
 	root := repoRootFromTest(t)
-	fixtureRoot := filepath.Join(root, "folio8-go", "testdata", "lint", "no-float-typed-value")
+	fixtureRoot := filepath.Join(root, "folio-go", "testdata", "lint", "no-float-typed-value")
 
 	got, stats, err := ScanFloatTypedValues(fixtureRoot, false)
 	if err != nil {
@@ -217,7 +217,7 @@ func TestFloatTypedFixtureScan(t *testing.T) {
 // the checker reports moves only one side.
 func TestFloatTypedFindingNamesResolvedTypeAndPosition(t *testing.T) {
 	root := repoRootFromTest(t)
-	fixtureRoot := filepath.Join(root, "folio8-go", "testdata", "lint", "no-float-typed-value")
+	fixtureRoot := filepath.Join(root, "folio-go", "testdata", "lint", "no-float-typed-value")
 
 	got, _, err := ScanFloatTypedValues(fixtureRoot, false)
 	if err != nil {
@@ -229,7 +229,7 @@ func TestFloatTypedFindingNamesResolvedTypeAndPosition(t *testing.T) {
 
 	// The vendor accessor the violating fixture calls resolves to this
 	// type. Assembled from parts so this test file does not itself
-	// contain the identifier as a single token — folio8-go's own
+	// contain the identifier as a single token — folio-go's own
 	// module-wide syntactic guard walks _test.go files, and this file is
 	// in lint, but keeping the two modules' fixtures legible about what
 	// they do and do not spell is the point of AC3's fixture.
@@ -283,7 +283,7 @@ func TestFloatTypedScanFailsLoudlyOnAnUnloadableTree(t *testing.T) {
 // measuring the sweep.
 func TestFloatTypedScanFailsLoudlyOnATreeThatDoesNotTypeCheck(t *testing.T) {
 	root := repoRootFromTest(t)
-	fixture := filepath.Join(root, "folio8-go", "testdata", "lint", "float-typed-untypecheckable")
+	fixture := filepath.Join(root, "folio-go", "testdata", "lint", "float-typed-untypecheckable")
 	src := filepath.Join(fixture, "untypecheckable.go")
 
 	// Precondition 1: the fixture exists and is non-empty.

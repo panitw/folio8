@@ -15,10 +15,10 @@ context:
 
 ## Intent
 
-**Problem:** Node code can't reach the folio8 engine without shelling out to the CLI. The only wasm build, `folio8-go/wasm/cmd/engine`, is the designer's stateful Load/Apply loop. It has 8 MiB input caps and fonts compiled in, so it is not a render API.
+**Problem:** Node code can't reach the folio8 engine without shelling out to the CLI. The only wasm build, `folio-go/wasm/cmd/engine`, is the designer's stateful Load/Apply loop. It has 8 MiB input caps and fonts compiled in, so it is not a render API.
 
 **Approach:**
-- Add a stateless, render-oriented js/wasm entry to `folio8-go` whose font set is passed in by the caller.
+- Add a stateless, render-oriented js/wasm entry to `folio-go` whose font set is passed in by the caller.
 - Add a new top-level `folio-js/` package: a promise-based TypeScript API over that entry, matching `api-surface.md` exactly (CAP-1, CAP-2).
 - Packaging and the embedded `fonts.shipped()` belong to story 5.
 
@@ -47,7 +47,7 @@ context:
 - **Byte identity:** a render through folio-js yields the same SHA-256 as the committed `expected.json` for the same inputs. Nothing in `folio-js` lays out, shapes or emits PDF.
 - **Determinism:** no clock, environment, network or filesystem input, except inside `loadTemplate`, which reads the one path it is given.
 - **Wasm entry:**
-  - The entry is `package main` under `folio8-go/wasm/cmd/render/` (`js && wasm`). It calls only the public `folio8` API and does **not** import `fonts`.
+  - The entry is `package main` under `folio-go/wasm/cmd/render/` (`js && wasm`). It calls only the public `folio8` API and does **not** import `fonts`.
   - No size caps beyond what wasm memory allows.
   - Bytes cross the boundary with `js.CopyBytesToGo` / `js.CopyBytesToJS`, not base64.
   - It is built with the go.mod toolchain as `GOOS=js GOARCH=wasm go build -buildvcs=false`.
@@ -79,21 +79,21 @@ context:
 
 ## Code Map
 
-- `folio8-go/render_entry.go:160,246`: `Render` and `RenderTo`. RenderTo renders fully and then writes once. `validate.go:52`, `folio8.go:54,80`, `parameter_references.go:22`.
-- `folio8-go/diagnostic.go:75,391,461`: `Severity.String()` is `Warning`/`Error`, so lowercase it. `Diagnostic` has no JSON tags. `render_error.go:47`: `RenderError{Diagnostic; Err}`.
-- `folio8-go/wasm/cmd/engine/main.go:22-96`: the precedent for the `js.Global().Set` host object and `select {}`. Reuse the diagnostic JSON shape at :62-68 and the severity mapping at :358-370. Don't reuse its request type, its caps or `internal/wasm`.
-- `folio8-go/public_surface_census_test.go:219-262`: a `package main` anywhere passes. A non-main helper package would fail, so keep the entry one `main` package.
-- `folio8-designer/scripts/build-wasm.mjs:19-23,38` and `wasm-vcs-stamp.mjs:60-64`: the build command and the `wasm_exec.js` lookup. Copy the approach into `folio-js/scripts/build-wasm.mjs`, whose output is git-ignored.
-- `folio8-designer/src/engine.worker.ts:41-47`: `new Go()`, instantiate, `go.run` without await, then read the global. Under Node, instantiate from `fs.readFile` bytes.
-- `folio8-go/fonts/fonts.go:159-172`: face name → embedded file. Tests build the same `Map` by reading `folio8-go/fonts/<dir>/*.ttf` with that name table.
+- `folio-go/render_entry.go:160,246`: `Render` and `RenderTo`. RenderTo renders fully and then writes once. `validate.go:52`, `folio8.go:54,80`, `parameter_references.go:22`.
+- `folio-go/diagnostic.go:75,391,461`: `Severity.String()` is `Warning`/`Error`, so lowercase it. `Diagnostic` has no JSON tags. `render_error.go:47`: `RenderError{Diagnostic; Err}`.
+- `folio-go/wasm/cmd/engine/main.go:22-96`: the precedent for the `js.Global().Set` host object and `select {}`. Reuse the diagnostic JSON shape at :62-68 and the severity mapping at :358-370. Don't reuse its request type, its caps or `internal/wasm`.
+- `folio-go/public_surface_census_test.go:219-262`: a `package main` anywhere passes. A non-main helper package would fail, so keep the entry one `main` package.
+- `folio-designer/scripts/build-wasm.mjs:19-23,38` and `wasm-vcs-stamp.mjs:60-64`: the build command and the `wasm_exec.js` lookup. Copy the approach into `folio-js/scripts/build-wasm.mjs`, whose output is git-ignored.
+- `folio-designer/src/engine.worker.ts:41-47`: `new Go()`, instantiate, `go.run` without await, then read the global. Under Node, instantiate from `fs.readFile` bytes.
+- `folio-go/fonts/fonts.go:159-172`: face name → embedded file. Tests build the same `Map` by reading `folio-go/fonts/<dir>/*.ttf` with that name table.
 - `fixtures/*/expected.json`, `input.folio`, `data.json`, `params.json`: the golden inputs. Pick fixtures whose Go golden test renders with exactly `fonts.Shipped()`.
-- `folio8-designer/package.json` and `tsconfig*.json`: TypeScript 5.9.3, vitest 4.1.11, oxlint 1.79.0 and `@types/node` 24.13.3 as the dev toolchain precedent.
+- `folio-designer/package.json` and `tsconfig*.json`: TypeScript 5.9.3, vitest 4.1.11, oxlint 1.79.0 and `@types/node` 24.13.3 as the dev toolchain precedent.
 - `.github/workflows/ci.yml:309-340`: the Node job shape (`setup-node` 24.16.0 and the go.mod toolchain); nothing picks up `folio-js/` today.
 
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `folio8-go/wasm/cmd/render/main.go` -- a stateless js/wasm host exposing parse, render, validate and parameterReferences over copied bytes and a font map; return a JSON envelope (`ok`, `pdf` length or bytes via CopyBytesToJS, `diagnostics`, or `error{diagnostic|message}`) -- the render-oriented engine entry
+- [ ] `folio-go/wasm/cmd/render/main.go` -- a stateless js/wasm host exposing parse, render, validate and parameterReferences over copied bytes and a font map; return a JSON envelope (`ok`, `pdf` length or bytes via CopyBytesToJS, `diagnostics`, or `error{diagnostic|message}`) -- the render-oriented engine entry
 - [ ] `folio-js/package.json`, `tsconfig.json`, `.gitignore`, `scripts/build-wasm.mjs` -- ESM package `folio-js`, `build` = build-wasm + tsc emit to `dist/` with declarations, `test` = vitest, `lint` = oxlint -- the package skeleton
 - [ ] `folio-js/src/{index,engine,template,errors,types}.ts` -- lazy shared instance, argument checks, conversion, the Promise API and `FolioRenderError` -- CAP-1 and CAP-2
 - [ ] `folio-js/test/*.test.ts` -- cover every I/O matrix row. Golden hashes for at least three fixtures, including `colour-strokes` and one Thai-shaping fixture. Warning parity against a Go-generated expectation for the same inputs, recorded in a test-data file produced by a small Go test or `cmd/folio8 validate`. -- proves byte and diagnostic parity
@@ -101,7 +101,7 @@ context:
 
 **Acceptance Criteria:**
 - Given a clean checkout with Go 1.26.0 and Node 24, when `cd folio-js && npm ci && npm run build && npm test` runs, then every test passes and the golden hashes match.
-- Given the repo, when `cd folio8-go && go vet ./... && go test ./...` runs and `GOOS=js GOARCH=wasm go vet ./wasm/cmd/render` runs, then both are green and every golden hash is unchanged.
+- Given the repo, when `cd folio-go && go vet ./... && go test ./...` runs and `GOOS=js GOARCH=wasm go vet ./wasm/cmd/render` runs, then both are green and every golden hash is unchanged.
 - Given `folio-js/src`, when searched, then it contains no layout, shaping or PDF logic, and `package.json` has no `dependencies`.
 
 ## Spec Change Log
@@ -136,7 +136,7 @@ context:
 
 - **Validate with an absent path rejects; it does not resolve.** Go's `Validate` returns a `*RenderError` (`BINDING_PATH_ABSENT`) for an absent data path and never puts an `error`-severity entry in its slice. folio-js follows Go verbatim (the Always rule), so the I/O matrix's "resolved rather than thrown" wording for that input does not hold; `go-parity.json` records Go's rejection and the test asserts it.
 - `version` is a synchronous `const` string (`src/version.ts`); a test holds it equal to the wasm host's `folio8.Version`.
-- Go parity expectations live in `folio-js/test/data/go-parity.json`, generated and drift-checked by `folio8-go/wasm/cmd/render/parity_test.go` (`FOLIO8_UPDATE_JS_PARITY=1` rewrites it).
+- Go parity expectations live in `folio-js/test/data/go-parity.json`, generated and drift-checked by `folio-go/wasm/cmd/render/parity_test.go` (`FOLIO8_UPDATE_JS_PARITY=1` rewrites it).
 - The package is marked `private: true` so it cannot be published before story 5.
 
 ## Design Notes
@@ -148,6 +148,6 @@ context:
 ## Verification
 
 **Commands:**
-- `cd folio8-go && go vet ./... && go test -count=1 -skip '^TestCorpusMeetsP6ExerciseFloors$' ./...` -- expected: green
-- `cd folio8-go && GOOS=js GOARCH=wasm go vet ./wasm/cmd/render` -- expected: clean
+- `cd folio-go && go vet ./... && go test -count=1 -skip '^TestCorpusMeetsP6ExerciseFloors$' ./...` -- expected: green
+- `cd folio-go && GOOS=js GOARCH=wasm go vet ./wasm/cmd/render` -- expected: clean
 - `cd folio-js && npm ci && npm run build && npm run lint && npm test` -- expected: green, golden hashes equal

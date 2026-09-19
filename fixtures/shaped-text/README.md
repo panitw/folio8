@@ -6,7 +6,7 @@ precedent: add a document, never switch one).
 
 | file | what it is |
 |---|---|
-| `input.folio` | the source document. Kept **byte-identical** to `folio8-go/shapedTextTemplateJSON` (`render_test.go`); `TestShapedTextGoldenFixture` fails if they drift. |
+| `input.folio` | the source document. Kept **byte-identical** to `folio-go/shapedTextTemplateJSON` (`render_test.go`); `TestShapedTextGoldenFixture` fails if they drift. |
 | `expected.json` | the **normative** hash, plus the recorded `folio8GoVersion` and `goToolchain`. |
 | `expected.pdf` | the rendered document, for **human diffing only**. Its own SHA-256 is asserted to equal `expected.json`'s, so the two halves cannot drift apart. |
 | `harfbuzz-oracle.json` | the independent cross-validation oracle — see below. |
@@ -120,7 +120,7 @@ whether Thai *reads correctly to someone who reads Thai*.
 
 **The obligation is tracked by a failing test, not by this paragraph.**
 `TestShapedTextThaiSemanticSignOffIsRecorded`
-(`folio8-go/shaped_signoff_matrix_test.go`) is gated behind the `matrix` build tag, exactly as the
+(`folio-go/shaped_signoff_matrix_test.go`) is gated behind the `matrix` build tag, exactly as the
 cross-target matrix legs are. Story 2.3 therefore commits green, and **the Epic 2 boundary gate
 cannot pass** until this directory contains `thai-signoff.json`:
 
@@ -160,11 +160,11 @@ almost nothing while remaining livable.
 
 ## `harfbuzz-oracle.json` — the independent cross-validation
 
-The frozen expectation table in `folio8-go/shaping_expectations_test.go` is cross-validated against
+The frozen expectation table in `folio-go/shaping_expectations_test.go` is cross-validated against
 **HarfBuzz itself** — the reference implementation, not a sibling port.
 
 This is a **one-time offline reference run, hand-checked, frozen here. HarfBuzz is never a build,
-test or runtime dependency of `folio8-go`**: the module graph is unchanged and
+test or runtime dependency of `folio-go`**: the module graph is unchanged and
 `TestModuleGraphAllowlist` is untouched (AD-25 permits exactly this; Story 1.1 set the precedent
 with `qpdf --check`).
 
@@ -217,5 +217,5 @@ recording machine, hand-checked, output pasted here. It is never a runtime or CI
 `TestModuleGraphAllowlist`), and it is deliberately **not** gated to "the legs that have qpdf": a check
 that runs on some legs and not others reproduces D-000.9's failure — an "all clear" indistinguishable
 from "I could not look" — one level up, at the leg. The standing every-leg regression guard is the
-in-repo checker `folio8-go/golden_structural_validity_test.go`, which is hermetic and covers all four
+in-repo checker `folio-go/golden_structural_validity_test.go`, which is hermetic and covers all four
 targets including `js-wasm`.

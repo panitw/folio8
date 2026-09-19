@@ -25,7 +25,7 @@ const RuleWordlistAssetMissing = "wordlist-asset-missing"
 // is negotiable, the shape is not; widening this to every asset
 // location in the repository is D-1.8.11's full inversion and is
 // explicitly out of scope here).
-const wordlistAssetLocation = "folio8-go/internal/text/wordlist"
+const wordlistAssetLocation = "folio-go/internal/text/wordlist"
 
 // wordlistExpectedFiles is every file AD-26 requires (or this story's
 // own provenance record adds) at wordlistAssetLocation today: the

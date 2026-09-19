@@ -6,26 +6,26 @@ cross-target matrix can actually detect FMA contraction, rather than merely neve
 seen one — **and nothing else** (D-1.2.3 (amended)).
 
 The **harness driver** that builds, runs and compares across all four targets lives in
-`folio8-go/matrix_test.go` (`//go:build matrix`), *not here*. An earlier ruling (D-1.2.3)
+`folio-go/matrix_test.go` (`//go:build matrix`), *not here*. An earlier ruling (D-1.2.3)
 placed the driver in this module too, for cohesion; that placement was withdrawn once it
 was checked against what the driver actually needs: `assertWellFormedPDF`,
-`firstDivergence` and `repoRootFromTest`, all unexported helpers in `folio8-go`'s own
+`firstDivergence` and `repoRootFromTest`, all unexported helpers in `folio-go`'s own
 `package folio8` test scope. A driver living here would either duplicate those — a second
-copy of the project's determinism diagnostic, free to drift silently — or force `folio8-go`
+copy of the project's determinism diagnostic, free to drift silently — or force `folio-go`
 to export test-only scaffolding as public API. Neither was worth buying cohesion that was
-only ever wanted for tidiness, so the driver stays in `folio8-go`, and only the probe —
+only ever wanted for tidiness, so the driver stays in `folio-go`, and only the probe —
 the thing that actually needs to be out of the guards' reach — lives here.
 
 This module is a **separate Go module** — `module github.com/panitw/folio8/hashmatrix` —
-with **zero dependencies**, and it has **no dependency on `folio8-go`**: no `require`, no
+with **zero dependencies**, and it has **no dependency on `folio-go`**: no `require`, no
 `replace`, no `go.work`. It does not need one. Render capture for the matrix goes through
-`folio8-go`'s own compiled *test binary*, driven by the `FOLIO8_SUBPROCESS_RENDER` and
-`FOLIO8_SUBPROCESS_TOOLCHAIN` seams in `folio8-go/render_test.go`, not through an import.
+`folio-go`'s own compiled *test binary*, driven by the `FOLIO8_SUBPROCESS_RENDER` and
+`FOLIO8_SUBPROCESS_TOOLCHAIN` seams in `folio-go/render_test.go`, not through an import.
 
-## Why this module exists, and why it is not inside `folio8-go`
+## Why this module exists, and why it is not inside `folio-go`
 
-`folio8-go/internal/arch_test.go` (`TestNoFloat64UnderInternal`) fails the build on the mere
-*identifier* `float64` anywhere under `folio8-go/internal/` — including in a bare
+`folio-go/internal/arch_test.go` (`TestNoFloat64UnderInternal`) fails the build on the mere
+*identifier* `float64` anywhere under `folio-go/internal/` — including in a bare
 conversion, and regardless of build tags, because it parses every file with `go/parser`
 rather than compiling it. Story 1.3's AD-1 import lint lands next with the same reach.
 Story 1.2's negative test (AC8–AC10) needs a *retained*, deliberately-introduced float64
@@ -40,9 +40,9 @@ lint to carve out an exception for `fixtures/`, which is exactly the exemption-l
 this placement avoids.
 
 `hashmatrix/` is a repo-root module (a D-000.6 spine amendment; see
-`ARCHITECTURE-SPINE.md` §Source tree), deliberately outside `folio8-go`, so the `float64`
+`ARCHITECTURE-SPINE.md` §Source tree), deliberately outside `folio-go`, so the `float64`
 AST guard and Story 1.3's AD-1 lint exclude it **by construction** — both bind
-`folio8-go/internal/` positively and never mention `hashmatrix/`, so there is nothing to
+`folio-go/internal/` positively and never mention `hashmatrix/`, so there is nothing to
 exempt and nothing to erode.
 
 ## `probe/`
@@ -74,11 +74,11 @@ because this module's only package is `main` at `./probe`, and `go build ./...` 
 `-o` tries to write a binary literally named `probe` into the module root, where the
 `probe/` directory already sits. This is a naming collision, not a build defect: build a
 specific output path instead, e.g. `go build -o /tmp/probe ./probe` (which is exactly what
-`folio8-go/matrix_test.go`'s `buildProbeBinary` does).
+`folio-go/matrix_test.go`'s `buildProbeBinary` does).
 
 ## Do not
 
-- Do not add a `require` on `folio8-go`, a `replace` directive, or a `go.work` file.
+- Do not add a `require` on `folio-go`, a `replace` directive, or a `go.work` file.
 - Do not add `expected.json` or any recorded probe hash to this module or to `fixtures/`.
 - Do not "fix" a red probe test by hard-coding its operands as literals (this is the
-  vacuity guard 9 mistake — see `folio8-go/matrix_test.go`'s `TestFMAProbeDiverges`).
+  vacuity guard 9 mistake — see `folio-go/matrix_test.go`'s `TestFMAProbeDiverges`).

@@ -1,13 +1,13 @@
 # Fixture: minimal-rect
 
-This fixture is the golden record for Story 1.1 — the first PDF `folio8-go` ever produced: a
+This fixture is the golden record for Story 1.1 — the first PDF `folio-go` ever produced: a
 single A4 page containing one filled rectangle, rendered with no compression, no `/Info`
 dictionary, and no `/CreationDate` or `/ModDate` (AD-7).
 
 ## Contents
 
 - `expected.json` — the normative record. It carries the SHA-256 of the rendered bytes, the
-  `folio8-go` version (`folio8GoVersion`) and the exact Go toolchain version (`goToolchain`) that
+  `folio-go` version (`folio8GoVersion`) and the exact Go toolchain version (`goToolchain`) that
   produced the hash. The hash is what tests compare against; the toolchain field exists so a test
   can detect and refuse a toolchain drift (see below) rather than silently re-measuring against it.
 - `expected.pdf` — the recorded bytes, kept for human diffing only. **The hash in `expected.json`
@@ -48,5 +48,5 @@ recording machine, hand-checked, output pasted here. It is never a runtime or CI
 `TestModuleGraphAllowlist`), and it is deliberately **not** gated to "the legs that have qpdf": a check
 that runs on some legs and not others reproduces D-000.9's failure — an "all clear" indistinguishable
 from "I could not look" — one level up, at the leg. The standing every-leg regression guard is the
-in-repo checker `folio8-go/golden_structural_validity_test.go`, which is hermetic and covers all four
+in-repo checker `folio-go/golden_structural_validity_test.go`, which is hermetic and covers all four
 targets including `js-wasm`.

@@ -31,7 +31,7 @@ old file was **invalid** and had to be amended. (An UNREFERENCED font asset is u
 rule and still loads with no record at all.)
 
 Neither new value is written down. `licenceText` is
-`folio8-go/fonts/notosansthai/LICENSE-OFL.txt` verbatim, embedded into the test binary beside the
+`folio-go/fonts/notosansthai/LICENSE-OFL.txt` verbatim, embedded into the test binary beside the
 face itself, and `copyright` is that file's own first line — so the document's terms and the terms
 committed beside the bytes cannot disagree. A hand-copied licence would be a second authority on
 what the terms are, which is the exact failure this rule exists to prevent.
@@ -43,10 +43,10 @@ derives none of it from the bytes and none of it is required to render, and Stor
 measurement found the produced PDF carries no `name` table at all. All 23 golden digests hold.
 
 The bytes are the **shipped** Noto Sans Thai
-(`folio8-go/fonts/notosansthai/NotoSansThai-Regular.ttf`), embedded here as an asset rather than
+(`folio-go/fonts/notosansthai/NotoSansThai-Regular.ttf`), embedded here as an asset rather than
 supplied through the `FontSet`. **No new binary entered the repository for this fixture**, and
 `input.folio` is not hand-transcribed: `embeddedFontTemplateJSON()`
-(`folio8-go/embedded_font_fixture_test.go`) derives it from those shipped bytes by the format's own
+(`folio-go/embedded_font_fixture_test.go`) derives it from those shipped bytes by the format's own
 rules, and `TestEmbeddedFontFixtureMatchesInputFolio8` pins the committed file against it.
 
 ## The text is pure Thai, and that is the whole measurement
@@ -109,10 +109,10 @@ build never subsets it.
 **The designer canvas *painting* with the carried face.** The engine now **measures** with it — the
 canvas paint projection's fragment origins and advances come from the render path's own
 `fontChain`/`shapeSegments`/`chainVerticalModel`, asserted by
-`folio8-go/canvas_embedded_face_test.go` — but the browser has **no CSS family for a carried face at
+`folio-go/canvas_embedded_face_test.go` — but the browser has **no CSS family for a carried face at
 all** and falls through to generic `sans-serif`. That is **Story 8.4a** (DW-35), and the gap is
 recorded by a test rather than by a comment:
-`folio8-designer/src/canvas-font-stack.test.ts`.
+`folio-designer/src/canvas-font-stack.test.ts`.
 
 ## Files
 

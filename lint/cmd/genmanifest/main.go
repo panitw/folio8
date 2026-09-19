@@ -48,14 +48,14 @@ func findRepoRoot() (string, error) {
 		return "", err
 	}
 	for {
-		if info, err := os.Stat(filepath.Join(dir, "folio8-go")); err == nil && info.IsDir() {
+		if info, err := os.Stat(filepath.Join(dir, "folio-go")); err == nil && info.IsDir() {
 			if info2, err := os.Stat(filepath.Join(dir, "lint")); err == nil && info2.IsDir() {
 				return dir, nil
 			}
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			return "", fmt.Errorf("could not find repo root (a directory containing both folio8-go/ and lint/) walking up from %s", dir)
+			return "", fmt.Errorf("could not find repo root (a directory containing both folio-go/ and lint/) walking up from %s", dir)
 		}
 		dir = parent
 	}

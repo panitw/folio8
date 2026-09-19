@@ -10,7 +10,7 @@ import (
 )
 
 // RuleStageRank is this guard's stable rule id (D-000.16): a
-// stage-rank violation — a package under folio8-go/internal/ importing
+// stage-rank violation — a package under folio-go/internal/ importing
 // another internal package of EQUAL OR HIGHER rank — or an internal
 // package that carries no rank at all.
 const RuleStageRank = "stage-rank"
@@ -28,7 +28,7 @@ const RuleStageRank = "stage-rank"
 // as a parameter.
 //
 // stageRankTable is the table, keyed by the package's DIRECTORY
-// relative to the scanned root (folio8-go/internal/). A package may
+// relative to the scanned root (folio-go/internal/). A package may
 // import only a STRICTLY LOWER rank; equal ranks may not import each
 // other, so two rank-1 siblings stay independent.
 //
@@ -69,7 +69,7 @@ var stageRankTable = []stageRank{
 	{"pdf", 8},
 	{"wasm", 9}, // spec-client-libraries story 1: the designer's session engine; a shell above every stage, importing designer
 
-	// "." is the scan root itself — folio8-go/internal/, which holds the
+	// "." is the scan root itself — folio-go/internal/, which holds the
 	// test-only `arch` fitness package (no non-test files; it exists to
 	// assert properties no single package's own tests can see past their
 	// directory). It is NOT a pipeline stage, so it is ranked BELOW

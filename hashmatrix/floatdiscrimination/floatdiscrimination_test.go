@@ -1,26 +1,26 @@
 // Package floatdiscrimination is Story 3.3's AC10 demonstration
-// (D-3.3.7), landed here rather than under folio8-go/ because there is
+// (D-3.3.7), landed here rather than under folio-go/ because there is
 // no location under that module where a landed, executing float64
-// mutant can live: folio8-go/internal/arch_test.go's Layer 1 walks
-// EVERY .go file under folio8-go/, including _test.go, flagging the
+// mutant can live: folio-go/internal/arch_test.go's Layer 1 walks
+// EVERY .go file under folio-go/, including _test.go, flagging the
 // bare identifier float64/float32 and any token.FLOAT literal, with no
 // allowlist mechanism at all; lint/internal/rules/floattyped.go's Layer
-// 2 is pointed at the folio8-go module root in both scopes. Both name
-// folio8-go/ positively and have nothing to exempt (D-3.1a.1 corrected,
+// 2 is pointed at the folio-go module root in both scopes. Both name
+// folio-go/ positively and have nothing to exempt (D-3.1a.1 corrected,
 // D-000.24: no exemption is ever added to either layer).
 //
 // hashmatrix/ is the established escape hatch: hashmatrix/probe/main.go
 // (Story 1.2, AC8) already states the rationale this package reuses —
-// no require, no replace, no go.work entry naming folio8-go, and never
+// no require, no replace, no go.work entry naming folio-go, and never
 // imported by it, so it sits outside AD-23's scope BY CONSTRUCTION.
-// This package adds NO dependency on folio8-go (go.mod is untouched):
+// This package adds NO dependency on folio-go (go.mod is untouched):
 // the zero-dependency property is the legality argument, not a
 // convenience, so D-000.61's corpus A is restated here as plain
 // (coefficient, exponent) integer pairs rather than imported as
-// folio8-go/internal/expr.Decimal values.
+// folio-go/internal/expr.Decimal values.
 //
 // The exact total is pinned as the SAME literal
-// folio8-go/internal/bind/aggregate_precision_test.go's
+// folio-go/internal/bind/aggregate_precision_test.go's
 // TestSumIsExactOnD00061CorpusA asserts —
 // {Coefficient: 1234567890123488, Exponent: -2} — two INDEPENDENT
 // producers agreeing on one pinned side, never two live computations
@@ -96,9 +96,9 @@ func reversed(in []int64) []int64 {
 }
 
 // TestValueLevelFloat64MutantMissesExactAnswerInDeclaredOrder is AC10's
-// value-assertion half, measured live against folio8-go's own
+// value-assertion half, measured live against folio-go's own
 // SumDecimals in this story's finisher pass (working-tree mutation,
-// reverted before commit — never landed under folio8-go/) before being
+// reverted before commit — never landed under folio-go/) before being
 // pinned here as a permanent, dependency-free demonstration: forward
 // (declared) order produced {Coefficient: 1234567890123487}, one
 // satang short of the exact {1234567890123488}.

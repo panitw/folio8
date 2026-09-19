@@ -16,7 +16,7 @@ const RuleResolverMethodSetClosed = "resolver-method-set-closed"
 // rule covers expr.Resolver's method SET (names and full signatures,
 // including any method contributed through an embedded interface) —
 // nothing else. Story 3.3's own AST-only guard,
-// folio8-go/internal/expr_arch_test.go's TestExprResolverMethodSetIsClosed,
+// folio-go/internal/expr_arch_test.go's TestExprResolverMethodSetIsClosed,
 // covers the closed NAME set and is unaffected; this rule exists
 // because that one cannot (D-3.1a.1's own precedent: "a pure AST walk
 // with no type information ... cannot resolve a type identity").
@@ -58,17 +58,17 @@ type ResolverMethodSetStats struct {
 
 // ScanResolverMethodSet loads the package declared in dir (the
 // DIRECTORY that declares a "Resolver" interface — the production
-// caller points this at folio8-go/internal/expr; a fixture red-proof
+// caller points this at folio-go/internal/expr; a fixture red-proof
 // points it directly at a fixture directory shaped the same way) WITH
 // TYPE INFORMATION, and asserts the Resolver interface's method set is
 // EXACTLY expectedResolverMethods, both by name and by full signature
 // (AC5, AC22, Story 3.3 finisher pass, Finding 2).
 //
-// Placed in lint (not folio8-go/internal/expr_arch_test.go), because
+// Placed in lint (not folio-go/internal/expr_arch_test.go), because
 // this rule needs go/types to resolve a method's actual signature and
 // to expand an embedded interface's contribution to the method set —
 // exactly the dependency D-1.3.11 already settled belongs in lint, not
-// in a dependency-free arch test under folio8-go/ (D-1.3.6).
+// in a dependency-free arch test under folio-go/ (D-1.3.6).
 func ScanResolverMethodSet(dir string) ([]Finding, ResolverMethodSetStats, error) {
 	cfg := &packages.Config{
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax |

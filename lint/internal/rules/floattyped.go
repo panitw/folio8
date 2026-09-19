@@ -19,7 +19,7 @@ const RuleNoFloatTypedValue = "no-float-typed-value"
 // FloatTypedStats reports what ScanFloatTypedValues actually examined,
 // taken from the scanner's OWN execution rather than a second,
 // independent walk (Major 5 of Story 1.3's QA review; the same reasoning
-// MapRangeStats and folio8-go's noFloat64Stats carry). A vacuity guard
+// MapRangeStats and folio-go's noFloat64Stats carry). A vacuity guard
 // built by re-deriving "there were files under this root" a different
 // way cannot see a scanner that silently does nothing: injecting
 // `if true { return nil, FloatTypedStats{}, nil }` as this checker's
@@ -49,13 +49,13 @@ type FloatTypedStats struct {
 // tree.
 //
 // WHY IT EXISTS (D-000.25, Finding 1). AD-23 promises "no float
-// arithmetic under internal/" and folio8-go/internal/arch_test.go
+// arithmetic under internal/" and folio-go/internal/arch_test.go
 // delivers "no float IDENTIFIERS, and no floating-point literals". Those
 // differ by exactly one thing that matters: a value whose float type is
 // INFERRED. `int64(someVendorCall())` names neither banned identifier
 // and contains no floating-point literal, so the syntactic scanner walks
 // straight past it. Measured at 431a6a5: the syntactic guard reported
-// zero under folio8-go while four float-typed value expressions stood in
+// zero under folio-go while four float-typed value expressions stood in
 // internal/fontset/fontset.go.
 //
 // DETECTION IS BY TYPE, NEVER BY SPELLING, AND COVERS THE CLASS RATHER
@@ -71,10 +71,10 @@ type FloatTypedStats struct {
 // D-1.3.11 gives: a one-directory-at-a-time type-check with a tolerant
 // importer resolves a cross-package type to "no information" and
 // silently reports nothing. golang.org/x/tools is lint's own dependency
-// and never touches folio8-go's module graph.
+// and never touches folio-go's module graph.
 //
 // includeTests selects packages.Config.Tests. AD-23's existing scope
-// INCLUDES _test.go files (folio8-go's walkGoFiles skips only testdata
+// INCLUDES _test.go files (folio-go's walkGoFiles skips only testdata
 // and dot-directories), so a rule that could not see them would be
 // strictly weaker in file scope than the guard it strengthens.
 //
@@ -185,7 +185,7 @@ func ScanFloatTypedValues(root string, includeTests bool) ([]Finding, FloatTyped
 					// tv.IsBuiltin(), never a list of builtin names —
 					// before the unresolved-type check below. Measured
 					// at 431a6a5: `len(buf)` in
-					// folio8-go/internal/template/decimal.go:260 is one
+					// folio-go/internal/template/decimal.go:260 is one
 					// such site. A builtin is never a value expression,
 					// so it can never be the float this rule looks for.
 					return true
@@ -216,7 +216,7 @@ func ScanFloatTypedValues(root string, includeTests bool) ([]Finding, FloatTyped
 					Line: pos.Line,
 					Message: fmt.Sprintf(
 						"%s:%d:%d: this value expression has floating-point type %s (resolved by go/types, not spelled in the source) — "+
-							"AD-23 forbids float arithmetic under folio8-go, and the syntactic no-float64 guard cannot see an inferred float",
+							"AD-23 forbids float arithmetic under folio-go, and the syntactic no-float64 guard cannot see an inferred float",
 						rel, pos.Line, pos.Column, tv.Type.String()),
 				})
 				return true

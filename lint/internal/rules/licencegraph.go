@@ -66,12 +66,12 @@ func ScanLicenceGraph(moduleDir string) ([]Finding, error) {
 }
 
 // ScanNPMGraph extends AD-26 to every direct and transitive dependency named
-// by folio8-designer/package-lock.json. Resolution is lockfile-first and local;
+// by folio-designer/package-lock.json. Resolution is lockfile-first and local;
 // absent or unclassifiable metadata is a finding, never a warning or skip.
 func ScanNPMGraph(designerDir string) ([]Finding, error) {
 	packages, err := licence.ResolveNPMGraph(designerDir)
 	if err != nil {
-		return []Finding{{Path: "folio8-designer/package-lock.json", Rule: RuleLicence, Message: "npm licence graph unresolvable: " + err.Error()}}, nil
+		return []Finding{{Path: "folio-designer/package-lock.json", Rule: RuleLicence, Message: "npm licence graph unresolvable: " + err.Error()}}, nil
 	}
 	var findings []Finding
 	for _, p := range packages {
@@ -89,7 +89,7 @@ func ScanNPMGraph(designerDir string) ([]Finding, error) {
 func ScanPDFJSNotice(designerDir string) ([]Finding, error) {
 	packages, err := licence.ResolveNPMGraph(designerDir)
 	if err != nil {
-		return []Finding{{Path: "folio8-designer/package-lock.json", Rule: RuleLicence, Message: "npm licence graph unresolvable: " + err.Error()}}, nil
+		return []Finding{{Path: "folio-designer/package-lock.json", Rule: RuleLicence, Message: "npm licence graph unresolvable: " + err.Error()}}, nil
 	}
 	for _, p := range packages {
 		if p.Path != "pdfjs-dist" {
@@ -102,7 +102,7 @@ func ScanPDFJSNotice(designerDir string) ([]Finding, error) {
 		for _, name := range []string{"NOTICE", "LICENSE-APACHE-2.0", "LICENSE-CMAPS", "LICENSE-LIBERATION"} {
 			contents, err := os.ReadFile(filepath.Join(noticeRoot, name))
 			if err != nil || len(contents) == 0 {
-				return []Finding{{Path: "folio8-designer/third-party-notices/pdfjs-dist/" + name, Rule: RuleLicence, Message: "pdfjs-dist is present but its required copied-asset license material is missing"}}, nil
+				return []Finding{{Path: "folio-designer/third-party-notices/pdfjs-dist/" + name, Rule: RuleLicence, Message: "pdfjs-dist is present but its required copied-asset license material is missing"}}, nil
 			}
 		}
 	}

@@ -26,7 +26,7 @@ func TestResolverMethodSetCoverageStatementWording(t *testing.T) {
 // internal/expr.Resolver interface, asserted to report zero findings.
 func TestResolverMethodSetProductionScan(t *testing.T) {
 	root := repoRootFromTest(t)
-	exprDir := filepath.Join(root, "folio8-go", "internal", "expr")
+	exprDir := filepath.Join(root, "folio-go", "internal", "expr")
 
 	findings, stats, err := ScanResolverMethodSet(exprDir)
 	if err != nil {
@@ -49,7 +49,7 @@ func TestResolverMethodSetProductionScan(t *testing.T) {
 // interface it happens to see.
 func TestResolverMethodSetCompliantFixtureIsClean(t *testing.T) {
 	root := repoRootFromTest(t)
-	fixtureDir := filepath.Join(root, "folio8-go", "testdata", "lint", "resolver-method-set", "compliant")
+	fixtureDir := filepath.Join(root, "folio-go", "testdata", "lint", "resolver-method-set", "compliant")
 
 	findings, stats, err := ScanResolverMethodSet(fixtureDir)
 	if err != nil {
@@ -67,11 +67,11 @@ func TestResolverMethodSetCompliantFixtureIsClean(t *testing.T) {
 // (evasion 1, Finding 2): ProjectCollection widened with an
 // offset/limit parameter, under its OWN unchanged name, must trip this
 // rule even though the AST-only name-list guard
-// (TestExprResolverMethodSetIsClosed, folio8-go/internal/expr_arch_test.go)
+// (TestExprResolverMethodSetIsClosed, folio-go/internal/expr_arch_test.go)
 // cannot see it — a name list has no notion of a parameter.
 func TestResolverMethodSetRedProofWidenedSignature(t *testing.T) {
 	root := repoRootFromTest(t)
-	fixtureDir := filepath.Join(root, "folio8-go", "testdata", "lint", "resolver-method-set", "widened-signature")
+	fixtureDir := filepath.Join(root, "folio-go", "testdata", "lint", "resolver-method-set", "widened-signature")
 
 	findings, _, err := ScanResolverMethodSet(fixtureDir)
 	if err != nil {
@@ -103,7 +103,7 @@ func TestResolverMethodSetRedProofWidenedSignature(t *testing.T) {
 // definition).
 func TestResolverMethodSetRedProofEmbeddedInterface(t *testing.T) {
 	root := repoRootFromTest(t)
-	fixtureDir := filepath.Join(root, "folio8-go", "testdata", "lint", "resolver-method-set", "embedded-interface")
+	fixtureDir := filepath.Join(root, "folio-go", "testdata", "lint", "resolver-method-set", "embedded-interface")
 
 	findings, stats, err := ScanResolverMethodSet(fixtureDir)
 	if err != nil {

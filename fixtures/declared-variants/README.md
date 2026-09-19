@@ -8,7 +8,7 @@ bold or italic at all**.
 > **2026-09-06** and the record is in [`signoff.json`](signoff.json). See
 > [What a human was asked to judge](#what-a-human-was-asked-to-judge) below.
 >
-> It shipped as a **candidate**: `folio8-go/declared_variants_signoff_matrix_test.go` was written as a
+> It shipped as a **candidate**: `folio-go/declared_variants_signoff_matrix_test.go` was written as a
 > *failing* test (D-11.5.1, arm [A]), the story **halted** on it, and the red was discharged inside
 > the same story rather than filed as a deferral. That gate reds again, by construction, the moment
 > `expected.pdf` is re-recorded — a reading is a reading of specific bytes.
@@ -28,7 +28,7 @@ started drawing every bold run in the regular face and **every gate in this repo
 stayed green**: no diagnostic, no red test, no moved golden.
 
 The red proof that this fixture is a witness rather than a decoration is the measurement in Story
-11.5's own record: with `variant := entry.Variant(want)` deleted from `folio8-go/render.go`'s
+11.5's own record: with `variant := entry.Variant(want)` deleted from `folio-go/render.go`'s
 resolver, **this** golden moves and this fixture's test fails, and **no pre-existing golden test
 fails at all** — which is DW-237 demonstrated rather than restated.
 
@@ -87,7 +87,7 @@ The document declares `"version": "2.0"`: an object-form chain entry raises the 
 ## How `expected.pdf` was recorded
 
 `SOURCE_DATE_EPOCH` must be **unset** — exported, the CLI injects an `/Info` dict the in-process
-render can never reproduce. From `folio8-go/`:
+render can never reproduce. From `folio-go/`:
 
 ```sh
 CGO_ENABLED=0 GOWORK=off go run ./cmd/folio8 render \
@@ -144,7 +144,7 @@ exactly the stale attestation this gate exists to prevent. The gate hashes the a
 reason; write down what you hashed.
 
 **And keep the record declared as a digest site**, or an untagged test reds. `goldenDigestRecord`
-(`folio8-go/byte_neutrality_test.go`) asserts that the set of files carrying this golden's digest is
+(`folio-go/byte_neutrality_test.go`) asserts that the set of files carrying this golden's digest is
 exactly the set it declares. This fixture declares **four** sites, and the fourth is the record:
 
 ```go

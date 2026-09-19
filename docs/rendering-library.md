@@ -1,6 +1,6 @@
 # folio8 rendering library for Go
 
-`folio8-go` turns a `.folio` template, JSON data and runtime parameters into a PDF 1.7 document. It
+`folio-go` turns a `.folio` template, JSON data and runtime parameters into a PDF 1.7 document. It
 reads no clock, no environment, no network and no host fonts while rendering: everything a document
 needs is passed in. The same inputs rendered with the same Go toolchain produce the same bytes.
 
@@ -24,29 +24,29 @@ Contents: [Install](#install) · [Your first PDF](#your-first-pdf) ·
 
 ## Install
 
-Install the released module, `folio8-go/v1.0.0`. From your application's directory:
+Install the released module, `folio-go/v1.0.0`. From your application's directory:
 
 ```sh
 go mod init example.com/folio8-demo
-go get github.com/panitw/folio8/folio8-go@v1.0.0
+go get github.com/panitw/folio8/folio-go@v1.0.0
 go mod tidy
 ```
 
-`go get` records `github.com/panitw/folio8/folio8-go v1.0.0` in your `go.mod`. The public API is
+`go get` records `github.com/panitw/folio8/folio-go v1.0.0` in your `go.mod`. The public API is
 frozen at `v1.0.0` under semver: later `v1` releases make no breaking API change, and a breaking
 change would need a new `/v2` import path. If you previously installed a pseudo-version from `@main`, read the
-GitHub release notes for `folio8-go/v1.0.0`, which list what changed.
+GitHub release notes for `folio-go/v1.0.0`, which list what changed.
 
 Import the module root as `folio8`. The shipped fonts are a separate, opt-in package:
 
 ```go
 import (
-	folio8 "github.com/panitw/folio8/folio8-go"
-	"github.com/panitw/folio8/folio8-go/fonts"
+	folio8 "github.com/panitw/folio8/folio-go"
+	"github.com/panitw/folio8/folio-go/fonts"
 )
 ```
 
-**Toolchain.** `folio8-go/go.mod` declares `go 1.25.0` as the minimum language version and
+**Toolchain.** `folio-go/go.mod` declares `go 1.25.0` as the minimum language version and
 `toolchain go1.26.0`. A dependency's `toolchain` line does not choose the compiler for your
 application: your own `go.mod` `toolchain` line, or your `GOTOOLCHAIN` setting, does. If you record
 PDF hashes in your own tests and expect them to hold, pin your own toolchain as well as your inputs.
@@ -116,8 +116,8 @@ import (
 	"log"
 	"os"
 
-	folio8 "github.com/panitw/folio8/folio8-go"
-	"github.com/panitw/folio8/folio8-go/fonts"
+	folio8 "github.com/panitw/folio8/folio-go"
+	"github.com/panitw/folio8/folio-go/fonts"
 )
 
 func main() {
@@ -209,8 +209,8 @@ import (
 	"log"
 	"os"
 
-	folio8 "github.com/panitw/folio8/folio8-go"
-	"github.com/panitw/folio8/folio8-go/fonts"
+	folio8 "github.com/panitw/folio8/folio-go"
+	"github.com/panitw/folio8/folio-go/fonts"
 )
 
 func main() {
@@ -881,14 +881,14 @@ The frame meaning of `style.border` applies to every table, including templates 
 
 ## API reference
 
-This section lists every exported identifier in the two packages of the `github.com/panitw/folio8/folio8-go` module:
+This section lists every exported identifier in the two packages of the `github.com/panitw/folio8/folio-go` module:
 
 | Import path | Package | Role |
 |---|---|---|
-| `github.com/panitw/folio8/folio8-go` | `folio8` | Parsing, rendering, validation, diagnostics and template helpers. |
-| `github.com/panitw/folio8/folio8-go/fonts` | `fonts` | The shipped font faces, as a ready-made `folio8.FontSet`. Opt-in: package `folio8` never imports it. |
+| `github.com/panitw/folio8/folio-go` | `folio8` | Parsing, rendering, validation, diagnostics and template helpers. |
+| `github.com/panitw/folio8/folio-go/fonts` | `fonts` | The shipped font faces, as a ready-made `folio8.FontSet`. Opt-in: package `folio8` never imports it. |
 
-**Stability.** The API is frozen at `folio8-go/v1.0.0`: `folio8.Version` is `"1.0.0"`. The rendering and validation entry points, the font input and the diagnostic types are the whole public surface. The canvas and authoring engine behind folio8 Designer is internal to the module and is not part of this API.
+**Stability.** The API is frozen at `folio-go/v1.0.0`: `folio8.Version` is `"1.0.0"`. The rendering and validation entry points, the font input and the diagnostic types are the whole public surface. The canvas and authoring engine behind folio8 Designer is internal to the module and is not part of this API.
 
 **Concurrency.** Nothing in these packages documents or tests concurrent use. Do not share a `*folio8.Template` across goroutines without your own locking.
 
@@ -1037,7 +1037,7 @@ The engine's only font input. It maps a **face name**, as written in a document'
 func Shipped() folio8.FontSet
 ```
 
-Returns a new `folio8.FontSet` map holding the eleven faces embedded in the `fonts` package. Each face ships with its OFL-1.1 licence text and NOTICE under `folio8-go/fonts/`. The keys are exactly:
+Returns a new `folio8.FontSet` map holding the eleven faces embedded in the `fonts` package. Each face ships with its OFL-1.1 licence text and NOTICE under `folio-go/fonts/`. The keys are exactly:
 
 | Family | Face names (map keys) |
 |---|---|
@@ -1191,11 +1191,11 @@ const LocaleTableVersion = expr.LocaleTableVersion // currently 1 (untyped integ
 const Version = "1.0.0"
 ```
 
-`LocaleTableVersion` identifies the built-in locale formatting table; its current value is `1`. `Version` is the library version string, `"1.0.0"` for the `folio8-go/v1.0.0` release.
+`LocaleTableVersion` identifies the built-in locale formatting table; its current value is `1`. `Version` is the library version string, `"1.0.0"` for the `folio-go/v1.0.0` release.
 
 ## Command-line tool
 
 The module also contains a `folio8` command with `validate` and `render` subcommands
-(`go run github.com/panitw/folio8/folio8-go/cmd/folio8@v1.0.0 render -data data.json -o out.pdf template.folio`).
+(`go run github.com/panitw/folio8/folio-go/cmd/folio8@v1.0.0 render -data data.json -o out.pdf template.folio`).
 It is a thin wrapper over `Validate` and `Render`; its flags are described in the
 [repository README](../README.md#render-from-the-command-line).

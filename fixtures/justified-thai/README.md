@@ -61,7 +61,7 @@ shipped `text.Dictionary()` and counts what comes back, with a `t.Fatalf` if it 
 if the segmenter's answer for this run changes, the case stops being AD-25's atomic run and the test
 says so instead of quietly passing.
 
-> **Do not check this by grepping the wordlist.** `folio8-go/internal/text/wordlist/words_th.txt`
+> **Do not check this by grepping the wordlist.** `folio-go/internal/text/wordlist/words_th.txt`
 > **does** contain `กานต์`, a suffix of the run — the property here is not "the wordlist lacks these
 > letters". The greedy matcher does match `กานต์` and does propose a break in front of it; D-2.1.9's
 > both-sides-coverable filter (`internal/text/tileable.go`) then withdraws that proposal, because the
@@ -93,7 +93,7 @@ says so instead of quietly passing.
 
 | File | What it is |
 |---|---|
-| `input.folio` | the template, kept byte-identical to `folio8-go/justifiedThaiTemplateJSON` by hand |
+| `input.folio` | the template, kept byte-identical to `folio-go/justifiedThaiTemplateJSON` by hand |
 | `expected.json` | the recorded digest and the toolchain it was recorded under |
 | `expected.pdf` | the recorded artifact |
 

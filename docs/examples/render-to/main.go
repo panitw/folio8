@@ -9,8 +9,8 @@ import (
 	"log"
 	"os"
 
-	folio8 "github.com/panitw/folio8/folio8-go"
-	"github.com/panitw/folio8/folio8-go/fonts"
+	folio8 "github.com/panitw/folio8/folio-go"
+	"github.com/panitw/folio8/folio-go/fonts"
 )
 
 func main() {

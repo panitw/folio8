@@ -8,7 +8,7 @@ namespace Folio8Tests
     /// <summary>
     /// <c>Fonts.Shipped()</c> is the package's promise that an installer can
     /// render without finding fonts of their own. These check it against the
-    /// engine itself — the bytes in <c>folio8-go/fonts/</c> and the
+    /// engine itself — the bytes in <c>folio-go/fonts/</c> and the
     /// <c>shippedFaces</c> record the Go engine wrote into
     /// <c>folio-js/test/data/go-parity.json</c> — never against a value
     /// restated here.
@@ -33,7 +33,7 @@ namespace Folio8Tests
 
         /// <summary>
         /// Not merely the right LENGTHS: the right BYTES. Compared against
-        /// folio8-go/fonts/ directly, which is where the pack step reads them
+        /// folio-go/fonts/ directly, which is where the pack step reads them
         /// from and where the engine embeds them from.
         /// </summary>
         [Fact]
@@ -43,7 +43,7 @@ namespace Folio8Tests
             foreach (KeyValuePair<string, string> face in Repo.ShippedFaceFiles)
             {
                 string[] segments = face.Value.Split('/');
-                byte[] fromGo = Repo.File_("folio8-go", "fonts", segments[0], segments[1]);
+                byte[] fromGo = Repo.File_("folio-go", "fonts", segments[0], segments[1]);
                 Assert.True(shipped.ContainsKey(face.Key), "Fonts.Shipped() is missing the face '" + face.Key + "'");
                 Assert.Equal(Repo.Sha256(fromGo), Repo.Sha256(shipped[face.Key]));
             }

@@ -1,12 +1,12 @@
 // Copies the eleven fonts.Shipped() faces, and each face's licence and notice,
-// from folio8-go/fonts/ into folio-js/fonts/, and writes fonts/manifest.json
+// from folio-go/fonts/ into folio-js/fonts/, and writes fonts/manifest.json
 // for src/fonts.ts to read.
 //
-// The bytes are NOT committed to folio-js: folio8-go/fonts/ is the one source
+// The bytes are NOT committed to folio-js: folio-go/fonts/ is the one source
 // of truth (the engine embeds those same files), and a second tracked 14 MB
 // copy could diverge silently. Every face is checked against
 // test/data/go-parity.json's shippedFaces — the record
-// folio8-go/wasm/cmd/render/parity_test.go writes from the engine — by size,
+// folio-go/wasm/cmd/render/parity_test.go writes from the engine — by size,
 // and against the Go source file itself by sha256, so a divergence is a build
 // failure instead of a rendering difference.
 //
@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url'
 import { faceLicenceFiles, shippedFaces } from './faces.mjs'
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
-const goFontsRoot = join(packageRoot, '..', 'folio8-go', 'fonts')
+const goFontsRoot = join(packageRoot, '..', 'folio-go', 'fonts')
 const outputDir = join(packageRoot, 'fonts')
 const parityPath = join(packageRoot, 'test', 'data', 'go-parity.json')
 
@@ -31,7 +31,7 @@ function readSource(path) {
   try {
     return readFileSync(path)
   } catch {
-    problems.push(`missing from folio8-go: ${path}`)
+    problems.push(`missing from folio-go: ${path}`)
     return undefined
   }
 }
@@ -43,7 +43,7 @@ try {
   if (problems.length > 0) rmSync(outputDir, { recursive: true, force: true })
 }
 if (problems.length > 0) {
-  throw new Error(`folio-js: the shipped font set has drifted from folio8-go:\n  ${problems.join('\n  ')}`)
+  throw new Error(`folio-js: the shipped font set has drifted from folio-go:\n  ${problems.join('\n  ')}`)
 }
 
 function build() {
@@ -80,7 +80,7 @@ function build() {
     // than waiting for prepack.
     const copied = readFileSync(join(outputDir, face.dir, face.file))
     if (digest(copied) !== digest(source)) {
-      problems.push(`${face.name}: the copy at fonts/${face.dir}/${face.file} does not match folio8-go/fonts/${face.dir}/${face.file}`)
+      problems.push(`${face.name}: the copy at fonts/${face.dir}/${face.file} does not match folio-go/fonts/${face.dir}/${face.file}`)
       continue
     }
     manifest.push({ name: face.name, file: `${face.dir}/${face.file}`, byteLength: source.length })

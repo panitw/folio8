@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { shipped } from '../src/fonts.js'
 import { repoRoot } from './helpers.js'
 
-// folio8-go/wasm/cmd/render/parity_test.go records shippedFaces from the
+// folio-go/wasm/cmd/render/parity_test.go records shippedFaces from the
 // engine's own fonts.Shipped(). It is the drift check for the packaged copy.
 const shippedFaces = (JSON.parse(readFileSync(join(repoRoot, 'folio-js', 'test', 'data', 'go-parity.json'), 'utf8')) as { shippedFaces: { name: string; byteLength: number }[] }).shippedFaces
 
@@ -20,13 +20,13 @@ describe('shipped()', () => {
     expect([...fonts].map(([name, bytes]) => ({ name, byteLength: bytes.byteLength })).sort(byName)).toEqual([...shippedFaces].sort(byName))
   })
 
-  it('carries the bytes folio8-go/fonts/ holds', async () => {
+  it('carries the bytes folio-go/fonts/ holds', async () => {
     const fonts = await shipped()
     const manifest = JSON.parse(readFileSync(join(repoRoot, 'folio-js', 'fonts', 'manifest.json'), 'utf8')) as { faces: { name: string; file: string }[] }
     // Compared by digest: a 10 MB element-by-element deep-equal costs seconds
     // per face and says nothing more.
     for (const face of manifest.faces) {
-      expect(digest(fonts.get(face.name)!), face.name).toBe(digest(readFileSync(join(repoRoot, 'folio8-go', 'fonts', face.file))))
+      expect(digest(fonts.get(face.name)!), face.name).toBe(digest(readFileSync(join(repoRoot, 'folio-go', 'fonts', face.file))))
     }
   })
 

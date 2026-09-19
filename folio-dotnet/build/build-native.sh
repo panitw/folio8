@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Builds the folio8 engine as a native library from folio8-go/cshared/cmd/folio8.
+# Builds the folio8 engine as a native library from folio-go/cshared/cmd/folio8.
 #
 #   ./build-native.sh                  # the host library only (the default)
 #   ./build-native.sh host win-x64     # a named subset
@@ -38,7 +38,7 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$(cd "$here/../.." && pwd)"
-module="$repo/folio8-go"
+module="$repo/folio-go"
 out="$here/native"
 pkg="./cshared/cmd/folio8"
 

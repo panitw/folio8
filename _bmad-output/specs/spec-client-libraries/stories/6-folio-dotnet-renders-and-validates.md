@@ -19,7 +19,7 @@ context:
 **Problem:** .NET applications cannot reach the engine at all, and the .NET Framework 4.6 floor rules out every wasm runtime. Nothing in the repo builds the engine as a native library or speaks its C ABI.
 
 **Approach:**
-- Add a `c-shared` build of `folio8-go` behind a small, explicit C ABI.
+- Add a `c-shared` build of `folio-go` behind a small, explicit C ABI.
 - Add a `netstandard2.0` managed library, `folio-dotnet`, that binds it with plain `DllImport` and exposes render and validate with Go's diagnostics (CAP-3, CAP-4).
 - NuGet packaging and bitness-aware loading are story 7; the full-corpus matrix is story 8.
 
@@ -78,11 +78,11 @@ context:
 
 ## Code Map
 
-- `folio8-go/wasm/cmd/render/main.go`: the closest precedent for a shell over the public API — the request shapes, the diagnostic JSON (`severity`, `code`, `elementId`, `dataPath`, `message` with severity lowercased), the error envelope, and the panic-recovery wrapper. Copy the shapes; the transport differs.
-- `folio8-go/render_entry.go:160,246`, `validate.go:52`, `folio8.go:54,80`, `parameter_references.go:22`: the Go entry points. `diagnostic.go:75,391,461` and `render_error.go:47` for the value types.
-- `folio8-go/public_surface_census_test.go:219-262`: any `package main` passes, so the c-shared entry belongs at `folio8-go/cshared/cmd/folio8/` (or similar) as `package main` with `//export`ed functions. A non-main helper would have to live under `internal/`.
-- `folio8-go/wasm/cmd/render/imports_test.go` and `parity_test.go`: the precedents for an import guard and for recording Go's output as test data. `folio-js/test/data/go-parity.json` already holds the recorded cases and the `shippedFaces` table — reuse it rather than recording a second copy.
-- `folio-js/scripts/faces.mjs` and `build-fonts.mjs`: how the shipped faces are located in `folio8-go/fonts/`. The .NET tests need the same table to build a `FontSet` from the Go tree.
+- `folio-go/wasm/cmd/render/main.go`: the closest precedent for a shell over the public API — the request shapes, the diagnostic JSON (`severity`, `code`, `elementId`, `dataPath`, `message` with severity lowercased), the error envelope, and the panic-recovery wrapper. Copy the shapes; the transport differs.
+- `folio-go/render_entry.go:160,246`, `validate.go:52`, `folio8.go:54,80`, `parameter_references.go:22`: the Go entry points. `diagnostic.go:75,391,461` and `render_error.go:47` for the value types.
+- `folio-go/public_surface_census_test.go:219-262`: any `package main` passes, so the c-shared entry belongs at `folio-go/cshared/cmd/folio8/` (or similar) as `package main` with `//export`ed functions. A non-main helper would have to live under `internal/`.
+- `folio-go/wasm/cmd/render/imports_test.go` and `parity_test.go`: the precedents for an import guard and for recording Go's output as test data. `folio-js/test/data/go-parity.json` already holds the recorded cases and the `shippedFaces` table — reuse it rather than recording a second copy.
+- `folio-js/scripts/faces.mjs` and `build-fonts.mjs`: how the shipped faces are located in `folio-go/fonts/`. The .NET tests need the same table to build a `FontSet` from the Go tree.
 - `folio-js/src/index.ts`: the argument checking, the error split and the `renderTo` discipline, as a behavioural reference for the same contract in C#.
 - `.github/workflows/ci.yml`: job shapes, the Go toolchain pin (1.26.0) and the `folio-js` job added last story. No Windows runner is used anywhere yet, and no job sets `CGO_ENABLED=1`.
 - `.github/workflows/matrix.yml`: how a per-target job records and compares hashes — the model story 8 will extend to this binding.
@@ -91,8 +91,8 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [x] `folio8-go/cshared/cmd/folio8/main.go` + an import guard test -- the `//export`ed C ABI over the public API, with the allocation table, panic recovery and status codes -- the engine as a native library
-- [x] `folio8-go/cshared/README.md` or header comment -- the ABI contract: each function, its parameters, the status codes, the ownership rule -- the binding and any future caller share one written contract
+- [x] `folio-go/cshared/cmd/folio8/main.go` + an import guard test -- the `//export`ed C ABI over the public API, with the allocation table, panic recovery and status codes -- the engine as a native library
+- [x] `folio-go/cshared/README.md` or header comment -- the ABI contract: each function, its parameters, the status codes, the ownership rule -- the binding and any future caller share one written contract
 - [x] `folio-dotnet/src/Folio8/*.cs` + `Folio8.csproj` -- the `netstandard2.0` managed surface and its `DllImport` layer -- CAP-3 and CAP-4
 - [x] `folio-dotnet/build/build-native.ps1` and `.sh` -- build `win-x86`, `win-x64` and the host library from one script -- reproducible native builds
 - [x] `folio-dotnet/test/Folio8.Tests/` -- every I/O matrix row, golden hashes and parity against `folio-js/test/data/go-parity.json` -- proves equality with Go rather than asserting it
@@ -145,7 +145,7 @@ context:
 
 **The public types sit in the GLOBAL namespace, not in a `Folio8` namespace.** `api-surface.md` pins the call site as `Folio8.Render(...)` and `Template.Parse(...)`, and a namespace named `Folio8` makes that spelling unreachable: C# resolves the simple name `Folio8` to the namespace and never reaches a class of the same name inside it. Measured, not assumed — a throwaway project with `namespace Folio8 { public static class Folio8 }` fails with `CS0234: the type or namespace name 'Render' does not exist in the namespace 'Folio8'`, with or without a `using`. The same rule bit the test project, whose original `Folio8.Tests` namespace shadowed the class from the inside; it is `Folio8Tests` now. Nine public types is a small enough surface to carry in the global namespace, and the frozen contract is what decided it.
 
-**The ABI frame is binary, not JSON.** `wasm/cmd/render`'s envelope is JSON because JavaScript parses JSON for free. .NET Framework 4.6 does not: no `System.Text.Json`, and no third-party dependency is allowed in the managed assembly, so a JSON transport would have forced a hand-rolled JSON parser — escape handling included, and the `BINDING_PATH_ABSENT` message contains embedded quotes — into the shipped library. The frame carries the SAME SHAPES (severity, code, elementId, dataPath, message; a payload; a reference list) in a length-prefixed binary form that `BinaryReader`/`BinaryWriter` handle exactly, in about forty lines. `folio8-go/cshared/README.md` is the written contract; `SurfaceTests.TheAbiContractIsDocumented` keeps every export and status code named in it.
+**The ABI frame is binary, not JSON.** `wasm/cmd/render`'s envelope is JSON because JavaScript parses JSON for free. .NET Framework 4.6 does not: no `System.Text.Json`, and no third-party dependency is allowed in the managed assembly, so a JSON transport would have forced a hand-rolled JSON parser — escape handling included, and the `BINDING_PATH_ABSENT` message contains embedded quotes — into the shipped library. The frame carries the SAME SHAPES (severity, code, elementId, dataPath, message; a payload; a reference list) in a length-prefixed binary form that `BinaryReader`/`BinaryWriter` handle exactly, in about forty lines. `folio-go/cshared/README.md` is the written contract; `SurfaceTests.TheAbiContractIsDocumented` keeps every export and status code named in it.
 
 **`CallingConvention.Cdecl` is load-bearing.** cgo exports are cdecl on every platform; .NET's `DllImport` default is `Winapi`, which is stdcall on Windows. The mismatch is invisible on x64, which has one convention, and corrupts the stack on x86 — the floor this library exists to reach. It could only have been found on Windows, so it is set deliberately everywhere rather than discovered there.
 
@@ -174,7 +174,7 @@ This is not confined to the test harness. `packaging-matrix.md` specifies the RI
 ## Verification
 
 **Commands:**
-- `cd folio8-go && go build ./... && go vet ./... && go test -count=1 -skip '^TestCorpusMeetsP6ExerciseFloors$' ./...` -- expected: green, no golden moved
+- `cd folio-go && go build ./... && go vet ./... && go test -count=1 -skip '^TestCorpusMeetsP6ExerciseFloors$' ./...` -- expected: green, no golden moved
 - `cd folio-dotnet && ./build/build-native.sh && dotnet test` -- expected: green against the host library
 - `cd folio-dotnet && dotnet build src/Folio8/Folio8.csproj` -- expected: `netstandard2.0` output with no package references
 - CI Windows job -- expected: both DLLs build; `net48` and modern .NET tests pass; the 4.6 compile check succeeds

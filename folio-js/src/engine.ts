@@ -7,7 +7,7 @@ interface HostReply {
   bytes?: Uint8Array
 }
 
-/** The functions folio8-go/wasm/cmd/render registers as globalThis.Folio8RenderHost. */
+/** The functions folio-go/wasm/cmd/render registers as globalThis.Folio8RenderHost. */
 export interface Host {
   parse(template: Uint8Array): HostReply
   render(template: Uint8Array, data: Uint8Array, params: Uint8Array | null, fontNames: string[], fontBytes: Uint8Array[]): HostReply

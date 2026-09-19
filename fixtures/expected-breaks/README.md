@@ -63,7 +63,7 @@ headwords though both of their parts are, and which therefore do carry a break.
 
 AC14's exact-equality assertion carries a small, enumerated, **fail-closed-only** exception for
 `thai-007`/`008`/`009` — see `s4ExpectedDivergences` in
-`folio8-go/internal/text/s4_expected_test.go`. The engine cannot be made to propose these breaks without
+`folio-go/internal/text/s4_expected_test.go`. The engine cannot be made to propose these breaks without
 inventing a heuristic (forbidden by AD-25) or editing the shipped wordlist to make a real Thai word
 disappear (forbidden, D-000.32) — the divergence is named and bounded rather than hidden inside a
 relaxed assertion.
@@ -120,7 +120,7 @@ never renders wrongly.
 ## Pending: the human sign-off
 
 **The labels here were authored by an agent, so an agent confirming them would be marking its own
-work.** `folio8-go/expected_breaks_signoff_matrix_test.go` is a `//go:build matrix` test that **fails**
+work.** `folio-go/expected_breaks_signoff_matrix_test.go` is a `//go:build matrix` test that **fails**
 until `break-signoff.json` exists, naming this file's (now corrected) sha256. The Epic 2 boundary gate
 cannot pass until a person has signed off on the corrected labels — requested only now that this
 correction has landed (D-000.41, D-000.43).

@@ -9,7 +9,7 @@ import (
 // repoRootFromTest finds the folio8 repository root by walking up from
 // the current working directory (Go test binaries run with cwd set to
 // the package directory) until it finds a directory containing both
-// folio8-go/ and lint/ — the same D-000.5/AD-21 pattern folio8-go's own
+// folio-go/ and lint/ — the same D-000.5/AD-21 pattern folio-go's own
 // repoRootFromTest helpers use, duplicated here because it lives only in
 // a _test.go file and lint/ is a separate module.
 func repoRootFromTest(t *testing.T) string {
@@ -24,14 +24,14 @@ func repoRootFromTest(t *testing.T) string {
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
-			t.Fatalf("could not find repo root (a directory containing both folio8-go/ and lint/) walking up from %s", dir)
+			t.Fatalf("could not find repo root (a directory containing both folio-go/ and lint/) walking up from %s", dir)
 		}
 		dir = parent
 	}
 }
 
 func isRepoRoot(dir string) bool {
-	folio8Go, err1 := os.Stat(filepath.Join(dir, "folio8-go"))
+	folio8Go, err1 := os.Stat(filepath.Join(dir, "folio-go"))
 	lintDir, err2 := os.Stat(filepath.Join(dir, "lint"))
 	return err1 == nil && folio8Go.IsDir() && err2 == nil && lintDir.IsDir()
 }

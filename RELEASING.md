@@ -4,18 +4,18 @@ This document is the procedure for cutting a folio8 release. It exists because
 **a release with no written procedure is not a release** — the same rule
 D-000.58 applies to gate procedures, one level up.
 
-It covers the Go engine module, `folio8-go`, and the two client libraries
+It covers the Go engine module, `folio-go`, and the two client libraries
 published as `folio8` — the npm package built in `folio-js/` and the NuGet
 package built in `folio-dotnet/`.
 The designer's own version and force-upgrade policy are at the end.
 
-**Released version:** `folio8-go/v1.0.0`
+**Released version:** `folio-go/v1.0.0`
 
-`TestVersionAgreesWithReleasingDoc` (`folio8-go/version_test.go`) reads the line
+`TestVersionAgreesWithReleasingDoc` (`folio-go/version_test.go`) reads the line
 above and fails unless `folio8.Version` equals it, so the stamp in the code and
 the release this document names cannot drift apart.
 
-## `folio8-go/v1.0.0`
+## `folio-go/v1.0.0`
 
 **Cut after SPEC-client-libraries stories 1 and 3, before the folio-js and
 folio-dotnet bindings are built** (owner decision, 2026-09-16, recorded in
@@ -76,18 +76,18 @@ reviewed as a whole before it freezes, because D-1.1.c fixes it at the tag.
 whole at story 1's spec checkpoint, which cut it from 287 items.
 
 **The live trigger is `TestPublicSurfaceMatchesTheFrozenV1Census`**
-(`folio8-go/public_surface_census_test.go`). It pins every exported identifier by
+(`folio-go/public_surface_census_test.go`). It pins every exported identifier by
 package, kind and name — not signatures, types or constant values — fails
 naming an addition `UNEXPECTED` and a removal `GONE`, fails if a scan finds
 nothing, and fails if any importable package other than `folio8` and `fonts`
-appears under `folio8-go/`. This line is what a release reads, not
+appears under `folio-go/`. This line is what a release reads, not
 what fires.
 
 *Discharges DW-4's surface re-measure.*
 
 ### 3. The call-graph walker is precise, or its precondition still holds
 
-**Obligation:** `buildFolio8CallGraph` (`folio8-go/render_arch_test.go`) resolves
+**Obligation:** `buildFolio8CallGraph` (`folio-go/render_arch_test.go`) resolves
 methods by name alone. Before a tag, either replace it with a `go/types`
 version in `lint`, or confirm its precondition — that no two receiver types in
 package `folio8` declare the same method name — still holds.
@@ -102,8 +102,8 @@ package `folio8`'s non-test sources found 41 methods under 41 distinct names.
 
 ### Version stamping
 
-`folio8.Version` (`folio8-go/version.go`) is the release's version without the
-tag prefix: tag `folio8-go/v1.0.0` ↔ `Version = "1.0.0"`. Bump it, and the
+`folio8.Version` (`folio-go/version.go`) is the release's version without the
+tag prefix: tag `folio-go/v1.0.0` ↔ `Version = "1.0.0"`. Bump it, and the
 **Released version** line at the top of this document, in the release commit
 itself. Nothing else holds a copy: `TestVersionAgreesWithReleasingDoc` fails if
 `Version` and that line disagree, and `TestReleasingDocNamesTheGuardedManifest`
@@ -125,7 +125,7 @@ For `v1.0.0` the notes carry the breaking changes since `main` that
 integrators on `@main` pseudo-versions would hit:
 
 - the designer surface (`Canvas`, `ApplyComponentCommand`, the projection
-  types and the `folio8-go/wasm` package) left the public API;
+  types and the `folio-go/wasm` package) left the public API;
 - `STYLE_COLOR_INVALID` and `STYLE_LINE_SPACING_INVALID` were retired into
   `TEMPLATE_FIELD_INVALID`;
 - an invalid colour is now refused when the template loads.
@@ -156,25 +156,25 @@ gh run list --workflow matrix.yml --commit "$SHA" --event push --limit 1
 gh run watch <ci run id>     --exit-status   # non-zero exit on a red run: stop
 gh run watch <matrix run id> --exit-status   # all four targets must be green
 
-git tag -a folio8-go/v1.0.0 "$SHA" -m "folio8-go v1.0.0"
-git push origin folio8-go/v1.0.0
-gh release create folio8-go/v1.0.0 lint/MANIFEST.md --title "folio8-go v1.0.0" --notes-file <notes>
+git tag -a folio-go/v1.0.0 "$SHA" -m "folio-go v1.0.0"
+git push origin folio-go/v1.0.0
+gh release create folio-go/v1.0.0 lint/MANIFEST.md --title "folio-go v1.0.0" --notes-file <notes>
 
 # Confirm the module proxy serves the tag.
-GOPROXY=https://proxy.golang.org go list -m github.com/panitw/folio8/folio8-go@v1.0.0
+GOPROXY=https://proxy.golang.org go list -m github.com/panitw/folio8/folio-go@v1.0.0
 ```
 
 The tag is pushed only after both runs are green, so a failing run needs no
 tag deletion: fix forward on `main` and start again. **A published tag is never
 moved or deleted.** A bad release is fixed forward with a new patch version,
-adding a `retract` directive to `folio8-go/go.mod` for the bad one if needed. The tag is
-directory-prefixed (AD-22) because the module lives in `folio8-go/`; Go resolves
-`go get github.com/panitw/folio8/folio8-go@v1.0.0` from it.
+adding a `retract` directive to `folio-go/go.mod` for the bad one if needed. The tag is
+directory-prefixed (AD-22) because the module lives in `folio-go/`; Go resolves
+`go get github.com/panitw/folio8/folio-go@v1.0.0` from it.
 
 ## Publishing `folio8` to npm
 
 The npm package `folio8`, built in `folio-js/`, is a separate release line from
-`folio8-go`, published by hand.
+`folio-go`, published by hand.
 **`npm publish` is never run by a script, a lifecycle hook or a CI job**: no
 workflow in this repository holds an npm token, and none should. It is the
 owner's command, typed at the owner's terminal, on the owner's explicit
@@ -189,7 +189,7 @@ install scripts**, so `npm install` on a machine with no Go, no C compiler and
 no network after the fetch produces a package that renders (CAP-6).
 
 `prepack` is what keeps that true. It rebuilds the wasm, re-copies the fonts
-from `folio8-go/fonts/` and recompiles `dist/`, then runs
+from `folio-go/fonts/` and recompiles `dist/`, then runs
 `scripts/package-check.mjs`, which refuses the pack — naming what is wrong —
 if anything the `files` allowlist promises is absent, or if a packaged face's
 bytes differ from the Go source. A publish therefore cannot ship an incomplete
@@ -197,13 +197,13 @@ tarball, and cannot ship a font set that has drifted from the engine's.
 
 ### Version and engine stamp
 
-The npm package's `version` is its own; it is not tied to `folio8-go`'s. What ties
+The npm package's `version` is its own; it is not tied to `folio-go`'s. What ties
 them is `package.json`'s **`folio8EngineVersion`**, which records the engine
 version the packaged wasm was built from and must equal `src/version.ts`'s
 `version` — `test/package.test.ts` fails if they disagree. Bump both in the
 release commit when the package is rebuilt against a newer engine tag.
 
-Both bindings build against the **`folio8-go/v1.0.0` tag, never `main`**.
+Both bindings build against the **`folio-go/v1.0.0` tag, never `main`**.
 
 ### Before publishing
 
@@ -251,7 +251,7 @@ version, and `npm deprecate` marks the bad one.
 ## Publishing `folio8` to NuGet
 
 The NuGet package `folio8`, built in `folio-dotnet/`, is a separate release
-line from `folio8-go` and from the npm package, published by hand. **`dotnet nuget push` is never run by a script,
+line from `folio-go` and from the npm package, published by hand. **`dotnet nuget push` is never run by a script,
 an MSBuild target or a CI job**: no workflow in this repository holds a NuGet
 API key, and none should. It is the owner's command, typed at the owner's
 terminal, on the owner's explicit go-ahead. `PackagingTests` greps every
@@ -291,7 +291,7 @@ ship a half package.
 
 ### Version and engine stamp
 
-The NuGet package's `Version` is its own; it is not tied to `folio8-go`'s. What
+The NuGet package's `Version` is its own; it is not tied to `folio-go`'s. What
 ties them is `Folio8.csproj`'s **`FolioEngineVersion`**, written into the
 assembly as the `folio8EngineVersion` metadata attribute — the .NET spelling
 of the npm package's `package.json` field. `PackagingTests` fails if it disagrees
@@ -299,9 +299,9 @@ with what the loaded native library reports or with `go-parity.json`. Bump it
 in the release commit when the package is rebuilt against a newer engine tag.
 
 **What the natives are actually built from is the working tree.**
-`build-native.{sh,ps1}` compile `folio8-go/cshared/cmd/folio8` out of this
+`build-native.{sh,ps1}` compile `folio-go/cshared/cmd/folio8` out of this
 repository, not out of a fetched module version — so "built against
-`folio8-go/v1.0.0`" is a statement about the COMMIT the release is cut from,
+`folio-go/v1.0.0`" is a statement about the COMMIT the release is cut from,
 and it holds only because the release commit is the tagged one. Cut the
 package from the commit the engine tag points at, or from a descendant whose
 engine sources are unchanged; nothing in the build enforces it for you.
@@ -414,7 +414,7 @@ version, and the bad one is **unlisted** on nuget.org.
 
 ## Choosing the designer version, and forcing an upgrade
 
-`folio8-designer/package.json`'s `version` is the number an open tab compares
+`folio-designer/package.json`'s `version` is the number an open tab compares
 itself against, and its **MAJOR is the entire force-upgrade policy**:
 
 | Bump | What an open tab does |

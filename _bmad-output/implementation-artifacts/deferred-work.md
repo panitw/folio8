@@ -179,10 +179,10 @@ all → **Fatal** on the vacuity path; moving the single declaration → **both*
 **Owner: none. There is nothing left to own.**
 
 **AMENDED 2026-09-17 (SPEC-client-libraries story 2) — publication discharged by the written
-procedure.** `RELEASING.md` item 1 now names the tag (`folio8-go/v1.0.0`) and its "The commands"
+procedure.** `RELEASING.md` item 1 now names the tag (`folio-go/v1.0.0`) and its "The commands"
 section attaches `lint/MANIFEST.md` with `gh release create`. `TestManifestUpToDate` and
 `TestReleasingDocNamesTheGuardedManifest` both pass on the release tree; the latter now anchors on
-`folio8-go/v1.0.0`.
+`folio-go/v1.0.0`.
 
 ## Open
 
@@ -789,7 +789,7 @@ owed by D-000.78 before the post-Epic-6 tag; this boundary does not discharge th
 **AMENDED 2026-09-17 (SPEC-client-libraries story 2) — DISCHARGED.** Story 15.3 was deprecated on
 2026-09-16 and its obligations passed to client-libraries story 2, which discharges them:
 
-- **Trigger re-affirmed, not assumed.** The owner replaced "after Epic 6" with `folio8-go/v1.0.0`,
+- **Trigger re-affirmed, not assumed.** The owner replaced "after Epic 6" with `folio-go/v1.0.0`,
   cut after client-libraries stories 1 and 3 and before the bindings. `RELEASING.md` names what is
   inside the release: Epics 1–14, 16 and 17, Epic 15's done stories, and stories 1–3.
 - **Surface re-measured.** 60 items, not the Epic 3 boundary's 40: package `folio8` has 7 funcs,
@@ -1966,7 +1966,7 @@ type-checking rules of [[D-000.75]] — so when this trigger fires, a `go/types`
 cost on working infrastructure**, exactly as [[D-3.7.9]] anticipated: *"both guards that actually held
 this story live in `lint`, which type-checks the module; both that leaked are in-module AST scans."*
 
-**AMENDED 2026-09-17 (SPEC-client-libraries story 2) — DISCHARGED for `folio8-go/v1.0.0` by confirming
+**AMENDED 2026-09-17 (SPEC-client-libraries story 2) — DISCHARGED for `folio-go/v1.0.0` by confirming
 the precondition.** On the release tree `TestFolio8MethodNamesAreInjective` passes, and an independent
 `go/ast` scan of package `folio8`'s non-test sources found **41 methods under 41 distinct names**, no
 collision. The `go/types` walker was not built; the pinned injectivity assertion remains the live
@@ -4193,7 +4193,7 @@ ruling would cover both halves of the question. **If anyone sees such a document
 
 **RULED 2026-09-17 (owner, recorded by SPEC-client-libraries story 2) — v1.0.0 ships the clip.** An
 aggregate-only over-tall keep-together group keeps rendering clipped with `TABLE_ROW_CLIPPED_HEIGHT`
-at `folio8-go/v1.0.0`. Making it fatal narrows what renders, so after the tag it is a conscious `/v2`
+at `folio-go/v1.0.0`. Making it fatal narrows what renders, so after the tag it is a conscious `/v2`
 choice, not a fix. The entry stays on the register as that ruling; the render behaviour is unchanged.
 
 
@@ -7064,7 +7064,7 @@ declaring none of this hashes identically"* — is the **negative** invariant, a
 **positive** coverage that is unowned, which is exactly why nothing caught this for two epics.
 
 **AMENDED 2026-09-17 (SPEC-client-libraries story 2) — the tag-gate question was put and answered.** The
-owner ruled that DW-147 gates `folio8-go/v1.0.0` (the "add a fixture" arm, not "ship with coverage
+owner ruled that DW-147 gates `folio-go/v1.0.0` (the "add a fixture" arm, not "ship with coverage
 stated"). The gate is met on the release tree: `fixtures/colour-strokes/` with its signed
 `signoff.json`, registered in the four-target matrix. Story 15.3's ownership passed to
 client-libraries stories 3 and 2 when 15.3 was deprecated.
@@ -7084,7 +7084,7 @@ parallel collections, each call crossing the C ABI into the Go runtime. The same
 passed, and the next commit's host job passed, so it does not reproduce on demand.
 
 **Why it is not dismissed as a flake.** The story-6 ABI is documented as safe to call from several
-threads (`folio8-go/cshared/README.md`), and `docs/folio-dotnet.md` now tells readers so. A crash under
+threads (`folio-go/cshared/README.md`), and `docs/folio-dotnet.md` now tells readers so. A crash under
 exactly that condition either falsifies the claim or exposes a defect in the test host's interaction
 with a Go c-shared library — and the corpus work of story 8 is what first made these tests render
 dozens of documents per run, so the exposure is new.
@@ -9332,7 +9332,7 @@ this assertion quantified over?** rather than by hunting a false zero (the first
 shipped-slot metadata gap). That question is now a standing census axis.
 
 **AMENDED 2026-09-17 (SPEC-client-libraries story 2) — released from the tag gate by owner ruling.**
-DW-230 does not gate `folio8-go/v1.0.0`. It stays **OPEN** against Story 15.2. Its premise that 15.2 is
+DW-230 does not gate `folio-go/v1.0.0`. It stays **OPEN** against Story 15.2. Its premise that 15.2 is
 "the last story that adds fixtures before the tag" no longer holds: client-libraries story 3 added
 `fixtures/colour-strokes/` before the tag, and 15.2 now runs after it.
 
@@ -9404,7 +9404,7 @@ delta without stating the same-arm repeat behind it.
 
 **AMENDED 2026-09-17 (SPEC-client-libraries story 2) — 8.4d no longer precedes the engine tag.** By owner
 ruling, Stories 8.4d (size budget) and 8.4k (licence exception) are released from the
-`folio8-go/v1.0.0` tag gate: they are designer-release and `lint` work, not Go-tag prerequisites. The
+`folio-go/v1.0.0` tag gate: they are designer-release and `lint` work, not Go-tag prerequisites. The
 tag does not discharge them. **8.4d still owes its size-budget ruling**, keyed as above; 8.4k stays
 `deferred-to-epic-15`.
 

@@ -22,7 +22,7 @@ context:
 ## Boundaries & Constraints
 
 **Always:**
-- **Fonts:** the complete set, eleven faces, about 14 MB, byte-identical to `fonts.Shipped()`. Copied from `folio8-go/fonts/` by the build, not committed to `folio-js/`, and git-ignored in the working tree.
+- **Fonts:** the complete set, eleven faces, about 14 MB, byte-identical to `fonts.Shipped()`. Copied from `folio-go/fonts/` by the build, not committed to `folio-js/`, and git-ignored in the working tree.
 - **`shipped()`** is exported from the subpath `folio-js/fonts`. It returns a `Promise<Map<string, Uint8Array>>` whose keys and bytes equal `fonts.Shipped()`, reading the packaged files. It caches after the first call and stays an explicit argument — nothing becomes ambient.
 - **Self-contained tarball:** prebuilt `.wasm`, `wasm_exec.js`, `dist/`, fonts, `README.md`, `LICENSE` and every font licence and notice. No `dependencies`, no `postinstall`, no `prepare`, no compiler, no network use after install.
 - **A publish cannot ship an incomplete tarball.** `prepack` rebuilds wasm, fonts and `dist/`, and packing fails if any is missing or if a face's bytes differ from the Go source.
@@ -46,7 +46,7 @@ context:
 | Repeat call | `shipped()` twice | the same cached Map, one read of each file | N/A |
 | Tarball contents | `npm pack --dry-run` | contains `dist/`, `wasm/`, 11 faces, each font licence and notice, `LICENSE`, `README.md`, and no test, source or lockfile | N/A |
 | Incomplete pack | fonts or wasm missing | `prepack` fails naming what is missing | packing stops |
-| Drifted face | a packaged face differs from `folio8-go/fonts/` | the build fails naming the face | N/A |
+| Drifted face | a packaged face differs from `folio-go/fonts/` | the build fails naming the face | N/A |
 | Install hygiene | the packed `package.json` | no `dependencies`, no install scripts | N/A |
 
 </frozen-after-approval>
@@ -55,8 +55,8 @@ context:
 
 - `folio-js/package.json`: `private: true` and `version: 0.0.0` today; `files` is `["dist","wasm"]`; `exports` has `.` only; devDependencies pin TypeScript 5.9.3, vitest 4.1.11, oxlint 1.79.0.
 - `folio-js/scripts/build-wasm.mjs`: builds `wasm/folio8-render.wasm` (12.4 MB) and copies `wasm_exec.js`. Extend it, or add a sibling script, to copy the faces.
-- `folio8-go/fonts/`: eleven face directories, each holding its `.ttf` plus `LICENSE-OFL.txt` and `NOTICE.md`. `fonts.go:159-172` is the name → file table; `fonts.go:20` records the total, 14,782,604 bytes. `NotoSansSC-Regular.ttf` alone is 10.1 MB.
-- `folio-js/test/data/go-parity.json`: already carries `shippedFaces` (name plus byte length) written by `folio8-go/wasm/cmd/render/parity_test.go`. It is the drift check for both the copy and `shipped()`.
+- `folio-go/fonts/`: eleven face directories, each holding its `.ttf` plus `LICENSE-OFL.txt` and `NOTICE.md`. `fonts.go:159-172` is the name → file table; `fonts.go:20` records the total, 14,782,604 bytes. `NotoSansSC-Regular.ttf` alone is 10.1 MB.
+- `folio-js/test/data/go-parity.json`: already carries `shippedFaces` (name plus byte length) written by `folio-go/wasm/cmd/render/parity_test.go`. It is the drift check for both the copy and `shipped()`.
 - `folio-js/test/helpers.ts`: builds the same map from the Go tree for tests; after this story the tests should use `shipped()` and keep `helpers.ts` only if something still needs the Go-side path.
 - `folio-js/src/index.ts`, `engine.ts`: the API and the lazy engine; `src/version.ts` holds the engine version string.
 - `folio-js/.gitignore`: `node_modules/`, `dist/`, `wasm/`. Add the fonts directory.
@@ -66,7 +66,7 @@ context:
 ## Tasks & Acceptance
 
 **Execution:**
-- [x] `folio-js/scripts/build-fonts.mjs` (or an extension of `build-wasm.mjs`) -- copy the eleven faces and their licences from `folio8-go/fonts/`, verifying each against `go-parity.json`'s `shippedFaces` -- the embedded set cannot drift
+- [x] `folio-js/scripts/build-fonts.mjs` (or an extension of `build-wasm.mjs`) -- copy the eleven faces and their licences from `folio-go/fonts/`, verifying each against `go-parity.json`'s `shippedFaces` -- the embedded set cannot drift
 - [x] `folio-js/src/fonts.ts` -- `shipped()`, cached, resolving packaged paths from `import.meta.url` so it works from `node_modules` -- CAP-6's missing half
 - [x] `folio-js/package.json` -- drop `private`, version `1.0.0`, add the `./fonts` export, `files`, metadata, the engine-version field, and `prepack` -- a publishable, self-contained package
 - [x] `folio-js/README.md`, `folio-js/LICENSE` -- the first-PDF snippet and the licence set -- an installer can start, and the font licences travel with the bytes
@@ -108,7 +108,7 @@ context:
 ## Implementation Notes
 
 - **The face table lives once, in `folio-js/scripts/faces.mjs`.** `build-fonts.mjs` copies from it and writes `fonts/manifest.json`; `src/fonts.ts` reads only the manifest, so the shipped package never restates the name -> file mapping and cannot disagree with what was copied.
-- **Two checks, at two moments.** `build-fonts.mjs` checks every face's SIZE against `go-parity.json`'s `shippedFaces` as it copies and deletes the output directory if any differs. `scripts/package-check.mjs` — run by `prepack`, after the build — re-reads the tree about to be packed and checks every face's BYTES (sha256) against `folio8-go/fonts/`, plus the presence of everything the `files` allowlist promises. It takes `--root`/`--go-fonts`/`--parity`, which is how `package.test.ts` exercises its refusals against deliberately broken trees in milliseconds instead of rebuilding a 13 MB wasm.
+- **Two checks, at two moments.** `build-fonts.mjs` checks every face's SIZE against `go-parity.json`'s `shippedFaces` as it copies and deletes the output directory if any differs. `scripts/package-check.mjs` — run by `prepack`, after the build — re-reads the tree about to be packed and checks every face's BYTES (sha256) against `folio-go/fonts/`, plus the presence of everything the `files` allowlist promises. It takes `--root`/`--go-fonts`/`--parity`, which is how `package.test.ts` exercises its refusals against deliberately broken trees in milliseconds instead of rebuilding a 13 MB wasm.
 - **The tests use the packaged fonts, not the Go tree.** `test/setup.ts` awaits `shipped()` once before any suite and `helpers.ts` hands the resulting Map to the many render call sites that are not in async position (`arguments.test.ts` passes thunks). `helpers.ts` keeps `repoRoot`/`repoFile`/`sha256` because the fixtures still come from the repository.
 - **`package.test.ts` packs with `--ignore-scripts`.** `npm test` runs after `npm run build`, so the tree is already what `prepack` would produce; skipping it keeps the suite from rebuilding the wasm with the Go toolchain a second time. `prepack`'s own gate is covered directly, against broken trees.
 - **The README snippet is extracted, not transcribed.** The test pulls the first ```js block out of `README.md` and runs it verbatim in the installed project, so the documented snippet and the tested snippet cannot drift.
@@ -118,7 +118,7 @@ context:
 
 ## Design Notes
 
-**Why the fonts are copied at build time rather than committed.** The bytes already live in `folio8-go/fonts/` and are embedded in the engine; a second tracked copy would be 14 MB of duplicate history that can silently diverge. Copying at build keeps one source of truth, and the `shippedFaces` check makes divergence a build failure rather than a rendering difference.
+**Why the fonts are copied at build time rather than committed.** The bytes already live in `folio-go/fonts/` and are embedded in the engine; a second tracked copy would be 14 MB of duplicate history that can silently diverge. Copying at build keeps one source of truth, and the `shippedFaces` check makes divergence a build failure rather than a rendering difference.
 
 **Size.** The tarball carries about 12.4 MB of wasm and 14 MB of fonts. That is the cost of the decided "embed the full set" constraint, and `NotoSansSC-Regular.ttf` is 10 MB of it. Slimming stays available additively (`SPEC-shipped-font-tiers`) and is not this story's business.
 
@@ -127,5 +127,5 @@ context:
 **Commands:**
 - `cd folio-js && npm ci && npm run build && npm run lint && npm test` -- expected: green, offline install included
 - `cd folio-js && npm pack --dry-run` -- expected: lists dist, wasm, the 11 faces and the licences; no sources or tests
-- `cd folio8-go && go test -count=1 -skip '^TestCorpusMeetsP6ExerciseFloors$' ./...` -- expected: green, no golden moved
+- `cd folio-go && go test -count=1 -skip '^TestCorpusMeetsP6ExerciseFloors$' ./...` -- expected: green, no golden moved
 - `git ls-files folio-js | grep -E '\.(ttf|wasm)$'` -- expected: no output

@@ -93,16 +93,16 @@
 
   <PropertyGroup>
     <FolioRepoRoot>$(MSBuildThisFileDirectory)../../../</FolioRepoRoot>
-    <FolioGoFonts>$(FolioRepoRoot)folio8-go/fonts</FolioGoFonts>
+    <FolioGoFonts>$(FolioRepoRoot)folio-go/fonts</FolioGoFonts>
     <FolioNativeDir>$(MSBuildThisFileDirectory)../../build/native</FolioNativeDir>
     <FolioParityJson>$(FolioRepoRoot)folio-js/test/data/go-parity.json</FolioParityJson>
   </PropertyGroup>
 
   <!--
-    THE ELEVEN FACES, EMBEDDED STRAIGHT FROM folio8-go/fonts/.
+    THE ELEVEN FACES, EMBEDDED STRAIGHT FROM folio-go/fonts/.
 
     They are read from the engine's own tree at build time and never copied
-    into folio-dotnet/, let alone committed there: folio8-go/fonts/ is the one
+    into folio-dotnet/, let alone committed there: folio-go/fonts/ is the one
     source of truth (the engine embeds the same files), and a second tracked
     14 MB copy could diverge silently. LogicalName is what Fonts.cs asks for,
     so the resource names do not depend on RootNamespace — which is
@@ -164,7 +164,7 @@
     pins folio-dotnet/LICENSE the way it pins folio-js/LICENSE.
 
     The FACE licences and notices go in beside them, under
-    third-party-notices/, copied at build time from folio8-go/fonts/ like the
+    third-party-notices/, copied at build time from folio-go/fonts/ like the
     faces themselves. A directory holding a font binary ships its own terms;
     here the binaries are inside the assembly, so the terms ship next to it.
   -->

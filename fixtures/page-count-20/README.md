@@ -65,7 +65,7 @@ tree and reports **20**, matching this document's declared page count exactly.
 
 ## Matrix registration
 
-Registered in `matrixDocuments` (`folio8-go/matrix_test.go`) as the Epic 2 gate's **sixth**
+Registered in `matrixDocuments` (`folio-go/matrix_test.go`) as the Epic 2 gate's **sixth**
 obligation (D-2.7.4, on D-2.6.2's criterion: FR31 had no cross-target artifact before this
 entry). Cross-target legs are **deferred to the gate** (D-000.4's override criterion declined —
 page-number substitution is integer advance arithmetic on `geom.Length`, no float, vendor call,

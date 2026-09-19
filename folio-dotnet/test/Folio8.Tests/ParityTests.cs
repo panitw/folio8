@@ -9,7 +9,7 @@ namespace Folio8Tests
     /// <summary>
     /// Diagnostic parity with Go, replayed from
     /// <c>folio-js/test/data/go-parity.json</c> — which
-    /// <c>folio8-go/wasm/cmd/render/parity_test.go</c> RECORDS from the Go
+    /// <c>folio-go/wasm/cmd/render/parity_test.go</c> RECORDS from the Go
     /// engine and holds equal to it. Every expectation here is Go's, and
     /// folio-js replays the same file, so the two bindings are proved equal to
     /// the engine against one set of recorded outcomes rather than two.

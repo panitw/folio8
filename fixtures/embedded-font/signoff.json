@@ -16,7 +16,7 @@
   },
   "why_the_transfer_is_sound": [
     "The two elements are identical in EVERY input that determines a shaped run: the same string, fontFamily 'body', fontSize 12, width 400, x 0. They differ only in y and height, which is placement, not shaping.",
-    "The face is the same PROGRAM, measured rather than taken from the asset's prose 'source' field: sha256(folio8-go/fonts/notosansthai/NotoSansThai-Regular.ttf) equals the embedded asset key AND the sha256 of its decoded 47788 bytes, all three being c94562c15cbff8c9af93042adb1c63981b5deeeba40693ea8d98cd3b33b73caf.",
+    "The face is the same PROGRAM, measured rather than taken from the asset's prose 'source' field: sha256(folio-go/fonts/notosansthai/NotoSansThai-Regular.ttf) equals the embedded asset key AND the sha256 of its decoded 47788 bytes, all three being c94562c15cbff8c9af93042adb1c63981b5deeeba40693ea8d98cd3b33b73caf.",
     "So the glyph ids and x/y offsets are necessarily identical whether the face arrives by name through the FontSet or by asset key out of the document. The PDFs differ (different subset, resource named from the asset key), but the layer a human attests -- the marks sit on the consonants they belong to -- is the same computation over the same bytes.",
     "fixtures/thai-stacked-marks/README.md designates e2 as THE CONTROL for that fixture: same script, same chain, same 12pt size, same 400pt box, and not one glyph with a vertical offset."
   ],

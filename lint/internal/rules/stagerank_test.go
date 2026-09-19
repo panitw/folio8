@@ -10,7 +10,7 @@ import (
 )
 
 // TestStageRankProductionScan is D-1.3.3's PRODUCTION caller: it points
-// the pure checker at the real folio8-go/internal/ tree and asserts ZERO
+// the pure checker at the real folio-go/internal/ tree and asserts ZERO
 // findings, failing on a scan error separately from, and BEFORE, the
 // zero-findings assertion (D-1.3.3 amended, RP-3b — a tree that cannot
 // be read must never be silently treated as "zero findings").
@@ -38,11 +38,11 @@ import (
 // change that caused the walk to skip it would go slack silently.
 func TestStageRankProductionScan(t *testing.T) {
 	root := repoRootFromTest(t)
-	internalDir := filepath.Join(root, "folio8-go", "internal")
+	internalDir := filepath.Join(root, "folio-go", "internal")
 
 	findings, stats, err := ScanStageRank(internalDir)
 	if err != nil {
-		t.Fatalf("scan folio8-go/internal/: %v", err)
+		t.Fatalf("scan folio-go/internal/: %v", err)
 	}
 
 	for _, pkg := range []string{"layout", "pagemodel", "pdf", "text", "fontset", "diag"} {
@@ -52,7 +52,7 @@ func TestStageRankProductionScan(t *testing.T) {
 		}
 	}
 	if stats.FilesSeen == 0 {
-		t.Fatal("vacuity guard: the scanner's own stats report 0 .go files parsed under folio8-go/internal/")
+		t.Fatal("vacuity guard: the scanner's own stats report 0 .go files parsed under folio-go/internal/")
 	}
 	if stats.FirstPartyImports == 0 {
 		t.Fatal("vacuity guard: the scanner's own stats report 0 first-party internal import edges examined — the rank comparison never ran even once, so zero findings proves nothing")
@@ -63,13 +63,13 @@ func TestStageRankProductionScan(t *testing.T) {
 		for _, f := range findings {
 			msgs = append(msgs, f.Message)
 		}
-		t.Fatalf("stage-rank violations under folio8-go/internal/ (D-000.16):\n%s", strings.Join(msgs, "\n"))
+		t.Fatalf("stage-rank violations under folio-go/internal/ (D-000.16):\n%s", strings.Join(msgs, "\n"))
 	}
 }
 
 // TestStageRankFixtureScan is D-1.3.3's FIXTURE caller over the RETAINED
-// VIOLATING FIXTURE at folio8-go/testdata/lint/stage-rank/ (never under
-// folio8-go/internal/, F-10). It asserts exactly the named findings BY
+// VIOLATING FIXTURE at folio-go/testdata/lint/stage-rank/ (never under
+// folio-go/internal/, F-10). It asserts exactly the named findings BY
 // FILE AND RULE, never by count (AC1, RP-3c) — matching neither a subset
 // nor a superset, so deleting an expected finding fails on the "expected
 // not reported" half and inventing one fails on the "unexpected
@@ -94,7 +94,7 @@ func TestStageRankProductionScan(t *testing.T) {
 //	                            NOT reported.
 func TestStageRankFixtureScan(t *testing.T) {
 	root := repoRootFromTest(t)
-	fixtureRoot := filepath.Join(root, "folio8-go", "testdata", "lint", "stage-rank")
+	fixtureRoot := filepath.Join(root, "folio-go", "testdata", "lint", "stage-rank")
 
 	got, stats, err := ScanStageRank(fixtureRoot)
 	if err != nil {
@@ -121,7 +121,7 @@ func TestStageRankFixtureScan(t *testing.T) {
 // a later stage needs rather than importing it.
 func TestStageRankMessageNamesAD5sArrow(t *testing.T) {
 	root := repoRootFromTest(t)
-	fixtureRoot := filepath.Join(root, "folio8-go", "testdata", "lint", "stage-rank")
+	fixtureRoot := filepath.Join(root, "folio-go", "testdata", "lint", "stage-rank")
 
 	got, _, err := ScanStageRank(fixtureRoot)
 	if err != nil {
@@ -167,7 +167,7 @@ func TestStageRankMessageNamesAD5sArrow(t *testing.T) {
 // test.
 func TestStageRankUnrankedMessageNamesASymbolThatExists(t *testing.T) {
 	root := repoRootFromTest(t)
-	fixtureRoot := filepath.Join(root, "folio8-go", "testdata", "lint", "stage-rank")
+	fixtureRoot := filepath.Join(root, "folio-go", "testdata", "lint", "stage-rank")
 
 	got, _, err := ScanStageRank(fixtureRoot)
 	if err != nil {

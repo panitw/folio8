@@ -1,13 +1,13 @@
-// Builds folio-js's engine: folio8-go/wasm/cmd/render compiled to js/wasm with
+// Builds folio-js's engine: folio-go/wasm/cmd/render compiled to js/wasm with
 // the go.mod toolchain, plus that toolchain's wasm_exec.js glue, into wasm/.
-// The command and the glue lookup follow folio8-designer/scripts/build-wasm.mjs.
+// The command and the glue lookup follow folio-designer/scripts/build-wasm.mjs.
 import { copyFileSync, existsSync, mkdirSync, rmSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
 const packageRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
-const goModuleRoot = join(packageRoot, '..', 'folio8-go')
+const goModuleRoot = join(packageRoot, '..', 'folio-go')
 const outputDir = join(packageRoot, 'wasm')
 
 // Run `go env` inside the module so GOTOOLCHAIN=auto resolves the go.mod

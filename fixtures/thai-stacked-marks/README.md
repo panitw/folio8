@@ -100,14 +100,14 @@ shaper really asked for whose rise scales to zero. `fontSize` has no positivity 
 stacked-mark document at `fontSize: 0.008` reaches the emitter with
 `ScaleRound(8, -57, 1000) == 0`. Emitting `0 Ts` there would drop the offset silently — the healthy
 output and the broken output would be the same bytes — so it still refuses, with zero bytes and a
-message pinned verbatim by `folio8-go/thai_mark_stacking_test.go`. At any `fontSize` of 1 pt or more,
+message pinned verbatim by `folio-go/thai_mark_stacking_test.go`. At any `fontSize` of 1 pt or more,
 `|rise| >= |YOffset|` millipoints and is never zero.
 
 ## Files
 
 | File | What it is |
 |---|---|
-| `input.folio` | the template, kept byte-identical to `folio8-go/thaiStackedMarksTemplateJSON` by hand |
+| `input.folio` | the template, kept byte-identical to `folio-go/thaiStackedMarksTemplateJSON` by hand |
 | `expected.json` | the recorded digest and the toolchain it was recorded under |
 | `expected.pdf` | the recorded artifact |
 

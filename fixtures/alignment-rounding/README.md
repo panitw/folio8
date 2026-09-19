@@ -73,7 +73,7 @@ sibling fixture's version leaks into a document requiring neither.
 
 | File | What it is |
 |---|---|
-| `input.folio` | the template, kept byte-identical to `folio8-go/alignmentRoundingTemplateJSON` by hand |
+| `input.folio` | the template, kept byte-identical to `folio-go/alignmentRoundingTemplateJSON` by hand |
 | `expected.json` | the recorded digest and the toolchain it was recorded under |
 | `expected.pdf` | the recorded artifact |
 

@@ -28,7 +28,7 @@ using System.Reflection;
 public static class Fonts
 {
     /// <summary>
-    /// The eleven faces, as <c>folio8-go/fonts/fonts.go</c> names them and in
+    /// The eleven faces, as <c>folio-go/fonts/fonts.go</c> names them and in
     /// the order it lists them: the face name a template's fallback chain
     /// uses, then the resource this assembly embeds it under.
     /// </summary>

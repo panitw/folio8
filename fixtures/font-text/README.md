@@ -1,9 +1,9 @@
 # Fixture: font-text
 
-This fixture is Story 1.5's golden record — the first PDF `folio8-go` produces with real,
+This fixture is Story 1.5's golden record — the first PDF `folio-go` produces with real,
 embedded, subsetted text: an A4 page whose content band renders `"Hello, World!"` and whose page
 footer renders `"Page footer 0123456789"`, both in a subset of the committed Latin test face
-(`folio8-go/testdata/fonts/Roboto-Regular.ttf`, AC26), embedded as a `Type0`/`Identity-H` composite
+(`folio-go/testdata/fonts/Roboto-Regular.ttf`, AC26), embedded as a `Type0`/`Identity-H` composite
 font with a `FontFile2` stream and a `ToUnicode` CMap (AC5).
 
 It sits **beside** `fixtures/minimal-rect/`, not in place of it (AC14a, D-1.5.9):
@@ -13,7 +13,7 @@ emission path; this fixture is the first covering the **font-embedding** path th
 
 ## Contents
 
-- `input.folio` — the `.folio` document rendered to produce this fixture. `folio8-go/fixture_test.go`
+- `input.folio` — the `.folio` document rendered to produce this fixture. `folio-go/fixture_test.go`
   renders the `fontTestTemplateJSON` constant directly, not this file — exactly as `minimal-rect/`'s
   fixture test renders `internal/pdf.Serialize()` directly rather than reading a file — but
   `TestRenderMatchesFontTextGoldenFixture` now asserts this file is byte-identical to that constant
@@ -27,9 +27,9 @@ emission path; this fixture is the first covering the **font-embedding** path th
 
 ## Font input
 
-Rendered with `FontSet{"Roboto-Regular": <bytes of folio8-go/testdata/fonts/Roboto-Regular.ttf>}`.
+Rendered with `FontSet{"Roboto-Regular": <bytes of folio-go/testdata/fonts/Roboto-Regular.ttf>}`.
 The font bytes are NOT copied into this directory a second time — AD-26 governs one committed copy
-per redistributed asset, and `folio8-go/testdata/fonts/` (with its own `LICENSE-Roboto.txt` and
+per redistributed asset, and `folio-go/testdata/fonts/` (with its own `LICENSE-Roboto.txt` and
 `NOTICE.md`) is that copy (AC25).
 
 ## Measured, at record time
@@ -91,7 +91,7 @@ bytes moved as a result, and the move **retires a regression rather than accepti
 Story 2.3's F3 recorded this fixture as *blind to shaping*. It is not, and the way that
 measurement misled is worth keeping on the page: **F3 measured the string `"Hello"` against a
 shipped Noto face**, while this fixture renders `"Hello, World!"` and `"Page footer 0123456789"`
-through `folio8-go/testdata/fonts/Roboto-Regular.ttf` at `unitsPerEm` 2048 — a different string
+through `folio-go/testdata/fonts/Roboto-Regular.ttf` at `unitsPerEm` 2048 — a different string
 *and* a different face. Roboto's `GPOS` kerns two pairs in that text, so the **previous bytes
 recorded UNKERNED output**: two `Tj` operators, no `TJ`, 22,299 bytes. The new bytes are 22,310,
 with two `TJ` arrays and zero `Tj`.
@@ -115,10 +115,10 @@ The kerning was confirmed against **HarfBuzz**, not against a second port of the
 **Exact invocations, verbatim, from the repository root:**
 
 ```
-hb-shape --no-glyph-names folio8-go/testdata/fonts/Roboto-Regular.ttf "Hello, World!"
+hb-shape --no-glyph-names folio-go/testdata/fonts/Roboto-Regular.ttf "Hello, World!"
 [44=0+1460|73=1+1085|80=2+497|80=3+497|83=4+1168|16=5+402|4=6+507|59=7+1786|83=8+1168|86=9+693|80=10+497|72=11+1155|5=12+527]
 
-hb-shape --no-glyph-names folio8-go/testdata/fonts/Roboto-Regular.ttf "Page footer 0123456789"
+hb-shape --no-glyph-names folio-go/testdata/fonts/Roboto-Regular.ttf "Page footer 0123456789"
 [52=0+1281|69=1+1114|75=2+1149|73=3+1085|4=4+507|74=5+711|83=6+1168|83=7+1168|88=8+669|73=9+1085|86=10+693|4=11+507|20=12+1150|21=13+1150|22=14+1150|23=15+1150|24=16+1150|25=17+1150|26=18+1150|27=19+1150|28=20+1150|29=21+1150]
 ```
 
@@ -169,5 +169,5 @@ recording machine, hand-checked, output pasted here. It is never a runtime or CI
 `TestModuleGraphAllowlist`), and it is deliberately **not** gated to "the legs that have qpdf": a check
 that runs on some legs and not others reproduces D-000.9's failure — an "all clear" indistinguishable
 from "I could not look" — one level up, at the leg. The standing every-leg regression guard is the
-in-repo checker `folio8-go/golden_structural_validity_test.go`, which is hermetic and covers all four
+in-repo checker `folio-go/golden_structural_validity_test.go`, which is hermetic and covers all four
 targets including `js-wasm`.

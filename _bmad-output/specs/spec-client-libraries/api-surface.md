@@ -1,6 +1,6 @@
 # API surface — folio-js and folio-dotnet
 
-The render-and-validate subset of `folio8-go`, and its shape in each language.
+The render-and-validate subset of `folio-go`, and its shape in each language.
 This is the complete public contract for both libraries: an item absent here is
 absent from the library, and CAP-8/CAP-9 require every row to appear in that
 language's API reference page.
@@ -14,7 +14,7 @@ returns a `Promise` — `await parseTemplate(…)`, `await render(…)` — over
 
 ## Entry points
 
-| `folio8-go` | folio-js | folio-dotnet | Notes |
+| `folio-go` | folio-js | folio-dotnet | Notes |
 | --- | --- | --- | --- |
 | `ParseTemplate(b []byte) (*Template, error)` | `parseTemplate(bytes)` | `Template.Parse(byte[])` | The primary constructor. Bytes in, template out. |
 | `LoadTemplate(path string) (*Template, error)` | `loadTemplate(path)` | `Template.Load(string)` | Convenience over the filesystem. The only API in either library that touches disk on the caller's behalf. |
@@ -25,7 +25,7 @@ returns a `Promise` — `await parseTemplate(…)`, `await render(…)` — over
 
 ## Value types
 
-| `folio8-go` | folio-js | folio-dotnet | Notes |
+| `folio-go` | folio-js | folio-dotnet | Notes |
 | --- | --- | --- | --- |
 | `Data []byte` | `Uint8Array \| string \| object` | `Data` (wraps `byte[]`) | JSON. JS accepts an object and serialises; .NET 4.6 has no `System.Text.Json`, so the wrapper takes bytes or a string and leaves serialiser choice to the caller. |
 | `Params []byte` | same as `Data` | `Params` | Runtime values that are not report data. Carries `documentDate`. |

@@ -2,7 +2,7 @@
 
 Story 2.2's fourth matrix document (AC8, D-1.8.6: **added**, replacing neither `font-text/` nor
 `image-embed/`) — the first fixture that renders folio8's actual **shipped** face set
-(`github.com/panitw/folio8/folio8-go/fonts`.Shipped()) through the public `Render` API, and the
+(`github.com/panitw/folio8/folio-go/fonts`.Shipped()) through the public `Render` API, and the
 first that genuinely exercises AD-8's ordered fallback **chain**: one text element whose value
 mixes three scripts against a three-member chain, `["Noto Sans", "Noto Sans Thai", "Noto Sans
 SC"]`.
@@ -17,7 +17,7 @@ matrix must cover them in-story, not at the Epic 2 gate.
 
 ## Contents
 
-- `input.folio` — byte-identical to `folio8-go/render_test.go`'s `multiScriptTestTemplateJSON`
+- `input.folio` — byte-identical to `folio-go/render_test.go`'s `multiScriptTestTemplateJSON`
   constant (verified, same shape as `font-text/`'s own `TestRenderMatchesFontTextGoldenFixture`
   drift check).
 - `expected.json` — the normative record: SHA-256 of the rendered bytes, `folio8GoVersion`,
@@ -36,7 +36,7 @@ matrix must cover them in-story, not at the Epic 2 gate.
 
 ## Feature guard (AC8, V6)
 
-`requireInstancedShippedFaces` (`folio8-go/matrix_test.go`) runs on **every captured leg, before any
+`requireInstancedShippedFaces` (`folio-go/matrix_test.go`) runs on **every captured leg, before any
 byte comparison**. It extracts all three embedded `FontFile2` programs and asserts, each behind a
 presence precondition:
 
@@ -65,7 +65,7 @@ variable face outright rather than choosing an instance on the caller's behalf.
 The story ships exactly three pairs — one Regular instance per shipped face (Bold is out of scope:
 the package exposes no way to request a non-default instance, so a Bold face would be selectable by
 nothing; D-2.2.1's standing condition, now **DW-12**, means the story that adds one inherits this
-obligation). Each pair's embedded program digest is pinned in `folio8-go/fixture_test.go`
+obligation). Each pair's embedded program digest is pinned in `folio-go/fixture_test.go`
 (`wantProgramSHA256`), and the count is asserted against the shipped set's own cardinality rather
 than a literal — the earlier `!= 3` compared a slice literal's length to a constant six lines above
 it, and was red-proved open. This sits alongside — not instead of — this fixture's own whole-document SHA-256 above: the whole-document
@@ -100,5 +100,5 @@ recording machine, hand-checked, output pasted here. It is never a runtime or CI
 `TestModuleGraphAllowlist`), and it is deliberately **not** gated to "the legs that have qpdf": a check
 that runs on some legs and not others reproduces D-000.9's failure — an "all clear" indistinguishable
 from "I could not look" — one level up, at the leg. The standing every-leg regression guard is the
-in-repo checker `folio8-go/golden_structural_validity_test.go`, which is hermetic and covers all four
+in-repo checker `folio-go/golden_structural_validity_test.go`, which is hermetic and covers all four
 targets including `js-wasm`.

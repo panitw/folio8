@@ -51,21 +51,21 @@ context:
 
 ## Code Map
 
-- `folio8-designer/src/sample-data.ts:22` — `SampleData.bytes` holds the accepted bytes (`bytes.slice(0)`); `sampleData.name` is the bounded file name.
-- `folio8-designer/src/App.tsx:536,623` — `sampleData` state and `sampleDataRef`; `:3151-3181` `exportPreviewPdf` is the pattern to copy (guards, `fileBusy`, `acquireSaveTarget` + `writeSave`, cancel and failure handling, "Saved … as" vs "Downloaded …").
-- `folio8-designer/src/file/file-access.ts` — `LocalFileFormat`, `folioFileFormat`, `pdfFileFormat`, `localFileName` (strips one known extension). Add the JSON sample format beside them; `file-system-access.ts` `pickerTypeFor` and `input-download.ts` already work from any format.
-- `folio8-designer/src/DataPanel.tsx:69-70,145-147` — props, the `action` label, the `file-button` markup, and the panel's `role="alert"` line; App wires the panel at `App.tsx:3699`.
-- `folio8-designer/src/sample-file.ts:7` — `samplePickerType` describes the same JSON type for opening; keep one wording for both.
+- `folio-designer/src/sample-data.ts:22` — `SampleData.bytes` holds the accepted bytes (`bytes.slice(0)`); `sampleData.name` is the bounded file name.
+- `folio-designer/src/App.tsx:536,623` — `sampleData` state and `sampleDataRef`; `:3151-3181` `exportPreviewPdf` is the pattern to copy (guards, `fileBusy`, `acquireSaveTarget` + `writeSave`, cancel and failure handling, "Saved … as" vs "Downloaded …").
+- `folio-designer/src/file/file-access.ts` — `LocalFileFormat`, `folioFileFormat`, `pdfFileFormat`, `localFileName` (strips one known extension). Add the JSON sample format beside them; `file-system-access.ts` `pickerTypeFor` and `input-download.ts` already work from any format.
+- `folio-designer/src/DataPanel.tsx:69-70,145-147` — props, the `action` label, the `file-button` markup, and the panel's `role="alert"` line; App wires the panel at `App.tsx:3699`.
+- `folio-designer/src/sample-file.ts:7` — `samplePickerType` describes the same JSON type for opening; keep one wording for both.
 - Tests to follow: `src/App.test.tsx:1922-1924` (an `acquireSaveTarget` stub), `:8551` and `src/DataPanel.test.tsx:137,295` (sample access stubs), `e2e/pdf-export.spec.ts:36-54,74-114` (download tier and picker tier), `e2e/sample-data.spec.ts:8-27` (loading a sample in the browser).
 
 ## Tasks & Acceptance
 
 **Execution:**
-- [x] `folio8-designer/src/file/file-access.ts` — add the JSON sample format constant beside the others — one description and extension for every save path.
-- [x] `folio8-designer/src/App.tsx` — a `saveSampleData` following `exportPreviewPdf`, wired to the panel — the save itself.
-- [x] `folio8-designer/src/DataPanel.tsx` — the Save sample data button and its `onSave` prop — the control.
-- [x] `folio8-designer/src/App.test.tsx` and `src/DataPanel.test.tsx` — every matrix row, including the bytes written being identical to the loaded bytes — unit coverage.
-- [x] `folio8-designer/e2e/sample-data.spec.ts` — save the loaded sample through the download tier and compare the downloaded bytes with the file that was loaded — browser proof.
+- [x] `folio-designer/src/file/file-access.ts` — add the JSON sample format constant beside the others — one description and extension for every save path.
+- [x] `folio-designer/src/App.tsx` — a `saveSampleData` following `exportPreviewPdf`, wired to the panel — the save itself.
+- [x] `folio-designer/src/DataPanel.tsx` — the Save sample data button and its `onSave` prop — the control.
+- [x] `folio-designer/src/App.test.tsx` and `src/DataPanel.test.tsx` — every matrix row, including the bytes written being identical to the loaded bytes — unit coverage.
+- [x] `folio-designer/e2e/sample-data.spec.ts` — save the loaded sample through the download tier and compare the downloaded bytes with the file that was loaded — browser proof.
 
 **Acceptance Criteria:**
 - Given an example opened from the startup dialog, when its sample is saved and the saved file is loaded again with Load sample JSON, then the Preview renders as it did before and the DATA tree is the same.
@@ -130,10 +130,10 @@ context:
 ## Verification
 
 **Commands:**
-- `cd folio8-designer && npm run build` — expected: exits 0, including `verify:offline`.
-- `cd folio8-designer && npx vitest run` — expected: pass.
-- `cd folio8-designer && npm run typecheck && npm run test:e2e:compile && npm run lint` — expected: pass.
-- `cd folio8-designer && npx playwright test` — expected: pass.
+- `cd folio-designer && npm run build` — expected: exits 0, including `verify:offline`.
+- `cd folio-designer && npx vitest run` — expected: pass.
+- `cd folio-designer && npm run typecheck && npm run test:e2e:compile && npm run lint` — expected: pass.
+- `cd folio-designer && npx playwright test` — expected: pass.
 
 **Manual checks:**
 - In the production build, open Invoice from the startup dialog, save its sample, reload, then load the saved file and confirm the Preview matches.

@@ -10,7 +10,7 @@ import (
 
 // RuleNoCompressor is this guard's stable rule id (D-000.14: findings
 // carry a rule id, never a bare string match) for AC10's BINDING half:
-// no file under folio8-go/ may import compress/flate, compress/zlib or
+// no file under folio-go/ may import compress/flate, compress/zlib or
 // compress/gzip. D-1.8.1: "no compressor is invoked" is the mechanism
 // that keeps R4 closed (`acceptance.md:83`: "compressor output is
 // stable by observation, not by contract") — the PNG/JPEG passthrough
@@ -19,7 +19,7 @@ import (
 const RuleNoCompressor = "no-compressor-import"
 
 // RuleNoImageDecoder is the ILLUSTRATIVE half (AC10): no NON-TEST file
-// under folio8-go/ may import image, image/png or image/jpeg — reaching
+// under folio-go/ may import image, image/png or image/jpeg — reaching
 // for a stdlib decoder is the concrete shape the "simpler" re-encoding
 // route this story explicitly forbids would take.
 const RuleNoImageDecoder = "no-image-decoder-import"
@@ -45,8 +45,8 @@ type NoCompressorStats struct {
 	FilesSeen   int
 }
 
-// ScanNoCompressorImports walks root (intended to be folio8-go/ itself,
-// not just internal/ — AC10 says "no file under folio8-go/", a wider
+// ScanNoCompressorImports walks root (intended to be folio-go/ itself,
+// not just internal/ — AC10 says "no file under folio-go/", a wider
 // scope than the forbidden-imports scan) and reports every import of a
 // banned compressor path (in ANY file, binding) or a banned image
 // decoder path (in any NON-TEST file, illustrative).
@@ -75,7 +75,7 @@ func ScanNoCompressorImports(root string) ([]Finding, NoCompressorStats, error) 
 					Message: fmt.Sprintf(
 						"%s:%d: forbidden compressor import %q — D-1.8.1's passthrough design "+
 							"embeds the file's own already-compressed bytes; no compressor may be "+
-							"invoked anywhere under folio8-go/ (keeps R4 closed)",
+							"invoked anywhere under folio-go/ (keeps R4 closed)",
 						rel, pos.Line, path,
 					),
 				})

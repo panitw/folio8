@@ -6,37 +6,37 @@ import (
 )
 
 // TestEmbedFontProductionScan is AC3's production caller: scans the
-// real folio8-go/internal/ tree and asserts zero findings — no package
+// real folio-go/internal/ tree and asserts zero findings — no package
 // under internal/ embeds font data (AD-8's Rule). Coverage witness
 // first (D-000.9): zero files parsed is a failure distinct from "zero
 // findings, healthy".
 func TestEmbedFontProductionScan(t *testing.T) {
 	root := repoRootFromTest(t)
-	internalDir := filepath.Join(root, "folio8-go", "internal")
+	internalDir := filepath.Join(root, "folio-go", "internal")
 
 	findings, stats, err := ScanEmbedFont(internalDir)
 	if err != nil {
-		t.Fatalf("scan folio8-go/internal/: %v", err)
+		t.Fatalf("scan folio-go/internal/: %v", err)
 	}
 	if stats.FilesParsed == 0 {
-		t.Fatal("ScanEmbedFont parsed zero files under folio8-go/internal/ — coverage witness failed (D-000.9): a scanner that looked at nothing must not report the same 'zero findings' as a healthy run")
+		t.Fatal("ScanEmbedFont parsed zero files under folio-go/internal/ — coverage witness failed (D-000.9): a scanner that looked at nothing must not report the same 'zero findings' as a healthy run")
 	}
 	if len(findings) > 0 {
 		var msgs []string
 		for _, f := range findings {
 			msgs = append(msgs, f.Message)
 		}
-		t.Fatalf("go:embed directive(s) naming a font file found under folio8-go/internal/ (AD-8, AC3):\n%v", msgs)
+		t.Fatalf("go:embed directive(s) naming a font file found under folio-go/internal/ (AD-8, AC3):\n%v", msgs)
 	}
 }
 
 // TestEmbedFontFixtureScan is AC3's fixture caller: the retained
-// fixture tree at folio8-go/testdata/lint/embed-font/ (never under
-// folio8-go/internal/) must report exactly the named finding, by file
+// fixture tree at folio-go/testdata/lint/embed-font/ (never under
+// folio-go/internal/) must report exactly the named finding, by file
 // and rule.
 func TestEmbedFontFixtureScan(t *testing.T) {
 	root := repoRootFromTest(t)
-	fixtureRoot := filepath.Join(root, "folio8-go", "testdata", "lint", "embed-font")
+	fixtureRoot := filepath.Join(root, "folio-go", "testdata", "lint", "embed-font")
 
 	got, stats, err := ScanEmbedFont(fixtureRoot)
 	if err != nil {

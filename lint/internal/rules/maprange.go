@@ -56,7 +56,7 @@ type MapRangeStats struct {
 // target subtree as one coherent package graph via go/packages, with
 // full type information for every package it loads and everything it
 // imports (invariant (b) still holds: golang.org/x/tools is lint's own
-// dependency and never touches folio8-go's module graph). And per the
+// dependency and never touches folio-go's module graph). And per the
 // same finding's fix: an *ast.RangeStmt subject whose type cannot be
 // resolved is now a hard error, not a silent skip — see the walkErr
 // handling below. A checker that can fall through to "zero findings"

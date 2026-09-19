@@ -8,15 +8,15 @@ import (
 )
 
 // This file is Story 3.4's AC2: "lint's forbidden-imports scan over
-// folio8-go/internal/ reports FilesSeen INCLUDING EVERY NEW FILE this
+// folio-go/internal/ reports FilesSeen INCLUDING EVERY NEW FILE this
 // story adds — asserted by name, not by a count that could pass while
 // the new file was skipped — and finds zero findings." It is a
 // coverage proof over the EXISTING guard, not a new fence (D-000.24):
 // no new rule is added here.
 
-// story34NewFiles is every file Story 3.4 added under folio8-go/internal/
+// story34NewFiles is every file Story 3.4 added under folio-go/internal/
 // (AD-12's locale table, formatDate, formatNumber and their supporting
-// grammars), by path RELATIVE TO folio8-go/internal/ — repaired against
+// grammars), by path RELATIVE TO folio-go/internal/ — repaired against
 // Finding 14 (this story's QA review, three gaps):
 //  1. The original list only named internal/expr's 8 non-test files;
 //     internal/template/locale.go — a new file this story adds under
@@ -53,14 +53,14 @@ var story34NewFiles = []string{
 }
 
 // TestForbiddenImportsScanSeesStory34Files is AC2's own-name coverage
-// assertion: the REAL production scan over folio8-go/internal/ (the
+// assertion: the REAL production scan over folio-go/internal/ (the
 // exact root TestForbiddenImportsProductionScan above uses, not a
 // narrower or independently-walked subdirectory) must report, in its
 // OWN FilesSeenNames, every file in story34NewFiles — named, not
 // merely counted.
 func TestForbiddenImportsScanSeesStory34Files(t *testing.T) {
 	root := repoRootFromTest(t)
-	internalDir := filepath.Join(root, "folio8-go", "internal")
+	internalDir := filepath.Join(root, "folio-go", "internal")
 
 	_, stats, err := ScanForbiddenImports(internalDir)
 	if err != nil {
@@ -88,7 +88,7 @@ func TestForbiddenImportsScanSeesStory34Files(t *testing.T) {
 // construction (the scratch copy is never written back).
 func TestForbiddenImportsRedProofOnStory34File(t *testing.T) {
 	root := repoRootFromTest(t)
-	src := filepath.Join(root, "folio8-go", "internal", "expr", "calendar.go")
+	src := filepath.Join(root, "folio-go", "internal", "expr", "calendar.go")
 	orig, err := os.ReadFile(src)
 	if err != nil {
 		t.Fatalf("read %s: %v", src, err)

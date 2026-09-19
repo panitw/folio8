@@ -10,13 +10,13 @@ import (
 )
 
 // TestLicenceGraphProductionScan is AC18's production caller: it walks
-// each of the repo's three real Go modules — folio8-go, hashmatrix, lint
+// each of the repo's three real Go modules — folio-go, hashmatrix, lint
 // itself — and asserts zero findings, uniformly (D-1.3.9: AD-26's scope
 // line is "Binds: all"; a checker covering its own dependency is
 // correct, not a bootstrap problem, D-1.3.6/D-1.3.9).
 func TestLicenceGraphProductionScan(t *testing.T) {
 	root := repoRootFromTest(t)
-	for _, mod := range []string{"folio8-go", "hashmatrix", "lint"} {
+	for _, mod := range []string{"folio-go", "hashmatrix", "lint"} {
 		mod := mod
 		t.Run(mod, func(t *testing.T) {
 			findings, err := ScanLicenceGraph(filepath.Join(root, mod))
@@ -32,19 +32,19 @@ func TestLicenceGraphProductionScan(t *testing.T) {
 			}
 		})
 	}
-	t.Run("folio8-designer npm lockfile", func(t *testing.T) {
-		packages, resolveErr := licence.ResolveNPMGraph(filepath.Join(root, "folio8-designer"))
+	t.Run("folio-designer npm lockfile", func(t *testing.T) {
+		packages, resolveErr := licence.ResolveNPMGraph(filepath.Join(root, "folio-designer"))
 		if resolveErr != nil || len(packages) < 2 {
 			t.Fatalf("expected complete non-empty npm graph, packages=%d err=%v", len(packages), resolveErr)
 		}
-		findings, err := ScanNPMGraph(filepath.Join(root, "folio8-designer"))
+		findings, err := ScanNPMGraph(filepath.Join(root, "folio-designer"))
 		if err != nil {
 			t.Fatalf("scan designer lockfile: %v", err)
 		}
 		if len(findings) > 0 {
 			t.Fatalf("forbidden or unresolvable npm licence(s): %v", findings)
 		}
-		noticeFindings, err := ScanPDFJSNotice(filepath.Join(root, "folio8-designer"))
+		noticeFindings, err := ScanPDFJSNotice(filepath.Join(root, "folio-designer"))
 		if err != nil || len(noticeFindings) != 0 {
 			t.Fatalf("scan designer pdfjs notice: findings=%v err=%v", noticeFindings, err)
 		}
@@ -73,7 +73,7 @@ func TestNPMGraphFixtureScan(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(findings) != 1 || findings[0].Path != "folio8-designer/package-lock.json" {
+		if len(findings) != 1 || findings[0].Path != "folio-designer/package-lock.json" {
 			t.Fatalf("unknown lockfile licence must fail closed: %v", findings)
 		}
 	})
@@ -92,7 +92,7 @@ func TestNPMGraphFixtureScan(t *testing.T) {
 			t.Fatal(err)
 		}
 		findings, err = ScanNPMGraph(dir)
-		if err != nil || len(findings) != 1 || findings[0].Path != "folio8-designer/package-lock.json" {
+		if err != nil || len(findings) != 1 || findings[0].Path != "folio-designer/package-lock.json" {
 			t.Fatalf("missing lockfile licence must fail closed without node_modules: findings=%v err=%v", findings, err)
 		}
 	})

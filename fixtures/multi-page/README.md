@@ -60,7 +60,7 @@ reads as sound.
   resolution or subsetting beyond the one ligature above.
 - **No element is taller than the content window**, so it does **not** exercise the
   fits-nowhere overflow diagnostic. That case is covered in
-  `folio8-go/internal/layout/paginate_test.go` and `folio8-go/render_overflow_test.go`, where it
+  `folio-go/internal/layout/paginate_test.go` and `folio-go/render_overflow_test.go`, where it
   can be stated as an error assertion rather than as bytes.
 - **Exactly one content element**, so it says nothing about how two absolutely-positioned
   siblings interleave across a window boundary. `internal/layout/paginate_test.go` covers that.
@@ -96,7 +96,7 @@ giving **22 lines on page 1 and 7 on page 2**.
 
 | file | what it is |
 |---|---|
-| `input.folio` | the document. Kept **byte-identical** to `multiPageTemplateJSON` in `folio8-go/multi_page_template.go`, by hand. |
+| `input.folio` | the document. Kept **byte-identical** to `multiPageTemplateJSON` in `folio-go/multi_page_template.go`, by hand. |
 | `expected.pdf` | the golden, recorded by Story 2.6. |
 | `expected.json` | the golden's digest and the toolchain that produced it. |
 
@@ -125,5 +125,5 @@ recording machine, hand-checked, output pasted here. It is never a runtime or CI
 `TestModuleGraphAllowlist`), and it is deliberately **not** gated to "the legs that have qpdf": a check
 that runs on some legs and not others reproduces D-000.9's failure — an "all clear" indistinguishable
 from "I could not look" — one level up, at the leg. The standing every-leg regression guard is the
-in-repo checker `folio8-go/golden_structural_validity_test.go`, which is hermetic and covers all four
+in-repo checker `folio-go/golden_structural_validity_test.go`, which is hermetic and covers all four
 targets including `js-wasm`.

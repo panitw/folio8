@@ -8,7 +8,7 @@ import (
 
 // TestFindRepoRoot is Finding 17's minimum fix (this story's QA review):
 // findRepoRoot is a third, near-identical copy of the "walk up until a
-// directory holds both folio8-go/ and lint/" pattern also duplicated in
+// directory holds both folio-go/ and lint/" pattern also duplicated in
 // lint/internal/rules/testutil_test.go and
 // lint/internal/manifest/manifest_test.go — but unlike those two, this
 // copy is production code with no test file at all, and it is the one
@@ -22,10 +22,10 @@ func TestFindRepoRoot(t *testing.T) {
 		t.Fatalf("findRepoRoot: %v", err)
 	}
 
-	folio8Go, err1 := os.Stat(filepath.Join(root, "folio8-go"))
+	folio8Go, err1 := os.Stat(filepath.Join(root, "folio-go"))
 	lintDir, err2 := os.Stat(filepath.Join(root, "lint"))
 	if err1 != nil || !folio8Go.IsDir() {
-		t.Errorf("resolved root %q does not contain a folio8-go/ directory", root)
+		t.Errorf("resolved root %q does not contain a folio-go/ directory", root)
 	}
 	if err2 != nil || !lintDir.IsDir() {
 		t.Errorf("resolved root %q does not contain a lint/ directory", root)

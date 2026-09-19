@@ -1,4 +1,4 @@
-# folio8 Designer static host, implementing folio8-designer/static-host-contract.json:
+# folio8 Designer static host, implementing folio-designer/static-host-contract.json:
 #   - /assets/* is content-addressed: served from its .br sidecar when the client
 #     accepts brotli, and cached as immutable.
 #   - index.html and sw.js are the updateable entries: always revalidated.

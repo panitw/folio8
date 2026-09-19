@@ -1356,7 +1356,7 @@ arguments read as ceremony, an options struct is the alternative — swapping be
 costs nothing. The named-type and `[]byte` decisions are high confidence and should not move.
 
 **AMENDED 2026-09-17 (SPEC-client-libraries story 2) — superseded as to the tag, not as to the
-shape.** The owner decided on 2026-09-16 that the tag is **`folio8-go/v1.0.0`**, not `v0.1.0`
+shape.** The owner decided on 2026-09-16 that the tag is **`folio-go/v1.0.0`**, not `v0.1.0`
 (SPEC-client-libraries, Constraints), so the public API fixes at `v1.0.0` under semver and a later
 breaking change needs a `/v2` import path. The ruled `Render`/`RenderTo` shape above is what
 ships: five positional arguments with named `Data`/`Params`; no options struct was adopted. The
@@ -12059,7 +12059,7 @@ three deferrals floating.
 
 **AMENDED 2026-09-17 (SPEC-client-libraries story 2) — superseded by the `v1.0.0` owner decision.**
 The "after Epic 6" trigger was never re-made while Epics 7–17 landed. The owner replaced it on
-2026-09-16: the first tag is **`folio8-go/v1.0.0`**, cut after the designer surface leaves the public
+2026-09-16: the first tag is **`folio-go/v1.0.0`**, cut after the designer surface leaves the public
 API (client-libraries story 1) and the colour golden and style-code retirement land (story 3), and
 before the folio-js and folio-dotnet bindings are built. Backlog Story 15.3 is deprecated in its
 favour. The three deferrals this entry left floating are discharged with evidence in

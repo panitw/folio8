@@ -5,7 +5,7 @@ import { FolioRenderError, parameterReferences, parseTemplate, render, validate,
 import { repoFile, repoRoot, sha256, shippedFonts } from './helpers.js'
 
 // Replays folio-js/test/data/go-parity.json, which
-// folio8-go/wasm/cmd/render/parity_test.go records from the Go engine and
+// folio-go/wasm/cmd/render/parity_test.go records from the Go engine and
 // holds equal to it. Every expectation here is Go's.
 interface Input {
   file?: string

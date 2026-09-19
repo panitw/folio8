@@ -30,7 +30,7 @@ type EmbedFontStats struct {
 }
 
 // ScanEmbedFont is AC3's guard: "no go:embed directive naming a font
-// file exists anywhere under folio8-go/internal/" (AD-8's Rule,
+// file exists anywhere under folio-go/internal/" (AD-8's Rule,
 // verbatim). Detection is line-based rather than AST-based — a
 // //go:embed directive is always a full comment line immediately
 // preceding the declaration it attaches to, and the property this guard

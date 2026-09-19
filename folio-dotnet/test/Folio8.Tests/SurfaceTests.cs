@@ -109,7 +109,7 @@ namespace Folio8Tests
         [Fact]
         public void TheAbiContractIsDocumented()
         {
-            string readme = Repo.Text("folio8-go", "cshared", "README.md");
+            string readme = Repo.Text("folio-go", "cshared", "README.md");
             foreach (string export in new[]
             {
                 "folio8_version", "folio8_parse", "folio8_render", "folio8_validate",

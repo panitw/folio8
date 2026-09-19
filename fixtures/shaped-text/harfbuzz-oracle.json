@@ -2,18 +2,18 @@
   "tool": "hb-shape",
   "toolPath": "/opt/homebrew/bin/hb-shape",
   "toolVersion": "hb-shape (HarfBuzz) 14.2.0",
-  "method": "One-time offline reference run, hand-checked, frozen here. HarfBuzz is never a build, test or runtime dependency of folio8-go: the module graph is unchanged and TestModuleGraphAllowlist is untouched. Replay: run each row's own argv verbatim against the font file named in that row (paths are repository-root-relative; the recording used absolute paths under this checkout).",
+  "method": "One-time offline reference run, hand-checked, frozen here. HarfBuzz is never a build, test or runtime dependency of folio-go: the module graph is unchanged and TestModuleGraphAllowlist is untouched. Replay: run each row's own argv verbatim against the font file named in that row (paths are repository-root-relative; the recording used absolute paths under this checkout).",
   "rows": [
     {
       "face": "Noto Sans Thai",
-      "fontFile": "folio8-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
+      "fontFile": "folio-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
       "fontSha256": "c94562c15cbff8c9af93042adb1c63981b5deeeba40693ea8d98cd3b33b73caf",
       "text": "ปั",
       "argv": [
         "hb-shape",
         "--no-glyph-names",
         "--output-format=json",
-        "folio8-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
+        "folio-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
         "ปั"
       ],
       "glyphs": [
@@ -37,14 +37,14 @@
     },
     {
       "face": "Noto Sans Thai",
-      "fontFile": "folio8-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
+      "fontFile": "folio-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
       "fontSha256": "c94562c15cbff8c9af93042adb1c63981b5deeeba40693ea8d98cd3b33b73caf",
       "text": "ฟั",
       "argv": [
         "hb-shape",
         "--no-glyph-names",
         "--output-format=json",
-        "folio8-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
+        "folio-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
         "ฟั"
       ],
       "glyphs": [
@@ -68,14 +68,14 @@
     },
     {
       "face": "Noto Sans Thai",
-      "fontFile": "folio8-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
+      "fontFile": "folio-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
       "fontSha256": "c94562c15cbff8c9af93042adb1c63981b5deeeba40693ea8d98cd3b33b73caf",
       "text": "ที่",
       "argv": [
         "hb-shape",
         "--no-glyph-names",
         "--output-format=json",
-        "folio8-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
+        "folio-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
         "ที่"
       ],
       "glyphs": [
@@ -107,14 +107,14 @@
     },
     {
       "face": "Noto Sans Thai",
-      "fontFile": "folio8-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
+      "fontFile": "folio-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
       "fontSha256": "c94562c15cbff8c9af93042adb1c63981b5deeeba40693ea8d98cd3b33b73caf",
       "text": "น้ำ",
       "argv": [
         "hb-shape",
         "--no-glyph-names",
         "--output-format=json",
-        "folio8-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
+        "folio-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
         "น้ำ"
       ],
       "glyphs": [
@@ -154,14 +154,14 @@
     },
     {
       "face": "Noto Sans Thai",
-      "fontFile": "folio8-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
+      "fontFile": "folio-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
       "fontSha256": "c94562c15cbff8c9af93042adb1c63981b5deeeba40693ea8d98cd3b33b73caf",
       "text": "ป้ำ",
       "argv": [
         "hb-shape",
         "--no-glyph-names",
         "--output-format=json",
-        "folio8-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
+        "folio-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
         "ป้ำ"
       ],
       "glyphs": [
@@ -201,14 +201,14 @@
     },
     {
       "face": "Noto Sans Thai",
-      "fontFile": "folio8-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
+      "fontFile": "folio-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
       "fontSha256": "c94562c15cbff8c9af93042adb1c63981b5deeeba40693ea8d98cd3b33b73caf",
       "text": "ณัฐวุฒิ",
       "argv": [
         "hb-shape",
         "--no-glyph-names",
         "--output-format=json",
-        "folio8-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
+        "folio-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
         "ณัฐวุฒิ"
       ],
       "glyphs": [
@@ -272,14 +272,14 @@
     },
     {
       "face": "Noto Sans Thai",
-      "fontFile": "folio8-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
+      "fontFile": "folio-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
       "fontSha256": "c94562c15cbff8c9af93042adb1c63981b5deeeba40693ea8d98cd3b33b73caf",
       "text": "เกิด",
       "argv": [
         "hb-shape",
         "--no-glyph-names",
         "--output-format=json",
-        "folio8-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
+        "folio-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
         "เกิด"
       ],
       "glyphs": [
@@ -319,14 +319,14 @@
     },
     {
       "face": "Noto Sans Thai",
-      "fontFile": "folio8-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
+      "fontFile": "folio-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
       "fontSha256": "c94562c15cbff8c9af93042adb1c63981b5deeeba40693ea8d98cd3b33b73caf",
       "text": "า",
       "argv": [
         "hb-shape",
         "--no-glyph-names",
         "--output-format=json",
-        "folio8-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
+        "folio-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
         "า"
       ],
       "glyphs": [
@@ -342,14 +342,14 @@
     },
     {
       "face": "Noto Sans Thai",
-      "fontFile": "folio8-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
+      "fontFile": "folio-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
       "fontSha256": "c94562c15cbff8c9af93042adb1c63981b5deeeba40693ea8d98cd3b33b73caf",
       "text": "กรุงเทพ",
       "argv": [
         "hb-shape",
         "--no-glyph-names",
         "--output-format=json",
-        "folio8-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
+        "folio-go/fonts/notosansthai/NotoSansThai-Regular.ttf",
         "กรุงเทพ"
       ],
       "glyphs": [
@@ -413,14 +413,14 @@
     },
     {
       "face": "Noto Sans",
-      "fontFile": "folio8-go/fonts/notosans/NotoSans-Regular.ttf",
+      "fontFile": "folio-go/fonts/notosans/NotoSans-Regular.ttf",
       "fontSha256": "a4c811314da2ade3b4d2f44e80cda21dd2624e50be82dcefa298dc45a3c92d6c",
       "text": "office",
       "argv": [
         "hb-shape",
         "--no-glyph-names",
         "--output-format=json",
-        "folio8-go/fonts/notosans/NotoSans-Regular.ttf",
+        "folio-go/fonts/notosans/NotoSans-Regular.ttf",
         "office"
       ],
       "glyphs": [
@@ -460,14 +460,14 @@
     },
     {
       "face": "Noto Sans",
-      "fontFile": "folio8-go/fonts/notosans/NotoSans-Regular.ttf",
+      "fontFile": "folio-go/fonts/notosans/NotoSans-Regular.ttf",
       "fontSha256": "a4c811314da2ade3b4d2f44e80cda21dd2624e50be82dcefa298dc45a3c92d6c",
       "text": "fi",
       "argv": [
         "hb-shape",
         "--no-glyph-names",
         "--output-format=json",
-        "folio8-go/fonts/notosans/NotoSans-Regular.ttf",
+        "folio-go/fonts/notosans/NotoSans-Regular.ttf",
         "fi"
       ],
       "glyphs": [
@@ -483,14 +483,14 @@
     },
     {
       "face": "Noto Sans",
-      "fontFile": "folio8-go/fonts/notosans/NotoSans-Regular.ttf",
+      "fontFile": "folio-go/fonts/notosans/NotoSans-Regular.ttf",
       "fontSha256": "a4c811314da2ade3b4d2f44e80cda21dd2624e50be82dcefa298dc45a3c92d6c",
       "text": "AV",
       "argv": [
         "hb-shape",
         "--no-glyph-names",
         "--output-format=json",
-        "folio8-go/fonts/notosans/NotoSans-Regular.ttf",
+        "folio-go/fonts/notosans/NotoSans-Regular.ttf",
         "AV"
       ],
       "glyphs": [
@@ -514,14 +514,14 @@
     },
     {
       "face": "Noto Sans",
-      "fontFile": "folio8-go/fonts/notosans/NotoSans-Regular.ttf",
+      "fontFile": "folio-go/fonts/notosans/NotoSans-Regular.ttf",
       "fontSha256": "a4c811314da2ade3b4d2f44e80cda21dd2624e50be82dcefa298dc45a3c92d6c",
       "text": "Wo. To,",
       "argv": [
         "hb-shape",
         "--no-glyph-names",
         "--output-format=json",
-        "folio8-go/fonts/notosans/NotoSans-Regular.ttf",
+        "folio-go/fonts/notosans/NotoSans-Regular.ttf",
         "Wo. To,"
       ],
       "glyphs": [
@@ -585,14 +585,14 @@
     },
     {
       "face": "Noto Sans",
-      "fontFile": "folio8-go/fonts/notosans/NotoSans-Regular.ttf",
+      "fontFile": "folio-go/fonts/notosans/NotoSans-Regular.ttf",
       "fontSha256": "a4c811314da2ade3b4d2f44e80cda21dd2624e50be82dcefa298dc45a3c92d6c",
       "text": "Hello",
       "argv": [
         "hb-shape",
         "--no-glyph-names",
         "--output-format=json",
-        "folio8-go/fonts/notosans/NotoSans-Regular.ttf",
+        "folio-go/fonts/notosans/NotoSans-Regular.ttf",
         "Hello"
       ],
       "glyphs": [
@@ -640,14 +640,14 @@
     },
     {
       "face": "Noto Sans SC",
-      "fontFile": "folio8-go/fonts/notosanssc/NotoSansSC-Regular.ttf",
+      "fontFile": "folio-go/fonts/notosanssc/NotoSansSC-Regular.ttf",
       "fontSha256": "5ef5755b1ac6502180985a2aba6ef0b42d6663829f6f653898ced8411a060158",
       "text": "结算单",
       "argv": [
         "hb-shape",
         "--no-glyph-names",
         "--output-format=json",
-        "folio8-go/fonts/notosanssc/NotoSansSC-Regular.ttf",
+        "folio-go/fonts/notosanssc/NotoSansSC-Regular.ttf",
         "结算单"
       ],
       "glyphs": [
@@ -679,14 +679,14 @@
     },
     {
       "face": "Noto Sans SC",
-      "fontFile": "folio8-go/fonts/notosanssc/NotoSansSC-Regular.ttf",
+      "fontFile": "folio-go/fonts/notosanssc/NotoSansSC-Regular.ttf",
       "fontSha256": "5ef5755b1ac6502180985a2aba6ef0b42d6663829f6f653898ced8411a060158",
       "text": "结算单，共３页",
       "argv": [
         "hb-shape",
         "--no-glyph-names",
         "--output-format=json",
-        "folio8-go/fonts/notosanssc/NotoSansSC-Regular.ttf",
+        "folio-go/fonts/notosanssc/NotoSansSC-Regular.ttf",
         "结算单，共３页"
       ],
       "glyphs": [

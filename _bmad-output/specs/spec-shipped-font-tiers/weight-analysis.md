@@ -1,6 +1,6 @@
 # Shipped font weight — measured
 
-Measured against `folio8-go/fonts/` with `du -sh`.
+Measured against `folio-go/fonts/` with `du -sh`.
 
 | Face | Cuts | Size | Share | Tier |
 | --- | --- | --- | --- | --- |
@@ -54,7 +54,7 @@ opt-in (10 MB, one explicit dependency)
 
 # What Noto Sans SC actually covers
 
-Measured against the shipped `folio8-go/fonts/notosanssc/NotoSansSC-Regular.ttf`
+Measured against the shipped `folio-go/fonts/notosanssc/NotoSansSC-Regular.ttf`
 — Adobe/Source Han derived, v2.004 — with fontTools: **31,036 glyphs,
 30,890 mapped codepoints, 10.1 MB.**
 

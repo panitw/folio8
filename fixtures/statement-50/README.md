@@ -13,7 +13,7 @@ per-page delta all four statement goldens took.
 
 **What moved, measured rather than reasoned about** (D-15.1.1; full evidence and commands in
 `_bmad-output/implementation-artifacts/evidence/15-1/attribution.md`). Commit `791ed00` created
-`folio8-go/text_alignment.go` and wired `style.align` into the emitter for the first time. The page
+`folio-go/text_alignment.go` and wired `style.align` into the emitter for the first time. The page
 footer `e4` declares `"align": "right"`, and until that commit the engine parsed, validated,
 round-tripped and displayed that request and then drew the text at the **left** edge of its box
 anyway. Resolving both PDFs with `splitPageContentStreams` and diffing them page by page shows
@@ -140,7 +140,7 @@ the bound collection:
   in binary64 **iff** 25 divides *m*, so "no multiple of 0.25" and "not representable" are the
   same statement), keeps the old quarter-integral class as the control that does **not**
   discriminate, and pins the totals a binary money path would draw. The wrong implementation is
-  deliberately **not written** anywhere under `folio8-go/` — three separate guards forbid binary
+  deliberately **not written** anywhere under `folio-go/` — three separate guards forbid binary
   floating point there, `_test.go` files included, and all three were measured firing during
   this story's finisher pass. This is the column AD-23 exists for.
 
@@ -204,7 +204,7 @@ asserted at recording (`statement_semantics_test.go`, `matrix_test.go`).
 
 The irreducibly-human half — *does this statement READ correctly to a person* — is outstanding,
 and is tracked by a **failing, matrix-gated test**, not by this paragraph:
-`TestStatementSemanticSignOffIsRecorded` in `folio8-go/statement_signoff_matrix_test.go`. It is
+`TestStatementSemanticSignOffIsRecorded` in `folio-go/statement_signoff_matrix_test.go`. It is
 red until `fixtures/statement-signoff.json` names a reader, a date, what they examined, and
 **all four** of this family's digests.
 
@@ -214,9 +214,9 @@ under-invalidating would let three attestations survive a systemic change.
 
 ## Matrix registration
 
-Registered in `matrixDocuments` (`folio8-go/matrix_test.go`), in
+Registered in `matrixDocuments` (`folio-go/matrix_test.go`), in
 `.github/workflows/matrix.yml`'s `docs=` list and its four per-target upload paths, and in
-`declaredEpic2GateObligations` (`folio8-go/byte_neutrality_test.go`).
+`declaredEpic2GateObligations` (`folio-go/byte_neutrality_test.go`).
 
 **The four legs are RUN IN THIS STORY**, not deferred to the Epic 4 boundary gate. D-000.4 names
 4.7 explicitly as a per-story matrix override (`matrix_test.go`'s own comments list the

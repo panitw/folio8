@@ -283,5 +283,5 @@
       }
     ]
   },
-  "handEditedNativeTemplate": "folio8-go/testdata/template/golden/worked-example.json (native test only; never uploaded by this browser test)"
+  "handEditedNativeTemplate": "folio-go/testdata/template/golden/worked-example.json (native test only; never uploaded by this browser test)"
 }

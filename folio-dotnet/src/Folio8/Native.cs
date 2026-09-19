@@ -12,7 +12,7 @@ using System.Text;
 /// for its one result frame. Nothing above this file knows the ABI exists.
 /// </summary>
 /// <remarks>
-/// The contract is written down in <c>folio8-go/cshared/README.md</c> and
+/// The contract is written down in <c>folio-go/cshared/README.md</c> and
 /// this file is held to it, not the other way round.
 /// <para>
 /// <see cref="CallingConvention.Cdecl"/> is load-bearing, not decoration.
@@ -64,7 +64,7 @@ internal static class Native
     /// </summary>
     internal const int ExpectedAbiVersion = 1;
 
-    // Status codes. Keep in step with folio8-go/cshared/README.md.
+    // Status codes. Keep in step with folio-go/cshared/README.md.
     internal const int StatusOk = 0;
     internal const int StatusErrorDiagnostic = 1;
     internal const int StatusErrorMessage = 2;
@@ -154,7 +154,7 @@ internal static class Native
                 throw new InvalidOperationException(
                     "folio8: a library named '" + Library + "' loaded, but it does not export folio8_abi_version — so it is not the folio8 engine. " +
                     LoadedModuleDescription() +
-                    " Expected a c-shared build of folio8-go/cshared/cmd/folio8, which exports folio8_abi_version, folio8_version, folio8_parse, folio8_render, folio8_validate, folio8_parameter_references, folio8_free and folio8_allocation_count.",
+                    " Expected a c-shared build of folio-go/cshared/cmd/folio8, which exports folio8_abi_version, folio8_version, folio8_parse, folio8_render, folio8_validate, folio8_parameter_references, folio8_free and folio8_allocation_count.",
                     missing);
             }
             if (actual != ExpectedAbiVersion)

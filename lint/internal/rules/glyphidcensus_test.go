@@ -55,26 +55,26 @@ import (
 // producers and eight consumers on this tree. The type checker reports
 // two and two.
 //
-// PLACEMENT. This lives in lint rather than in folio8-go because lint
-// already type-checks the whole folio8-go module through packages.Load
+// PLACEMENT. This lives in lint rather than in folio-go because lint
+// already type-checks the whole folio-go module through packages.Load
 // (D-1.3.11), and because D-3.7.9's lesson is explicit that AST-only
-// scans over folio8-go/ are the weaker instrument "wherever a lint-side
+// scans over folio-go/ are the weaker instrument "wherever a lint-side
 // equivalent is affordable". It is also in the CI job that is green and
 // independently scheduled (ci.yml's lint job declares no `needs:`).
 func TestGlyphIdentifierCensus(t *testing.T) {
 	// The closed sets. Editing either of these is the deliberate,
 	// reviewable act DW-16 asks for — never a drive-by.
 	wantProducers := []string{
-		"folio8-go/render.go:buildShapedPDFRuns",         // the allocator: mints base AND synthetic values
-		"folio8-go/page_number.go:resolvePageRunForPage", // Story 2.7: a COPIER, reads CIDs the allocator minted
+		"folio-go/render.go:buildShapedPDFRuns",         // the allocator: mints base AND synthetic values
+		"folio-go/page_number.go:resolvePageRunForPage", // Story 2.7: a COPIER, reads CIDs the allocator minted
 	}
 	wantReaderPkgs := []string{
-		"github.com/panitw/folio8/folio8-go",              // the copier's own read path (page_number.go)
-		"github.com/panitw/folio8/folio8-go/internal/pdf", // the only legitimate consumer
+		"github.com/panitw/folio8/folio-go",              // the copier's own read path (page_number.go)
+		"github.com/panitw/folio8/folio-go/internal/pdf", // the only legitimate consumer
 	}
 
 	root := repoRootFromTest(t)
-	moduleRoot := filepath.Join(root, "folio8-go")
+	moduleRoot := filepath.Join(root, "folio-go")
 
 	field, pkgs := loadShapedGlyphCIDField(t, moduleRoot)
 	producers, readers, sites := censusShapedGlyphCID(t, pkgs, field)
@@ -84,7 +84,7 @@ func TestGlyphIdentifierCensus(t *testing.T) {
 	// expected set is also empty. Assert the scan actually found sites
 	// before comparing sets, and fail on zero rather than pass.
 	if sites == 0 {
-		t.Fatalf("the census resolved zero references to pagemodel.ShapedGlyph.CID across the whole folio8-go module — that is a broken scan, not a clean tree (D-000.9)")
+		t.Fatalf("the census resolved zero references to pagemodel.ShapedGlyph.CID across the whole folio-go module — that is a broken scan, not a clean tree (D-000.9)")
 	}
 
 	slices.Sort(producers)
@@ -130,7 +130,7 @@ func loadShapedGlyphCIDField(t *testing.T, moduleRoot string) (*types.Var, []*pa
 			moduleRoot, strings.Join(loadErrs, "; "))
 	}
 
-	const pagemodelPath = "github.com/panitw/folio8/folio8-go/internal/pagemodel"
+	const pagemodelPath = "github.com/panitw/folio8/folio-go/internal/pagemodel"
 	var field *types.Var
 	packages.Visit(pkgs, nil, func(p *packages.Package) {
 		if p.PkgPath != pagemodelPath || p.Types == nil || field != nil {
@@ -246,10 +246,10 @@ func censusShapedGlyphCID(t *testing.T, pkgs []*packages.Package, field *types.V
 	return producers, readers, sites
 }
 
-// relToModule trims everything above folio8-go/ so a finding reads the
+// relToModule trims everything above folio-go/ so a finding reads the
 // way the decision log writes it.
 func relToModule(path string) string {
-	if i := strings.Index(path, "folio8-go/"); i >= 0 {
+	if i := strings.Index(path, "folio-go/"); i >= 0 {
 		return path[i:]
 	}
 	return path

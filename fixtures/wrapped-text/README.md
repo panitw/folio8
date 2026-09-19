@@ -67,7 +67,7 @@ proving anything about the declaration.
   at all** — it is the only one with a multi-line element on a multi-face stack, and for a
   single-face stack the amended and superseded forms are identical. Measured by mutation: reinstating
   the superseded rule reddens this fixture and nothing else.
-- `input.folio` is kept byte-identical to `folio8-go/wrapped_text_template.go`'s
+- `input.folio` is kept byte-identical to `folio-go/wrapped_text_template.go`'s
   `wrappedTextTemplateJSON` by hand, as `font-text` and `multi-script-fallback` already are.
 
 ## Cross-target status
@@ -127,5 +127,5 @@ recording machine, hand-checked, output pasted here. It is never a runtime or CI
 `TestModuleGraphAllowlist`), and it is deliberately **not** gated to "the legs that have qpdf": a check
 that runs on some legs and not others reproduces D-000.9's failure — an "all clear" indistinguishable
 from "I could not look" — one level up, at the leg. The standing every-leg regression guard is the
-in-repo checker `folio8-go/golden_structural_validity_test.go`, which is hermetic and covers all four
+in-repo checker `folio-go/golden_structural_validity_test.go`, which is hermetic and covers all four
 targets including `js-wasm`.

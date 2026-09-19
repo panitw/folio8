@@ -52,16 +52,16 @@ present; it stayed green under the same mutation with only one.
 ## Contents
 
 - `input.folio` — the captured canonical output of step 3 above, byte-identical to the
-  `componentAssetImportTemplateJSON` constant in `folio8-go/render_test.go`.
+  `componentAssetImportTemplateJSON` constant in `folio-go/render_test.go`.
 - `expected.json` — the normative record: SHA-256 of the rendered bytes, `folio8GoVersion`, and the
   exact Go toolchain version that produced the hash (AC16, D-1.2.2). `goToolchain` matches every
-  other fixture's recorded value (`assertFixturesShareToolchain`, `folio8-go/matrix_test.go`).
+  other fixture's recorded value (`assertFixturesShareToolchain`, `folio-go/matrix_test.go`).
 - `expected.pdf` — the recorded bytes, kept for human diffing only. **The hash in `expected.json`
   is normative, not this file.**
 
 ## What this fixture proves that image-embed does not
 
-`TestRenderMatchesComponentAssetImportGoldenFixture` (`folio8-go/fixture_test.go`) asserts two
+`TestRenderMatchesComponentAssetImportGoldenFixture` (`folio-go/fixture_test.go`) asserts two
 things, not one:
 
 1. **(a)** the render of `input.folio` matches `expected.json`'s recorded hash, in the same shape
@@ -85,6 +85,6 @@ sort entirely and watching this assertion fail.
 
 ## Matrix registration
 
-Registered in `matrixDocuments` (`folio8-go/matrix_test.go`, `//go:build matrix`) alongside the
+Registered in `matrixDocuments` (`folio-go/matrix_test.go`, `//go:build matrix`) alongside the
 other fixtures, so the four-target hash matrix picks this fixture up automatically the next time
 it runs (D-5.13.5: this story writes the registration but does not run the matrix itself).

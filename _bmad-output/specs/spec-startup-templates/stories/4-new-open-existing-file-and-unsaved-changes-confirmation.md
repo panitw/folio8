@@ -67,13 +67,13 @@ context:
 
 ## Code Map
 
-- `folio8-designer/src/App.tsx:2960-2976` (`startBlank`): its body becomes the Blank path of a reopened dialog. The document-bar button at `:3491` changes to New… (opens the dialog).
-- `folio8-designer/src/App.tsx:2861-2896` (`open`, `installOpenedDocument`): split the picker from the install so the dialog shares the path. Cancel is detected with `isFileAccessCancelled` (`src/file/file-access.ts:65`).
-- `folio8-designer/src/App.tsx:2904-2934` (`chooseStartup`), `:372-377` (dialog state, `startupCards`): add the dialog origin (launch or New…) and a pending confirmation. `startupCards` must still hold Blank when `examples` is undefined, so New… works in unit tests.
-- `folio8-designer/src/App.tsx:366,3256` (`savedRevision`, `dirty`): keep `dirty` for the bar's label. Add a separate baseline revision, set wherever a document is installed (starter at launch, `startBlank`, `open`, example load) or saved. The warning fires only when `snapshot.revision` differs from that baseline.
-- `folio8-designer/src/StartupDialog.tsx`: add `onOpenFile?` and `onCancel`. Cancel and Escape stop meaning Blank; App decides. (After the owner renegotiation: no confirmation prop.)
-- `folio8-designer/src/App.tsx` `DeletePageDialog` (~:5772): the shape copied by `UnsavedChangesDialog`, the warning New… shows before the startup dialog.
-- `folio8-designer/src/App.css` `.startup-*`, `.unsaved-warning-*`: Open existing file, the footer rule, and the warning's amber dot and mono title.
+- `folio-designer/src/App.tsx:2960-2976` (`startBlank`): its body becomes the Blank path of a reopened dialog. The document-bar button at `:3491` changes to New… (opens the dialog).
+- `folio-designer/src/App.tsx:2861-2896` (`open`, `installOpenedDocument`): split the picker from the install so the dialog shares the path. Cancel is detected with `isFileAccessCancelled` (`src/file/file-access.ts:65`).
+- `folio-designer/src/App.tsx:2904-2934` (`chooseStartup`), `:372-377` (dialog state, `startupCards`): add the dialog origin (launch or New…) and a pending confirmation. `startupCards` must still hold Blank when `examples` is undefined, so New… works in unit tests.
+- `folio-designer/src/App.tsx:366,3256` (`savedRevision`, `dirty`): keep `dirty` for the bar's label. Add a separate baseline revision, set wherever a document is installed (starter at launch, `startBlank`, `open`, example load) or saved. The warning fires only when `snapshot.revision` differs from that baseline.
+- `folio-designer/src/StartupDialog.tsx`: add `onOpenFile?` and `onCancel`. Cancel and Escape stop meaning Blank; App decides. (After the owner renegotiation: no confirmation prop.)
+- `folio-designer/src/App.tsx` `DeletePageDialog` (~:5772): the shape copied by `UnsavedChangesDialog`, the warning New… shows before the startup dialog.
+- `folio-designer/src/App.css` `.startup-*`, `.unsaved-warning-*`: Open existing file, the footer rule, and the warning's amber dot and mono title.
 - **Tests clicking the document bar's "Start blank"** move to New… then Start blank, plus Discard when a confirmation appears, through one shared unit-test helper:
   - `src/App.test.tsx`: 2942, 6091, 6172, 8583, 9015, 9554, 10733; names at 1169 and 1192.
   - `src/App.font-store.test.tsx`: 314, 373, 851, 919.
@@ -81,28 +81,28 @@ context:
   - `src/table-column-binding.test.tsx`: 151, 167.
   - `e2e/pages.spec.ts`: 30, 95, 164.
   - `e2e/application-shell.spec.ts`: 25.
-- `folio8-designer/src/control-vocabulary-contract.test.tsx:585,1014`: rename "Start blank" to "New…"; leave the planted-violation fixtures at 810-828 alone.
-- **Undo history** lives in the engine (`folio8-go/wasm/engine.go` `load` clears it). Keep editing must make no engine request.
+- `folio-designer/src/control-vocabulary-contract.test.tsx:585,1014`: rename "Start blank" to "New…"; leave the planted-violation fixtures at 810-828 alone.
+- **Undo history** lives in the engine (`folio-go/wasm/engine.go` `load` clears it). Keep editing must make no engine request.
 
 ## Tasks & Acceptance
 
 **Execution:**
-- [x] `folio8-designer/src/StartupDialog.tsx`: Open existing file…, separate Cancel, confirmation footer and its focus and Escape behaviour. It stays presentational.
-- [x] `folio8-designer/src/App.css`: styles for the new footer states, tokens only.
-- [x] `folio8-designer/src/App.tsx`: New… button, dialog origin, the Blank path for a reopened dialog, open-from-dialog, the unsaved predicate and confirmation state, all wired to the shared install helpers.
-- [x] `folio8-designer/src/App.test.tsx`: cover every I/O matrix row, including undo still enabled after Keep editing and after Cancel. Add the shared New…-then-Blank helper and migrate the unit tests listed in the Code Map.
-- [x] `folio8-designer/src/control-vocabulary-contract.test.tsx`: rename the button.
-- [x] `folio8-designer/e2e/startup-dialog.spec.ts`: add three flows:
+- [x] `folio-designer/src/StartupDialog.tsx`: Open existing file…, separate Cancel, confirmation footer and its focus and Escape behaviour. It stays presentational.
+- [x] `folio-designer/src/App.css`: styles for the new footer states, tokens only.
+- [x] `folio-designer/src/App.tsx`: New… button, dialog origin, the Blank path for a reopened dialog, open-from-dialog, the unsaved predicate and confirmation state, all wired to the shared install helpers.
+- [x] `folio-designer/src/App.test.tsx`: cover every I/O matrix row, including undo still enabled after Keep editing and after Cancel. Add the shared New…-then-Blank helper and migrate the unit tests listed in the Code Map.
+- [x] `folio-designer/src/control-vocabulary-contract.test.tsx`: rename the button.
+- [x] `folio-designer/e2e/startup-dialog.spec.ts`: add three flows:
   - edit, then New…, Invoice, Keep editing (same revision), then Discard lands in Preview;
   - Open existing file… with a fixture `.folio` closes the dialog;
   - after migrating `pages.spec.ts` and `application-shell.spec.ts`, confirm they still pass.
 
 **Rework after owner renegotiation (warning before the dialog):**
-- [x] `folio8-designer/src/StartupDialog.tsx`, `src/App.css`: remove the confirmation footer, the `confirmation` prop, the `.startup-unsaved*` rules and the confirmation-only focus handling. Keep Open existing file…, `onCancel` and the Tab-trap fix.
-- [x] `folio8-designer/src/App.tsx`: New… checks for real edits and shows an unsaved-changes warning in `DeletePageDialog`'s shape. Discard opens the startup dialog, and Keep editing/Escape closes the warning. Remove `startupPending` and the in-dialog asking from `chooseStartup`/`requestStartupFile`. App keyboard shortcuts and canvas keys stay gated while the warning is open.
-- [x] `folio8-designer/src/test/new-document.ts`, `e2e/app.ts`: `startBlankFromNew` presses Discard on the warning if it appears, then Start blank.
-- [x] `folio8-designer/src/App.test.tsx`: replace the confirmation tests with tests for every row of the revised matrix.
-- [x] `folio8-designer/e2e/startup-dialog.spec.ts`: rework the edited-document flow. Edit, New…, and the warning shows before any startup dialog. Keep editing leaves the same revision and no dialog. New… again, Discard, and the dialog opens; Invoice lands in Preview.
+- [x] `folio-designer/src/StartupDialog.tsx`, `src/App.css`: remove the confirmation footer, the `confirmation` prop, the `.startup-unsaved*` rules and the confirmation-only focus handling. Keep Open existing file…, `onCancel` and the Tab-trap fix.
+- [x] `folio-designer/src/App.tsx`: New… checks for real edits and shows an unsaved-changes warning in `DeletePageDialog`'s shape. Discard opens the startup dialog, and Keep editing/Escape closes the warning. Remove `startupPending` and the in-dialog asking from `chooseStartup`/`requestStartupFile`. App keyboard shortcuts and canvas keys stay gated while the warning is open.
+- [x] `folio-designer/src/test/new-document.ts`, `e2e/app.ts`: `startBlankFromNew` presses Discard on the warning if it appears, then Start blank.
+- [x] `folio-designer/src/App.test.tsx`: replace the confirmation tests with tests for every row of the revised matrix.
+- [x] `folio-designer/e2e/startup-dialog.spec.ts`: rework the edited-document flow. Edit, New…, and the warning shows before any startup dialog. Keep editing leaves the same revision and no dialog. New… again, Discard, and the dialog opens; Invoice lands in Preview.
 
 **Acceptance Criteria:**
 - Given the warning is showing, when Tab is pressed repeatedly, then focus cycles only through Keep editing and Discard, and no startup dialog is in the page.
@@ -191,10 +191,10 @@ context:
 ## Verification
 
 **Commands:**
-- `cd folio8-designer && npm run build`: exits 0, including `verify:offline`.
-- `cd folio8-designer && npx vitest run`: passes, including `canvas-authority-contract` (e2e files must not read `scroll*`/`client*`/`offset*` sizes).
-- `cd folio8-designer && npm run typecheck && npm run test:e2e:compile && npm run lint`: passes.
-- `cd folio8-designer && npx playwright test`: passes.
+- `cd folio-designer && npm run build`: exits 0, including `verify:offline`.
+- `cd folio-designer && npx vitest run`: passes, including `canvas-authority-contract` (e2e files must not read `scroll*`/`client*`/`offset*` sizes).
+- `cd folio-designer && npm run typecheck && npm run test:e2e:compile && npm run lint`: passes.
+- `cd folio-designer && npx playwright test`: passes.
 
 **Manual checks:**
 - In the production build, check the unsaved-changes warning against `DeletePageDialog`'s look, and the footer with Open existing file… against `Main.dc.html`.

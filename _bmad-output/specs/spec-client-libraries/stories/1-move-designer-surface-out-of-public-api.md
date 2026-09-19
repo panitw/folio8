@@ -1,5 +1,5 @@
 ---
-title: 'Move the designer surface out of folio8-go public API'
+title: 'Move the designer surface out of folio-go public API'
 type: 'refactor'
 created: '2026-09-17'
 status: 'done'
@@ -14,7 +14,7 @@ context:
 
 ## Intent
 
-**Problem:** `folio8-go` exports 313 items across `folio8`, `fonts` and `wasm`, and nearly all of them serve the designer. The tag `folio8-go/v1.0.0` (story 2) would place that designer surface under semver, so a later rename or removal would need `/v2`.
+**Problem:** `folio-go` exports 313 items across `folio8`, `fonts` and `wasm`, and nearly all of them serve the designer. The tag `folio-go/v1.0.0` (story 2) would place that designer surface under semver, so a later rename or removal would need `/v2`.
 
 **Approach:** Leave the designer implementation in package `folio8`, unexport it, and move its data types, constants and `ComponentCommandError` into a new `internal/designer` package. Root exposes the designer functions to in-module callers through function variables it assigns in `init()`. Move package `wasm` to `internal/wasm`. Afterwards the public surface is render and validate only, about 59 items, and no render output changes.
 
@@ -30,8 +30,8 @@ context:
 - **What leaves public.** Funcs `Canvas`, `CanvasWithTextPaint`, `ApplyComponentCommand`, `ApplyPageSetupCommand`, `PreviewComponentMove`, `TableColumns`, `SnapToGrid`, `PreviewIdentity`, `AssetBytes`, `StandInData`; all 20 designer types; consts `MaxCanvasMillipoints`, `GridIncrement`, `MaxStandInDataBytes`, `MaxStandInDataPaths`, `StandInInstant`; and all of package `wasm`.
 - **Render-neutral.** Every golden-corpus hash is identical before and after. The designer's wire JSON is byte-identical: field names and tags do not change.
 - **The designer keeps working.** `npm run build:wasm`, the designer unit suite and the e2e compile all pass.
-- **Designer documentation is deleted from the public guide** (owner decision). Remove from `docs/rendering-library.md` and its `.html` twin every section documenting the moved API: `ComponentCommandError`; the designer parts of "Template and asset helpers" (`AssetBytes`, `StandInData`, `PreviewIdentity`, `TableColumns`); "Authoring and canvas"; "Authoring command catalog"; "wasm integration". Also update the intro and line 9 so `folio8-go/wasm` is no longer listed as public. `ParameterReferences`, `Version` and `LocaleTableVersion` stay documented. The two files must stay in step. Nothing is moved to contributor docs.
-- **The wasm clock comes from outside `internal/`.** `internal/wasm` may not import `time`, so the main package under `folio8-go/wasm/cmd/engine` supplies the render-elapsed clock. Tests use a fixed fake.
+- **Designer documentation is deleted from the public guide** (owner decision). Remove from `docs/rendering-library.md` and its `.html` twin every section documenting the moved API: `ComponentCommandError`; the designer parts of "Template and asset helpers" (`AssetBytes`, `StandInData`, `PreviewIdentity`, `TableColumns`); "Authoring and canvas"; "Authoring command catalog"; "wasm integration". Also update the intro and line 9 so `folio-go/wasm` is no longer listed as public. `ParameterReferences`, `Version` and `LocaleTableVersion` stay documented. The two files must stay in step. Nothing is moved to contributor docs.
+- **The wasm clock comes from outside `internal/`.** `internal/wasm` may not import `time`, so the main package under `folio-go/wasm/cmd/engine` supplies the render-elapsed clock. Tests use a fixed fake.
 
 **Never:**
 - Weaken, exempt or skip a lint rule to admit the move. If moved code breaks an internal-only rule (float64, map-range, forbidden imports) and cannot be fixed without changing behaviour, stop and ask.
@@ -43,7 +43,7 @@ context:
 
 | Scenario | Input / State | Expected Output / Behavior | Error Handling |
 |----------|--------------|---------------------------|----------------|
-| Outside caller | module consumer references `folio8.Canvas` or imports `folio8-go/wasm` | compile error: undefined, or internal package not allowed | N/A |
+| Outside caller | module consumer references `folio8.Canvas` or imports `folio-go/wasm` | compile error: undefined, or internal package not allowed | N/A |
 | In-module caller | `internal/wasm` calls a designer function through `internal/designer` | same projection or command result as today, same JSON bytes | a component failure still matches `*designer.ComponentCommandError` via `errors.As` |
 | Bridge not assigned | a package imports `internal/designer` without importing `folio8` | caught by a test | a test asserts every bridge variable is set once `folio8` is imported |
 | Handle of the wrong type | a bridge function receives something other than `*folio8.Template` | a clear panic naming the expected type | programmer error; never reachable from wasm |
@@ -52,42 +52,42 @@ context:
 
 ## Code Map
 
-- `folio8-go/folio8.go:33`: `Template` has only the unexported fields `doc` and `derivedFooters`, and it stays opaque.
-- `folio8-go/page_setup.go`: effectively all designer code. Consts and `Canvas*` types occupy lines 1–246; also `SnapToGrid`, `Canvas` (:949), `CanvasWithTextPaint` (:1092), `ApplyPageSetupCommand` (:2468). Its calls to render helpers stay within root.
-- `folio8-go/component_commands.go`: `ComponentCommandError` (:26) and its constructor (:34), which must move with the type, then `ApplyComponentCommand` (:218) and about 35 unexported handlers.
-- `folio8-go/{group_movement,pages_command,table_columns_projection,stand_in_data,asset_bytes,preview_identity,canvas_authored_properties}.go`: purely designer code.
-- `folio8-go/section_break.go` and `barcode_element.go`: mixed files. `ParseTemplate` and `Render` depend on their non-designer halves, so they stay in root. `barcode_element.go:183-340` defines the Canvas barcode/QR types, which move.
-- `folio8-go/table_min_height.go:84`: kept code that calls `componentFailure`, which will construct `designer.ComponentCommandError`.
+- `folio-go/folio8.go:33`: `Template` has only the unexported fields `doc` and `derivedFooters`, and it stays opaque.
+- `folio-go/page_setup.go`: effectively all designer code. Consts and `Canvas*` types occupy lines 1–246; also `SnapToGrid`, `Canvas` (:949), `CanvasWithTextPaint` (:1092), `ApplyPageSetupCommand` (:2468). Its calls to render helpers stay within root.
+- `folio-go/component_commands.go`: `ComponentCommandError` (:26) and its constructor (:34), which must move with the type, then `ApplyComponentCommand` (:218) and about 35 unexported handlers.
+- `folio-go/{group_movement,pages_command,table_columns_projection,stand_in_data,asset_bytes,preview_identity,canvas_authored_properties}.go`: purely designer code.
+- `folio-go/section_break.go` and `barcode_element.go`: mixed files. `ParseTemplate` and `Render` depend on their non-designer halves, so they stay in root. `barcode_element.go:183-340` defines the Canvas barcode/QR types, which move.
+- `folio-go/table_min_height.go:84`: kept code that calls `componentFailure`, which will construct `designer.ComponentCommandError`.
 - Designer types reference only builtins, each other and `geom.Length` (rank 0), never a root type, so they can live in `internal/designer`.
-- `folio8-go/wasm/engine.go`: imports `time` at :23 and brackets `Render` with `time.Now` at :255–257. Uses about 16 designer references. It moves to `internal/wasm`.
-- `folio8-go/wasm/cmd/engine/main.go`: `package main`, `//go:build js && wasm`. It stays at this path, so the designer build path `./wasm/cmd/engine` in `folio8-designer/scripts/wasm-vcs-stamp.mjs:64` does not change. Update its imports (:44, :266).
+- `folio-go/wasm/engine.go`: imports `time` at :23 and brackets `Render` with `time.Now` at :255–257. Uses about 16 designer references. It moves to `internal/wasm`.
+- `folio-go/wasm/cmd/engine/main.go`: `package main`, `//go:build js && wasm`. It stays at this path, so the designer build path `./wasm/cmd/engine` in `folio-designer/scripts/wasm-vcs-stamp.mjs:64` does not change. Update its imports (:44, :266).
 - `lint/internal/rules/stagerank.go:57-81`: an unranked `internal/` directory is a finding. Add `designer` (1, since it imports only geom) and `wasm` (strictly above every internal package it imports; use 9 if unsure). Forbidden-imports, map-range and float64 rules then apply to both.
-- `folio8-go/docs_examples_test.go:400,415`: change the package list to `{".", "fonts"}` and set the `total < 250` floor to the new measured count. Keep the guard.
-- `folio8-designer/src/engine-bounds-mirror.test.ts:74`: points at `folio8-go/wasm/engine.go`, which moves.
-- `folio8-go/component_commands_test.go:2220,3034`: read `wasm/cmd/engine/main.go` by path, which does not change.
+- `folio-go/docs_examples_test.go:400,415`: change the package list to `{".", "fonts"}` and set the `total < 250` floor to the new measured count. Keep the guard.
+- `folio-designer/src/engine-bounds-mirror.test.ts:74`: points at `folio-go/wasm/engine.go`, which moves.
+- `folio-go/component_commands_test.go:2220,3034`: read `wasm/cmd/engine/main.go` by path, which does not change.
 - Tests using moved symbols: 42 root test files. 39 are `package folio8` and switch to the unexported names and `designer.` types. `formatlocale_command_test.go`, `pick_declares_cuts_ext_test.go` and `starter_template_test.go` are `package folio8_test`: call through `internal/designer`. Tests under `wasm/` move with the package.
-- `README.md:29`: points at `folio8-go/wasm/`.
+- `README.md:29`: points at `folio-go/wasm/`.
 - `font_cache_sites_test.go:97-116`, `render_arch_test.go` and `testdata/templateopaque`: each scans root or pins root call sites. Designer code stays in root, so all should pass unchanged. Confirm they do.
 
 ## Tasks & Acceptance
 
 **Execution:**
-- [x] `folio8-go/internal/designer/` -- create the package: the 20 types moved verbatim (tags unchanged), the 5 consts, a `ComponentCommandError` constructor, and typed function variables whose template parameter is `any` (the opaque `*folio8.Template`) -- the only way for code outside root to reach root's unexported designer code without exporting `Template` internals
-- [x] `folio8-go/*.go` (designer files, `barcode_element.go`, `table_min_height.go`, new `designer_bridge.go`) -- rename the 10 funcs to unexported, repoint type and const references at `designer.`, and assign every bridge variable in `init()` -- removes the surface while keeping behaviour
-- [x] `folio8-go/wasm/*` -> `folio8-go/internal/wasm/` -- move the package, call designer functions through the bridge, and take a `func() int64` millisecond clock in place of `time` -- keeps it lint-clean under `internal/`
-- [x] `folio8-go/wasm/cmd/engine/main.go` -- import `internal/wasm` and `internal/designer`, supply the clock from `time` -- the only shell allowed to read a clock
+- [x] `folio-go/internal/designer/` -- create the package: the 20 types moved verbatim (tags unchanged), the 5 consts, a `ComponentCommandError` constructor, and typed function variables whose template parameter is `any` (the opaque `*folio8.Template`) -- the only way for code outside root to reach root's unexported designer code without exporting `Template` internals
+- [x] `folio-go/*.go` (designer files, `barcode_element.go`, `table_min_height.go`, new `designer_bridge.go`) -- rename the 10 funcs to unexported, repoint type and const references at `designer.`, and assign every bridge variable in `init()` -- removes the surface while keeping behaviour
+- [x] `folio-go/wasm/*` -> `folio-go/internal/wasm/` -- move the package, call designer functions through the bridge, and take a `func() int64` millisecond clock in place of `time` -- keeps it lint-clean under `internal/`
+- [x] `folio-go/wasm/cmd/engine/main.go` -- import `internal/wasm` and `internal/designer`, supply the clock from `time` -- the only shell allowed to read a clock
 - [x] `lint/internal/rules/stagerank.go` -- rank `designer` and `wasm` -- unranked packages fail lint
 - [x] root `_test.go` files, `docs_examples_test.go`, `engine-bounds-mirror.test.ts`, `README.md` -- update per Code Map; add a test asserting every bridge variable is set -- keeps the guards meaningful
 - [x] `docs/rendering-library.md` and `docs/rendering-library.html` -- delete the designer sections listed in Boundaries (~882–897 intro, line 9, ~1135–1343 designer parts, ~1344–1988) in both files together -- the published guide documents only the public API
 
 **Acceptance Criteria:**
 - Given the moved tree, when a census of exported identifiers runs over package `folio8` (non-test files) and package `fonts`, then it lists exactly the "What stays public" set and nothing else.
-- Given a fresh module that `require`s this checkout, when it references any moved symbol or imports `folio8-go/wasm`, then compilation fails.
+- Given a fresh module that `require`s this checkout, when it references any moved symbol or imports `folio-go/wasm`, then compilation fails.
 - Given the full test suite with `-count=1`, then every golden-corpus hash and every existing guard passes. A lowered census floor is not a failure.
 
 ## Implementation Notes
 
-- **Bridge as specified.** `internal/designer/bridge.go` declares 10 function variables with a template parameter typed `any`, and `folio8-go/designer_bridge.go` assigns them in `init()`. A foreign handle panics naming `*folio8.Template`. A nil `*Template` passes through, so each function keeps its own nil refusal, as the public functions did before.
+- **Bridge as specified.** `internal/designer/bridge.go` declares 10 function variables with a template parameter typed `any`, and `folio-go/designer_bridge.go` assigns them in `init()`. A foreign handle panics naming `*folio8.Template`. A nil `*Template` passes through, so each function keeps its own nil refusal, as the public functions did before.
 - **`ComponentCommandError` moved with its only constructor**, `designer.NewComponentCommandError`, because it embeds an unexported `error`. `componentFailure` stays in root and calls it.
 - **`internal/wasm` reads no clock.** `NewEngine(clock func() int64)`. `wasm/cmd/engine/main.go` stays at its path, supplies a monotonic clock from `time`, and keeps the designer build path `./wasm/cmd/engine` unchanged. Engine tests use a fake clock that advances exactly 7 ms per reading.
 - **Stage ranks: `designer` 1, `wasm` 9.** The lint compares its rank table to the ladder in `_bmad-output/planning-artifacts/architecture/architecture-folio-2026-08-23/ARCHITECTURE-SPINE.md`, so both rows were added there too. Lint was confirmed to cover `internal/wasm`: a temporary `import "time"` there failed it.
@@ -97,7 +97,7 @@ context:
   - `engine-bounds-mirror.test.ts`: three regexes read Go signatures that now say `designer.CanvasBand` and `designer.CanvasProjection{}`.
   - `TestStandInGeneratorReadsNoClock`: its sanity anchor moved from `const StandInInstant` to `func standInData(`.
   - `component_commands_test.go`: a local variable `canvas` became `initial`, so it no longer shadows the renamed function.
-- **Added during the matrix audit:** matrix row 1 (an outside caller) had no committed test. `public_surface_consumer_test.go` builds separate consumer modules. It starts with a positive control, where the kept API must build, then checks that `folio8.Canvas`, `folio8.ApplyComponentCommand`, `folio8.CanvasProjection`, `folio8-go/wasm`, `internal/wasm` and `internal/designer` each fail to build, naming the cause. A mutation check that re-exported `Canvas` made the test fail as intended.
+- **Added during the matrix audit:** matrix row 1 (an outside caller) had no committed test. `public_surface_consumer_test.go` builds separate consumer modules. It starts with a positive control, where the kept API must build, then checks that `folio8.Canvas`, `folio8.ApplyComponentCommand`, `folio8.CanvasProjection`, `folio-go/wasm`, `internal/wasm` and `internal/designer` each fail to build, naming the cause. A mutation check that re-exported `Canvas` made the test fail as intended.
 - **Not run:** `wasm/cmd/engine/main_test.go` builds only for js/wasm. It was vetted for that target, but its tests were not executed, as before this story. Some prose comments in designer TypeScript still name `wasm/engine.go` at its old path; they are not load-bearing and were left alone.
 
 ## Spec Change Log
@@ -128,7 +128,7 @@ context:
 | V0 | verification-gap | No verification gaps found | false | Not a defect; the layer reports coverage confirmed for the clock, the bridge and the public API. | rejected |
 | V1 | verification-gap | `internal/wasm/engine.go:276` comment names `folio8.AssetBytes` | low | Same as E7. | patch (P1) |
 | V2 | verification-gap | `designer.SnapToGrid` bridge variable has no caller | low | Verified: 0 non-test callers, and nothing outside root called exported `SnapToGrid` at the baseline. Dead surface in the bridge. Fix is a direct deletion (variable, assignment, test entry). | patch (P3) |
-| V3 | verification-gap | Designer TS comments still cite `folio8-go/wasm/engine.go` | low | Same as E8. | patch (P1) |
+| V3 | verification-gap | Designer TS comments still cite `folio-go/wasm/engine.go` | low | Same as E8. | patch (P1) |
 
 ## Design Notes
 
@@ -144,8 +144,8 @@ func init() { designer.Canvas = func(tpl any) (designer.CanvasProjection, error)
 ## Verification
 
 **Commands:**
-- `cd folio8-go && go build ./... && go vet ./...` -- expected: clean
-- `cd folio8-go && go test -count=1 -skip '^TestCorpusMeetsP6ExerciseFloors$' ./...` -- expected: all pass, golden hashes unchanged
-- `cd folio8-go && go test -count=1 -tags=matrix -skip '^TestCorpusMeetsP6ExerciseFloors$|^TestShippedFacesReproduceFromUpstream$|^TestCrossTargetByteIdentity$|^TestFMAProbeDiverges$' ./...` -- expected: all pass
+- `cd folio-go && go build ./... && go vet ./...` -- expected: clean
+- `cd folio-go && go test -count=1 -skip '^TestCorpusMeetsP6ExerciseFloors$' ./...` -- expected: all pass, golden hashes unchanged
+- `cd folio-go && go test -count=1 -tags=matrix -skip '^TestCorpusMeetsP6ExerciseFloors$|^TestShippedFacesReproduceFromUpstream$|^TestCrossTargetByteIdentity$|^TestFMAProbeDiverges$' ./...` -- expected: all pass
 - `cd lint && go test -count=1 ./...` -- expected: all pass, no new findings
-- `cd folio8-designer && npm run build:wasm && npx vitest run && npm run test:e2e:compile` -- expected: all pass
+- `cd folio-designer && npm run build:wasm && npx vitest run && npm run test:e2e:compile` -- expected: all pass

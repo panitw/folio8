@@ -2,9 +2,9 @@ node_modules/
 # Anchored: these three name directories at the package root, never a nested
 # dist/, wasm/ or fonts/ that happens to share the name.
 /dist/
-# Built by scripts/build-wasm.mjs from folio8-go/wasm/cmd/render and the Go
+# Built by scripts/build-wasm.mjs from folio-go/wasm/cmd/render and the Go
 # toolchain's wasm_exec.js.
 /wasm/
-# Copied from folio8-go/fonts/ by scripts/build-fonts.mjs. The bytes live in
-# folio8-go/fonts/ and are never committed twice.
+# Copied from folio-go/fonts/ by scripts/build-fonts.mjs. The bytes live in
+# folio-go/fonts/ and are never committed twice.
 /fonts/

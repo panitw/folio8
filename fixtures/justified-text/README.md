@@ -69,7 +69,7 @@ it reachable, because an unknown Thai run is atomic.
 
 | File | What it is |
 |---|---|
-| `input.folio` | the template, kept byte-identical to `folio8-go/justifiedTemplateJSON` by hand |
+| `input.folio` | the template, kept byte-identical to `folio-go/justifiedTemplateJSON` by hand |
 | `expected.json` | the recorded digest and the toolchain it was recorded under |
 | `expected.pdf` | the recorded artifact |
 

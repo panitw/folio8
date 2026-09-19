@@ -29,7 +29,7 @@ context:
 - **.NET Framework gets its own delivery.** `runtimes/` is a modern-.NET mechanism, so the package also ships MSBuild targets that place both architectures beside a .NET Framework consumer's output, in per-architecture subdirectories. The consumer authors nothing.
 - **Resolution is by process bitness at load time**, before the first P/Invoke: the loader picks the `x86` or `x64` asset from `IntPtr.Size` and loads it by full path, so the later `DllImport` binds to the already-loaded module. No `DllImportResolver`, no `NativeLibrary`, nothing newer than .NET Framework 4.6. It must work unchanged from an AnyCPU project on 64-bit Windows, an AnyCPU project forced 32-bit, and an explicitly x86 project, on both target families.
 - **Failure is named and actionable (CAP-11).** A dedicated folio8 exception states the detected process bitness, the RID and filename sought, every path probed, and the likely cause — bitness mismatch, missing RID asset, or P/Invoke blocked by the host. There is no degraded mode and no silent fallback to the other architecture.
-- **Fonts ship inside the package**, the complete eleven-face `fonts.Shipped()` set, byte-identical to the engine's, copied from `folio8-go/fonts/` at build time and never committed under `folio-dotnet/`. `Fonts.Shipped()` returns them as a `FontSet`, caching after the first call, and stays an explicit argument at every call site.
+- **Fonts ship inside the package**, the complete eleven-face `fonts.Shipped()` set, byte-identical to the engine's, copied from `folio-go/fonts/` at build time and never committed under `folio-dotnet/`. `Fonts.Shipped()` returns them as a `FontSet`, caching after the first call, and stays an explicit argument at every call site.
 - **Package metadata:** id `folio-dotnet`, version `1.0.0`, MIT, README and licence in the package, repository and project metadata, a field recording the engine version, and no `PackageReference` dependencies.
 - **The licence census records the new licence file**, as `folio-js/LICENSE` is recorded, so the AD-26 gate stays satisfied.
 - **Packing cannot ship an incomplete package:** the pack step fails if either native is missing, if a native has the wrong architecture, if a face is missing or has drifted, or if the font set is not the eleven faces.
@@ -69,7 +69,7 @@ context:
 - `folio-dotnet/test/Folio8.Tests/Folio8.Tests.csproj`: `FolioNativeRid` selects which native is staged, plus the MSBuild error when it is missing — the precedent for consumer-side wiring.
 - `folio-dotnet/test/Folio8.Net46Compile/`: the 4.6 API-surface check; the new loader must keep compiling there.
 - `folio-js/scripts/faces.mjs`, `build-fonts.mjs`, `src/fonts.ts`: the face table, the drift check against `folio-js/test/data/go-parity.json`'s `shippedFaces`, and the caching contract `Fonts.Shipped()` should mirror.
-- `folio8-go/fonts/fonts.go:159-172`: the name → file table; eleven faces, 14,782,604 bytes total.
+- `folio-go/fonts/fonts.go:159-172`: the name → file table; eleven faces, 14,782,604 bytes total.
 - `.github/workflows/ci.yml`: the `folio-dotnet` Windows job (compiler probes, export dump, 64- and 32-bit legs, trx uploads) and `folio-dotnet-host` on ubuntu. Consumer tests extend the Windows job.
 - `RELEASING.md:172+`: the npm section, as the shape for the NuGet one.
 - `lint/internal/licence/licencecensus_test.go:103`: where `folio-js/LICENSE` is pinned; `folio-dotnet/LICENSE` needs the same row or CI's `lint` job fails.
@@ -155,7 +155,7 @@ projects force the two that *can* be produced for real, against a real
 installed package.
 
 **Fonts.** The eleven faces are `EmbeddedResource`s read straight out of
-`folio8-go/fonts/` at build time, with explicit `LogicalName`s (`RootNamespace`
+`folio-go/fonts/` at build time, with explicit `LogicalName`s (`RootNamespace`
 is deliberately empty). Nothing is copied into `folio-dotnet/` at all, so
 "never committed" holds by construction. `Fonts.Shipped()` reads the resources
 once per process and returns a fresh `FontSet` each call; `FontSet.Add` copies,
@@ -197,7 +197,7 @@ only part it cannot exercise is the Windows native selection itself.
 - `dotnet pack folio-dotnet/src/Folio8/Folio8.csproj -c Release` — one 42 MB `.nupkg` containing `lib/netstandard2.0/Folio8.dll` (14.8 MB, faces embedded), both `runtimes/<rid>/native/folio8_native.dll`, `build/` and `buildTransitive/` targets, `README.md`, `LICENSE` and 22 font licence/notice files.
 - Both pack-time refusals forced and observed (missing native, wrong architecture).
 - `cd lint && go test -count=1 ./...` — green, census included.
-- `cd folio8-go && go test -count=1 -skip '^TestCorpusMeetsP6ExerciseFloors$' ./...` — green, no golden moved.
+- `cd folio-go && go test -count=1 -skip '^TestCorpusMeetsP6ExerciseFloors$' ./...` — green, no golden moved.
 
 ## Outstanding
 
@@ -221,7 +221,7 @@ only part it cannot exercise is the Windows native selection itself.
 - `cd folio-dotnet && ./build/build-native.sh host win-x64 win-x86 && dotnet test -c Release` -- expected: green
 - `cd folio-dotnet && dotnet pack -c Release` -- expected: one `.nupkg` with both natives, eleven faces, README and licence
 - `cd lint && go test -count=1 ./...` -- expected: green, including the licence census
-- `cd folio8-go && go test -count=1 -skip '^TestCorpusMeetsP6ExerciseFloors$' ./...` -- expected: green, no golden moved
+- `cd folio-go && go test -count=1 -skip '^TestCorpusMeetsP6ExerciseFloors$' ./...` -- expected: green, no golden moved
 - CI Windows job -- expected: every consumer shape renders to the committed hash; each forced failure names its cause
 
 **Manual checks:**

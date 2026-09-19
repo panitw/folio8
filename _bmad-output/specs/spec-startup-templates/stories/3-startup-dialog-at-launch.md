@@ -50,30 +50,30 @@ context:
 
 ## Code Map
 
-- `folio8-designer/src/main.tsx:9-13,29-38` -- replace the side-effect import with `import { exampleAssets }`; pass it to App once the engine is ready.
-- `folio8-designer/src/App.tsx:259,327` -- `AppProps`; add the examples prop. App remounts on engine ready (`key`), so launch-only state initialises once.
-- `folio8-designer/src/App.tsx:2813-2837` (`open`) -- factor the post-picker body into a helper taking bytes, name, target; `open` and the example load both call it.
-- `folio8-designer/src/App.tsx:2795-2812` (`loadSample`) -- factor the accept tail (`acceptSampleData` → `sampleDataRef`/`setSampleData` → preview invalidation) into a helper taking name and bytes.
-- `folio8-designer/src/App.tsx:1195-1200` (`enterPreview`) -- sets `modeRef` synchronously; call after document and sample install.
-- `folio8-designer/src/App.tsx:3034-3053,1736` -- keyboard shortcuts and the `fileBusy` guard; gate while the dialog is open, set `fileBusy` during an example load.
-- `folio8-designer/src/App.tsx:3545-3546` -- where TableEditor and FontBrowser render inline; render the dialog alongside.
-- `folio8-designer/src/FontBrowser.tsx:109,127-145,276` -- dialog markup, initial focus and inline focus trap to copy.
-- `folio8-designer/src/App.css:1234-1331` -- `.font-browser-*` sheet, header, grid/card, footer, confirm and active-state rules to mirror under new `.startup-*` classes.
-- `folio8-designer/src/design-contract.test.ts:52-101` -- no colour literals, `var(--radius…)` only, reuse `--shadow-sheet`, focus outline rule.
-- `folio8-designer/src/App.test.tsx:210,2941,8548,3921` -- fake engine, blank start, sample load and hand-rolled `fetch` stub patterns.
-- `folio8-designer/e2e/*.spec.ts` -- 37 specs, 69 `page.goto(` calls land on the canvas today; a production build serves the dialog in e2e (`playwright.config.ts` webServer).
+- `folio-designer/src/main.tsx:9-13,29-38` -- replace the side-effect import with `import { exampleAssets }`; pass it to App once the engine is ready.
+- `folio-designer/src/App.tsx:259,327` -- `AppProps`; add the examples prop. App remounts on engine ready (`key`), so launch-only state initialises once.
+- `folio-designer/src/App.tsx:2813-2837` (`open`) -- factor the post-picker body into a helper taking bytes, name, target; `open` and the example load both call it.
+- `folio-designer/src/App.tsx:2795-2812` (`loadSample`) -- factor the accept tail (`acceptSampleData` → `sampleDataRef`/`setSampleData` → preview invalidation) into a helper taking name and bytes.
+- `folio-designer/src/App.tsx:1195-1200` (`enterPreview`) -- sets `modeRef` synchronously; call after document and sample install.
+- `folio-designer/src/App.tsx:3034-3053,1736` -- keyboard shortcuts and the `fileBusy` guard; gate while the dialog is open, set `fileBusy` during an example load.
+- `folio-designer/src/App.tsx:3545-3546` -- where TableEditor and FontBrowser render inline; render the dialog alongside.
+- `folio-designer/src/FontBrowser.tsx:109,127-145,276` -- dialog markup, initial focus and inline focus trap to copy.
+- `folio-designer/src/App.css:1234-1331` -- `.font-browser-*` sheet, header, grid/card, footer, confirm and active-state rules to mirror under new `.startup-*` classes.
+- `folio-designer/src/design-contract.test.ts:52-101` -- no colour literals, `var(--radius…)` only, reuse `--shadow-sheet`, focus outline rule.
+- `folio-designer/src/App.test.tsx:210,2941,8548,3921` -- fake engine, blank start, sample load and hand-rolled `fetch` stub patterns.
+- `folio-designer/e2e/*.spec.ts` -- 37 specs, 69 `page.goto(` calls land on the canvas today; a production build serves the dialog in e2e (`playwright.config.ts` webServer).
 
 ## Tasks & Acceptance
 
 **Execution:**
-- [x] `folio8-designer/src/startup-examples.ts` -- id → name and description for Blank and the four examples, plus the sample file name -- dialog copy in one place.
-- [x] `folio8-designer/src/StartupDialog.tsx` -- the dialog per Boundaries -- presentational, receives cards, selection, busy and error, and callbacks.
-- [x] `folio8-designer/src/App.css` -- `.startup-*` rules mirroring the font-browser sheet with the mockup's sizes -- tokens only.
-- [x] `folio8-designer/src/App.tsx` -- examples prop, open-at-launch state, document and sample install helpers shared with `open`/`loadSample`, example load, shortcut gating, render -- wiring.
-- [x] `folio8-designer/src/main.tsx` -- import and pass `exampleAssets` -- enables the dialog in the product only.
-- [x] `folio8-designer/src/App.test.tsx` (or `StartupDialog.test.tsx`) -- every I/O matrix row, the metadata covering every `exampleAssets` id, focus trap and shortcut gating -- unit coverage.
-- [x] `folio8-designer/e2e/app.ts` (new) and every `e2e/*.spec.ts` that navigates to the app -- a shared `openWorkspace(page)` that navigates and dismisses the dialog with Escape; replace direct `page.goto('/')` landings -- existing specs keep their meaning.
-- [x] `folio8-designer/e2e/startup-dialog.spec.ts` -- launch shows the dialog; Escape lands on the canvas; opening Invoice lands in Preview with its sample loaded -- end-to-end proof.
+- [x] `folio-designer/src/startup-examples.ts` -- id → name and description for Blank and the four examples, plus the sample file name -- dialog copy in one place.
+- [x] `folio-designer/src/StartupDialog.tsx` -- the dialog per Boundaries -- presentational, receives cards, selection, busy and error, and callbacks.
+- [x] `folio-designer/src/App.css` -- `.startup-*` rules mirroring the font-browser sheet with the mockup's sizes -- tokens only.
+- [x] `folio-designer/src/App.tsx` -- examples prop, open-at-launch state, document and sample install helpers shared with `open`/`loadSample`, example load, shortcut gating, render -- wiring.
+- [x] `folio-designer/src/main.tsx` -- import and pass `exampleAssets` -- enables the dialog in the product only.
+- [x] `folio-designer/src/App.test.tsx` (or `StartupDialog.test.tsx`) -- every I/O matrix row, the metadata covering every `exampleAssets` id, focus trap and shortcut gating -- unit coverage.
+- [x] `folio-designer/e2e/app.ts` (new) and every `e2e/*.spec.ts` that navigates to the app -- a shared `openWorkspace(page)` that navigates and dismisses the dialog with Escape; replace direct `page.goto('/')` landings -- existing specs keep their meaning.
+- [x] `folio-designer/e2e/startup-dialog.spec.ts` -- launch shows the dialog; Escape lands on the canvas; opening Invoice lands in Preview with its sample loaded -- end-to-end proof.
 
 **Acceptance Criteria:**
 - Given a production build, when the app launches offline after first load, then the dialog and all five thumbnails appear and an example opens in Preview.
@@ -129,10 +129,10 @@ Escape keeps the starter rather than calling `startBlank`, so launch state stays
 ## Verification
 
 **Commands:**
-- `cd folio8-designer && npm run build` -- expected: exits 0 including `verify:offline`.
-- `cd folio8-designer && npx vitest run` -- expected: pass.
-- `cd folio8-designer && npm run typecheck && npm run lint` -- expected: pass.
-- `cd folio8-designer && npx playwright test` -- expected: pass.
+- `cd folio-designer && npm run build` -- expected: exits 0 including `verify:offline`.
+- `cd folio-designer && npx vitest run` -- expected: pass.
+- `cd folio-designer && npm run typecheck && npm run lint` -- expected: pass.
+- `cd folio-designer && npx playwright test` -- expected: pass.
 
 **Manual checks (if no CLI):**
 - Launch the built app; compare the dialog with `Main.dc.html`; open each example and confirm Preview shows its sample.

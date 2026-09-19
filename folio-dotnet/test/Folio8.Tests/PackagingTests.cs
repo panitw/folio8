@@ -177,7 +177,7 @@ namespace Folio8Tests
 
         /// <summary>
         /// NO BINARY IS TRACKED under folio-dotnet/. The faces come from
-        /// folio8-go/fonts/ at build time and the natives from
+        /// folio-go/fonts/ at build time and the natives from
         /// build-native.{sh,ps1}; a committed copy of either is a second
         /// source of truth that can drift in silence.
         /// </summary>

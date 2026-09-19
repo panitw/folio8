@@ -32,7 +32,7 @@ assertion.
 
 `lineSpacing: 0.6` gives an advance of **8,989 mp** against a first-baseline offset of **11,759 mp**.
 One line's baseline therefore sits *below* the next line's top: the line boxes overlap. **That is
-what tight leading is**, and it is what the page draws. `folio8-designer`'s `isTextPaint` carried a
+what tight leading is**, and it is what the page draws. `folio-designer`'s `isTextPaint` carried a
 clause forbidding exactly this shape (`paint.baseline > paint.top + paint.advance`), which failed one
 line, then `isCanvas`, then `isSnapshot`, and blanked the **whole** projection. D-7.2.2 deleted it:
 the browser was refusing the engine's own honest measurement, which is AD-17 inverted rather than
@@ -79,7 +79,7 @@ differ.
   reaches a render.
 - **Do not add this fixture to `baselineAcceptanceFixtures`.** That list is Story 2.5a's record of
   the five goldens *that story* re-recorded, and is hard-pinned to exactly five.
-- `input.folio` is kept byte-identical to `folio8-go/lineSpacingTemplateJSON` by hand, the same way
+- `input.folio` is kept byte-identical to `folio-go/lineSpacingTemplateJSON` by hand, the same way
   `font-text`, `multi-script-fallback`, `wrapped-text` and `mandatory-break` are.
 
 ## Recorded

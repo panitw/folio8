@@ -13,7 +13,7 @@ import (
 )
 
 // TestFontsAssetsProductionScan is AC5's production caller: at the real
-// repo root, folio8-go/fonts/ exists (Story 2.2 created it) and holds
+// repo root, folio-go/fonts/ exists (Story 2.2 created it) and holds
 // only recognised shapes, so this must report zero findings today.
 func TestFontsAssetsProductionScan(t *testing.T) {
 	root := repoRootFromTest(t)
@@ -35,7 +35,7 @@ func TestFontsAssetsProductionScan(t *testing.T) {
 // TestFontsAssetsRedProofByInjectionAtTheDeclaredLocation red-proves
 // AC5's fail-closed property at the DECLARED location — fontsAssetLocation
 // itself, the constant production reads — rather than at the real
-// working tree: a non-font stray file placed under folio8-go/fonts/ must
+// working tree: a non-font stray file placed under folio-go/fonts/ must
 // be reported, by rule id and message.
 //
 // It used to inject that file into the real committed tree and remove it
@@ -106,7 +106,7 @@ func minimalSfnt() []byte {
 }
 
 // scratchFontsRoot builds a synthetic repo root under t.TempDir() with a
-// folio8-go/fonts/ tree and a fonts.go declaring one //go:embed per entry
+// folio-go/fonts/ tree and a fonts.go declaring one //go:embed per entry
 // in faces. Faces whose value is nil are DECLARED but not written, which
 // is how the missing-face polarity is exercised.
 //
@@ -233,14 +233,14 @@ func TestFontsAssetsRejectsNonFontWithFontExtension(t *testing.T) {
 
 // TestFontsAssetsReportsAbsentLocation covers RuleFontsAssetMissing's
 // polarity-flip branch, which had no test at all: no test called
-// ScanFontsAssets on a root lacking folio8-go/fonts/.
+// ScanFontsAssets on a root lacking folio-go/fonts/.
 func TestFontsAssetsReportsAbsentLocation(t *testing.T) {
 	findings, stats, err := ScanFontsAssets(t.TempDir())
 	if err != nil {
 		t.Fatalf("scan: %v", err)
 	}
 	if stats.LocationExists {
-		t.Fatal("LocationExists must be false for a root with no folio8-go/fonts/")
+		t.Fatal("LocationExists must be false for a root with no folio-go/fonts/")
 	}
 	assertFinding(t, findings, RuleFontsAssetMissing, fontsAssetLocation, "declared shipped-fonts location is missing")
 }
@@ -274,10 +274,10 @@ func TestFontsAssetsFailsWhenExpectedSetCannotBeDerived(t *testing.T) {
 // build. ScanFontsAssets itself deliberately does NOT re-check this
 // (see its doc comment) — that property is
 // lint/internal/manifest.ResolveAssets' job (AC25), which already walks
-// the whole repo, folio8-go/fonts/ included, for exactly this. This test
+// the whole repo, folio-go/fonts/ included, for exactly this. This test
 // proves that enforcement actually fires, by the production error
 // message, not by exit status — removing NOTICE.md from
-// folio8-go/fonts/notosans/ and asserting ResolveAssets errors with the
+// folio-go/fonts/notosans/ and asserting ResolveAssets errors with the
 // "no NOTICE* file" message.
 //
 // The removal happens in a throwaway repository built by
@@ -298,7 +298,7 @@ func TestFontsAssetsNoticeRemovalRedProof(t *testing.T) {
 
 	_, err := manifest.ResolveAssets(root)
 	if err == nil {
-		t.Fatal("expected manifest.ResolveAssets to fail with NOTICE.md removed from folio8-go/fonts/notosans/, got nil error")
+		t.Fatal("expected manifest.ResolveAssets to fail with NOTICE.md removed from folio-go/fonts/notosans/, got nil error")
 	}
 	wantSubstr := "no NOTICE* file"
 	if !strings.Contains(err.Error(), wantSubstr) {
@@ -338,7 +338,7 @@ func TestFontsAssetsLicenceRemovalRedProof(t *testing.T) {
 
 	_, err = manifest.ResolveAssets(root)
 	if err == nil {
-		t.Fatal("expected manifest.ResolveAssets to fail with LICENSE-OFL.txt removed from folio8-go/fonts/notosansthai/, got nil error")
+		t.Fatal("expected manifest.ResolveAssets to fail with LICENSE-OFL.txt removed from folio-go/fonts/notosansthai/, got nil error")
 	}
 	wantSubstr := "no LICENSE* file"
 	if !strings.Contains(err.Error(), wantSubstr) {
@@ -347,7 +347,7 @@ func TestFontsAssetsLicenceRemovalRedProof(t *testing.T) {
 }
 
 // scratchRepoFromCommittedFace copies the REAL committed
-// folio8-go/fonts/<face>/ directory into a fresh git repository under
+// folio-go/fonts/<face>/ directory into a fresh git repository under
 // t.TempDir(), at the same repository-relative path, git-adds it, and
 // returns (synthetic root, copied face directory).
 //

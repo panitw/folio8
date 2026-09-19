@@ -1591,7 +1591,7 @@ named consumer branch on them?* — and retire whichever fails. Not an event own
 the tag is the hard, dated boundary.
 
 **AMENDED 2026-09-17 (SPEC-client-libraries story 2) — discharged before the tag.** The audit ran
-under the owner's ruling that it gates `folio8-go/v1.0.0`: no consumer branched on either code, so
+under the owner's ruling that it gates `folio-go/v1.0.0`: no consumer branched on either code, so
 **both** `STYLE_COLOR_INVALID` and `STYLE_LINE_SPACING_INVALID` were retired by client-libraries
 story 3 (commit `0260ba6`) — line spacing now reports `TEMPLATE_FIELD_INVALID`, and colour is
 validated at load with `TEMPLATE_FIELD_INVALID`. Neither `DiagCode*` constant exists on the release
@@ -1610,7 +1610,7 @@ or removing what is published, is free exactly once.**
 3. **D-7.8.2's audit** — retire whichever of the two existing style codes no consumer branches on.
    Removes a published code.
 
-**AMENDED 2026-09-17 (SPEC-client-libraries story 2) — the set at the `folio8-go/v1.0.0` tag.** The tag
+**AMENDED 2026-09-17 (SPEC-client-libraries story 2) — the set at the `folio-go/v1.0.0` tag.** The tag
 is `v1.0.0`, not `folio-go/v0.1.0` (owner decision, 2026-09-16). Every item that joined this set is
 recorded here against it, read from the tracker on the release tree:
 
@@ -1622,7 +1622,7 @@ recorded here against it, read from the tracker on the release tree:
 5. **Story 8.4 AC4** (D-8.4.3, non-font-asset render refusal) — `done`.
 6. **Story 16.1's nameID 13 licence tie** (D-16.R.5) — Story 16.1 `done`. Its hand-authored
    "second door" at load is deliberately not closed and ships open; see
-   `folio8-go/internal/template/parse.go`.
+   `folio-go/internal/template/parse.go`.
 
 **Tag-gate rulings recorded with the set (owner):** DW-147 gated the tag and is met
 (`fixtures/colour-strokes/`, signed). **DW-68 is ruled: v1.0.0 ships the clip**, so making the

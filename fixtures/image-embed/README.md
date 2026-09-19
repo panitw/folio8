@@ -1,6 +1,6 @@
 # Fixture: image-embed
 
-Story 1.8's golden record — the first PDF `folio8-go` produces with a real, embedded, passthrough
+Story 1.8's golden record — the first PDF `folio-go` produces with a real, embedded, passthrough
 image: an A4 page whose content band draws one `image` element (a 100pt x 60pt box) referencing a
 real, supported, non-square 3x2 8-bit RGB PNG asset embedded inside the document itself (FR33,
 AD-9).
@@ -14,7 +14,7 @@ route (D-1.8.1).
 ## Contents
 
 - `input.folio` — the `.folio` document rendered to produce this fixture, byte-identical to the
-  `imageTestTemplateJSON` constant in `folio8-go/render_test.go` (AC25a, the same discipline
+  `imageTestTemplateJSON` constant in `folio-go/render_test.go` (AC25a, the same discipline
   `fixtures/font-text/input.folio` carries).
 - `expected.json` — the normative record: SHA-256 of the rendered bytes, `folio8GoVersion`, and the
   exact Go toolchain version that produced the hash (AC16, D-1.2.2: `sha256` is always a JSON
@@ -35,7 +35,7 @@ IDAT/IEND all verified by the second tool before being committed here. It is del
 
 ## Passthrough route asserted
 
-`TestRenderMatchesImageEmbedGoldenFixture` (`folio8-go/fixture_test.go`) asserts the rendered bytes
+`TestRenderMatchesImageEmbedGoldenFixture` (`folio-go/fixture_test.go`) asserts the rendered bytes
 contain an image XObject (`/Subtype /Image`) BEFORE comparing any hash (AC23's vacuity guard, the
 same shape `font-text/`'s `FontFile2` guard uses) — a render that silently dropped the image would
 otherwise match nothing and prove nothing.
@@ -67,5 +67,5 @@ recording machine, hand-checked, output pasted here. It is never a runtime or CI
 `TestModuleGraphAllowlist`), and it is deliberately **not** gated to "the legs that have qpdf": a check
 that runs on some legs and not others reproduces D-000.9's failure — an "all clear" indistinguishable
 from "I could not look" — one level up, at the leg. The standing every-leg regression guard is the
-in-repo checker `folio8-go/golden_structural_validity_test.go`, which is hermetic and covers all four
+in-repo checker `folio-go/golden_structural_validity_test.go`, which is hermetic and covers all four
 targets including `js-wasm`.

@@ -68,13 +68,13 @@ text and its break computation did not change, only its label) — every
 change is named at its own row.
 
 All figures below are computed by the harness
-(`folio8-go/internal/text/corpus_test.go`, `p2_independent_test.go`,
+(`folio-go/internal/text/corpus_test.go`, `p2_independent_test.go`,
 `s4_test.go`) from the corpus actually read
 (`fixtures/thai-break-corpus/corpus.json`, **243 items: 204 sourced, 39
 synthetic**), never narrated. Reproduce with:
 
 ```
-cd folio8-go && go test ./internal/text/... -run \
+cd folio-go && go test ./internal/text/... -run \
   'TestCorpusMeetsP5Floors|TestCorpusMeetsP6ExerciseFloors|TestP1NeverBreaksInsideCluster|TestP2NeverBreaksInsideUnknownRun|TestP2IndependentDPCrossCheck|TestP3ProperNounsNeverSplit|TestAC10ComputedBreaksMatchS4Basis' -v -count=1
 ```
 
@@ -248,7 +248,7 @@ fixture** (D-2.1.9's table) is **re-pointed** from the pre-rebuild
 sourced-surname ids: **`name-116` (`ดอเลาะ`) and `name-117` (`แนแซ`)** — two
 ids, not three, now that the third candidate (`ฉั่วสมบูรณ์`) has been
 relabelled synthetic and is no longer a sourced personal name at all. See
-also `folio8-go/internal/text/break_test.go`'s V11 comment, corrected the same
+also `folio-go/internal/text/break_test.go`'s V11 comment, corrected the same
 way (Nit 1).
 
 **Several of these are given names, a different population from the 2
@@ -306,11 +306,11 @@ resolved.
 
 **Measured, run in this story (`rtk proxy` first, then redirect):**
 
-- `go build ./...`, `go vet ./...`, `gofmt -l .` — folio8-go, lint (green
+- `go build ./...`, `go vet ./...`, `gofmt -l .` — folio-go, lint (green
   after two `gofmt -w` fixes on newly-added test files); hashmatrix has a
   pre-existing, unrelated `go build ./...` quirk (`probe` package name
   collision with root output name), not introduced by this story.
-- `folio8-go` full suite, `-count=1`: **314 `--- PASS`, exactly 2 `--- FAIL`,
+- `folio-go` full suite, `-count=1`: **314 `--- PASS`, exactly 2 `--- FAIL`,
   0 `--- SKIP`** (re-measured by the finisher after Major 5's fix added one
   new passing test, `TestCorpusRegeneratedMatchesCommitted`; the second QA
   review measured 313/2/0 immediately before that test existed). **`internal/text`
@@ -318,7 +318,7 @@ resolved.
   `TestCorpusMeetsP6ExerciseFloors` (P6g, reported unmet) and
   `TestP2IndependentDPCrossCheck` (P2, reported failing) — both intentional
   per this reopening's explicit instruction to let them go red. Every other
-  package (`folio8-go`, `cmd/gencorpus`, `internal`, `internal/bind`,
+  package (`folio-go`, `cmd/gencorpus`, `internal`, `internal/bind`,
   `internal/fontset`, `internal/geom`, `internal/pdf`, `internal/template`) is
   `ok`.
 - `lint` module, full suite, `-count=1`, including `GOPROXY=off`: green
@@ -327,7 +327,7 @@ resolved.
   subdirectory/missing-file red-proofs).
 - `go build -tags=matrix ./...` / `go vet -tags=matrix ./...`: green.
 - Licence manifest (`lint/MANIFEST.md`): regenerated; now correctly carries
-  the CC0 wordlist row (`folio8-go/internal/text/wordlist/words_th.txt |
+  the CC0 wordlist row (`folio-go/internal/text/wordlist/words_th.txt |
   CC0-1.0 | ...`), fixed by adding a CC0-full-text fallback marker to
   `ClassifyLicenceText` (the committed `LICENSE-CC0-1.0.txt` is the full CC0
   1.0 Universal legal code, which needed the same kind of text-marker match
@@ -379,16 +379,16 @@ mechanism.
 **Finding 15 — the `runtime.Caller` guard's actual reach.** `RuleRuntimeCaller`
 (`lint/internal/rules/forbiddenimports.go`) is wired into `ScanForbiddenImports`,
 whose production caller (`TestForbiddenImportsProductionScan`) scans
-`folio8-go/internal/` ONLY. V1's original framing ("`runtime.Caller` occurs
+`folio-go/internal/` ONLY. V1's original framing ("`runtime.Caller` occurs
 zero times **in the repository** today") is a repo-wide measurement; the
-GUARD's enforcement is narrower — `folio8-go/internal/**` only. Verified
+GUARD's enforcement is narrower — `folio-go/internal/**` only. Verified
 （this story's dev record): injecting `runtime.Caller(0)` into
-`folio8-go/internal/text/data.go` fails the production scan (as designed);
-injecting the identical call into `folio8-go/cmd/gentrie/main.go` does
+`folio-go/internal/text/data.go` fails the production scan (as designed);
+injecting the identical call into `folio-go/cmd/gentrie/main.go` does
 **not** — the whole `lint` suite stays green, `go vet ./cmd/...` stays
 clean. This is a real gap in the guard's reach relative to V1's stated
 scope, disclosed rather than silently left implied as closed. Widening it
-(to the whole repo, or at least to `folio8-go/` including `cmd/`) is a
+(to the whole repo, or at least to `folio-go/` including `cmd/`) is a
 separate decision, out of this story's scope to make unilaterally.
 
 **Finding 16 — the place-040 label correction, quantified.** The
@@ -432,7 +432,7 @@ every check), and that `ฉั่วสมบูรณ์` was a live, self-decl
 instance of exactly the dodge the ruling forbids. Three fixes: (a) the bar
 (renamed `checkNoObsoleteConsonant`) now covers all five sourced buckets
 (given names, both surname lists, place names, transaction descriptions);
-(b) a new test, `folio8-go/cmd/gencorpus/main_test.go`'s
+(b) a new test, `folio-go/cmd/gencorpus/main_test.go`'s
 `TestCorpusRegeneratedMatchesCommitted`, regenerates the corpus from
 `buildItems()` and compares it structurally against the committed
 `corpus.json` — mirroring `internal/text`'s

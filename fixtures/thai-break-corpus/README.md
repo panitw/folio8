@@ -15,7 +15,7 @@ methodology and findings.
   attested; see `SPIKE-REPORT.md` and `deferred-work.md` DW-11.)
 - **`computed_breaks.json`** — **a cross-target REGRESSION ANCHOR ONLY, never
   a correctness oracle.** It is the CONSTRAINED engine's own raw output
-  (`folio8-go/internal/text.ComputeBreaks`, `unconstrained=false`), checked in
+  (`folio-go/internal/text.ComputeBreaks`, `unconstrained=false`), checked in
   so `TestAC10ComputedBreaksMatchS4Basis` can confirm every build target
   (native, `js/wasm`, and — at the Epic 2 gate — `linux/amd64`/`linux/arm64`)
   computes byte-identical break positions. **It is NOT a correctness label
@@ -33,7 +33,7 @@ methodology and findings.
 
 ## Regenerating
 
-From the `folio8-go/` module root:
+From the `folio-go/` module root:
 
 ```
 go run ./cmd/gencorpus   # rebuilds corpus.json from the curated word lists

@@ -7,7 +7,7 @@ import { corpus, expectedSha256, repoFile, repoRoot, sha256, shippedFonts } from
 // CAP-5, for folio-js: the WHOLE renderable corpus, not a hand-picked subset.
 //
 // The fixture list comes from folio-js/test/data/go-corpus.json, which
-// folio8-go/wasm/cmd/render/corpus_test.go derives from Go and holds equal to
+// folio-go/wasm/cmd/render/corpus_test.go derives from Go and holds equal to
 // it — every fixtures/ directory is either in that manifest or excluded there
 // with a stated reason, so a new fixture cannot go uncovered. The expected
 // hash is read from each fixture's own committed expected.json and is never

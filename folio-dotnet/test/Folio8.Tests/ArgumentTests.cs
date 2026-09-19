@@ -154,7 +154,7 @@ namespace Folio8Tests
         [Fact]
         public void FontSetCopiesEachFace()
         {
-            byte[] face = Repo.File_("folio8-go", "fonts", "roboto", "Roboto-Regular.ttf");
+            byte[] face = Repo.File_("folio-go", "fonts", "roboto", "Roboto-Regular.ttf");
             FontSet fonts = new FontSet();
             fonts.Add("Roboto", face);
             byte[] stored = fonts["Roboto"];

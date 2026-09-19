@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  Builds the folio8 engine as a native library from folio8-go/cshared/cmd/folio8.
+  Builds the folio8 engine as a native library from folio-go/cshared/cmd/folio8.
 
 .DESCRIPTION
   The Windows half of build-native.sh, with the same output layout:
@@ -59,7 +59,7 @@ $here = Split-Path -Parent $MyInvocation.MyCommand.Path
 # PowerShell 6+, and this script has to run under Windows PowerShell 5.1 too,
 # which is what a plain `powershell.exe` is on every Windows box.
 $repo = Resolve-Path (Join-Path (Join-Path $here '..') '..')
-$module = Join-Path $repo 'folio8-go'
+$module = Join-Path $repo 'folio-go'
 $out = Join-Path $here 'native'
 $pkg = './cshared/cmd/folio8'
 

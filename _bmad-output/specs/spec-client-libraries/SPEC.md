@@ -37,7 +37,7 @@ The .NET floor is what makes this urgent rather than merely nice. Reporting work
   - **success:** For every corpus fixture, the diagnostic sequence from .NET equals the sequence from Go, compared by code, severity and message.
 
 - **CAP-5**
-  - **intent:** Both libraries are continuously proved to render byte-identically to `folio8-go`, rather than asserted to.
+  - **intent:** Both libraries are continuously proved to render byte-identically to `folio-go`, rather than asserted to.
   - **success:** A CI job renders the whole corpus through each binding on every supported runtime and platform and fails on any hash that differs from the committed expected PDF — the same standard [matrix.yml](../../../.github/workflows/matrix.yml) already holds the Go targets to.
 
 - **CAP-6**
@@ -66,32 +66,32 @@ The .NET floor is what makes this urgent rather than merely nice. Reporting work
 
 ## Constraints
 
-- **Byte-identity with `folio8-go` is the acceptance bar, not a goal.** For the same template, data, params and font set on a given build toolchain, both libraries must emit the bytes the golden corpus records. This is what rules out reimplementing the engine in TypeScript or C#.
-- **One engine, two delivery mechanisms.** folio-js runs the Go engine compiled to wasm; folio-dotnet calls a `c-shared` build of the same engine over a C ABI. Neither library may contain rendering logic of its own — layout, shaping, pagination and PDF emission stay in `folio8-go`.
+- **Byte-identity with `folio-go` is the acceptance bar, not a goal.** For the same template, data, params and font set on a given build toolchain, both libraries must emit the bytes the golden corpus records. This is what rules out reimplementing the engine in TypeScript or C#.
+- **One engine, two delivery mechanisms.** folio-js runs the Go engine compiled to wasm; folio-dotnet calls a `c-shared` build of the same engine over a C ABI. Neither library may contain rendering logic of its own — layout, shaping, pagination and PDF emission stay in `folio-go`.
 - **.NET Framework 4.6 is the floor, and it bans the modern toolkit.** No wasm runtime targets it; it predates `Span<T>`, `System.Text.Json` and `DllImportResolver`. The binding is therefore plain `DllImport` marshalling, and the managed assembly targets `netstandard2.0` to span 4.6 through modern .NET from one build.
 - **The determinism commitments carry over unchanged.** No clock, no locale, no network, no filesystem beyond calls the caller makes, no ambient environment input. `SOURCE_DATE_EPOCH` stays a CLI-only convenience; library callers pass `documentDate` as an ordinary param.
 - **`docs/*.md` is the source of truth and `docs/*.html` is the published page.** Both must be authored for each new page, and they must agree.
-- **A new documentation page costs release budget.** Each `.html` page must be registered in [build-wasm.mjs](../../../folio8-designer/scripts/build-wasm.mjs), must use system fonts only — the `forbidden-font-hosts` scan fails the build on a remote font host — and spends a cache-asset slot against `maximumCacheAssets = 90`.
+- **A new documentation page costs release budget.** Each `.html` page must be registered in [build-wasm.mjs](../../../folio-designer/scripts/build-wasm.mjs), must use system fonts only — the `forbidden-font-hosts` scan fails the build on a remote font host — and spends a cache-asset slot against `maximumCacheAssets = 90`.
 - **folio-dotnet is Windows-only, and ships both `win-x86` and `win-x64`.** .NET Framework projects default to AnyCPU, which runs as a 64-bit process on 64-bit Windows and cannot load a 32-bit DLL; shipping one architecture alone would make `BadImageFormatException` the normal first experience. Resolution is by **process bitness at load time**, because .NET Framework 4.6 has no `DllImportResolver` — RID-based package layout and probing are the only mechanisms available.
 - **Both libraries embed the full shipped font set (~14 MB), mirroring `fonts.Shipped()` exactly.** This diverges from the Go `folio8`/`folio8/fonts` split, which exists so Go callers opt into that weight: here it is paid on every install to keep the call site one step and the face list identical to the engine's. Fonts remain an explicit argument at the API level; embedding changes how the bytes arrive, not whether the caller names them.
 - **`fonts.Shipped()` can never shrink after the tag.** Under the v1.0.0 semver commitment its contents are fixed for the life of v1, so any future slimming must be additive — a `fonts/cjk` sub-package and a `fonts.ShippedCore()` beside an unchanged `Shipped()`. Accepted deliberately; the retiering is specified in [SPEC-shipped-font-tiers](../spec-shipped-font-tiers/SPEC.md), currently deferred.
-- **The prerequisite chain: move the designer surface out of the public API → land a signed-off colour fixture and retire the two unused style codes → cut `folio8-go/v1.0.0` → build the bindings.** The tag is `v1.0.0`, not the `v0.1.0` that RELEASING.md and D-1.1.c name (owner decision): it commits to semver, so any later breaking change needs a `/v2` import path every caller edits. Both documents need rewording. Cutting it carries RELEASING.md's checklist and is irreversible: D-1.1.c fixes the public API at it. It replaces backlog Story 15.3, now deprecated, and inherits DW-4's surface re-measure and the engineering-lead checkpoint. Changelog policy is GitHub release notes per tag.
+- **The prerequisite chain: move the designer surface out of the public API → land a signed-off colour fixture and retire the two unused style codes → cut `folio-go/v1.0.0` → build the bindings.** The tag is `v1.0.0`, not the `v0.1.0` that RELEASING.md and D-1.1.c name (owner decision): it commits to semver, so any later breaking change needs a `/v2` import path every caller edits. Both documents need rewording. Cutting it carries RELEASING.md's checklist and is irreversible: D-1.1.c fixes the public API at it. It replaces backlog Story 15.3, now deprecated, and inherits DW-4's surface re-measure and the engineering-lead checkpoint. Changelog policy is GitHub release notes per tag.
 - **What does and does not gate the tag (owner rulings).** Before the tag:
   - **DW-147.** No fixture declares a colour today, so the byte-identity claim has never covered `style.color` or element box strokes. A golden fixture declaring both lands with a recorded human sign-off.
   - **D-7.8.2.** `STYLE_COLOR_INVALID` and `STYLE_LINE_SPACING_INVALID` are both retired, because the audit found no consumer branches on either and removing a public code is free only before the tag (AD-14).
 
   Released from the gate: 8.4d and 8.4k, which are designer-release and `lint` work, and DW-230, which stays open on Story 15.2. **DW-68 is ruled: v1.0.0 ships the clip.** An over-tall aggregate-only keep-together group keeps rendering clipped with a warning.
-- **v1.0.0 freezes render and validate only — about 59 items.** Before the tag, the canvas/designer surface of package `folio8` and the whole `folio8-go/wasm` package move behind `internal/`. What stays public: `LoadTemplate`, `ParseTemplate`, `Render`, `RenderTo`, `Validate`, `ParameterReferences`, `SerializeTemplate`; the types `Template`, `Data`, `Params`, `FontSet`, `Result`, `Diagnostic`, `Severity`, `RenderError`; the `DiagCode*` and `Severity*` constants, `Version`, `LocaleTableVersion`, `MaxParameterReferenceNameLength`; and `fonts.Shipped`. The move must not change a single corpus hash.
+- **v1.0.0 freezes render and validate only — about 59 items.** Before the tag, the canvas/designer surface of package `folio8` and the whole `folio-go/wasm` package move behind `internal/`. What stays public: `LoadTemplate`, `ParseTemplate`, `Render`, `RenderTo`, `Validate`, `ParameterReferences`, `SerializeTemplate`; the types `Template`, `Data`, `Params`, `FontSet`, `Result`, `Diagnostic`, `Severity`, `RenderError`; the `DiagCode*` and `Severity*` constants, `Version`, `LocaleTableVersion`, `MaxParameterReferenceNameLength`; and `fonts.Shipped`. The move must not change a single corpus hash.
 - **folio-js is promise-based over the `js/wasm` target.** It reuses the designer's proven build and Go's `wasm_exec.js` shim rather than adding a second wasm target. Rendering is pure CPU work, so a synchronous API over `wasip1/wasm` was defensible and was declined: async keeps a large render offloadable to a worker thread, so it cannot block a Node server's event loop. `renderTo` takes a Node `Writable`, mirroring Go's `RenderTo(w io.Writer, …)`.
 - **Diagnostics are a shared contract, not a per-language convenience.** Codes, severities and message text match the Go `Result` across all three languages, because callers port between them.
 
 ## Non-goals
 
-- **The canvas and designer command API.** `Canvas`, `CanvasWithTextPaint`, `ApplyComponentCommand`, `ApplyPageSetupCommand`, `PreviewComponentMove`, `TableColumns` and the projection types become `internal/` to `folio8-go` and serve the designer alone. These libraries render and validate; they do not edit templates.
+- **The canvas and designer command API.** `Canvas`, `CanvasWithTextPaint`, `ApplyComponentCommand`, `ApplyPageSetupCommand`, `PreviewComponentMove`, `TableColumns` and the projection types become `internal/` to `folio-go` and serve the designer alone. These libraries render and validate; they do not edit templates.
 - **Reimplementing the engine in either language.** No TypeScript or C# renderer, not even a partial one for a fast path.
 - **A folio8 service, server, or HTTP API.** folio8 remains a library.
 - **Database connectivity.** Unchanged from the Go engine: the caller prepares the JSON.
-- **A browser or bundler build of folio-js.** Node is the target. This is a scope choice, not a technical limit — folio8-designer already runs this same wasm engine in a browser worker — so it can be revisited without re-establishing feasibility.
+- **A browser or bundler build of folio-js.** Node is the target. This is a scope choice, not a technical limit — folio-designer already runs this same wasm engine in a browser worker — so it can be revisited without re-establishing feasibility.
 - **Non-Windows platforms for folio-dotnet.** No Linux, macOS or ARM native binaries in this spec. folio-js, being wasm, is unaffected and runs wherever Node does.
 - **Authoring `.folio` templates from either library.** `SerializeTemplate` and the editing surface are out.
 
@@ -105,7 +105,7 @@ A developer on a .NET Framework 4.6 application that has never been able to use 
 - Package identities are npm `folio-js` and NuGet `folio-dotnet`, taken from the names in the request. Registry availability is unverified.
 - Both libraries expose diagnostics carrying the same codes, severities and messages as the Go `Result`, on the assumption that callers port between languages.
 - folio-js is Node-only for this spec; the browser case is deferred, not ruled out.
-- `folio8-go/wasm` is the **designer** engine — a `Load`/`Apply` command loop — so folio-js needs its own render-oriented wasm entry point rather than reusing that shell.
+- `folio-go/wasm` is the **designer** engine — a `Load`/`Apply` command loop — so folio-js needs its own render-oriented wasm entry point rather than reusing that shell.
 
 ## Release preconditions — checked
 

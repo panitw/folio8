@@ -76,7 +76,7 @@ drawn baselines are `774131, 759149` (`e1`), `714131, 684167` (`e2` — **two** 
 - **`TEXT_MISSING_GLYPH` does not fire here, and that green is not glyph coverage.** No face covers
   U+000A and none is expected to — from Story 7.1 the breaker consumes it. This is the first document
   under `TestCorpusFixturesProduceNoMissingGlyphWarnings` to pass for a reason unrelated to coverage.
-- `input.folio` is kept byte-identical to `folio8-go/mandatoryBreakTemplateJSON` by hand, the same way
+- `input.folio` is kept byte-identical to `folio-go/mandatoryBreakTemplateJSON` by hand, the same way
   `font-text`, `multi-script-fallback` and `wrapped-text` are.
 
 ## Recorded

@@ -10,7 +10,7 @@ engine in the space JasperReports occupies, built around four commitments:
   No clock, no locale, no network, no filesystem beyond the calls you make.
 - **Portable templates.** A `.folio` file is text. It diffs, it reviews, it lives
   in git, and a person or an agent can edit it without opening the designer.
-- **A library, not a service.** `folio8-go` is the reference engine and a normal Go
+- **A library, not a service.** `folio-go` is the reference engine and a normal Go
   dependency. The designer is a static page that runs that same engine in your
   browser.
 
@@ -24,10 +24,10 @@ approximation of it.
 
 | Path | What it is |
 | --- | --- |
-| [folio8-go/](folio8-go/) | The rendering engine and reference implementation — expression evaluation, layout, pagination, PDF output. A Go module: `github.com/panitw/folio8/folio8-go`. See its [README](folio8-go/README.md). |
-| [folio8-go/cmd/folio8/](folio8-go/cmd/folio8/) | The `folio8` CLI: `validate` and `render`, and nothing else. |
-| [folio8-go/wasm/cmd/engine/](folio8-go/wasm/cmd/engine/) | The designer's js/wasm entry point over the internal session engine in `folio8-go/internal/wasm` — the same engine, compiled to wasm. Not public API. |
-| [folio8-designer/](folio8-designer/) | The visual designer: React + Vite, running the wasm engine in a worker. No server, no account, no upload. |
+| [folio-go/](folio-go/) | The rendering engine and reference implementation — expression evaluation, layout, pagination, PDF output. A Go module: `github.com/panitw/folio8/folio-go`. See its [README](folio-go/README.md). |
+| [folio-go/cmd/folio8/](folio-go/cmd/folio8/) | The `folio8` CLI: `validate` and `render`, and nothing else. |
+| [folio-go/wasm/cmd/engine/](folio-go/wasm/cmd/engine/) | The designer's js/wasm entry point over the internal session engine in `folio-go/internal/wasm` — the same engine, compiled to wasm. Not public API. |
+| [folio-designer/](folio-designer/) | The visual designer: React + Vite, running the wasm engine in a worker. No server, no account, no upload. |
 | [fixtures/](fixtures/) | The golden corpus — template, data, params and the expected PDF for each fixture document. These bytes are the contract every renderer conforms against. |
 | [lint/](lint/) | The guardrails that fail the build: architecture/import rules, the float ban, and the third-party licence check ([MANIFEST.md](lint/MANIFEST.md)). A separate Go module. |
 | [hashmatrix/](hashmatrix/) | A deliberately-broken floating-point probe, kept out of the guards' reach, that proves the cross-target matrix can actually *detect* divergence. See its [README](hashmatrix/README.md). |
@@ -35,7 +35,7 @@ approximation of it.
 | [docs/](docs/) | User documentation, the source of truth: the [rendering library guide](docs/rendering-library.md), the [folio-js guide](docs/folio-js.md) (the npm package `folio8`), the [folio-dotnet guide](docs/folio-dotnet.md) (the NuGet package `folio8`), the [`.folio` format reference](docs/folio-format.md), the [expression reference](docs/expression-reference.md), and the original [MVP plan](docs/folio8-mvp-plan.md). |
 | [_bmad-output/](_bmad-output/) | Planning and delivery record: PRD, architecture spine, specs, epics, and [sprint status](_bmad-output/implementation-artifacts/sprint-status.yaml). |
 
-Three independent Go modules (`folio8-go`, `lint`, `hashmatrix`) with no
+Three independent Go modules (`folio-go`, `lint`, `hashmatrix`) with no
 `go.work` between them. Each builds and tests from its own directory.
 
 ---
@@ -61,14 +61,14 @@ if err := os.WriteFile("statement.pdf", res.Bytes, 0o644); err != nil {
 }
 ```
 
-Install with `go get github.com/panitw/folio8/folio8-go@v1.0.0`. The
+Install with `go get github.com/panitw/folio8/folio-go@v1.0.0`. The
 [rendering library guide](docs/rendering-library.md) walks through installation, a complete first
 PDF, errors and warnings, template features and the full API.
 
 `folio8.RenderTo` writes straight to an `io.Writer` for HTTP handlers and large
 documents. The font set arrives as an explicit argument — `fonts.Shipped()` gives
 you Noto Sans, Noto Sans Thai and Noto Sans SC; bring your own `FontSet` if you
-need other typography. The [folio8-go README](folio8-go/README.md) explains why
+need other typography. The [folio-go README](folio-go/README.md) explains why
 `folio8` and `folio8/fonts` are separate imports (~11.3 MB of embedded faces you
 opt into), and covers `Data` vs `Params`, the `locale` field, and the known
 limitations.
@@ -88,7 +88,7 @@ success, `1` validation or render failure, `2` usage error.
 ### Run the designer
 
 ```
-cd folio8-designer
+cd folio-designer
 npm ci
 npm run dev
 ```
@@ -128,7 +128,7 @@ The byte-identity claim is a tested property, not an aspiration:
   renders the corpus on four targets and compares bytes. `hashmatrix`'s
   retained float64 multiply-add proves that comparison has teeth.
 - **Guardrails that fail the build.** `float64` may not appear under
-  `folio8-go/internal/` at all — the check parses the source rather than compiling
+  `folio-go/internal/` at all — the check parses the source rather than compiling
   it, so build tags don't hide it. Import rules, a map-range determinism check
   and a licence check run beside it, all from the `lint` module.
 - **No ambient input.** The render path reads no environment variable. The CLI is
@@ -149,13 +149,13 @@ CI invokes the guardrails, it never re-implements them, and neither does the
 Makefile:
 
 ```
-cd folio8-go && go build ./... && go vet ./... && go test ./...
+cd folio-go && go build ./... && go vet ./... && go test ./...
 cd lint      && go test ./...
 cd hashmatrix && go test ./...
 ```
 
 ```
-cd folio8-designer
+cd folio-designer
 npm run test        # unit and contract tests
 npm run typecheck
 npm run lint
@@ -188,7 +188,7 @@ inspector and designer chrome (12–14), and the release blockers (15).
 [sprint-status.yaml](_bmad-output/implementation-artifacts/sprint-status.yaml)
 is the current record, including what is deliberately deferred and why.
 
-`folio8-go/v1.0.0` is the first release. Its public Go API — rendering, validation, the
+`folio-go/v1.0.0` is the first release. Its public Go API — rendering, validation, the
 font input and the diagnostic types — is frozen under semver: a breaking change needs a
 `/v2` import path. See [RELEASING.md](RELEASING.md).
 

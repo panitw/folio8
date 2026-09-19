@@ -14,7 +14,7 @@ namespace Folio8Tests
     /// CAP-5, for folio-dotnet: the WHOLE renderable corpus, not a hand-picked
     /// subset. The fixture list comes from
     /// <c>folio-js/test/data/go-corpus.json</c>, which
-    /// <c>folio8-go/wasm/cmd/render/corpus_test.go</c> derives from Go and
+    /// <c>folio-go/wasm/cmd/render/corpus_test.go</c> derives from Go and
     /// holds equal to it — every <c>fixtures/</c> directory is either in that
     /// manifest or excluded there with a stated reason, so a new fixture
     /// cannot go uncovered. It is the same manifest folio-js drives, so the

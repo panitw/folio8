@@ -66,14 +66,14 @@ type VisibilityComputationSignatureStats struct {
 // WITH TYPE INFORMATION and asserts computeVisibility's resolved
 // parameter type list is EXACTLY expectedVisibilityComputationParams
 // (Story 3.5 finisher review, Finding 2 / Major). The production caller
-// points dir at folio8-go's own module root, where package folio8
+// points dir at folio-go's own module root, where package folio8
 // declares computeVisibility (render_visibility.go); a fixture
 // red-proof points it at a synthetic module shaped the same way.
 //
-// Placed in lint, not a folio8-go arch test, for the same reason
+// Placed in lint, not a folio-go arch test, for the same reason
 // ScanResolverMethodSet is (D-1.3.11 as extended by Story 3.3): a
 // go/types-resolved signature needs the dependency this module already
-// carries, and folio8-go's own arch tests stay dependency-free (D-1.3.6).
+// carries, and folio-go's own arch tests stay dependency-free (D-1.3.6).
 func ScanVisibilityComputationSignature(dir string) ([]Finding, VisibilityComputationSignatureStats, error) {
 	cfg := &packages.Config{
 		Mode: packages.NeedName | packages.NeedFiles | packages.NeedSyntax |

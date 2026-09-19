@@ -7,26 +7,26 @@ import (
 )
 
 // TestNoCompressorProductionScan is AC10's production caller: the real
-// folio8-go/ tree (not merely internal/ — AC10 says "no file under
-// folio8-go/") must show zero findings. Non-vacuous per D-000.9: the
+// folio-go/ tree (not merely internal/ — AC10 says "no file under
+// folio-go/") must show zero findings. Non-vacuous per D-000.9: the
 // scanner's own reported FilesSeen must be non-zero.
 func TestNoCompressorProductionScan(t *testing.T) {
 	root := repoRootFromTest(t)
-	folio8GoDir := filepath.Join(root, "folio8-go")
+	folio8GoDir := filepath.Join(root, "folio-go")
 
 	findings, stats, err := ScanNoCompressorImports(folio8GoDir)
 	if err != nil {
-		t.Fatalf("scan folio8-go/: %v", err)
+		t.Fatalf("scan folio-go/: %v", err)
 	}
 	if stats.FilesSeen == 0 {
-		t.Fatal("vacuity guard: scanner's own stats report 0 files seen under folio8-go/ (D-000.9)")
+		t.Fatal("vacuity guard: scanner's own stats report 0 files seen under folio-go/ (D-000.9)")
 	}
 	if len(findings) > 0 {
 		var msgs []string
 		for _, f := range findings {
 			msgs = append(msgs, f.Message)
 		}
-		t.Fatalf("forbidden compressor/image-decoder imports found under folio8-go/ (AC10, D-1.8.1):\n%s", strings.Join(msgs, "\n"))
+		t.Fatalf("forbidden compressor/image-decoder imports found under folio-go/ (AC10, D-1.8.1):\n%s", strings.Join(msgs, "\n"))
 	}
 }
 
@@ -45,7 +45,7 @@ func TestNoCompressorRedProof(t *testing.T) {
 	root := repoRootFromTest(t)
 
 	t.Run("compressor import reddens with RuleNoCompressor", func(t *testing.T) {
-		dir := filepath.Join(root, "folio8-go", "testdata", "lint", "no-compressor", "violating-compressor")
+		dir := filepath.Join(root, "folio-go", "testdata", "lint", "no-compressor", "violating-compressor")
 		findings, stats, err := ScanNoCompressorImports(dir)
 		if err != nil {
 			t.Fatalf("scan: %v", err)
@@ -65,7 +65,7 @@ func TestNoCompressorRedProof(t *testing.T) {
 	})
 
 	t.Run("image decoder import reddens with RuleNoImageDecoder", func(t *testing.T) {
-		dir := filepath.Join(root, "folio8-go", "testdata", "lint", "no-compressor", "violating-decoder")
+		dir := filepath.Join(root, "folio-go", "testdata", "lint", "no-compressor", "violating-decoder")
 		findings, stats, err := ScanNoCompressorImports(dir)
 		if err != nil {
 			t.Fatalf("scan: %v", err)

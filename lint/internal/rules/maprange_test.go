@@ -7,7 +7,7 @@ import (
 )
 
 // TestMapRangeProductionScan is the AC17 production caller: it scans
-// the real folio8-go/internal/ tree and asserts zero findings,
+// the real folio-go/internal/ tree and asserts zero findings,
 // non-vacuously — from the scanner's OWN reported MapRangeStats (Major
 // 5, this story's QA review), not a second, independent re-walk. A
 // second, independent walk cannot see a dead scanner: injecting
@@ -17,7 +17,7 @@ import (
 // stats — which is exactly what this guard now asserts against.
 //
 // TypedRangeStmts is NOT asserted non-zero here: F-7 measured that every
-// `range` site under folio8-go/internal/ today is inside a `_test.go`
+// `range` site under folio-go/internal/ today is inside a `_test.go`
 // file (D-1.3.5 exempts test files, so ScanMapRange never loads them —
 // packages.Config.Tests is false), so the real tree legitimately types
 // zero range statements in non-test files right now. That statistic IS
@@ -28,11 +28,11 @@ import (
 // this restriction is being taken before a caller exists.
 func TestMapRangeProductionScan(t *testing.T) {
 	root := repoRootFromTest(t)
-	internalDir := filepath.Join(root, "folio8-go", "internal")
+	internalDir := filepath.Join(root, "folio-go", "internal")
 
 	findings, stats, err := ScanMapRange(internalDir)
 	if err != nil {
-		t.Fatalf("scan folio8-go/internal/: %v", err)
+		t.Fatalf("scan folio-go/internal/: %v", err)
 	}
 
 	visitedGeom, visitedPDF := false, false
@@ -65,11 +65,11 @@ func TestMapRangeProductionScan(t *testing.T) {
 // unchanged, and the slices.Sorted(maps.Keys(...)) escape hatch is
 // unchanged) — the exact D-1.6.7 move ("the render path's extent
 // starts in package folio8, so the hazard does too"), the identical
-// precedent folio8-go/internal/arch_test.go's TestNoFloat64UnderModule
+// precedent folio-go/internal/arch_test.go's TestNoFloat64UnderModule
 // already applied to the no-float64 guard.
 //
 // Measured, at creation (B15, V4): TestMapRangeProductionScan above
-// only ever scans folio8-go/internal/, so "internal/ must never range
+// only ever scans folio-go/internal/, so "internal/ must never range
 // the FontSet" was VACUOUSLY true — no internal/ package can even name
 // folio8.FontSet without an import cycle, and FontSet is declared and
 // consumed entirely at the module root (fontset.go, render.go), outside
@@ -80,7 +80,7 @@ func TestMapRangeProductionScan(t *testing.T) {
 // two callers, one checker, exactly as D-1.6.7 left the float64 guard.
 func TestMapRangeUnderModule(t *testing.T) {
 	root := repoRootFromTest(t)
-	moduleRoot := filepath.Join(root, "folio8-go")
+	moduleRoot := filepath.Join(root, "folio-go")
 
 	findings, stats, err := ScanMapRange(moduleRoot)
 	if err != nil {
@@ -141,7 +141,7 @@ func TestMapRangeUnderModule(t *testing.T) {
 
 // TestMapRangeFixtureScan is the AC1 fixture caller, red-proving AC16's
 // both polarities on retained fixtures at
-// folio8-go/testdata/lint/map-range/ (never under folio8-go/internal/,
+// folio-go/testdata/lint/map-range/ (never under folio-go/internal/,
 // F-10): a non-test file ranging a map is reported; the
 // slices.Sorted(maps.Keys(m)) idiom, a range over a slice, a string, an
 // integer, and a `_test.go` file ranging a map are all not reported.
@@ -156,7 +156,7 @@ func TestMapRangeUnderModule(t *testing.T) {
 // coherent package graph.
 func TestMapRangeFixtureScan(t *testing.T) {
 	root := repoRootFromTest(t)
-	fixtureRoot := filepath.Join(root, "folio8-go", "testdata", "lint", "map-range")
+	fixtureRoot := filepath.Join(root, "folio-go", "testdata", "lint", "map-range")
 
 	got, stats, err := ScanMapRange(fixtureRoot)
 	if err != nil {
@@ -169,7 +169,7 @@ func TestMapRangeFixtureScan(t *testing.T) {
 	// nothing would report TypedRangeStmts == 0 here even though
 	// TestMapRangeProductionScan legitimately cannot make this
 	// assertion (F-7: no non-test range statements exist under
-	// folio8-go/internal/ today).
+	// folio-go/internal/ today).
 	if stats.TypedRangeStmts == 0 {
 		t.Fatal("vacuity guard: scanner's own stats report 0 range statements successfully typed in the fixture tree — this is the statistic that would have caught Blocker 1 (D-1.3.11)")
 	}
@@ -199,7 +199,7 @@ func TestMapRangeFailureMessageNamesEscapeHatch(t *testing.T) {
 	}
 
 	root := repoRootFromTest(t)
-	fixtureRoot := filepath.Join(root, "folio8-go", "testdata", "lint", "map-range")
+	fixtureRoot := filepath.Join(root, "folio-go", "testdata", "lint", "map-range")
 
 	got, _, err := ScanMapRange(fixtureRoot)
 	if err != nil {
