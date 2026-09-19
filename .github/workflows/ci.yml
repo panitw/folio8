@@ -655,16 +655,25 @@ jobs:
         shell: pwsh
         run: |
           $pacman = 'C:\msys64\usr\bin\pacman.exe'
+          # --disable-download-timeout: pacman aborts a transfer that drops
+          # below ~1 byte/sec for 10s, and an MSYS2 mirror that stalls on a
+          # single .sig fails the WHOLE transaction. Measured on this job.
           if (Test-Path $pacman) {
             foreach ($pass in 1, 2) {
-              & $pacman -Syuu --noconfirm
+              & $pacman -Syuu --noconfirm --disable-download-timeout
               if ($LASTEXITCODE -ne 0) { Write-Host "::warning::pacman -Syuu pass $pass exited $LASTEXITCODE" }
             }
-            & $pacman -S --noconfirm --needed mingw-w64-i686-gcc mingw-w64-x86_64-gcc
+            & $pacman -S --noconfirm --needed --disable-download-timeout mingw-w64-i686-gcc mingw-w64-x86_64-gcc
             if ($LASTEXITCODE -ne 0) { Write-Host "::warning::pacman -S exited $LASTEXITCODE; build-native.ps1 will report which compilers actually work" }
           } else {
             Write-Host "::warning::no MSYS2 pacman on this image; relying on preinstalled toolchains"
           }
+          # THE STEP IS BEST-EFFORT AND MUST SAY SO IN ITS EXIT CODE. Every
+          # branch above writes a warning and carries on, but `shell: pwsh`
+          # fails the step on a non-zero $LASTEXITCODE, so a stalled mirror
+          # killed the job here — before build-native.ps1, the step that
+          # actually PROVES each compiler, ever ran.
+          exit 0
       # Cheap, unconditional inventory. When the build step fails, this is the
       # first thing a reader wants and the last thing they can reconstruct
       # afterwards.
