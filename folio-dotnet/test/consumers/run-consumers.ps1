@@ -17,7 +17,7 @@
   gets its OWN intermediate directory as well as its own output directory.
   That second half is not tidiness: three legs build the SAME project with
   different PlatformTarget/Prefer32Bit settings, and with a shared obj/ MSBuild
-  finds the compile up to date and skips it — so the 32-bit legs would run the
+  finds the compile up to date and skips it -- so the 32-bit legs would run the
   64-bit executable the first leg left behind and the bitness proof would be
   vacuous.
 
@@ -33,13 +33,13 @@
 
   The two 32-bit modern legs name a RID as well as the platform target because
   modern .NET picks its apphost's bitness from the RID, not from
-  PlatformTarget, and setup-dotnet installs no 32-bit runtime on the runner —
+  PlatformTarget, and setup-dotnet installs no 32-bit runtime on the runner --
   so they are self-contained and bring their own.
 
   Each leg renders the fixture; its SHA-256 must equal the committed
   expected.json and its ENGINE line must equal the version the Go engine
-  recorded. Then two CAP-11 modes are FORCED, IN BOTH DIRECTIONS — against a
-  64-bit and a 32-bit leg on each family — by deleting the native and by
+  recorded. Then two CAP-11 modes are FORCED, IN BOTH DIRECTIONS -- against a
+  64-bit and a 32-bit leg on each family -- by deleting the native and by
   replacing it with the other architecture's file. The third mode, a host that
   blocks P/Invoke, cannot be produced in an ordinary console process and is
   covered in Folio8.Tests/LoaderTests.cs, which drives the same code path with
@@ -78,7 +78,7 @@ function Fail([string] $what) { Write-Host "::error::$what"; $failures.Add($what
 # ---------------------------------------------------------------- pack ----
 # A FRESH PACKAGE EVERY RUN, and the global cache purged of the id first.
 # NuGet caches by id+version, and this package's version does not move between
-# commits — so without the purge a second run on the same machine would
+# commits -- so without the purge a second run on the same machine would
 # install the FIRST run's package and report on code that is no longer there.
 Remove-Item -Recurse -Force $feed -ErrorAction SilentlyContinue
 Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
@@ -103,7 +103,7 @@ Write-Host "packed $($nupkg.Name)  $([math]::Round($nupkg.Length / 1MB, 1)) MB  
 
 # The package's own contents, asserted before a consumer ever sees it. A
 # missing entry here is a far more legible failure than seven consumer legs
-# all reporting a load failure — and the counted entries are promises
+# all reporting a load failure -- and the counted entries are promises
 # RELEASING.md and the README make that no consumer leg would ever notice
 # were they dropped.
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -127,7 +127,7 @@ foreach ($required in @(
   if ($entries -notcontains $required) { Fail "the package does not contain $required" }
 }
 
-# AD-26: a face's terms and notice travel with it. Eleven of each, counted —
+# AD-26: a face's terms and notice travel with it. Eleven of each, counted --
 # the npm package's test counts the same two files beside every face, and for
 # the same reason: dropping the glob from the csproj is invisible to every
 # other check in this suite.
@@ -144,7 +144,7 @@ elseif ($nuspecText -match '<dependency\s') { Fail 'the packed .nuspec declares 
 
 # ----------------------------------------------------------- the legs -----
 # Rid is what each shape MUST resolve to, and it is what the forced failure
-# modes below assert against — the bitness the process reports and the RID the
+# modes below assert against -- the bitness the process reports and the RID the
 # loader names are two different claims.
 $legs = @(
   @{ Name = 'net48-anycpu-64';   Project = 'Consumer.Net48';  Bits = 64; Rid = 'win-x64'; Props = @() }
@@ -212,7 +212,7 @@ foreach ($leg in $legs | Where-Object { $_.Name -in @('net48-anycpu-64', 'net48-
   $otherRid = if ($leg.Rid -eq 'win-x64') { 'win-x86' } else { 'win-x64' }
 
   # (1) MISSING RID ASSET. Every copy of the native this process could load is
-  #     removed — including the OTHER architecture's, so that a pass cannot
+  #     removed -- including the OTHER architecture's, so that a pass cannot
   #     come from a silent fallback.
   $missing = Copy-Leg $built[$name] "$name-missing"
   Get-ChildItem -Recurse -Path $missing -Filter 'folio8_native.dll' | Remove-Item -Force
@@ -249,17 +249,17 @@ foreach ($leg in $legs | Where-Object { $_.Name -in @('net48-anycpu-64', 'net48-
 
 if ($failures.Count -gt 0) {
   Write-Host ''
-  Write-Host "CONSUMER SUITE FAILED — $($failures.Count) problem(s):"
+  Write-Host "CONSUMER SUITE FAILED -- $($failures.Count) problem(s):"
   $failures | ForEach-Object { Write-Host "  - $_" }
   exit 1
 }
 
 Write-Host ''
-Write-Host "CONSUMER SUITE PASSED — $($legs.Count) process shapes rendered $Fixture to $expected, and both forced failure modes reported the folio8 load exception in both directions on both families."
+Write-Host "CONSUMER SUITE PASSED -- $($legs.Count) process shapes rendered $Fixture to $expected, and both forced failure modes reported the folio8 load exception in both directions on both families."
 
 # EXIT 0 EXPLICITLY. The forced-failure legs above run a consumer that exits
 # NON-ZERO ON PURPOSE, and $LASTEXITCODE still holds that value here. The
 # shell that invokes this script exits with $LASTEXITCODE when the script
 # does not exit itself, so without this line a fully passing suite fails the
-# job — which is exactly what happened on this file's first CI run.
+# job -- which is exactly what happened on this file's first CI run.
 exit 0

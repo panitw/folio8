@@ -20,7 +20,7 @@
 
     C:\mingw64\bin\gcc.exe          (x86_64, standalone, already on PATH)
     C:\msys64\mingw64\bin\gcc.exe   (x86_64, MSYS2)
-    C:\msys64\mingw32\bin\gcc.exe   (i686,   MSYS2 — the only 32-bit one)
+    C:\msys64\mingw32\bin\gcc.exe   (i686,   MSYS2 -- the only 32-bit one)
 
   and the MSYS2 ones can be installed or repaired with
   `C:\msys64\usr\bin\pacman -S --noconfirm --needed mingw-w64-x86_64-gcc mingw-w64-i686-gcc`.
@@ -28,7 +28,7 @@
   THE COMPILER'S OWN bin DIRECTORY IS PREPENDED TO PATH before the build.
   This is not tidiness. A mingw gcc.exe invoked by full path still loads its
   runtime DLLs (libiconv-2.dll, libintl-8.dll, zlib1.dll and friends) from
-  beside itself, by the ordinary Windows search order — and when that search
+  beside itself, by the ordinary Windows search order -- and when that search
   fails, the process dies at load time with NO stderr at all. cgo then reports
   only `cgo.exe: exit status 2` with no compiler diagnostic, which is exactly
   what the first Windows CI run produced.
@@ -36,7 +36,7 @@
   A candidate is also PROVED before it is used: each one compiles a trivial
   translation unit, and a compiler that cannot do that is rejected by name
   with its reason, and the next candidate is tried. That covers the other way
-  this breaks — a `pacman -S` against a stale database leaving a partially
+  this breaks -- a `pacman -S` against a stale database leaving a partially
   upgraded toolchain whose gcc and its DLLs disagree.
 
   CGO_ENABLED and GOTOOLCHAIN are pinned here rather than inherited, for the
@@ -85,7 +85,7 @@ $Targets = $expanded
 #
 # PowerShell turns a native command's stderr into ErrorRecords, and under
 # `$ErrorActionPreference = 'Stop'` the first of them can terminate the
-# pipeline before the rest is ever written — which is one way a compiler
+# pipeline before the rest is ever written -- which is one way a compiler
 # diagnostic disappears from a CI log. Nothing is hidden here: the stream is
 # merged, written verbatim, and the exit code is returned for the caller to
 # judge.
@@ -158,12 +158,12 @@ function Resolve-Cc {
             if ($found) { $path = $found.Source }
         }
         if (-not $path) {
-            $rejected += "  $candidate — not found"
+            $rejected += "  $candidate -- not found"
             continue
         }
         $why = Test-Cc $path
         if ($why) {
-            $rejected += "  $path — $why"
+            $rejected += "  $path -- $why"
             continue
         }
         $probe = Get-NativeOutput $path @('--version')
@@ -233,7 +233,7 @@ function Build-Target {
 # already on PATH, self-contained, and involves MSYS2 not at all, so it cannot
 # be caught by a half-finished pacman transaction. MSYS2's own x86_64 gcc is
 # the fallback. There is no standalone 32-bit mingw on the image, so win-x86
-# has MSYS2 and nothing else — which is why Resolve-Cc proves it works rather
+# has MSYS2 and nothing else -- which is why Resolve-Cc proves it works rather
 # than assuming it does.
 $x64Candidates = @('C:\mingw64\bin\gcc.exe', 'C:\msys64\mingw64\bin\gcc.exe', 'x86_64-w64-mingw32-gcc', 'gcc')
 $x86Candidates = @('C:\msys64\mingw32\bin\gcc.exe', 'C:\mingw32\bin\gcc.exe', 'i686-w64-mingw32-gcc')
