@@ -171,8 +171,12 @@ resolves toward making that handoff reliable rather than toward feature breadth.
   timestamp in subset output, and subset tags derived by hash.
 - **No server, no accounts, no server-side template storage.** Templates and data never leave
   the user's machine during design.
-- **A ~9 MB first load is accepted** in exchange for a designer that is genuinely offline with
-  no font-fetch failure mode.
+- **A ~10.67 MiB first load is accepted** in exchange for a designer that is genuinely offline
+  with no font-fetch failure mode. That load is the *core tier* only — the engine, the base
+  Latin and Thai faces, the shell and pdf.js. The CJK font and the font catalogue are fetched
+  on first use and kept, so "genuinely offline" is a claim about what this browser has actually
+  fetched, not about the whole release. See `spec-deferred-offline-cache`, which supersedes the
+  earlier "~9 MB" figure this constraint carried.
 - **Reliability over feature breadth**, enforced against a solo delivery capacity.
 - **Folio ships under MIT, and nothing copyleft enters.** No dependency may carry GPL, LGPL,
   AGPL, SSPL, or a commercial EULA at any depth — Go links statically, so such a dependency

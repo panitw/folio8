@@ -1,0 +1,81 @@
+- id: "1"
+  title: Tier the release at build time
+  description: >-
+    Assign every emitted asset to exactly one tier — core or deferred — and carry that
+    assignment in the offline release manifest and the S1 payload, with verification failing a
+    build that leaves an asset untiered or grows the core tier past its bound (CAP-5).
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    Nothing about loading behaviour changes in this story: the worker still precaches and
+    gates on the whole release. This story only makes the tiering exist and be enforced.
+
+    The core tier is the 28 assets in asset-tiers.md. The bound that matters from here on is
+    the CORE tier's asset count, not the release total.
+
+    `minimumCacheAssets`, `maximumCacheAssets` and `warnCacheAssets` in
+    folio-designer/src/release-payload.ts are read by
+    scripts/offline-release-contract.mjs through a line-anchored reader that requires exactly
+    one live `const <name> = <digits>` match. Keep that idiom — `npm run build` runs
+    verify:offline but never runs Vitest, so a re-typed constant plus a tie test would leave a
+    drifted build green. Derive, never re-type.
+
+    scripts/offline-release-contract.test.mjs asserts `declaredCacheAssetBounds`'s return shape
+    by exact equality and drives its failure cases with fixture strings; widening that return
+    shape breaks every one of those fixtures for reasons unrelated to the case under test. The
+    existing comments in that file explain why `warnCacheAssets` is a separate export — follow
+    the same reasoning for anything new.
+
+- id: "2"
+  title: Gate the designer on the core tier and fetch the rest on demand
+  description: >-
+    The designer becomes interactive once the core tier verifies rather than the whole release;
+    deferred assets are fetched the first time an author's action needs them and cached
+    permanently; the font browser reports per-face what this browser actually holds
+    (CAP-1, CAP-2, CAP-4).
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    This is the story that delivers the first-load win: 28 assets / 10.67 MiB blocking instead
+    of 80 / 18.63 MiB. Measure a cold-cache load before and after and report both numbers.
+
+    `cacheReady` in folio-designer/src/offline-lifecycle.ts currently means "this browser holds
+    a verified release" and gates the engine through `engineMayStart`. It must come to mean the
+    CORE tier and must not be readable as a claim about the deferred tier. Keep the
+    `import.meta.env.DEV` / `dev-bypass` branch and its property that production bundles
+    eliminate it — verify-offline-release.mjs proves that absence and will fail if it leaks.
+
+    Deferred fetches resolve the content-addressed URL of the release THIS page is running.
+    `matches()` drops any worker message whose releaseId is not this page's own, and a waiting
+    worker is a different release by definition; nothing in this story may let a new asset land
+    in an old release's cache. Leave the pending-release, mandatory-upgrade and update-polling
+    behaviour alone.
+
+    folio-designer/src/font-store.ts already keeps fetched web-tier faces in IndexedDB, and
+    font-browser-model.ts already defines AVAILABLE LOCALLY as the committed catalogue plus the
+    faces this designer fetched and kept. Extend that path rather than building a second one —
+    but note the definition itself now changes: a catalogue face is no longer locally held just
+    by shipping in the release.
+
+    No background prefetch of any kind. On demand means on demand.
+
+- id: "3"
+  title: Preflight a document on open
+  description: >-
+    Opening a document enumerates every asset it needs, fetches what is missing while the
+    network is available, and refuses the open naming each missing asset when one is both
+    missing and unreachable (CAP-3).
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    A first CJK document on a connected machine must OPEN, fetching the font as part of the
+    open. Refusal is only for missing-and-unreachable.
+
+    Byte-identity is not negotiable here: never substitute a fallback face for one the document
+    declares. The canvas and the preview show the real production output or nothing.
+
+    A catalogue face picked mid-session while offline is refused the same way a preflight miss
+    is — same rule, same message shape. That consistency is an assumption recorded in SPEC.md
+    rather than an owner ruling; if the implementation makes it awkward, raise it instead of
+    quietly diverging.
+
+    No document may open and then fail mid-edit for an asset that was already absent at open.
+    That is the property worth a test.
