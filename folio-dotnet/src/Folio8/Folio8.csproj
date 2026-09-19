@@ -59,7 +59,7 @@
   <PropertyGroup>
     <IsPackable>true</IsPackable>
     <PackageId>folio8</PackageId>
-    <Version>1.0.0</Version>
+    <Version>1.0.1</Version>
     <Authors>Panit Wechasil</Authors>
     <Company>Panit Wechasil</Company>
     <Product>folio8</Product>

@@ -130,7 +130,12 @@ describe('install hygiene', () => {
       folio8EngineVersion: string
     }
     expect(manifest.private).toBeUndefined()
-    expect(manifest.version).toBe('1.0.0')
+    // THE SHAPE AND THE SOURCE, not a literal: pinning the number here would
+    // redden a routine version bump in a test that has no opinion about which
+    // version is right. What matters is that what packs is what the repository
+    // declares.
+    expect(manifest.version).toMatch(/^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$/)
+    expect(manifest.version).toBe((JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')) as { version: string }).version)
     expect(manifest.dependencies).toBeUndefined()
     expect(manifest.peerDependencies).toBeUndefined()
     expect(manifest.optionalDependencies).toBeUndefined()

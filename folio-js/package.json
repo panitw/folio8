@@ -1,6 +1,6 @@
 {
   "name": "folio8",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "folio8 for Node: render and validate .folio templates with the folio8 engine compiled to WebAssembly. Design templates at https://folio8.report.",
   "license": "MIT",
   "author": "Panit Wechasil",
