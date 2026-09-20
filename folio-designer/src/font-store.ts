@@ -222,10 +222,17 @@ export type FamilyCensus = Readonly<{
  * stall sentence, *"Try the pick again if you like"*, true for a cut that is not
  * the base.
  *
- * MEASURED: 947 of the 1,274 offered web families publish a Regular and nothing
- * else (`font-index.json`, `axes == []`, `styles == ["400"]`), so for 74.3% of
- * the population this is complete the moment the Regular lands and the census
- * never has a refusal to carry at all.
+ * MEASURED: 947 of the 1,270 offered web families publish a Regular and nothing
+ * else — `font-index.json`, `axes == []`, `styles` carrying `400` and none of
+ * `700`, `400i`, `700i` — so for 74.5% of the population this is complete the
+ * moment the Regular lands and the census never has a refusal to carry at all.
+ *
+ * ⚠ THE PREDICATE IS THE PROJECTION, NOT `styles == ["400"]`. Only 935 rows
+ * carry that literal one-entry list; the other 12 also publish weights outside
+ * the RIBBI four — a 500, a 300 — which the emit step DROPS rather than maps,
+ * so they yield a Regular alone exactly like the 935 and belong in the same
+ * count. Citing the narrower predicate beside the wider number is how 935 and
+ * 947 come to be read as one fact.
  */
 export const censusIsComplete = (census: FamilyCensus, heldCuts: ReadonlySet<string>): boolean =>
   census.published.every((cut) => heldCuts.has(cut) || census.refused.some((entry) => entry.style === cut && entry.permanence === 'permanent'))

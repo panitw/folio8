@@ -2,9 +2,11 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FontBrowser } from './FontBrowser'
 import { familiesPerPage } from './font-browser-model'
+import { catalogueFaces } from './generated/font-catalogue'
 import { addableFamilyCount, offeredFamilies, type FamilySource } from './font-index'
 import type { LocalFaceHoldings } from './held-local-faces'
-import type { StoredFace } from './font-store'
+import type { FamilyCensus, StoredFace } from './font-store'
+import type { FaceCut } from './font-source'
 import { previewFaceFamily } from './preview-face-family'
 
 // THE MODAL THE DESIGN DREW (Story 16.3), ASSERTED THROUGH THE NAMES A KEYBOARD
@@ -37,13 +39,19 @@ function installStubFontSet(): Readonly<{ restore: () => void; live: () => Reado
 let installed: Readonly<{ restore: () => void; live: () => ReadonlyArray<string> }> | undefined
 afterEach(() => { installed?.restore(); installed = undefined })
 
-const web = (family: string, category: string, scripts: ReadonlyArray<'latin' | 'thai'>, popularity: number): FamilySource =>
-  ({ tier: 'web', family, row: { family, category, scripts, variable: false, popularity } })
+// THE CUT SET IS PART OF A SNAPSHOT ROW SINCE spec-install-all-face-cuts STORY
+// 5. The four fixtures below deliberately do NOT all carry the same one: the
+// dialog's whole job here is to tell a Regular-only family apart from a
+// four-cut one before the author picks either, and a fixture set agreeing on
+// their cuts could not tell whether the screen reads the row or prints a
+// constant.
+const web = (family: string, category: string, scripts: ReadonlyArray<'latin' | 'thai'>, popularity: number, cuts: ReadonlyArray<FaceCut> = ['Regular']): FamilySource =>
+  ({ tier: 'web', family, row: { family, category, scripts, cuts, variable: false, popularity } })
 
 const sources: ReadonlyArray<FamilySource> = [
-  web('Sarabun', 'Sans Serif', ['latin', 'thai'], 1),
+  web('Sarabun', 'Sans Serif', ['latin', 'thai'], 1, ['Regular', 'Bold', 'Italic', 'Bold Italic']),
   web('Lora', 'Serif', ['latin'], 2),
-  web('Chonburi', 'Display', ['latin', 'thai'], 3),
+  web('Chonburi', 'Display', ['latin', 'thai'], 3, ['Regular', 'Italic']),
   web('Zilla Slab', 'Serif', ['latin'], 4),
 ]
 
@@ -273,6 +281,119 @@ describe('filters, sort, views and the empty state', () => {
     fireEvent.change(screen.getByRole('slider', { name: 'Preview size in pixels' }), { target: { value: '56' } })
     const specimens = await screen.findAllByText('Everyone has the right to freedom of thought')
     for (const specimen of specimens) expect(specimen.style.fontSize).toBe('26px')
+  })
+
+  /**
+   * CAP-6 — THE CUT LINE IS ON THE SCREEN, IN BOTH VIEWS (story 5, D1 and D6).
+   *
+   * ⚠ THIS FILE HAS NO ROW-CHILDREN CENSUS TO CATCH ITS ABSENCE. The HEADER's
+   * children are pinned as a closed set above, which is what stops a sentence
+   * being minted into that slot; the ROW has no such pin, so a cut line that
+   * silently stopped rendering — or never rendered in the Grid card — would
+   * leave every gate in this file green. The assertion therefore has to be
+   * POSITIVE and it has to be made TWICE, once per view, because the row head
+   * and the card foot are two different pieces of markup.
+   *
+   * IT IS ASSERTED PER FAMILY AND NOT AS "SOME TEXT SOMEWHERE". The whole
+   * proposition is that two families with different cut sets read differently
+   * before the author picks either, so the fixtures carry three different sets
+   * and each row is looked up by its own name.
+   */
+  const cutLines: ReadonlyArray<readonly [string, string]> = [
+    ['Sarabun', 'Regular · Bold · Italic · Bold Italic'],
+    ['Chonburi', 'Regular · Italic'],
+    ['Lora', 'Regular'],
+    ['Zilla Slab', 'Regular'],
+  ]
+
+  it('names each family\'s cuts in the row head, before anything is picked', () => {
+    installed = installStubFontSet()
+    open()
+    const list = screen.getByRole('list', { name: 'Font families' })
+    expect(list.className).toContain('font-browser-rows')
+    for (const [family, line] of cutLines) {
+      const row = within(list).getAllByRole('listitem').find((item) => item.textContent?.includes(family))
+      expect(row, `${family} must be on screen for its cuts to be asserted`).toBeDefined()
+      expect(within(row as HTMLElement).getByText(line), `${family} must name its cuts`).toBeInTheDocument()
+    }
+    // NON-VACUITY: the four rows do NOT all say the same thing, which is the
+    // only reason the display is worth drawing.
+    expect(new Set(cutLines.map(([, line]) => line)).size).toBeGreaterThan(1)
+  })
+
+  it('names the same cuts in the Grid card, so the two views never say different things', () => {
+    installed = installStubFontSet()
+    open()
+    fireEvent.click(within(screen.getByRole('group', { name: 'Results view' })).getByRole('button', { name: 'Grid view' }))
+    const list = screen.getByRole('list', { name: 'Font families' })
+    expect(list.className).toContain('font-browser-grid')
+    for (const [family, line] of cutLines) {
+      const card = within(list).getAllByRole('listitem').find((item) => item.textContent?.includes(family))
+      expect(card, `${family} must be on screen for its cuts to be asserted`).toBeDefined()
+      expect(within(card as HTMLElement).getByText(line), `${family}'s card must name the same cuts its row does`).toBeInTheDocument()
+    }
+  })
+
+  /**
+   * AND THE OTHER TWO TIERS, THROUGH THE COMPONENT (story 5, D1).
+   *
+   * ⚠ EVERY OTHER FIXTURE IN THIS FILE IS `tier: 'web'`. The web arm reads one
+   * field off a snapshot row; the local arm unions the committed rows with the
+   * shipped mirror and the stored arm subtracts permanently-refused cuts from a
+   * census — three different computations, and only one of them had ever
+   * reached this component's markup. `'cuts not stated'` had reached it least of
+   * all: the whole justification for those three words is how an EMPTY SPAN
+   * would read in the DOM, and no test in this file had ever put one there.
+   * With no row-children census here to catch a regression, the tiers have to
+   * be rendered rather than reasoned about.
+   *
+   * THE LOCAL ROWS ARE THE REAL COMMITTED FACES, not hand-built ones, so the
+   * Roboto line is the product's own answer rather than this file's opinion of
+   * it: `font-catalogue.json` carries Roboto's Regular alone while the release
+   * ships all four cuts, and the row must print what installing YIELDS.
+   */
+  const localSource = (family: string): FamilySource =>
+    ({ tier: 'local', family, faces: catalogueFaces.filter((face) => face.family === family) })
+  const census = (family: string, published: ReadonlyArray<string>): FamilyCensus =>
+    ({ family, published, refused: [{ style: 'Bold', reason: 'gone upstream', permanence: 'permanent' }], recordedAt: '2026-09-19' })
+  const storedFace = (family: string, style: string): StoredFace => ({
+    key: 'a'.repeat(64), family, style, licence: 'OFL-1.1', licenceText: 'terms', copyright: 'c',
+    source: 'google/fonts — ofl/x/X-Regular.ttf, fetched 2026-09-03', mediaType: 'font/ttf', scripts: ['latin'],
+    fetchedAt: '2026-09-03', byteLength: 4,
+  })
+
+  it('names a local, a stored and an unstated row\'s cuts in the markup, not only a web row\'s', () => {
+    installed = installStubFontSet()
+    const tiers: ReadonlyArray<FamilySource> = [
+      localSource('Roboto'),
+      localSource('DM Sans'),
+      { tier: 'stored', family: 'Kanit', faces: ['Regular', 'Italic'].map((style) => storedFace('Kanit', style)), census: census('Kanit', ['Regular', 'Bold', 'Italic']) },
+      // THE EMPTY CASE, AND IT IS REACHABLE: a family installed before story 1
+      // carries no census, so its cuts are the ones this machine HOLDS — and a
+      // store that has just self-healed a record it could not verify holds none.
+      { tier: 'stored', family: 'Mitr', faces: [] },
+    ]
+    open({ sources: tiers })
+    const list = screen.getByRole('list', { name: 'Font families' })
+    const lines: ReadonlyArray<readonly [string, string]> = [
+      ['Roboto', 'Regular · Bold · Italic · Bold Italic'],
+      ['DM Sans', 'Regular · Bold'],
+      ['Kanit', 'Regular · Italic'],
+      ['Mitr', 'cuts not stated'],
+    ]
+    for (const [family, line] of lines) {
+      const item = within(list).getAllByRole('listitem').find((row) => row.textContent?.includes(family))
+      expect(item, `${family} must be on screen for its cuts to be asserted`).toBeDefined()
+      expect(within(item as HTMLElement).getByText(line), `${family} must name its cuts`).toBeInTheDocument()
+    }
+    // NON-VACUITY: four rows, four different lines — a component printing a
+    // constant, or reading the web arm for every tier, could not pass.
+    expect(new Set(lines.map(([, line]) => line)).size).toBe(4)
+    // AND THE PERMANENTLY REFUSED CUT IS NOT ON THE SCREEN AT ALL. `Kanit`
+    // publishes a Bold that nothing will ever deliver, so the words must not
+    // appear in its row under any spelling.
+    const kanit = within(list).getAllByRole('listitem').find((row) => row.textContent?.includes('Kanit')) as HTMLElement
+    expect(kanit.textContent).not.toContain('Regular · Bold')
   })
 
   it('shows the design\'s empty state, naming the query', () => {

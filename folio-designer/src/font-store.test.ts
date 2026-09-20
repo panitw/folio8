@@ -485,7 +485,7 @@ describe('the family census, and the additive upgrade that adds it', () => {
   it('reads complete only when every published cut is held or carries a PERMANENT refusal', () => {
     const publishing = (published: ReadonlyArray<string>, refused: ReadonlyArray<FamilyCutRefusal> = []) =>
       ({ family: 'Kanit', published, refused, recordedAt: '2026-09-20' })
-    // The 947-of-1,274 common case: one cut published, one cut held, complete
+    // The 947-of-1,270 common case: one cut published, one cut held, complete
     // the moment it lands and never re-offered.
     expect(censusIsComplete(publishing(['Regular']), new Set(['Regular']))).toBe(true)
     // Published and neither held nor refused — NEVER ATTEMPTED, so incomplete

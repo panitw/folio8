@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import { familyIsComplete, indexCategories, indexScripts, type FamilySource } from './font-index'
 import type { LocalFaceHoldings } from './held-local-faces'
-import { browserRows, browserSorts, browserViews, buttonLabel, buttonName, confirmLabel, confirmName, degradedFooterNote, defaultSpecimenSize, emptyStateHeading, emptyStateHint, filterRows, filtersActive, maxSpecimenSize, minSpecimenSize, noFilters, pageCount, pageLine, pageOf, pendingLine, resultLine, rowState, rowTierNote, scriptBadge, sizeReadout, sortRows, specimenFor, specimenSize, weightLine, type BrowserFilters, type BrowserRow, type BrowserSort, type BrowserView } from './font-browser-model'
+import { browserRows, browserSorts, browserViews, buttonLabel, buttonName, confirmLabel, confirmName, cutLine, degradedFooterNote, defaultSpecimenSize, emptyStateHeading, emptyStateHint, filterRows, filtersActive, maxSpecimenSize, minSpecimenSize, noFilters, pageCount, pageLine, pageOf, pendingLine, resultLine, rowState, rowTierNote, scriptBadge, sizeReadout, sortRows, specimenFor, specimenSize, weightLine, type BrowserFilters, type BrowserRow, type BrowserSort, type BrowserView } from './font-browser-model'
 import { previewFaceFamily } from './preview-face-family'
 import { openPreviewFaceRegistry, type PreviewFaceBytes, type PreviewFaceRegistry, type PreviewFaceStatus } from './preview-face-registry'
 
@@ -263,6 +263,8 @@ export function FontBrowser({ sources, inTemplate, localFaceHoldings, previewByt
               <span className="font-browser-meta">{row.category ?? 'category not stated'}</span>
               <span className="font-browser-meta">·</span>
               <span className="font-browser-meta">{rowTierNote(row.source)}</span>
+              <span className="font-browser-meta">·</span>
+              {cuts(row)}
               {badge(row)}
               <span className="font-browser-spacer" />
               {addButton(row)}
@@ -283,6 +285,8 @@ export function FontBrowser({ sources, inTemplate, localFaceHoldings, previewByt
               <span className="font-browser-meta">{row.category ?? 'category not stated'}</span>
               <span className="font-browser-meta">·</span>
               <span className="font-browser-meta">{rowTierNote(row.source)}</span>
+              <span className="font-browser-meta">·</span>
+              {cuts(row)}
               {badge(row)}
             </div>
           </li>)}
@@ -295,6 +299,23 @@ export function FontBrowser({ sources, inTemplate, localFaceHoldings, previewByt
   }
 
   const badge = (row: BrowserRow) => <span className={`font-browser-badge${row.scripts.includes('thai') ? ' font-browser-badge-thai' : ''}`}>{scriptBadge(row)}</span>
+
+  // THE CUT LINE, DRAWN IMMEDIATELY AFTER THE TIER NOTE IN BOTH VIEWS (CAP-6,
+  // D1 and D6). It sits there rather than anywhere else because the two facts
+  // are read together: WHICH cuts, and whether they are here already or will be
+  // downloaded. And NO SECOND DISCLOSURE MARKER GOES BESIDE IT ON A WEB ROW
+  // (D5) — the tier note it follows already says the bytes are not here yet,
+  // and a marker saying the cut set is a build-time snapshot claim would be a
+  // second authority ageing on its own schedule.
+  //
+  // THE WORDS ARE `font-browser-model.ts`'s, INCLUDING THE SEPARATOR INSIDE
+  // THEM. Nothing user-facing is spelled in this file.
+  //
+  // IT IS AN ORDINARY `font-browser-meta` SPAN AND NOT A CLASS OF ITS OWN. The
+  // cut set is one more fact about the family at the same weight as its category
+  // and its tier, and a class with no rule behind it in `App.css` is dead
+  // vocabulary the next reader has to check before they can trust it.
+  const cuts = (row: BrowserRow) => <span className="font-browser-meta">{cutLine(row)}</span>
 
   return <section ref={dialog} className="font-browser-backdrop" role="dialog" aria-modal="true" aria-label="Font browser" aria-busy={busy || undefined} onKeyDownCapture={trap}>
     <div className="font-browser">

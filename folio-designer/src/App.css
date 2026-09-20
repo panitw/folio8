@@ -1315,6 +1315,23 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
 .font-browser-rows { margin: 0; padding: 0; list-style: none; }
 .font-browser-row { padding: var(--space-6) var(--space-sheet-x); border-bottom: var(--hairline) solid var(--color-line-subtle); }
 .font-browser-row-head, .font-browser-row-foot { display: flex; align-items: center; gap: var(--space-4); }
+/* THE CARD'S FOOT WRAPS; THE LIST ROW'S HEAD DOES NOT (spec-install-all-face-cuts story 5,
+   owner-widened fence — `App.css` was not among the story's named files).
+
+   MEASURED at 1024px in chromium 1217, which is why the two are split rather than both wrapped.
+   The Grid card is 229px wide and its foot content box 203px. Flex items default to
+   `min-width: auto`, so at `nowrap` the six spans do not overflow — each shrinks to min-content and
+   its text wraps INSIDE the span. The cut line `Regular · Bold · Italic · Bold Italic` became a
+   35px-wide, 65px-tall column with the `·` separators orphaned onto their own lines, and the
+   specimen collapsed 57px -> 18px because the card's `min-height: 150px` holds its height.
+   Wrapping the foot lets the line break BETWEEN spans instead of inside them: one 148px line, a
+   82px foot, and a 13px specimen.
+
+   THE LIST ROW'S HEAD IS DELIBERATELY EXCLUDED. It has 710px of content at the same viewport and
+   the named form fits all 1,270 offered families on one line with 58.9px of slack at the tightest
+   (`Fira Sans Extra Condensed`), so it has nothing to wrap — and letting it would move the add
+   button onto a second line the moment anything grew. The list view draws no `-foot` at all. */
+.font-browser-row-foot { flex-wrap: wrap; }
 .font-browser-family { color: var(--color-ink-high); font: var(--type-title); }
 .font-browser-meta { color: var(--color-ink-low); font: var(--type-body); }
 .font-browser-badge { padding: 1px var(--space-2); border: var(--hairline) solid var(--color-line-strong); color: var(--color-ink-low); font: var(--type-label); letter-spacing: 0; }

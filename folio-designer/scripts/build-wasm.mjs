@@ -331,8 +331,8 @@ for (const [script, family] of Object.entries(scriptFallbacks)) {
 // `.folio` entry's closed variant set (`bold`/`italic`/`boldItalic`) while the
 // store's is the RIBBI subfamily name the binary calls itself. Both are
 // correct; anything joining a catalogue row to a stored face has to say which
-// it is using, and `src/App.tsx`'s `CATALOGUE_CUT_STYLES` is where that join is
-// spelled. A row spelt `bolditalic` in either vocabulary is a face no cut
+// it is using, and `src/font-source.ts`'s `CATALOGUE_CUT_STYLES` is where that
+// join is spelled. A row spelt `bolditalic` in either vocabulary is a face no cut
 // resolver could ever find, which is what this closed set refuses.
 const CATALOGUE_STYLES = ['Regular', 'Bold', 'Italic', 'BoldItalic']
 

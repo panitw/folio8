@@ -5,7 +5,16 @@ import { catalogueFaces, type CatalogueFace, type CatalogueScript } from './gene
 // carries both answers and names which is which — see `familyIsInstalled`.
 import type { LocalFaceHoldings } from './held-local-faces'
 import { familyIndex, familyIndexExcludedCjkFamilies, familyIndexPublishedFamilies, type IndexFamily } from './generated/font-index'
+// THE CUT VOCABULARY AND THE BRIDGE BETWEEN ITS THREE SPELLINGS, FROM THE
+// MODULE THAT DECLARES THEM. `sourceCuts` below reads a committed row's `style`
+// back as a RIBBI cut, and a second copy of that mapping here is the defect
+// this epic has already paid for twice — see `font-source.ts`'s own note.
+import { faceCutOfCatalogueStyle, faceCuts, ribbiCutOf, styleCuts, type FaceCut } from './font-source'
 import { censusIsComplete, type FamilyCensus, type StoredFace } from './font-store'
+// THE CUTS A PICK OF A SHIPPED FAMILY DECLARES. Read, never re-derived: the
+// local arm of `sourceCuts` has to say what the pick YIELDS, and for a family
+// this release ships that is the declared mirror's answer, not the catalogue's.
+import { shippedFamilyCutsOf } from './shipped-face-cuts'
 
 // THE TWO TIERS, AND THE JOIN BETWEEN THEM (D-16.R.3).
 //
@@ -142,6 +151,100 @@ export function sourceScripts(source: FamilySource): ReadonlyArray<string> {
   return regularCutOf(cuts)?.scripts ?? cuts[0]?.scripts ?? []
 }
 
+/**
+ * WHAT INSTALLING THIS FAMILY YIELDS ON THIS MACHINE — read off whichever tier
+ * the row is, in RIBBI order, from the closed four-cut set and nothing wider
+ * (spec-install-all-face-cuts story 5, CAP-6).
+ *
+ * ONE PLACE RESOLVES CUTS, AND THE SWITCH IS EXHAUSTIVE for the reason
+ * `sourceScripts` and `familySourceNote` are: a fourth tier stops compiling at
+ * the `never` rather than quietly showing no cuts at all, which is the failure
+ * mode a `?? []` fallback would have.
+ *
+ * ⚠ THE ANSWER IS ORDERED BY `faceCuts` AND NEVER BY ARRIVAL. A census's
+ * `published` array, a store listing and the catalogue all reach this in
+ * whatever order they were written, and a row that printed `Bold · Regular`
+ * beside its neighbour's `Regular · Bold` would be one screen giving two
+ * spellings of one fact. Filtering the vocabulary is what makes the order a
+ * property of the vocabulary.
+ *
+ * PER TIER:
+ *
+ *   `web` — THE PROJECTED SNAPSHOT ROW, which is why story 5 projects at emit
+ *   at all: this was the one tier with no cut data, and the alternative was a
+ *   `METADATA.pb` fetch per listed row before the author has picked anything.
+ *   It is a build-time claim and it AGES, and the row does not mint a second
+ *   disclosure marker saying so (D5): it already states, immediately beside
+ *   this line, that the bytes are "downloaded when you install it". On install
+ *   the tier flips to `stored` and this reads the census instead — the row
+ *   self-corrects rather than carrying a caveat for ever.
+ *
+ *   `local` — THE CUTS THE RELEASE ACTUALLY SHIPS, WHICH IS **TWO SOURCES
+ *   UNIONED** AND NOT THE CATALOGUE ALONE. The committed rows are read through
+ *   `faceCutOfCatalogueStyle`, because the catalogue spells the combined cut
+ *   `BoldItalic` and every other tier spells it `Bold Italic`. But a family
+ *   this release SHIPS — `shipped-face-cuts.ts`'s declared mirror — has cuts
+ *   the catalogue never carries: `Roboto Bold`, `Roboto Italic` and `Roboto
+ *   Bold Italic` are hardcoded core faces of the wasm build, so
+ *   `font-catalogue.json` holds Roboto's Regular and nothing else. The pick
+ *   routes through `commitDeclaredCuts` and declares all four (`App.tsx`), so a
+ *   card reading `Regular` beside a B control that bolds is the row and the
+ *   product disagreeing — the exact failure CAP-6 exists to prevent. The union
+ *   is what "the cuts actually shipped" means for this tier.
+ *
+ *   `stored` — **`published` MINUS PERMANENTLY-REFUSED CUTS** (D4). That set is
+ *   literally "what installing this family yields on this machine":
+ *   `censusIsComplete`'s two components taken apart. A TRANSIENTLY missing cut
+ *   IS STILL A YIELD and stays shown — a stall, an offline minute or a 5xx
+ *   settles nothing and the cut is fetched again on the next pick, which is why
+ *   the button still offers to install (`FontBrowser.tsx` drives it from
+ *   `familyIsComplete`, not from `familyIsInstalled`). A PERMANENTLY refused
+ *   cut is never shown, because nothing will ever deliver it.
+ *
+ *   `stored` WITH NO CENSUS — THE HELD CUTS AND NOT ONE MORE. That is every
+ *   family installed before story 1, and the census is the only authority on
+ *   what a family publishes, so with none there is no cut this designer can
+ *   claim. Reading the snapshot row here instead would make
+ *   `generated/font-index.ts` a second authority on published cuts, which
+ *   `font-store.ts`'s own note on `FamilyCensus` forbids in those words.
+ */
+export function sourceCuts(source: FamilySource): ReadonlyArray<FaceCut> {
+  const inRibbiOrder = (held: ReadonlySet<string>): ReadonlyArray<FaceCut> => faceCuts.filter((cut) => held.has(cut))
+  switch (source.tier) {
+    // ORDERED HERE AND NOT TRUSTED FROM THE EMIT STEP. The projection happens
+    // to emit in RIBBI order today, and the guarantee above is this function's
+    // to keep — a passthrough would make it a property of another module's
+    // string building.
+    case 'web': return inRibbiOrder(new Set(source.row.cuts))
+    // `undefined` FOR A STYLE NEITHER VOCABULARY NAMES IS DROPPED RATHER THAN
+    // GUESSED. `scripts/build-wasm.mjs` holds every committed row to the
+    // format's key set, so it cannot arise today; a row that ever carried
+    // something else would be a cut this dialog has no name for, and naming it
+    // anyway is how a fifth weight gets onto the screen.
+    case 'local': {
+      const committed = source.faces.map((face) => faceCutOfCatalogueStyle(face.style)).filter((cut): cut is FaceCut => cut !== undefined)
+      // THE DECLARED MIRROR'S CUTS, DERIVED FROM THE RECORD RATHER THAN LISTED.
+      // A shipped family's pick declares the base face — which IS its Regular —
+      // plus whichever of the three variant keys the row carries.
+      const declared = shippedFamilyCutsOf(source.family)
+      const shipped: ReadonlyArray<FaceCut> = declared === undefined
+        ? []
+        : ['Regular', ...styleCuts.filter((key) => declared[key] !== undefined).map(ribbiCutOf)]
+      return inRibbiOrder(new Set<string>([...committed, ...shipped]))
+    }
+    case 'stored': {
+      const held = new Set(source.faces.map((face) => face.style))
+      if (source.census === undefined) return inRibbiOrder(held)
+      const settled = new Set(source.census.refused.filter((entry) => entry.permanence === 'permanent').map((entry) => entry.style))
+      return inRibbiOrder(new Set(source.census.published.filter((cut) => !settled.has(cut))))
+    }
+    default: {
+      const unhandled: never = source
+      throw new Error(`a FamilySource tier nothing describes reached the cut reader: ${String((unhandled as FamilySource).tier)}`)
+    }
+  }
+}
+
 /* `indexSnapshotDate` STOOD HERE AND WENT WITH THE DISCLOSURE (Story 16.10).
    Its only reader was `familyIndexDisclosure()`, the sentence the browser's
    header no longer draws, so restating the snapshot date for a UI that never
@@ -225,8 +328,32 @@ export const localTierHolds = (family: string): boolean => localByFamily.has(fam
  * variable-only rows only because the `google/fonts` mirror carries VF-only
  * builds of them. A family in the local tier is offered from the local tier and
  * the index's opinion about it is never consulted.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * AND SINCE spec-install-all-face-cuts STORY 5 THE FENCE HAS A SECOND CLAUSE:
+ * **A FAMILY PUBLISHING NO UPRIGHT REGULAR IS NOT OFFERED** (D2, owner).
+ *
+ * `font-source.ts` refuses such a family outright at the pick — the Regular is
+ * the base every other cut hangs off, the face a chain entry names, and the one
+ * cut this designer will not install a family without. This filter did not know
+ * that, so the dialog listed three families (`Buda`, `Molle`, `UnifrakturCook`)
+ * whose every pick fails. That was survivable while the row said nothing about
+ * cuts; story 5 makes the row PRINT ITS CUT SET, and a line advertising an
+ * Italic beside a button that cannot deliver it is the exact failure CAP-6
+ * exists to prevent. The owner widened the story's fence to close it.
+ *
+ * ⚠ IT IS DERIVED FROM THE PROJECTED CUT SET, NEVER A LIST OF THREE NAMES. The
+ * three families are what TODAY'S snapshot happens to contain; the CONDITION is
+ * `publishedCuts`' own — is there a static upright 400 — projected at emit onto
+ * the same closed set from the same `cutDeclarations`. A refresh that withdraws
+ * one of the three or adds a fourth needs no edit here.
+ *
+ * A HIDDEN ROW IS STILL A PRESENTATION CHOICE AND NEVER A GUARD:
+ * `font-source.ts`'s `fetchWebFamily` refuses the family outright — "publishes
+ * no upright Regular (a static face at weight 400) upstream" — whatever this
+ * filter does, and nothing here relaxes it.
  */
-const addableFromTheWeb = (row: IndexFamily): boolean => !row.variable
+const addableFromTheWeb = (row: IndexFamily): boolean => !row.variable && row.cuts.includes('Regular')
 
 /**
  * A FAMILY THAT CANNOT BE ADDED IS FILTERED OUT, NOT LISTED AND REFUSED
@@ -580,8 +707,9 @@ export function indexRowFor(family: string): IndexFamily | undefined {
  * THE POPULATION A CHIP VOCABULARY MUST BE DERIVED FROM IS THE ONE THE CHIPS
  * FILTER, AND THAT IS NOT `familyIndex`.
  *
- * `familyIndex` is 1,811 rows. The browser offers 1,273 web rows plus the 31 the
- * local tier holds: `addableFromTheWeb` alone drops 537 variable-only rows. A
+ * `familyIndex` is 1,811 rows. The browser offers 1,270 web rows plus the 31 the
+ * local tier holds: `addableFromTheWeb` drops 537 variable-only rows AND the
+ * three that publish no upright Regular, and the join drops the local tier's. A
  * vocabulary read off the wider list is a vocabulary that can name a value no
  * offered family carries — which is a chip that empties the list every time it
  * is pressed, the exact false affordance the derivation exists to prevent.

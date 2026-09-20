@@ -6,7 +6,8 @@ import { catalogueFaces } from './generated/font-catalogue'
 import { familyIndex, familyIndexPublishedFamilies, familyIndexSnapshotDate } from './generated/font-index'
 import { blankComments } from '../scripts/forbidden-font-hosts.mjs'
 import type { LocalFaceHoldings } from './held-local-faces'
-import { addableFamilyCount, familyIsComplete, familyIsInstalled, familySourceNote, indexCategories, indexRowFor, indexScripts, indexExcludedCjkFamilies, localTierHolds, offeredFamilies, regularCutOf, sourceScripts, webFamilies } from './font-index'
+import { addableFamilyCount, familyIsComplete, familyIsInstalled, familySourceNote, indexCategories, indexRowFor, indexScripts, indexExcludedCjkFamilies, localTierHolds, offeredFamilies, regularCutOf, sourceCuts, sourceScripts, webFamilies, type FamilySource } from './font-index'
+import { faceCuts, type FaceCut } from './font-source'
 import type { FamilyCensus, FamilyCutRefusal, StoredFace } from './font-store'
 
 // EVERY CATALOGUE FAMILY HELD — the state this designer is in once its
@@ -136,14 +137,157 @@ describe('the build-time index snapshot', () => {
       const emitted = emitFontIndexModule()
       expect(emitted.families).toBe(familyIndex.length)
       expect(emitted.snapshotDate).toBe(familyIndexSnapshotDate)
+      // AND THE ROWS CARRY THEIR CUT DATA, WHICH IS WHAT MAKES THIS TEST STILL
+      // MEAN SOMETHING AFTER STORY 5. The projection is a pure function of the
+      // committed JSON — no snapshot regeneration, no `METADATA.pb` — so a
+      // network-free emit step must still produce it.
+      //
+      // ⚠ READ BACK OFF DISK, NEVER OFF THE IMPORT. `familyIndex` is a STATIC
+      // ESM import, bound before this test ran and never re-evaluated, so an
+      // assertion over it says nothing about what `emitFontIndexModule()` just
+      // wrote — it stayed green with `cutsOf` stubbed to `[]`. The file the
+      // emit step rewrote is the only witness, so it is the file that is read.
+      const emittedText = fs.readFileSync(path.join(here, 'generated', 'font-index.ts'), 'utf8')
+      const emittedRows = emittedText.split('\n').filter((line) => line.startsWith('  { family: '))
+      expect(emittedRows.length, 'every snapshot family reaches the emitted module').toBe(familyIndex.length)
+      expect(emittedRows.filter((line) => line.includes('cuts: [],')).length, 'the variable rows carry no cut set').toBeGreaterThan(500)
+      expect(emittedRows.filter((line) => !line.includes('cuts: [],')).length, 'the network-free emit step must still project the cut set').toBeGreaterThan(1000)
     } finally {
       globalThis.fetch = restore
     }
   })
 
-  it('carries no licence field, because no licence is knowable before a pick', () => {
+  // ⚠ THE FIELD SET MOVED, DELIBERATELY, AT spec-install-all-face-cuts STORY 5:
+  // `cuts` JOINED IT. The row now carries the RIBBI cut set projected out of the
+  // snapshot's offered-weights list at the emit step, because the font browser
+  // shows an author which cuts a family has BEFORE they pick it (CAP-6) and the
+  // web tier was the only one with no cut data at all. The alternative was a
+  // `METADATA.pb` fetch per listed row, which the dialog may not make.
+  //
+  // THE PIN ITSELF IS UNCHANGED IN PURPOSE and is the reason the field could not
+  // arrive quietly: it is a CLOSED SET, so anything minted into the generated
+  // row reds this test whatever it is called. `licence` is still the named
+  // refusal (D-16.R.6) — the index publishes none, and inventing one here would
+  // be a second licence authority ageing on its own schedule. `styles`, the raw
+  // eighteen-entry weight list, is still refused too: `cuts` is its PROJECTION
+  // onto the four the `.folio` format can declare, which is what keeps a fifth
+  // weight unrepresentable rather than merely unused.
+  it('carries the projected cut set and still no licence field, because no licence is knowable before a pick', () => {
     const row = familyIndex[0] as unknown as Record<string, unknown>
-    expect(Object.keys(row).sort()).toEqual(['category', 'family', 'popularity', 'scripts', 'variable'])
+    expect(Object.keys(row).sort()).toEqual(['category', 'cuts', 'family', 'popularity', 'scripts', 'variable'])
+    expect(Object.keys(row)).not.toContain('styles')
+  })
+
+  // CAP-6's OWN REQUIREMENT, OVER THE GENERATED MODULE RATHER THAN A FIXTURE:
+  // the vocabulary is closed, it is ordered, and it is not uniform.
+  it('projects every row onto the closed four cuts, in RIBBI order', () => {
+    const vocabulary = new Set<string>(faceCuts)
+    for (const row of familyIndex) {
+      for (const cut of row.cuts) expect(vocabulary.has(cut), `${row.family} names ${cut}`).toBe(true)
+      expect([...row.cuts], `${row.family} is out of RIBBI order`).toEqual(faceCuts.filter((cut) => row.cuts.includes(cut)))
+    }
+    // NON-VACUITY, BOTH WAYS. Every assertion above is satisfied by a module in
+    // which every row carries nothing at all, or in which every row carries the
+    // same thing — and the whole point of the display is that families DIFFER.
+    // NAMED FOR WHAT IT IS: the 1,274 NON-VARIABLE rows, which is not the 1,270
+    // the browser offers — the local-tier join and the no-Regular fence have
+    // not been applied here, and calling this `offered` made it read as though
+    // they had.
+    const nonVariable = familyIndex.filter((row) => !row.variable)
+    expect(nonVariable.filter((row) => row.cuts.length === 4).length, 'the four-cut families must be there to be told apart').toBeGreaterThan(50)
+    expect(nonVariable.filter((row) => row.cuts.length === 1).length, 'and the Regular-only majority must be there to tell them from').toBeGreaterThan(900)
+  })
+
+  /**
+   * A VARIABLE ROW CARRIES NO CUT SET AT ALL, AND THE EMIT STEP IS WHERE THAT
+   * IS DECIDED.
+   *
+   * `styles` is an OFFERED-WEIGHTS map, not an inventory of static files:
+   * measured, all 558 axes-declaring families list a `400` key, and 537 of them
+   * reach this module. A projection that never consulted `axes` therefore
+   * emitted a confident `Regular · Bold · Italic · Bold Italic` for rows whose
+   * upstream publishes one variable file and none of those four faces — the
+   * exact "fiction" `cutsOf`'s own comment says the projection keeps out of the
+   * module, left merely unused rather than unrepresentable.
+   *
+   * ⚠ THE NON-VACUITY IS THE SECOND HALF. Asserting only that variable rows are
+   * empty would be satisfied by a projection that emitted nothing anywhere, so
+   * the same rows are shown to be ones that WOULD have projected: they list the
+   * snapshot keys the four cuts are drawn from.
+   */
+  it('emits no cut set for a variable row, because its offered weights are not static faces', () => {
+    const snapshot = JSON.parse(fs.readFileSync(path.join(here, '..', 'font-index.json'), 'utf8')) as
+      { families: ReadonlyArray<{ family: string; axes: ReadonlyArray<string>; styles: ReadonlyArray<string> }> }
+    let variable = 0
+    let wouldHaveProjected = 0
+    for (const [position, family] of snapshot.families.entries()) {
+      if (family.axes.length === 0) continue
+      const row = familyIndex[position]!
+      expect(row.family).toBe(family.family)
+      expect([...row.cuts], `${family.family} declares axes ${family.axes.join(', ')} and may state no cut`).toEqual([])
+      variable += 1
+      if (family.styles.some((style) => ['400', '700', '400i', '700i'].includes(style))) wouldHaveProjected += 1
+    }
+    expect(variable, 'about a quarter of the library ships variable-only').toBeGreaterThan(500)
+    expect(wouldHaveProjected, 'the rows must be ones an axes-blind projection would have filled, or this pins nothing').toBe(variable)
+    // AND THE FENCE THAT HID THEM IS UNMOVED: `addableFromTheWeb` already
+    // required `!row.variable`, so emptying their cut set changes no offered
+    // population — which is why this may be fixed without a second sweep.
+    for (const row of webFamilies) expect(row.variable).toBe(false)
+  })
+
+  // MATRIX ROW 3, AND THE QUESTION THE GUARD ABOVE CANNOT ASK. That test checks
+  // that every emitted cut is IN the vocabulary — which a projection mapping
+  // `500` onto `Bold` would satisfy, because `Bold` IS in the vocabulary. The
+  // row the matrix names is the other half: a many-weight family publishing
+  // 100…900 must project onto Regular + Bold and NEVER NAME A FIFTH WEIGHT, so
+  // the assertion has to be that the out-of-range weights are DROPPED.
+  //
+  // RUN OVER THE REAL SNAPSHOT, ROW BY ROW, not over a fixture: `cutsOf` has no
+  // direct test at all, and 169 of the 1,274 non-variable rows carry a weight
+  // outside the four — 811 style entries in total — so a fixture would be
+  // asserting a population this file already ships.
+  //
+  // ⚠ THE EXPECTED PROJECTION IS SPELLED HERE, DELIBERATELY. Deriving the key
+  // set from `cutDeclarations` — the emit step's own authority — would make
+  // this test agree with the projection however the projection changed, which
+  // is precisely the failure it exists to catch.
+  it('drops the weights outside the RIBBI four rather than mapping them onto a cut', () => {
+    const snapshot = JSON.parse(fs.readFileSync(path.join(here, '..', 'font-index.json'), 'utf8')) as
+      { families: ReadonlyArray<{ family: string; axes: ReadonlyArray<string>; styles: ReadonlyArray<string> }> }
+    // The only four snapshot keys a cut may come from. `400i` is the italic at
+    // weight 400; everything else — 100…900 and their italics — is unrepresentable.
+    const ribbiOf: Readonly<Record<string, FaceCut | undefined>> = { '400': 'Regular', '700': 'Bold', '400i': 'Italic', '700i': 'Bold Italic' }
+    expect(snapshot.families.length, 'every snapshot family is emitted, in order').toBe(familyIndex.length)
+
+    let dropped = 0
+    let manyWeightsToRegularBold = 0
+    let manyWeightsToRegularAlone = 0
+    for (const [position, family] of snapshot.families.entries()) {
+      const row = familyIndex[position]!
+      expect(row.family).toBe(family.family)
+      if (family.axes.length > 0) continue
+      const honoured = new Set(family.styles.map((style) => ribbiOf[style]).filter((cut): cut is FaceCut => cut !== undefined))
+      dropped += family.styles.filter((style) => ribbiOf[style] === undefined).length
+      expect([...row.cuts], `${family.family} publishes ${family.styles.join(', ')}`).toEqual(faceCuts.filter((cut) => honoured.has(cut)))
+      if (family.styles.length >= 5 && row.cuts.length === 2) manyWeightsToRegularBold += 1
+      if (family.styles.length >= 3 && row.cuts.length === 1) manyWeightsToRegularAlone += 1
+    }
+
+    // NON-VACUITY: THERE IS SOMETHING TO DROP, AND IT IS NOT A CORNER.
+    expect(dropped, 'the snapshot must still carry weights outside the four for this to mean anything').toBeGreaterThan(500)
+    // MATRIX ROW 3 ITSELF, COUNTED: 61 families carry five or more weights and
+    // still yield Regular + Bold, and 2 carry three or more and still yield a
+    // Regular alone. A projection that mapped an out-of-range weight onto a cut
+    // would move both counts as well as failing the row assertion above.
+    expect(manyWeightsToRegularBold, 'many-weight families that project onto Regular + Bold').toBeGreaterThan(40)
+    expect(manyWeightsToRegularAlone, 'many-weight families that project onto a Regular alone').toBeGreaterThan(1)
+    // AND NAMED, so the failure reads as a family rather than as a number.
+    const cutsFor = (family: string) => familyIndex.find((row) => row.family === family)?.cuts
+    expect(cutsFor('Abhaya Libre'), '400 500 600 700 800').toEqual(['Regular', 'Bold'])
+    expect(cutsFor('Athiti'), '200 300 400 500 600 700').toEqual(['Regular', 'Bold'])
+    expect(cutsFor('Idiqlat'), '200 300 400').toEqual(['Regular'])
+    expect(cutsFor('Londrina Solid'), '100 300 400 900').toEqual(['Regular'])
   })
 })
 
@@ -244,7 +388,15 @@ describe('the local face tier', () => {
     // while each family had exactly one row; spec-install-all-face-cuts story 3
     // gave a family up to four, so the row count is 107 over 31 families.
     expect(beforeLocal.size, 'the pre-batch tier is the catalogue minus the ten').toBe(localFamilies.size - batchFamilies.length)
-    const beforeWeb = familyIndex.filter((row) => !row.variable && !beforeLocal.has(row.family))
+    // ⚠ THE RECONSTRUCTION MIRRORS `addableFromTheWeb`, AND STORY 5 GAVE THAT
+    // PREDICATE A SECOND CLAUSE (D2, owner): a family publishing no upright
+    // Regular is not offered, because no pick of it can succeed. Left at
+    // `!row.variable` alone this "before" counted three families — `Buda`,
+    // `Molle`, `UnifrakturCook` — that the "after" no longer offers, and the
+    // delta came out at 7 for a batch of 10. The number under test is still
+    // Story 16.1a's batch size and is unchanged; what moved is the filter this
+    // line has to be the same filter as.
+    const beforeWeb = familyIndex.filter((row) => !row.variable && row.cuts.includes('Regular') && !beforeLocal.has(row.family))
     const beforeAddable = beforeWeb.length + beforeLocal.size
     expect(
       addableFamilyCount - beforeAddable,
@@ -270,6 +422,59 @@ describe('what the browser shows and what it says about it', () => {
     for (const row of webFamilies) expect(row.variable, `${row.family} is variable-only and must not be listed`).toBe(false)
     // AND THE HIDDEN ROWS ARE HIDDEN, not merely marked.
     expect(offeredFamilies('').some((source) => source.tier === 'web' && source.row.variable)).toBe(false)
+  })
+
+  /**
+   * D2 (OWNER) — THE DIALOG STOPS OFFERING A FAMILY WITH NO UPRIGHT REGULAR
+   * (spec-install-all-face-cuts story 5).
+   *
+   * `font-source.ts` refuses such a family at the pick: the Regular is the base
+   * every other cut hangs off, and there is no face for the rest to attach to
+   * without it. The browser listed three of them anyway. That was survivable
+   * while the row said nothing about cuts; story 5 makes the row PRINT ITS CUT
+   * SET, and `Molle` would have advertised an Italic that no pick can deliver —
+   * the exact failure CAP-6 exists to prevent. The owner widened the fence.
+   *
+   * ⚠ ASSERTED AS THE CONDITION, WITH THE THREE NAMES AS A NON-VACUITY CONTROL
+   * AND NOT AS THE RULE. The names are what today's snapshot happens to contain;
+   * a refresh may withdraw one or add a fourth, and a test written as a list
+   * would then be measuring the snapshot rather than the fence.
+   */
+  it('stops offering a family that publishes no upright Regular, because no pick of it can succeed', () => {
+    const refusedUpstream = familyIndex.filter((row) => !row.variable && !row.cuts.includes('Regular'))
+    expect(refusedUpstream.length, 'this assertion is only meaningful while some non-variable family publishes no Regular').toBeGreaterThan(0)
+    // THE CONTROL: the three the snapshot carries today, by name, so a fence
+    // that quietly stopped filtering anything could not pass this.
+    expect(refusedUpstream.map((row) => row.family).sort()).toEqual(['Buda', 'Molle', 'UnifrakturCook'])
+    for (const row of refusedUpstream) {
+      expect(webFamilies.some((offered) => offered.family === row.family), `${row.family} publishes no Regular and must not be offered`).toBe(false)
+      expect(offeredFamilies(row.family).some((source) => source.family === row.family)).toBe(false)
+    }
+    // AND EVERY REMAINING WEB ROW HAS ONE, which is the positive half: the fence
+    // is a property of the offered population, not a filter over three strings.
+    for (const row of webFamilies) expect(row.cuts.includes('Regular'), `${row.family} is offered and must publish a Regular`).toBe(true)
+    // THE COUNT MOVED WITH IT, AND BY EXACTLY THE POPULATION ABOVE. Derived on
+    // both sides rather than typed in — a hardcoded 1,270 is a second authority
+    // that ages with the next snapshot refresh.
+    // BOTH TERMS ARE FILTERED THE SAME WAY, or the formula is not the
+    // refresh-proof identity it is sold as: a no-Regular family that were ALSO
+    // in the local tier is absent from the first term already, and subtracting
+    // it again would under-count by one.
+    expect(addableFamilyCount).toBe(familyIndex.filter((row) => !row.variable && !localTierHolds(row.family)).length - refusedUpstream.filter((row) => !localTierHolds(row.family)).length + new Set(catalogueFaces.map((face) => face.family)).size)
+  })
+
+  /**
+   * THE PER-TIER CUT READER — ONE PLACE RESOLVES CUTS, AND A FOURTH TIER STOPS
+   * COMPILING. `sourceScripts` and `familySourceNote` have the same shape and
+   * the same guard; the behavioural cases live in `font-browser-model.test.ts`,
+   * where the display that reads them is.
+   */
+  it('reads a family\'s cuts off whichever tier it comes from, and cannot gain a fourth silently', () => {
+    const local = offeredFamilies('Arimo').find((source) => source.tier === 'local')
+    expect(sourceCuts(local as FamilySource)).toEqual(['Regular', 'Bold', 'Italic', 'Bold Italic'])
+    const web = offeredFamilies('Kanit').find((source) => source.tier === 'web')
+    expect(sourceCuts(web as FamilySource)).toEqual((web as { row: { cuts: ReadonlyArray<string> } }).row.cuts)
+    expect(() => sourceCuts({ tier: 'gossip' } as unknown as FamilySource)).toThrow(/gossip/)
   })
 
   // THE COUNT'S OWN FACTS, REHOMED SO THEY OUTLIVE THE SENTENCE THAT QUOTED THEM

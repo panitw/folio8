@@ -32,7 +32,7 @@ import { deferredFaceAssets, prefetchDeferredFaces } from './document-face-prefe
 import { COMPLETION_CONFIRM_LABEL, COMPLETION_DECLINE_LABEL, COMPLETION_OFFLINE, COMPLETION_QUESTION_TITLE, completionProgress, completionQuestion, completionSettled, completionShortfall, incompleteDocumentFamilies } from './document-face-completion'
 import { isShippedFamily, shippedFamilyEntry } from './shipped-face-cuts'
 import { browserRows } from './font-browser-model'
-import { cutsBesideTheRegular, fetchWebFamily } from './font-source'
+import { CATALOGUE_CUT_STYLES, cutsBesideTheRegular, fetchWebFamily, ribbiCutOf, type StyleCut } from './font-source'
 import { censusIsComplete, openFontStore, storeWriteRefusal, storedFaceKey, type FamilyCensus, type FontStore, type StoredFace } from './font-store'
 import { previewFaceFamily } from './preview-face-family'
 import { openPreviewFaceRegistry, type PreviewFaceBytes, type PreviewFaceRegistry, type PreviewFaceStatus } from './preview-face-registry'
@@ -5900,46 +5900,25 @@ function canonicalValue(canvas: CanvasProjection, ids: ReadonlyArray<string>, fi
  * statement is simply false. A panel that lies precisely is worse than one that
  * lies vaguely. One sentence per cut cannot go false that way.
  */
-const CUT_NAMES = { bold: 'bold', italic: 'italic', boldItalic: 'bold italic' } as const
-type StyleCut = keyof typeof CUT_NAMES
+const CUT_NAMES: Readonly<Record<StyleCut, string>> = { bold: 'bold', italic: 'italic', boldItalic: 'bold italic' }
 
-/**
- * THE BRIDGE BETWEEN THE TWO CUT VOCABULARIES, IN ONE NAMED PLACE.
- *
- * The chain, the projection and this panel spell a cut `bold` / `italic` /
- * `boldItalic` — the format's own closed key set. The face store and the fetch
- * layer spell the SAME four cuts as RIBBI subfamily names, `Regular` / `Bold` /
- * `Italic` / `Bold Italic`, because that is what `METADATA.pb` publishes and
- * what a `StoredFace.style` is required to be exactly (`font-source.ts`'s
- * `faceCuts`).
- *
- * ⚠ IT IS A FUNCTION AND NOT AN INLINE LITERAL AT EACH USE. Three call sites
- * need it — the embed plan, the held-ness question and the census lookup — and
- * a cut resolved by matching a string that was spelled by hand at the third
- * site is a cut that silently resolves to nothing. `'Bold Italic'` with one
- * space is the member that makes that a real risk rather than a tidiness
- * argument.
- */
-const RIBBI_CUT_NAMES: Readonly<Record<StyleCut, string>> = { bold: 'Bold', italic: 'Italic', boldItalic: 'Bold Italic' }
-const ribbiCutOf = (cut: StyleCut): string => RIBBI_CUT_NAMES[cut]
+/* THE BRIDGE BETWEEN THE THREE CUT VOCABULARIES MOVED OUT OF THIS FILE
+   (spec-install-all-face-cuts story 5).
 
-/**
- * ⚠ THE TWO TIERS SPELL THE COMBINED CUT DIFFERENTLY, AND THE DIFFERENCE IS
- * REAL RATHER THAN COSMETIC (spec-install-all-face-cuts story 3).
- *
- * `font-source.ts` stamps a FETCHED face `Bold Italic`, with the space, and
- * that is the spelling `StoredFace.style` carries and the document records.
- * `font-catalogue.json` spells a COMMITTED row `BoldItalic`, without one,
- * because that is the key the `.folio` format's closed variant set uses
- * (`bold`/`italic`/`boldItalic`) and `scripts/build-wasm.mjs` holds every row
- * to it. Neither is wrong; they are two vocabularies for one cut, and anything
- * joining a stored face to a catalogue row has to say which it is using.
- *
- * So the catalogue is looked up under ITS spelling, and the document is written
- * in the STORE'S — see `commitPropertiesEmbeddingCuts` — so a `.folio` records
- * one vocabulary whichever tier the bytes came from.
- */
-const CATALOGUE_CUT_STYLES: Readonly<Record<StyleCut, string>> = { bold: 'Bold', italic: 'Italic', boldItalic: 'BoldItalic' }
+   `RIBBI_CUT_NAMES`/`ribbiCutOf` and `CATALOGUE_CUT_STYLES` stood here, with
+   `StyleCut` derived from `CUT_NAMES` above them. They are now declared beside
+   `faceCuts` in `font-source.ts`, which is the module that declares one of the
+   three spellings, and are IMPORTED here unchanged in value. The move is the
+   whole repair: the font browser gained a second reader of the same mapping —
+   it reads a committed catalogue row's cut to say which cuts a local-tier
+   family has before the pick — and a bridge kept in one component's private
+   scope is a bridge the second reader copies. A duplicated authority on these
+   four strings is the defect this epic has already paid for twice.
+
+   `CUT_NAMES` STAYS, because it is this panel's PROSE — "bold italic" in a
+   sentence — and not a vocabulary anything joins on. It is now typed against
+   the imported `StyleCut` rather than being the thing that defines it, so the
+   three records cannot drift apart in their key set. */
 
 /**
  * THE COMMITTED TIER'S OWN CUT INDEX, BUILT ONCE FROM A BUILD-TIME CONSTANT.

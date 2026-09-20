@@ -216,6 +216,78 @@ export type FaceCut = typeof faceCuts[number]
 export const cutsBesideTheRegular: ReadonlyArray<FaceCut> = faceCuts.filter((cut) => cut !== 'Regular')
 
 /**
+ * ⚠ THREE SPELLINGS OF ONE CUT SET, RECONCILED HERE AND NOWHERE ELSE.
+ *
+ * MOVED FROM `App.tsx` BY spec-install-all-face-cuts STORY 5, unchanged in
+ * value. The panel was the only reader while the only join was chain→store;
+ * story 5 gives the font browser a SECOND reader — it has to read a committed
+ * catalogue row's cut to say which cuts a local-tier family has before the pick
+ * — and a bridge with two readers in one component's private scope is a bridge
+ * the second reader copies. This module already declares `faceCuts`, which is
+ * one of the three vocabularies, so the reconciliation lives beside it.
+ *
+ *   · `bold` / `italic` / `boldItalic` — the `.folio` format's own closed
+ *     variant key set, which the chain, the projection and the panel speak.
+ *   · `Regular` / `Bold` / `Italic` / `Bold Italic` — RIBBI subfamily names,
+ *     what `METADATA.pb` publishes and what a `StoredFace.style` is required to
+ *     be EXACTLY (`faceCuts` above).
+ *   · `Regular` / `Bold` / `Italic` / `BoldItalic` — what `font-catalogue.json`
+ *     spells a COMMITTED row, because `scripts/build-wasm.mjs` holds every row
+ *     to the format's key set with its capitals.
+ *
+ * Neither of the last two is wrong; they are two vocabularies for one cut, and
+ * anything joining a stored face to a catalogue row has to say which it is
+ * using. `'Bold Italic'` with one space is the member that makes a hand-spelled
+ * literal a real risk rather than a tidiness argument: it resolves to nothing,
+ * silently.
+ *
+ * THE VARIANT KEY SET NAMES ONLY THE THREE NON-BASE CUTS. A chain entry IS its
+ * Regular, so the format has no key for it — which is why `StyleCut` has three
+ * members against `FaceCut`'s four, and why the reverse bridge below has to
+ * handle the base cut by its absence from this record rather than by a fourth
+ * entry in it.
+ *
+ * ⚠ THE TYPE IS DERIVED FROM THE LIST, exactly as `FaceCut` is derived from
+ * `faceCuts` forty lines above. A hand-written union beside a hand-written
+ * array is two authorities on one closed set — the defect this very block
+ * exists to refuse — and one of them would eventually gain a member the other
+ * does not have.
+ */
+export const styleCuts = ['bold', 'italic', 'boldItalic'] as const
+export type StyleCut = typeof styleCuts[number]
+
+/**
+ * A `.folio` variant key, as the store and the fetch layer spell the same cut.
+ *
+ * MODULE-PRIVATE: `ribbiCutOf` is the reader, and a caller holding the record
+ * itself could index it with something the accessor would have refused.
+ */
+const RIBBI_CUT_NAMES: Readonly<Record<StyleCut, FaceCut>> = { bold: 'Bold', italic: 'Italic', boldItalic: 'Bold Italic' }
+export const ribbiCutOf = (cut: StyleCut): FaceCut => RIBBI_CUT_NAMES[cut]
+
+/** A `.folio` variant key, as `font-catalogue.json` spells the same cut. */
+export const CATALOGUE_CUT_STYLES: Readonly<Record<StyleCut, string>> = { bold: 'Bold', italic: 'Italic', boldItalic: 'BoldItalic' }
+
+/**
+ * THE REVERSE BRIDGE — A COMMITTED ROW'S `style` READ BACK AS A RIBBI CUT —
+ * AND IT IS **DERIVED FROM THE TWO RECORDS ABOVE**, NEVER RESTATED.
+ *
+ * A fourth literal spelling of these four strings is the defect this epic has
+ * already paid for twice, so this map is BUILT rather than typed: for every cut
+ * in the closed set, find the variant key whose RIBBI name is that cut and take
+ * ITS catalogue spelling. The one cut with no variant key is the Regular, and
+ * the two vocabularies agree on it by construction — the fallback is the cut's
+ * own name, not a fourth constant.
+ */
+const catalogueCutNames: ReadonlyMap<string, FaceCut> = new Map(faceCuts.map((cut) => {
+  const key = styleCuts.find((variant) => RIBBI_CUT_NAMES[variant] === cut)
+  return [key === undefined ? cut : CATALOGUE_CUT_STYLES[key], cut]
+}))
+
+/** `undefined` for a style string neither vocabulary names — a real answer, never a guessed cut. */
+export const faceCutOfCatalogueStyle = (style: string): FaceCut | undefined => catalogueCutNames.get(style)
+
+/**
  * WHICH `METADATA.pb` ENTRY IS WHICH CUT — READ, NEVER CONSTRUCTED.
  *
  * This is the generalisation of what used to be `regularFilename`, and it is
@@ -225,8 +297,16 @@ export const cutsBesideTheRegular: ReadonlyArray<FaceCut> = faceCuts.filter((cut
  * `${family}-Bold.ttf` — is a guess, and it is wrong often enough that the
  * whole pick would fail on families whose files are named for something other
  * than their display name. Nothing below reads the family string at all.
+ *
+ * ⚠ EXPORTED SINCE spec-install-all-face-cuts STORY 5, FOR THE EMIT STEP. The
+ * font browser shows a web family's cuts BEFORE the pick, which means projecting
+ * the snapshot's offered-weights list onto this same closed set at build time
+ * (`scripts/build-font-index.mjs`). It reads THIS list — the weight and the
+ * slope are what a cut IS — rather than minting a fourth table of four strings
+ * that would be free to disagree with the fetch path about which weight is a
+ * Bold.
  */
-const cutDeclarations: ReadonlyArray<Readonly<{ cut: FaceCut; style: string; weight: number }>> = [
+export const cutDeclarations: ReadonlyArray<Readonly<{ cut: FaceCut; style: string; weight: number }>> = [
   { cut: 'Regular', style: 'normal', weight: 400 },
   { cut: 'Bold', style: 'normal', weight: 700 },
   { cut: 'Italic', style: 'italic', weight: 400 },
@@ -241,8 +321,16 @@ export type PublishedCut = Readonly<{ cut: FaceCut; filename: string }>
  *
  * Absent is a first-class answer: a family publishing only an upright 400 comes
  * back as a one-entry list, which is the common case — measured, 947 of the
- * 1,274 offered web families. Nothing is invented for the three it does not
+ * 1,270 offered web families. Nothing is invented for the three it does not
  * publish and no placeholder is returned for them.
+ *
+ * ⚠ THE DENOMINATOR MOVED AT spec-install-all-face-cuts STORY 5 AND THE
+ * NUMERATOR DID NOT. D2 stopped the dialog offering the three non-variable
+ * families that publish no static upright 400 at all — `Buda`, `Molle`,
+ * `UnifrakturCook`, which THIS FUNCTION's own caller refuses below, so no pick
+ * of them could ever succeed — taking the offered web population from 1,273 to
+ * 1,270. None of the three was ever among the 947, because none of them
+ * publishes a Regular in the first place.
  */
 export function publishedCuts(metadata: FamilyMetadata): ReadonlyArray<PublishedCut> {
   const cuts: PublishedCut[] = []
@@ -376,13 +464,14 @@ type Fetcher = (url: string) => Promise<Response>
  * therefore the wronger one.
  *
  * WHY THAT FACE IS THE TARGET. The budget serves the FETCHABLE population, not
- * the committed one. Of 1,811 index rows, 1,273 are addable after removing
- * variable-only rows and the 31 local-tier families; 1,218 of those publish a
- * `<slug>-Regular.ttf` upstream, and their sizes are median 107,440 B, p90
- * 420,092 B, p99 1,715,888 B, max 24,271,604 B — `Noto Color Emoji`, which sits
- * in the snapshot as `variable: false` and is therefore offerable TODAY. Sizing
- * against the 646 KB the committed faces reach would be a denominator error:
- * that is the wrong population by ~37x at the tail.
+ * the committed one. Of 1,811 index rows, 1,270 are addable after removing
+ * variable-only rows, the three that publish no upright Regular, and the 31
+ * local-tier families; 1,218 of those publish a `<slug>-Regular.ttf` upstream,
+ * and their sizes are median 107,440 B, p90 420,092 B, p99 1,715,888 B, max
+ * 24,271,604 B — `Noto Color Emoji`, which sits in the snapshot as
+ * `variable: false` and is therefore offerable TODAY. Sizing against the 646 KB
+ * the committed faces reach would be a denominator error: that is the wrong
+ * population by ~37x at the tail.
  *
  * THE FACTOR IS x10, AND THE REASON IS THE SAMPLE'S OWN LIMIT. One connection,
  * one day, five repetitions. That sample cannot speak for a connection ten
@@ -580,7 +669,7 @@ export async function fetchWebFamily(family: string, fetcher: Fetcher = timedFet
   // NOTHING LEFT TO FETCH IS NOT A REASON TO FETCH THE TERMS (D-3).
   //
   // A re-pick of a family this machine already holds in full happens on the
-  // MIGRATION PATH and it is the common case, not a corner: 947 of the 1,274
+  // MIGRATION PATH and it is the common case, not a corner: 947 of the 1,270
   // offered families publish a Regular and nothing else, so every one of them
   // installed before this story is a `stored` row holding everything it
   // publishes and carrying no census. Picking it writes the census and fetches

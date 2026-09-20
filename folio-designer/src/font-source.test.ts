@@ -298,7 +298,7 @@ describe('fetching a family from the web tier', () => {
 
   // AND A FAMILY THIS MACHINE ALREADY HOLDS IN FULL FETCHES NO BYTES AND NO
   // TERMS — the migration path, and the common case rather than a corner. 947
-  // of the 1,274 offered families publish a Regular and nothing else, so every
+  // of the 1,270 offered families publish a Regular and nothing else, so every
   // one of them installed before this story is exactly this shape: everything
   // it publishes is held, and the only thing missing is the census.
   it('reads the metadata and stops when this machine already holds every cut', async () => {

@@ -1,4 +1,5 @@
-import { addableFamilyCount, indexRowFor, sourceScripts, type FamilySource } from './font-index'
+import { addableFamilyCount, indexRowFor, sourceCuts, sourceScripts, type FamilySource } from './font-index'
+import type { FaceCut } from './font-source'
 
 // THE FONT BROWSER'S BEHAVIOUR, PORTED FROM THE DESIGN RATHER THAN RE-DERIVED
 // FROM A SCREENSHOT (Story 16.3).
@@ -23,14 +24,39 @@ import { addableFamilyCount, indexRowFor, sourceScripts, type FamilySource } fro
 //   generated module nor the raw snapshot carries it, so the search predicate is
 //   family and category only, and no row prints a designer's name.
 //
-//   THERE IS NO `Most styles` SORT ARM (D-16.R.33 R3). This product embeds
-//   exactly one face per family — the upright Regular at weight 400 — so a style
-//   count sorts on a difference the product erases before the author can act on
-//   it.
+//   THERE IS STILL NO `Most styles` SORT ARM (D-16.R.33 R3) — BUT NOT FOR THE
+//   REASON THAT STOOD HERE, WHICH IS NOW FALSE. It read: "this product embeds
+//   exactly one face per family — the upright Regular at weight 400 — so a
+//   style count sorts on a difference the product erases before the author can
+//   act on it." CAP-1 OVERTURNED THAT PREMISE. A pick installs every RIBBI cut
+//   the family publishes, so eighteen styles and one style no longer deliver
+//   the author the identical thing: one is four faces on this machine and a
+//   working B and I, the other is one face and a warning. The difference is
+//   real, the author can act on it, and R3's own criterion therefore points the
+//   other way.
 //
-//   `stylesLabel` GOES WITH IT, for the same reason and with the same
-//   consequence: the row's secondary line carries what this product can honestly
-//   say about a family — where its bytes come from, and which scripts it covers.
+//   SO THE HALF OF R3 THAT RESTS ON THE DEAD PREMISE IS REVERSED AND THE HALF
+//   THAT DOES NOT IS KEPT, and the split is the point rather than a compromise.
+//   REVERSED: the cut set is now carried into the generated module and PRINTED
+//   on every row (`cutLine` below, spec-install-all-face-cuts story 5, CAP-6),
+//   because the fact the author needs before the pick is WHICH cuts a family
+//   has. KEPT: there is no `Most styles` sort arm, because CAP-6 asks for a
+//   DISPLAY and not an ordering, and a sort by cut count is a separate claim
+//   with its own reasoning that nothing has asked for. KEPT: no `designer`
+//   field, which never rested on the one-face premise at all — neither the
+//   generated module nor the raw snapshot carries one.
+//
+//   ⚠ AND THE REVERSAL IS ARGUED ON THE CRITERION, NEVER ON THE BUDGET. R3
+//   priced the projection in bytes and warned in terms that a later reader
+//   should not reverse it because the number had moved. It has not been
+//   reversed because bytes got cheaper; it has been reversed because the thing
+//   the number was weighed against — "the author cannot act on this
+//   difference" — stopped being true.
+//
+//   `stylesLabel` STAYS GONE, and `cutLine` is not it under another name. A
+//   label reading "18 styles" counts what upstream OFFERS; this line names the
+//   four the product can actually deliver, from the closed set the file format
+//   declares, so it cannot state a number no pick will honour.
 
 /** The design's two samples. A specimen is set in one of these unless the author types their own. */
 export const latinSample = 'Everyone has the right to freedom of thought'
@@ -124,6 +150,17 @@ export type BrowserRow = Readonly<{
   // holds. The chips are derived from the same vocabulary (`indexScripts`), so
   // widening costs nothing a chip can act on.
   scripts: ReadonlyArray<string>
+  // WHAT INSTALLING THIS FAMILY YIELDS ON THIS MACHINE, in RIBBI order
+  // (spec-install-all-face-cuts story 5, CAP-6). Typed as the CLOSED FOUR and
+  // not as `ReadonlyArray<string>`, which is the opposite of the widening
+  // `scripts` argues for two lines up — and the difference is the point. A
+  // script vocabulary is open: a stored face records whatever coverage its
+  // bytes had, and narrowing it would mean dropping one the store holds. The
+  // cut vocabulary is CLOSED BY THE FILE FORMAT — there are four variants a
+  // `.folio` chain entry can name and there is nowhere to put a fifth — so
+  // widening here would let a Thin or a Black reach the screen through a
+  // database read, which is the single thing this display must never do.
+  cuts: ReadonlyArray<FaceCut>
 }>
 
 export type BrowserFilters = Readonly<{
@@ -168,6 +205,16 @@ export function browserRows(sources: ReadonlyArray<FamilySource>): ReadonlyArray
       // was recorded from the bytes this machine actually holds; the snapshot's
       // is a claim about whatever upstream publishes under that name today.
       scripts: scripts.length > 0 ? scripts : row?.scripts ?? [],
+      // ONE DERIVATION AGAIN, AND WITH NO SNAPSHOT FALLBACK BENEATH IT. The
+      // `scripts` line above falls back to the index row when the tier records
+      // no coverage, because coverage is a fact about BYTES and an unrecorded
+      // one is a gap the snapshot can honestly fill. Cuts are not: an installed
+      // family's cut set is what this machine will actually yield, and reaching
+      // for the snapshot when the census is silent would print a Bold the store
+      // has never heard of — exactly the second authority `font-store.ts`'s note
+      // on `FamilyCensus` forbids. An empty answer is a real answer here, and
+      // `cutLine` says so in words.
+      cuts: sourceCuts(source),
     }
   })
 }
@@ -245,6 +292,44 @@ export function scriptBadge(row: BrowserRow): string {
   if (row.scripts.includes('thai')) return row.scripts.includes('latin') ? 'Thai + Latin' : 'Thai'
   if (row.scripts.length === 0) return 'script not stated'
   return row.scripts.map((script) => script === 'cjk' ? 'CJK' : `${script.slice(0, 1).toUpperCase()}${script.slice(1)}`).join(' + ')
+}
+
+/**
+ * THE CUTS THIS FAMILY WILL YIELD, NAMED IN FULL (CAP-6, D1 owner).
+ *
+ * `Regular · Bold · Italic · Bold Italic`. NOT A COUNT and not badges: "4
+ * cuts" is a number the author has to decode, and the decode is the whole
+ * question — 947 of the 1,270 offered web families publish a Regular and
+ * NOTHING ELSE, and until this line existed that family was indistinguishable
+ * from a four-cut one in the dialog. They find out by applying it and pressing
+ * B. Spelling the names is what makes the row answer the question without
+ * being opened.
+ *
+ * MEASURED, NOT REASONED ABOUT: at 1024px in chromium 1217 against the real
+ * `App.css` and IBM Plex Sans, the named form fits all 1,270 offered families
+ * in the 710px row with ZERO wraps, tightest slack 58.9px (Fira Sans Extra
+ * Condensed). Both flex containers are `nowrap` with `overflow: visible`, so
+ * the failure mode is a taller box and never hidden text.
+ *
+ * THE SAME WORDS IN THE GRID CARD TOO (D6, owner). One vocabulary everywhere:
+ * the card's foot is a different box from the row's head, and a dialog that
+ * said "Regular · Bold" in one view and "2 cuts" in the other would say two
+ * things about one family depending on which toggle the author last pressed.
+ *
+ * THE EMPTY ANSWER IS STATED RATHER THAN LEFT BLANK, on `scriptBadge`'s own
+ * ground two functions up. It is reachable: a family installed before story 1
+ * carries no census, so its cuts are the ones this machine HOLDS — and a store
+ * that has just self-healed a record it could not verify can hold none. An
+ * empty span there reads as a cut set nobody has got round to printing; the
+ * words say the designer does not know, which is the true statement and the one
+ * story 2's absence vocabulary already commits this screen to.
+ */
+export function cutLine(row: BrowserRow): string {
+  if (row.cuts.length === 0) return 'cuts not stated'
+  // A PLAIN JOIN OVER AN ALREADY-ORDERED SET. `sourceCuts` orders by the closed
+  // vocabulary itself, so this function does no sorting of its own — one place
+  // decides the order and it is not this one.
+  return row.cuts.join(' · ')
 }
 
 /**

@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { addableFamilyCount, indexCategories, indexScripts, offeredFamilies, sourceScripts, type FamilySource } from './font-index'
-import { browserRows, buttonLabel, buttonName, confirmLabel, emptyStateHeading, familiesPerPage, filterRows, filtersActive, gridSpecimenCap, latinSample, noFilters, pageCount, pageLine, pageOf, pendingLine, resultLine, rowState, rowTierNote, scriptBadge, sizeReadout, sortRows, specimenFor, specimenSize, thaiSample, weightLine, type BrowserRow, type BrowserSort, type BrowserView, type RowState } from './font-browser-model'
-import type { StoredFace } from './font-store'
+import { addableFamilyCount, familyIsComplete, indexCategories, indexScripts, offeredFamilies, sourceScripts, type FamilySource } from './font-index'
+import type { LocalFaceHoldings } from './held-local-faces'
+import { browserRows, buttonLabel, buttonName, confirmLabel, cutLine, emptyStateHeading, familiesPerPage, filterRows, filtersActive, gridSpecimenCap, latinSample, noFilters, pageCount, pageLine, pageOf, pendingLine, resultLine, rowState, rowTierNote, scriptBadge, sizeReadout, sortRows, specimenFor, specimenSize, thaiSample, weightLine, type BrowserRow, type BrowserSort, type BrowserView, type RowState } from './font-browser-model'
+import type { FamilyCensus, FamilyCutRefusal, StoredFace } from './font-store'
+import { catalogueFaces } from './generated/font-catalogue'
+import { faceCutOfCatalogueStyle, faceCuts, type FaceCut } from './font-source'
+import { shippedFamilyCutsOf } from './shipped-face-cuts'
 
 // THE FONT BROWSER'S LOGIC, ASSERTED AGAINST THE DESIGN IT WAS PORTED FROM
 // (Story 16.3).
@@ -12,17 +16,26 @@ import type { StoredFace } from './font-store'
 // search predicate narrowed to family and category, and a footer that states
 // what this product actually embeds.
 
-const webRow = (family: string, category: string, scripts: ReadonlyArray<'latin' | 'thai'>, popularity: number): FamilySource =>
-  ({ tier: 'web', family, row: { family, category, scripts, variable: false, popularity } })
+// THE SNAPSHOT ROW CARRIES ITS CUT SET SINCE spec-install-all-face-cuts STORY
+// 5, projected at emit onto the closed RIBBI four. It DEFAULTS TO THE
+// REGULAR-ONLY CASE rather than to the four-cut one, because that is the
+// population: 947 of the 1,270 offered web families publish a Regular and
+// nothing else, and a fixture defaulting to four cuts would make the common row
+// the one nothing in this file exercises.
+const webRow = (family: string, category: string, scripts: ReadonlyArray<'latin' | 'thai'>, popularity: number, cuts: ReadonlyArray<FaceCut> = ['Regular']): FamilySource =>
+  ({ tier: 'web', family, row: { family, category, scripts, cuts, variable: false, popularity } })
 
-const storedRecord = (family: string, scripts: ReadonlyArray<string>): StoredFace => ({
-  key: 'a'.repeat(64), family, style: 'Regular', licence: 'OFL-1.1', licenceText: 'terms', copyright: 'c',
+const storedRecord = (family: string, scripts: ReadonlyArray<string>, style = 'Regular'): StoredFace => ({
+  key: 'a'.repeat(64), family, style, licence: 'OFL-1.1', licenceText: 'terms', copyright: 'c',
   source: 'google/fonts — ofl/x/X-Regular.ttf, fetched 2026-09-03', mediaType: 'font/ttf', scripts,
   fetchedAt: '2026-09-03', byteLength: 4,
 })
 
-const row = (family: string, category: string | undefined, scripts: ReadonlyArray<string>, popularity?: number): BrowserRow =>
-  ({ family, source: webRow(family, category ?? 'Serif', [], popularity ?? 0), ...(category === undefined ? {} : { category }), ...(popularity === undefined ? {} : { popularity }), scripts })
+const census = (family: string, published: ReadonlyArray<string>, refused: ReadonlyArray<FamilyCutRefusal> = []): FamilyCensus =>
+  ({ family, published, refused, recordedAt: '2026-09-19' })
+
+const row = (family: string, category: string | undefined, scripts: ReadonlyArray<string>, popularity?: number, cuts: ReadonlyArray<FaceCut> = ['Regular']): BrowserRow =>
+  ({ family, source: webRow(family, category ?? 'Serif', [], popularity ?? 0, cuts), ...(category === undefined ? {} : { category }), ...(popularity === undefined ? {} : { popularity }), scripts, cuts })
 
 describe('the font browser describes the families it is given', () => {
   it('reads category, popularity and scripts off the snapshot, and says nothing it cannot read', () => {
@@ -287,6 +300,203 @@ describe('the footer states what confirming will actually do', () => {
     }
     // The empty slot stays empty — the one staged count with no sentence at all.
     expect(weightLine(0)).toBe('')
+  })
+})
+
+/**
+ * CAP-6 — EVERY LISTED FAMILY SHOWS ITS CUTS, AND WHAT IS SHOWN MATCHES WHAT
+ * INSTALLING YIELDS (spec-install-all-face-cuts story 5).
+ *
+ * ⚠ PARAMETERISED OVER THE INPUT, NOT PINNED AT ONE VALUE, and that is this
+ * file's own recorded defect applied before it could happen again: the weight
+ * line's guards above were written as bans over `weightLine(3)` alone, and a
+ * false clause emitted for `staged === 2` shipped with the full suite green. A
+ * cut display has exactly that shape — one function over a set with sixteen
+ * possible values — so every assertion below walks the cases rather than
+ * sampling one.
+ */
+describe('the row names the cuts installing the family will yield', () => {
+  // MATRIX ROWS 1–3: THE WEB TIER, over the cut set the emit step projected.
+  it('names a web family\'s projected cuts, in RIBBI order, at every arity', () => {
+    const cases: ReadonlyArray<readonly [ReadonlyArray<FaceCut>, string]> = [
+      // The 103 four-cut families — the case the dialog could not tell from the
+      // 947 below until this line existed.
+      [['Regular', 'Bold', 'Italic', 'Bold Italic'], 'Regular · Bold · Italic · Bold Italic'],
+      // THE POPULATION: 947 of 1,270 offered web families publish this and
+      // nothing else.
+      [['Regular'], 'Regular'],
+      [['Regular', 'Bold'], 'Regular · Bold'],
+      [['Regular', 'Italic'], 'Regular · Italic'],
+      [['Regular', 'Bold', 'Italic'], 'Regular · Bold · Italic'],
+      [['Regular', 'Italic', 'Bold Italic'], 'Regular · Italic · Bold Italic'],
+    ]
+    for (const [cuts, expected] of cases) {
+      const [drawn] = browserRows([webRow('A Family', 'Serif', ['latin'], 1, cuts)])
+      expect(drawn?.cuts, `the row must carry ${expected}`).toEqual(cuts)
+      expect(cutLine(drawn as BrowserRow)).toBe(expected)
+    }
+  })
+
+  // MATRIX ROW 3, OVER THE REAL SHIPPED POPULATION RATHER THAN A FIXTURE.
+  // `Fira Sans Extra Condensed` publishes eighteen styles — 100…900 upright and
+  // italic — and the row may name exactly two of them. A fixture cannot prove
+  // that, because a fixture is written by the same hand as the projection; the
+  // generated module is the thing that would carry a fifth weight if the emit
+  // step ever let one through.
+  it('never names a weight outside the closed RIBBI four, over every offered family', () => {
+    const rows = browserRows(offeredFamilies(''))
+    expect(rows.length, 'this guard is only meaningful over the real offered population').toBeGreaterThan(1000)
+    const vocabulary = new Set<string>(faceCuts)
+    for (const row of rows) {
+      for (const cut of row.cuts) expect(vocabulary.has(cut), `${row.family} names ${cut}, which is not one of the four cuts`).toBe(true)
+      // AND THE LINE IS THE CUTS, so the guard cannot be satisfied by a row that
+      // carries the right set and prints something else.
+      if (row.cuts.length > 0) expect(cutLine(row).split(' · ')).toEqual([...row.cuts])
+    }
+    const manyWeights = rows.find((row) => row.family === 'Fira Sans Extra Condensed')
+    expect(manyWeights, 'the eighteen-style family is the one this guard exists for').toBeDefined()
+    expect(cutLine(manyWeights as BrowserRow)).toBe('Regular · Bold · Italic · Bold Italic')
+    // AND THE REGULAR-ONLY MAJORITY IS ACTUALLY THERE, so the guard above is not
+    // passing over a population that happens to be uniform.
+    expect(rows.filter((row) => row.source.tier === 'web' && row.cuts.length === 1).length).toBeGreaterThan(900)
+  })
+
+  // MATRIX ROW 5: THE COMMITTED TIER — and the spelling bridge is the whole
+  // assertion. `font-catalogue.json` spells the combined cut `BoldItalic`;
+  // every other tier spells it `Bold Italic`. A row printing the catalogue's
+  // spelling would be a fourth vocabulary on the screen.
+  it('names a committed family\'s cuts in the store\'s spelling, never the catalogue\'s', () => {
+    const lineFor = (family: string): string => {
+      const local = offeredFamilies(family).find((source) => source.tier === 'local' && source.family === family)
+      expect(local, `${family} is a committed local-tier family`).toBeDefined()
+      const [drawn] = browserRows([local as FamilySource])
+      return cutLine(drawn as BrowserRow)
+    }
+    // The catalogue declares these rows as Regular / Bold / BoldItalic / Italic,
+    // in that order, so this also pins that the answer is ordered by the
+    // VOCABULARY and not by the order the rows happen to arrive in.
+    expect(lineFor('Arimo')).toBe('Regular · Bold · Italic · Bold Italic')
+    expect(lineFor('DM Sans')).toBe('Regular · Bold')
+    // ⚠ ROBOTO IS FOUR CUTS AND `font-catalogue.json` CARRIES ONE OF THEM.
+    // `Roboto Bold`, `Roboto Italic` and `Roboto Bold Italic` ship as hardcoded
+    // CORE faces of the wasm build rather than as catalogue rows, so the
+    // committed rows alone answer `Regular` — and a pick routes through
+    // `commitDeclaredCuts`, which declares all four, so pressing B after that
+    // pick bolds. The card said `Regular`. The matrix row for this tier is "the
+    // cuts actually shipped", and for a family in `shipped-face-cuts.ts`'s
+    // declared mirror that is the mirror's answer unioned with the catalogue's.
+    expect(lineFor('Roboto')).toBe('Regular · Bold · Italic · Bold Italic')
+    // AND ROBOTO IS THE ONLY LOCAL FAMILY THE MIRROR WIDENS TODAY. Pinned as a
+    // listing rather than assumed: a fifth shipped family joining the committed
+    // catalogue would red this and be read for its cuts before it shipped.
+    const committedFamilies = [...new Set(catalogueFaces.map((face) => face.family))].sort()
+    expect(committedFamilies.filter((family) => shippedFamilyCutsOf(family) !== undefined)).toEqual(['Roboto'])
+    for (const row of browserRows(offeredFamilies('').filter((source) => source.tier === 'local'))) {
+      expect(cutLine(row), `${row.family} prints the catalogue's own spelling`).not.toContain('BoldItalic')
+    }
+  })
+
+  /**
+   * THE BRIDGE THE TIER ABOVE IS READ THROUGH, OVER THE REAL COMMITTED ROWS.
+   *
+   * `faceCutOfCatalogueStyle` answers `undefined` for a style neither vocabulary
+   * names, and the `local` arm DROPS that answer — which is right, because
+   * naming a cut this dialog has no word for is how a fifth weight gets onto the
+   * screen. But it means a committed row whose `style` stopped resolving would
+   * VANISH from the cut line in silence, and the `not.toContain('BoldItalic')`
+   * guard above would stay green precisely because the offending cut is not
+   * printed at all. So the resolution is asserted directly, row by row, over the
+   * population the guard cannot speak for.
+   */
+  it('resolves every committed row\'s style to a cut, so none can vanish from the line', () => {
+    expect(catalogueFaces.length, 'this guard is only meaningful over the real committed tier').toBeGreaterThan(30)
+    const vocabulary = new Set<string>(faceCuts)
+    for (const face of catalogueFaces) {
+      const cut = faceCutOfCatalogueStyle(face.style)
+      expect(cut, `${face.family} ${face.style} resolves to no cut and would be dropped from the line in silence`).toBeDefined()
+      expect(vocabulary.has(cut as string)).toBe(true)
+    }
+    // NON-VACUITY: the catalogue's own spelling of the combined cut is IN the
+    // population, which is the one that resolves to nothing if typed by hand.
+    expect(catalogueFaces.some((face) => face.style === 'BoldItalic'), 'the combined cut must be committed for this to mean anything').toBe(true)
+    expect(faceCutOfCatalogueStyle('BoldItalic')).toBe('Bold Italic')
+    // AND THE NEGATIVE HALF STAYS NEGATIVE: an unnamed style is `undefined`, a
+    // real answer, never a guessed cut.
+    expect(faceCutOfCatalogueStyle('Bold Italic')).toBeUndefined()
+    expect(faceCutOfCatalogueStyle('SemiBold')).toBeUndefined()
+  })
+
+  // MATRIX ROWS 6–9: THE STORED TIER, WHICH IS D4 — `published` MINUS
+  // PERMANENTLY-REFUSED CUTS. Every arm of that rule gets its own case, and the
+  // two refusal permanences are asserted against each other rather than
+  // separately, because the whole decision is that they differ.
+  it('shows an installed family what it publishes, less what is permanently refused', () => {
+    const storedSource = (faces: ReadonlyArray<string>, published?: ReadonlyArray<string>, refused: ReadonlyArray<FamilyCutRefusal> = []): FamilySource =>
+      published === undefined
+        ? { tier: 'stored', family: 'Kanit', faces: faces.map((style) => storedRecord('Kanit', ['latin'], style)) }
+        : { tier: 'stored', family: 'Kanit', faces: faces.map((style) => storedRecord('Kanit', ['latin'], style)), census: census('Kanit', published, refused) }
+    const stored = (faces: ReadonlyArray<string>, published?: ReadonlyArray<string>, refused: ReadonlyArray<FamilyCutRefusal> = []): BrowserRow =>
+      browserRows([storedSource(faces, published, refused)])[0] as BrowserRow
+    // `Kanit` IS A WEB FAMILY, NOT A CATALOGUE ONE, so it is in neither holding
+    // set and the empty sets are the honest argument rather than a stub —
+    // `familyIsComplete`'s `stored` arm reads the census and the held styles and
+    // never touches this, which is exactly the fact worth stating once.
+    const noLocalHoldings: LocalFaceHoldings = { usable: new Set(), complete: new Set() }
+    const every = ['Regular', 'Bold', 'Italic', 'Bold Italic']
+
+    // COMPLETE: published ⊆ held. Every published cut is shown.
+    expect(cutLine(stored(every, every))).toBe('Regular · Bold · Italic · Bold Italic')
+
+    // A TRANSIENT GAP IS STILL A YIELD. The Bold is not on this machine and the
+    // stall settles nothing, so the row goes on naming it and the next pick
+    // fetches it.
+    const transientSource = storedSource(['Regular', 'Italic', 'Bold Italic'], every, [{ style: 'Bold', reason: 'the network stalled', permanence: 'transient' }])
+    const transient = browserRows([transientSource])[0] as BrowserRow
+    expect(cutLine(transient)).toBe('Regular · Bold · Italic · Bold Italic')
+    // AC4, ON THE SAME FIXTURE AND THEREFORE AS ONE FACT. A named cut this
+    // machine does not hold has to stay reachable, and the cut line alone does
+    // not say that: INCOMPLETE is what re-offers the family, so the button goes
+    // on offering to install and the next pick fetches the Bold.
+    expect(familyIsComplete(transientSource, noLocalHoldings), 'a transient refusal settles nothing').toBe(false)
+
+    // A PERMANENT REFUSAL IS NEVER SHOWN — nothing will ever deliver it — and
+    // the SAME INPUT with the SAME cut missing differs only in the permanence.
+    const permanentSource = storedSource(['Regular', 'Italic', 'Bold Italic'], every, [{ style: 'Bold', reason: 'upstream publishes no such file', permanence: 'permanent' }])
+    const permanent = browserRows([permanentSource])[0] as BrowserRow
+    expect(cutLine(permanent)).toBe('Regular · Italic · Bold Italic')
+    expect(cutLine(permanent), 'a permanently refused cut may never be named').not.toContain('Bold ·')
+    // AC3, ON THE SAME FIXTURE. Dropping the cut from the line and settling the
+    // family are one decision: if this read INCOMPLETE the row would offer to
+    // install a Bold it has just stopped naming, and offer it again for ever.
+    // The two inputs differ ONLY in the permanence, and so does the answer.
+    expect(familyIsComplete(permanentSource, noLocalHoldings), 'a permanent refusal settles the cut').toBe(true)
+
+    // A CUT THE FAMILY DOES NOT PUBLISH IS NOT INVENTED FROM THE HELD SET
+    // either — `published` is the authority, and it is the smaller list here.
+    expect(cutLine(stored(every, ['Regular', 'Bold']))).toBe('Regular · Bold')
+
+    // NO CENSUS: THE HELD CUTS AND NOT ONE MORE. This is every family installed
+    // before story 1, and the snapshot row for the same family publishes four —
+    // so a reader that fell back to the index would print four here.
+    expect(cutLine(stored(['Regular', 'Bold']))).toBe('Regular · Bold')
+    expect(cutLine(stored(['Bold Italic', 'Regular'])), 'held cuts are ordered by the vocabulary too').toBe('Regular · Bold Italic')
+
+    // AND THE EMPTY ANSWER IS STATED RATHER THAN DRAWN BLANK.
+    expect(cutLine(stored([]))).toBe('cuts not stated')
+    expect(cutLine(stored([], ['Regular'], [{ style: 'Regular', reason: 'gone upstream', permanence: 'permanent' }]))).toBe('cuts not stated')
+  })
+
+  // THE LINE IS A DISPLAY AND CHANGES NOTHING ELSE ON THE ROW (the story's
+  // "Never" list, asserted rather than trusted). `weightLine` in particular was
+  // corrected by story 3 and this story must not make it false again.
+  it('leaves the footer\'s own sentences alone', () => {
+    expect(weightLine(3)).toBe('3 families · every cut each one publishes, up to four')
+    for (const cuts of [['Regular'], ['Regular', 'Bold', 'Italic', 'Bold Italic']] as ReadonlyArray<ReadonlyArray<FaceCut>>) {
+      const drawn = browserRows([webRow('A Family', 'Serif', ['latin'], 1, cuts)])[0] as BrowserRow
+      // ONE FACT PER SLOT: the cut line names cuts and says nothing about where
+      // the bytes come from — `rowTierNote` is the span beside it and owns that.
+      expect(cutLine(drawn)).not.toMatch(/machine|install|download|snapshot/i)
+    }
   })
 })
 
