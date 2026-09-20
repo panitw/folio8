@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/panitw/folio8/folio-go/fonts"
 	"os"
 	"reflect"
 	"slices"
@@ -16,7 +17,7 @@ func TestEngineColumnExpressionExactBytesHistoryAndRefusals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine(testClock())
+	engine := NewEngine(testClock(), fonts.Shipped())
 	if _, err := engine.Load(input); err != nil {
 		t.Fatal(err)
 	}
@@ -55,7 +56,7 @@ func TestEngineColumnExpressionExactBytesHistoryAndRefusals(t *testing.T) {
 			if err != nil || projected.Table.Columns[0].Binding != binding {
 				t.Fatalf("projection changed expression: %#v %v", projected, err)
 			}
-			fresh := NewEngine(testClock())
+			fresh := NewEngine(testClock(), fonts.Shipped())
 			if _, err := fresh.Load(after); err != nil {
 				t.Fatal(err)
 			}
@@ -99,7 +100,7 @@ func TestEngineColumnExpressionFooterAndAliasRefusalPreserveHistory(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine(testClock())
+	engine := NewEngine(testClock(), fonts.Shipped())
 	if _, err := engine.Load(input); err != nil {
 		t.Fatal(err)
 	}

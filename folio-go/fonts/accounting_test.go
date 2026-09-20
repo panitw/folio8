@@ -255,7 +255,103 @@ func readNoticeRecords(t *testing.T) []noticeRecord {
 		)
 	}
 	sort.Slice(records, func(i, j int) bool { return records[i].dir < records[j].dir })
-	return records
+	return withoutUnshippedFaceDirs(t, records)
+}
+
+// withoutUnshippedFaceDirs drops the face directories THIS BUILD does not
+// embed, and it is the one seam the `nocjkface` build needs in this file
+// (spec-deferred-offline-cache, CAP-6).
+//
+// WHY A DROP AND NOT A SKIP EARLIER IN THE WALK. The directory is still
+// there, still holds its binary, its LICENSE and its NOTICE, and is still
+// shipped by every other build of this module — so it is read and parsed
+// exactly as every other face directory is, and only then removed from the
+// set the join is total over. A NOTICE that stopped parsing under the tag
+// therefore still fails here rather than being skipped into silence.
+//
+// IT IS EMPTY IN THE DEFAULT BUILD, which is what keeps the untagged
+// accounting byte-for-byte the guard it has always been: eleven faces,
+// eleven NOTICEs, total in both directions.
+//
+// AND A DECLARED NAME THAT THE WALK DID NOT FIND IS A HARD FAILURE, not a
+// quiet no-op: that is how this list would rot into excluding nothing
+// while reading as though it excluded something.
+func withoutUnshippedFaceDirs(t *testing.T, records []noticeRecord) []noticeRecord {
+	t.Helper()
+	if len(unshippedFaceDirs) == 0 {
+		return records
+	}
+	kept := make([]noticeRecord, 0, len(records))
+	dropped := map[string]bool{}
+	for _, record := range records {
+		excluded := false
+		for _, dir := range unshippedFaceDirs {
+			if record.dir == dir {
+				excluded = true
+				dropped[dir] = true
+				break
+			}
+		}
+		if !excluded {
+			kept = append(kept, record)
+		}
+	}
+	for _, dir := range unshippedFaceDirs {
+		if !dropped[dir] {
+			t.Fatalf(
+				"this build declares folio-go/fonts/%s/ as a face it does not embed, but the walk of "+
+					"folio-go/fonts/ found no such face directory. An exclusion that excludes nothing reads "+
+					"as an accounting over a set it never narrowed — correct the list in the build-tagged "+
+					"pair beside this file, or restore the directory.",
+				dir,
+			)
+		}
+	}
+	if len(kept) == 0 {
+		t.Fatal("every face directory was excluded as unshipped, which would make the accounting below vacuous")
+	}
+	return kept
+}
+
+// TestCJKFaceIsBuildTagged pins the pair that CAP-6 rests on. The embed
+// and its stand-in must carry COMPLEMENTARY constraints: matching both
+// would declare buildTaggedFaces twice and matching neither would not
+// compile, so the pair is asserted rather than trusted — the same guard
+// folio-go/cshared/cmd/folio8/imports_test.go keeps over its cgo/!cgo
+// pair, which is the precedent this split follows.
+func TestCJKFaceIsBuildTagged(t *testing.T) {
+	for _, pair := range []struct{ path, constraint string }{
+		{"notosanssc.go", "//go:build !nocjkface"},
+		{"notosanssc_absent.go", "//go:build nocjkface"},
+	} {
+		source, err := os.ReadFile(pair.path)
+		if err != nil {
+			t.Fatalf("read %s: %v (it is one half of the pair that keeps the CJK face out of the designer's engine)", pair.path, err)
+		}
+		if !strings.Contains(string(source), pair.constraint) {
+			t.Errorf("%s no longer carries the %s constraint, so the two files would collide or both drop out", pair.path, pair.constraint)
+		}
+	}
+	// AND THE EMBED LIVES IN EXACTLY ONE OF THEM. A go:embed of the SC
+	// face left behind in fonts.go would compile under both tags and the
+	// designer's wasm would carry the 10 MiB again with every test here
+	// still green.
+	unconditional, err := os.ReadFile("fonts.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(unconditional), "notosanssc/") {
+		t.Error("fonts.go embeds notosanssc/ unconditionally again; the whole point of the pair is that the directive is not compiled under `nocjkface`")
+	}
+
+	// AND THE FACE NAME SURVIVES THE SPLIT. The key the designer's engine
+	// installs at run time, and the key internal/fontset declares line
+	// metrics under, must stay the key this package ships the face under —
+	// three files in three packages agreeing on one string, with nothing
+	// deriving it from anything else (D-B).
+	if !strings.Contains(string(unconditional), "Noto Sans SC") {
+		t.Error("fonts.go no longer mentions \"Noto Sans SC\" at all; the key the designer's shell declares as deferred must stay the key this package ships it under")
+	}
 }
 
 // joinShippedToNotices derives the face -> directory relation instead of
@@ -585,6 +681,26 @@ func TestEveryShippedFaceIsAccountedForByExactlyOneRoute(t *testing.T) {
 	// THE OTHER DIRECTION FOR THE `derived` ROUTE: a manifest entry that
 	// derives a face nothing ships. That is how the manifest's own `N of N`
 	// witness stays green while the shipped set has moved underneath it.
+	//
+	// ⚠ A FACE THIS BUILD DELIBERATELY DOES NOT EMBED IS NOT AN ORPHAN.
+	// Under `-tags nocjkface` the CJK face is still derived, still
+	// committed, still NOTICE'd and still shipped by every other build of
+	// this module — it is only absent from THIS Shipped(). Excluding it by
+	// name here is what keeps the check pointed at real manifest drift;
+	// `unshippedFaceKeys` is empty in the default build, and a name in it
+	// that the manifest does not carry fails below rather than excluding
+	// nothing.
+	for _, key := range unshippedFaceKeys {
+		if !manifestKeys[key] {
+			t.Fatalf(
+				"this build declares face %q as one it does not embed, but tools/fontgen's UPSTREAM manifest "+
+					"does not derive it either, so the exclusion narrows nothing. Correct the list in the "+
+					"build-tagged pair beside this file.",
+				key,
+			)
+		}
+		delete(manifestKeys, key)
+	}
 	orphaned := []string{}
 	for key := range manifestKeys {
 		if _, ok := shipped[key]; !ok {

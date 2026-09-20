@@ -35,7 +35,7 @@
       "length": 76744,
       "sha256": "114df1d6508981d4eb162c585ff6f01eedf2a75393a5a2a9b649809e8ac968db"
     },
-    "serializations": 5,
+    "serializations": 6,
     "commands": [],
     "operations": [
       {
@@ -79,40 +79,56 @@
         "requestId": "request-10"
       },
       {
-        "operation": "identity",
+        "operation": "serialize",
         "requestId": "request-11"
       },
       {
-        "operation": "serialize",
+        "operation": "render",
         "requestId": "request-12"
       },
       {
-        "operation": "render",
+        "operation": "install-face",
         "requestId": "request-13"
       },
       {
-        "operation": "identity",
+        "operation": "render",
         "requestId": "request-14"
       },
       {
-        "operation": "serialize",
+        "operation": "identity",
         "requestId": "request-15"
       },
       {
-        "operation": "render",
+        "operation": "serialize",
         "requestId": "request-16"
       },
       {
-        "operation": "identity",
+        "operation": "render",
         "requestId": "request-17"
       },
       {
-        "operation": "serialize",
+        "operation": "identity",
         "requestId": "request-18"
       },
       {
-        "operation": "render",
+        "operation": "serialize",
         "requestId": "request-19"
+      },
+      {
+        "operation": "render",
+        "requestId": "request-20"
+      },
+      {
+        "operation": "identity",
+        "requestId": "request-21"
+      },
+      {
+        "operation": "serialize",
+        "requestId": "request-22"
+      },
+      {
+        "operation": "render",
+        "requestId": "request-23"
       }
     ]
   },
@@ -141,7 +157,7 @@
       "length": 16116,
       "sha256": "251b6cc72fc9804a80ab227c0be204a59a7f36a40731086ffb5ef80f2c1c881f"
     },
-    "serializations": 3,
+    "serializations": 4,
     "commands": [
       {
         "requestId": "request-4",
@@ -258,28 +274,36 @@
         "requestId": "request-17"
       },
       {
-        "operation": "identity",
+        "operation": "serialize",
         "requestId": "request-18"
       },
       {
-        "operation": "serialize",
+        "operation": "render",
         "requestId": "request-19"
       },
       {
-        "operation": "render",
+        "operation": "identity",
         "requestId": "request-20"
       },
       {
-        "operation": "identity",
+        "operation": "serialize",
         "requestId": "request-21"
       },
       {
-        "operation": "serialize",
+        "operation": "render",
         "requestId": "request-22"
       },
       {
-        "operation": "render",
+        "operation": "identity",
         "requestId": "request-23"
+      },
+      {
+        "operation": "serialize",
+        "requestId": "request-24"
+      },
+      {
+        "operation": "render",
+        "requestId": "request-25"
       }
     ]
   },

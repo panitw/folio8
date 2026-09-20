@@ -6,17 +6,17 @@ the static-host contract — not the 55.9 MiB uncompressed total.
 
 | | assets | wire bytes |
 |---|---|---|
-| Whole release today (all blocking) | 80 | 18.63 MiB |
-| **Core tier** (blocking after this change) | 30 | 10.82 MiB |
+| Whole release before the spec (all blocking) | 80 | 18.63 MiB |
+| **Core tier** (blocking) | 30 | 6.10 MiB |
 | **Deferred tier** (on demand) | 50 | 7.81 MiB |
 
-## Core tier — 30 assets, 10.82 MiB
+## Core tier — 30 assets, 6.10 MiB
 
 Everything needed to open, edit, preview and render an ordinary Latin or Thai document.
 
 | asset | MiB |
 |---|---|
-| `folio8-engine…wasm` | 8.11 |
+| `folio8-engine…wasm` | 3.40 |
 | `pdf.worker-….mjs` | 0.36 |
 | `noto-sans-bold-italic…ttf` | 0.23 |
 | `noto-sans-bold…ttf` | 0.22 |
@@ -93,3 +93,22 @@ and 50 / 7.81. `runtime-fonts.css` maps the family `Roboto` to that catalogue fa
 1 left one family straddling the two tiers — and the starter and all four bundled examples
 declare that chain, which meant the default document needed a deferred fetch to paint its body
 text. The figures above are read from a `npm run build` manifest, not re-derived by pattern.
+
+**Re-measured 2026-09-19 (story 5).** The designer's engine wasm is now built `-tags nocjkface`
+and no longer embeds `Noto Sans SC`: 8,508,122 Brotli bytes (8.11 MiB) → 3,564,400 (3.40 MiB),
+taking the core tier from 30 / 11,335,794 bytes (10.81 MiB) to 30 / 6,392,910 (6.10 MiB) and the
+whole release from 18.62 MiB to 13.91 MiB. The COUNTS did not move — the wasm is still one asset,
+only smaller — and the deferred tier is untouched at 50 / 7.81 MiB, because the CJK face was
+always already there: the release served those exact bytes twice, and now serves them once.
+
+What the tagged engine keeps is the face's THREE hhea integers
+(`folio-go/internal/fontset/declared_metrics.go`), so a chain naming the face measures the same
+vertical model with or without its glyphs. A Latin or Thai session therefore fetches nothing at
+all; the 4.72 MiB deferred asset is fetched only when a CJK rune must actually be drawn.
+
+The core tier's WEIGHT is guarded from this story on. `maximumCoreCacheBytes` in
+`folio-designer/src/release-payload.ts` is 6,553,600 (6.25 MiB); `generate-offline-release.mjs`
+refuses to emit a release over it and `verify-offline-release.mjs` refuses to pass one, both
+reading that one declaration as text through `declaredCoreCacheByteCeiling()`. Before this story
+nothing in the repository compared the core tier's size to anything at all, which is how 4.72 MiB
+of duplicated CJK glyphs could sit in the blocking download unnoticed.

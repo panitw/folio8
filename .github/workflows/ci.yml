@@ -138,6 +138,26 @@ jobs:
       - name: go vet -tags=matrix
         working-directory: folio-go
         run: go vet -tags=matrix ./...
+      # spec-deferred-offline-cache CAP-6. `nocjkface` is the tag the
+      # designer's engine wasm is built with (ENGINE_BUILD_FLAGS in
+      # folio-designer/scripts/wasm-vcs-stamp.mjs), and until this step
+      # existed NOTHING in any pipeline compiled it: the two assertions the
+      # whole capability rests on — that Shipped() really drops the face, and
+      # that a ten-face engine renders BYTE-IDENTICALLY to an eleven-face one
+      # — could be deleted with every build green.
+      #
+      # ⚠ IT IS THREE PACKAGES AND TWO TESTS, NOT `./...`, AND THAT IS NOT A
+      # SHORTCUT. Most of package folio8's suite is ABOUT the eleven-face
+      # shipped set — the golden instances, the PostScript-name census, the
+      # starter's declared cuts — and every one of them correctly fails under
+      # a tag whose entire purpose is that Shipped() returns ten. The tag is
+      # run over the packages that have something to say about it, plus the
+      # byte-identity pair at the module root by name.
+      - name: go test -tags=nocjkface (the designer engine's own build)
+        working-directory: folio-go
+        run: |
+          go test -count=1 -tags=nocjkface ./fonts/ ./internal/fontset/ ./internal/wasm/
+          go test -count=1 -tags=nocjkface ./ -run '^(TestTenFaceRenderIsByteIdenticalUnderTheTag|TestCJKTextStillRefusesInATenFaceEngine)$'
       - name: gofmt -l (must be empty)
         working-directory: folio-go
         run: test -z "$(gofmt -l .)"

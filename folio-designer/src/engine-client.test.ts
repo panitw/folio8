@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createEngineClientSingleton, EngineClient, isProducerRenderFailure, type WorkerPort } from './engine-client'
 import { ENGINE_PROTOCOL_VERSION, type EngineRequest } from './engine-protocol'
 
@@ -7,11 +7,13 @@ class FakeWorker implements WorkerPort {
   onerror: ((event: ErrorEvent) => void) | null = null
   readonly sent: EngineRequest[] = []
   terminated = 0
-  postMessage(message: EngineRequest): void { this.sent.push(message) }
+  readonly transfers: Transferable[][] = []
+  postMessage(message: EngineRequest, transfer: Transferable[] = []): void { this.sent.push(message); this.transfers.push(transfer) }
   terminate(): void { this.terminated++ }
   emit(data: unknown): void { this.onmessage?.({ data } as MessageEvent<unknown>) }
   ready(): void { this.emit({ protocolVersion: ENGINE_PROTOCOL_VERSION, kind: 'lifecycle', state: 'ready' }) }
   respond(requestId: string, revision: number, bytes?: ArrayBuffer): void { this.emit({ protocolVersion: ENGINE_PROTOCOL_VERSION, kind: 'response', requestId, ok: true, snapshot: { documentState: 'loaded', revision, byteLength: 10 }, ...(bytes ? { bytes } : {}) }) }
+  refuse(requestId: string, code: string, message: string): void { this.emit({ protocolVersion: ENGINE_PROTOCOL_VERSION, kind: 'response', requestId, ok: false, error: { code, message } }) }
 }
 
 describe('engine client protocol and lifecycle', () => {
@@ -258,5 +260,113 @@ describe('group move query transport', () => {
     const groupMove = { revision: kind === 'revision' ? 2 : 3, dx: kind === 'unsafe' ? Number.MAX_SAFE_INTEGER + 1 : 1, dy: 2, ...(kind === 'surplus' ? { arbitrary: true } : {}) }
     worker.emit({ protocolVersion: ENGINE_PROTOCOL_VERSION, kind: 'response', requestId: 'request-1', ok: true, snapshot: { documentState: 'loaded', revision: 3, byteLength: 10 }, ...(kind === 'missing' ? {} : { groupMove }) })
     await expect(pending).rejects.toMatchObject({ code: kind === 'missing' || kind === 'wrong-operation' ? 'PROTOCOL_OPERATION_MISMATCH' : 'PROTOCOL_INVALID' })
+  })
+})
+
+// ---------------------------------------------------------------------------
+// THE ABSENT-FACE RETRY (spec-deferred-offline-cache, story 5).
+//
+// The transport answers exactly ONE refusal code with something other than a
+// rejection, and every property below is about the boundary of that exception
+// rather than about fonts: which request is sent again, how many times, and
+// what the caller is told when the recovery cannot help.
+// ---------------------------------------------------------------------------
+describe('the absent-face retry', () => {
+  const refusalCode = 'TEXT_FACE_ABSENT'
+
+  it('resends the refused request once, after the recovery reports a face was supplied', async () => {
+    const worker = new FakeWorker()
+    const client = new EngineClient(worker)
+    worker.ready()
+    const recovered: string[] = []
+    client.onAbsentFace(async (error) => { recovered.push(error.message); return true })
+    const pending = client.request('load', new Uint8Array([7, 7, 7]).buffer)
+    expect(worker.sent).toHaveLength(1)
+    worker.refuse('request-1', refusalCode, 'face "Noto Sans SC" is not present in the supplied FontSet')
+    await vi.waitFor(() => expect(worker.sent).toHaveLength(2))
+    expect(recovered).toEqual(['face "Noto Sans SC" is not present in the supplied FontSet'])
+    // THE SAME OPERATION AND THE SAME BYTES. The first copy was TRANSFERRED
+    // and is detached; a retry that resent it would send an empty buffer.
+    expect(worker.sent[1].operation).toBe('load')
+    expect(new Uint8Array(worker.sent[1].payload as ArrayBuffer)).toEqual(new Uint8Array([7, 7, 7]))
+    worker.respond('request-2', 5)
+    await expect(pending).resolves.toMatchObject({ snapshot: { revision: 5 } })
+  })
+
+  it('surfaces the second refusal rather than recovering for ever', async () => {
+    const worker = new FakeWorker()
+    const client = new EngineClient(worker)
+    worker.ready()
+    let attempts = 0
+    client.onAbsentFace(async () => { attempts++; return true })
+    const pending = client.request('load', new Uint8Array([1]).buffer)
+    worker.refuse('request-1', refusalCode, 'face "Noto Sans SC" is not present in the supplied FontSet')
+    await vi.waitFor(() => expect(worker.sent).toHaveLength(2))
+    worker.refuse('request-2', refusalCode, 'face "Noto Sans SC" is not present in the supplied FontSet')
+    await expect(pending).rejects.toMatchObject({ code: refusalCode })
+    expect(attempts, 'one recovery per request, whatever the recovery claims').toBe(1)
+    expect(worker.sent).toHaveLength(2)
+  })
+
+  it('reports the ORIGINAL refusal when the recovery could not supply the face', async () => {
+    const worker = new FakeWorker()
+    const client = new EngineClient(worker)
+    worker.ready()
+    client.onAbsentFace(async () => false)
+    const pending = client.request('load', new Uint8Array([1]).buffer)
+    worker.refuse('request-1', refusalCode, 'face "Noto Sans SC" is not present in the supplied FontSet')
+    await expect(pending).rejects.toMatchObject({ code: refusalCode, message: 'face "Noto Sans SC" is not present in the supplied FontSet' })
+    expect(worker.sent, 'a recovery that supplied nothing must not resend anything').toHaveLength(1)
+  })
+
+  it('reports the original refusal when the recovery itself throws', async () => {
+    const worker = new FakeWorker()
+    const client = new EngineClient(worker)
+    worker.ready()
+    client.onAbsentFace(async () => { throw new Error('the network is gone') })
+    const pending = client.request('load', new Uint8Array([1]).buffer)
+    worker.refuse('request-1', refusalCode, 'face "Noto Sans SC" is not present in the supplied FontSet')
+    await expect(pending, 'the author is told which face is missing, never what the recovery tripped over').rejects.toMatchObject({ code: refusalCode })
+  })
+
+  // ⚠ THE RECOVERY'S OWN REQUEST MUST NEVER RECURSE THROUGH IT. `install-face`
+  // is what the recovery issues; a refusal of it that re-entered the recovery
+  // would be a loop with an await in the middle.
+  it('never recovers an install-face refusal', async () => {
+    const worker = new FakeWorker()
+    const client = new EngineClient(worker)
+    worker.ready()
+    let attempts = 0
+    client.onAbsentFace(async () => { attempts++; return true })
+    const pending = client.request('install-face', { face: 'Noto Sans SC', bytes: new Uint8Array([1, 2]).buffer })
+    expect(worker.transfers[0], 'the face bytes must be TRANSFERRED, never structurally cloned').toHaveLength(1)
+    worker.refuse('request-1', refusalCode, 'face "Noto Sans SC" is not present in the supplied FontSet')
+    await expect(pending).rejects.toMatchObject({ code: refusalCode })
+    expect(attempts).toBe(0)
+  })
+
+  // Every other refusal is a refusal, and this is the control that says so.
+  it('leaves every other refusal exactly as it was', async () => {
+    const worker = new FakeWorker()
+    const client = new EngineClient(worker)
+    worker.ready()
+    let attempts = 0
+    client.onAbsentFace(async () => { attempts++; return true })
+    const pending = client.request('load', new Uint8Array([1]).buffer)
+    worker.refuse('request-1', 'TEXT_MISSING_GLYPH', 'no supplied face covers U+6C49')
+    await expect(pending).rejects.toMatchObject({ code: 'TEXT_MISSING_GLYPH' })
+    expect(attempts).toBe(0)
+  })
+
+  // And with no recovery installed the client behaves exactly as it always did,
+  // which is what makes the focused unit suites and the dev server unaffected.
+  it('rejects as before when no recovery is installed', async () => {
+    const worker = new FakeWorker()
+    const client = new EngineClient(worker)
+    worker.ready()
+    const pending = client.request('load', new Uint8Array([1]).buffer)
+    worker.refuse('request-1', refusalCode, 'face "Noto Sans SC" is not present in the supplied FontSet')
+    await expect(pending).rejects.toMatchObject({ code: refusalCode })
+    expect(worker.sent).toHaveLength(1)
   })
 })

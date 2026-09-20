@@ -21,7 +21,7 @@ func TestEngineTableCollectionBindingOwnsOneHistoryStep(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine(testClock())
+	engine := NewEngine(testClock(), fonts.Shipped())
 	loaded, err := engine.Load(input)
 	if err != nil {
 		t.Fatal(err)
@@ -86,7 +86,7 @@ func TestEngineCollectionFooterRebaseIsOneHistoryStep(t *testing.T) {
 				encoded, _ := json.Marshal(payload)
 				return encoded
 			}
-			engine := NewEngine(testClock())
+			engine := NewEngine(testClock(), fonts.Shipped())
 			loaded, err := engine.Load(input)
 			if err != nil {
 				t.Fatal(err)
@@ -142,7 +142,7 @@ func TestEngineLoadAndSerializeRoundTripsCanonicalBytes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine(testClock())
+	engine := NewEngine(testClock(), fonts.Shipped())
 	nonCanonical := append([]byte("\n  "), input...)
 	snapshot, err := engine.Load(nonCanonical)
 	if err != nil {
@@ -166,7 +166,7 @@ func TestEngineLoadAndSerializeRoundTripsCanonicalBytes(t *testing.T) {
 }
 
 func TestEngineParameterReferencesAreARevisionCorrelatedProjection(t *testing.T) {
-	engine := NewEngine(testClock())
+	engine := NewEngine(testClock(), fonts.Shipped())
 	input, err := os.ReadFile("../../testdata/example/first-pdf.folio")
 	if err != nil {
 		t.Fatal(err)
@@ -182,7 +182,7 @@ func TestEngineParameterReferencesAreARevisionCorrelatedProjection(t *testing.T)
 }
 
 func TestEngineEmptyParameterReferencesRemainAnArrayForWorkerTransport(t *testing.T) {
-	engine := NewEngine(testClock())
+	engine := NewEngine(testClock(), fonts.Shipped())
 	input, err := os.ReadFile("../../testdata/example/first-pdf.folio")
 	if err != nil {
 		t.Fatal(err)
@@ -204,7 +204,7 @@ func TestEngineTableColumnsAreRevisionCorrelatedAndHistoryOwned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine(testClock())
+	engine := NewEngine(testClock(), fonts.Shipped())
 	if _, err := engine.Load(input); err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +259,7 @@ func TestEngineTableCreationAndStarterColumnUndoRedoAtomically(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine(testClock())
+	engine := NewEngine(testClock(), fonts.Shipped())
 	loaded, err := engine.Load(input)
 	if err != nil {
 		t.Fatal(err)
@@ -348,7 +348,15 @@ func TestEngineRenderMatchesTheNativeProductionPathByteForByte(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			engine := NewEngine(testClock())
+			// BOTH SIDES OF THE PARITY READ THE SAME SET, AND IT IS THE
+			// ELEVEN-FACE ONE UNDER EVERY BUILD (spec-deferred-offline-cache).
+			// This test asks whether the engine's render equals the production
+			// render of the same bytes — a question about the RENDERER, not
+			// about which faces a build embeds. Left on fonts.Shipped(), it
+			// would silently change subject under `-tags nocjkface` and refuse
+			// the CJK fixtures for a reason that has nothing to do with parity.
+			faces := elevenFaceSet(t)
+			engine := NewEngine(testClock(), faces)
 			if _, err := engine.Load(input); err != nil {
 				t.Fatal(err)
 			}
@@ -360,7 +368,7 @@ func TestEngineRenderMatchesTheNativeProductionPathByteForByte(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want, err := folio8.Render(wantTemplate, folio8.Data(data), folio8.Params(params), fonts.Shipped())
+			want, err := folio8.Render(wantTemplate, folio8.Data(data), folio8.Params(params), faces)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -418,14 +426,14 @@ func TestEngineRenderMatchesTheNativeProductionPathByteForByte(t *testing.T) {
 			// supply precisely the complete shipped set to the public identity
 			// contract. Omitting any production face in Engine.PreviewIdentity
 			// therefore disagrees with this independently assembled expectation.
-			wantIdentity := designer.PreviewIdentity(canonical, folio8.Data(data), folio8.Params(params), fonts.Shipped())
+			wantIdentity := designer.PreviewIdentity(canonical, folio8.Data(data), folio8.Params(params), faces)
 			if err != nil || identity != wantIdentity || evidence.Identity != wantIdentity || identityRevision != snapshot.Revision {
 				t.Fatalf("identity evidence = %q/%d, render = %q, want=%q, err=%v", identity, identityRevision, evidence.Identity, wantIdentity, err)
 			}
-			for face, program := range fonts.Shipped() {
+			for face, program := range faces {
 				changed := append([]byte(nil), program...)
 				changed[0] ^= 1
-				mutated := fonts.Shipped()
+				mutated := elevenFaceSet(t)
 				mutated[face] = changed
 				if designer.PreviewIdentity(canonical, folio8.Data(data), folio8.Params(params), mutated) == wantIdentity {
 					t.Fatalf("shipped face %q did not affect preview identity", face)
@@ -443,7 +451,7 @@ func TestEngineRejectedLoadIsTransactional(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine(testClock())
+	engine := NewEngine(testClock(), fonts.Shipped())
 	before, err := engine.Load(input)
 	if err != nil {
 		t.Fatal(err)
@@ -468,7 +476,7 @@ func TestEngineRejectsUnknownCommandWithoutChangingDocument(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine(testClock())
+	engine := NewEngine(testClock(), fonts.Shipped())
 	before, err := engine.Load(input)
 	if err != nil {
 		t.Fatal(err)
@@ -487,7 +495,7 @@ func TestEngineCommitsComponentChangesThroughGoOwnedCommandChannel(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine(testClock())
+	engine := NewEngine(testClock(), fonts.Shipped())
 	before, err := engine.Load(input)
 	if err != nil {
 		t.Fatal(err)
@@ -506,7 +514,7 @@ func TestEnginePageSetupRevisionAndProjectionChangeTogether(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine(testClock())
+	engine := NewEngine(testClock(), fonts.Shipped())
 	before, err := engine.Load(input)
 	if err != nil {
 		t.Fatal(err)
@@ -525,7 +533,7 @@ func TestEnginePropertyBatchAdvancesOneRevisionOrLeavesEverythingUntouched(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine(testClock())
+	engine := NewEngine(testClock(), fonts.Shipped())
 	before, err := engine.Load(input)
 	if err != nil {
 		t.Fatal(err)
@@ -552,7 +560,7 @@ func TestEngineUndoRedoOwnsCommittedCanonicalHistoryAndResetsOnLoad(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine(testClock())
+	engine := NewEngine(testClock(), fonts.Shipped())
 	loaded, err := engine.Load(input)
 	if err != nil {
 		t.Fatal(err)
@@ -610,7 +618,7 @@ func TestEngineScalarBindingIsOneCanonicalUndoableMutation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine(testClock())
+	engine := NewEngine(testClock(), fonts.Shipped())
 	loaded, err := engine.Load(input)
 	if err != nil {
 		t.Fatal(err)
@@ -661,7 +669,7 @@ func TestEngineScalarBindingRoundTripsAndNoOpPreservesHistoryBranches(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine(testClock())
+	engine := NewEngine(testClock(), fonts.Shipped())
 	if _, err := engine.Load(input); err != nil {
 		t.Fatal(err)
 	}
@@ -694,7 +702,7 @@ func TestEngineScalarBindingRoundTripsAndNoOpPreservesHistoryBranches(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	reloaded := NewEngine(testClock())
+	reloaded := NewEngine(testClock(), fonts.Shipped())
 	loaded, err := reloaded.Load(canonical)
 	if err != nil || loaded.Canvas == nil || canvasComponentByID(t, loaded.Canvas, "e1").Binding == nil {
 		t.Fatalf("saved canonical binding did not survive load: %#v, err=%v", loaded, err)
@@ -717,7 +725,7 @@ func TestEngineNoOpDoesNotChangeHistoryRevisionOrRedo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine(testClock())
+	engine := NewEngine(testClock(), fonts.Shipped())
 	if _, err := engine.Load(input); err != nil {
 		t.Fatal(err)
 	}
@@ -748,7 +756,7 @@ func TestEngineDuplicateIsACommittedGoCommand(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine(testClock())
+	engine := NewEngine(testClock(), fonts.Shipped())
 	before, err := engine.Load(input)
 	if err != nil {
 		t.Fatal(err)
@@ -790,7 +798,7 @@ const fontChainEngineDocJSON = `{
 
 func fontChainEngine(t *testing.T) *Engine {
 	t.Helper()
-	engine := NewEngine(testClock())
+	engine := NewEngine(testClock(), fonts.Shipped())
 	if _, err := engine.Load([]byte(fontChainEngineDocJSON)); err != nil {
 		t.Fatal(err)
 	}
@@ -1100,7 +1108,7 @@ func TestEngineApplyRefusesADuplicateKeyOnEitherRoutingBranch(t *testing.T) {
 		},
 	} {
 		t.Run(probe.name, func(t *testing.T) {
-			engine := NewEngine(testClock())
+			engine := NewEngine(testClock(), fonts.Shipped())
 			before, err := engine.Load(input)
 			if err != nil {
 				t.Fatal(err)
@@ -1145,7 +1153,7 @@ func TestEngineGroupMovePreviewAtomicHistoryAndRevisionFence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine(testClock())
+	engine := NewEngine(testClock(), fonts.Shipped())
 	if _, err := engine.Load(input); err != nil {
 		t.Fatal(err)
 	}
@@ -1221,7 +1229,7 @@ func TestEngineFreshTableDuplicateHistoryPreservesIndependentColumnIDs(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine(testClock())
+	engine := NewEngine(testClock(), fonts.Shipped())
 	loaded, err := engine.Load(input)
 	if err != nil {
 		t.Fatal(err)
@@ -1261,7 +1269,7 @@ func TestEngineFreshTableDuplicateHistoryPreservesIndependentColumnIDs(t *testin
 		t.Fatalf("duplicate column = %#v, err=%v", copy, err)
 	}
 	canonical, _, _ := engine.Serialize()
-	reloaded := NewEngine(testClock())
+	reloaded := NewEngine(testClock(), fonts.Shipped())
 	if _, err := reloaded.Load(canonical); err != nil {
 		t.Fatalf("duplicated table did not reload: %v", err)
 	}
@@ -1300,7 +1308,7 @@ func TestEngineColumnAuthoringSplitBindingClearAndReopenHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine(testClock())
+	engine := NewEngine(testClock(), fonts.Shipped())
 	loaded, err := engine.Load(input)
 	if err != nil {
 		t.Fatal(err)
@@ -1419,7 +1427,7 @@ func TestEngineColumnAuthoringSplitBindingClearAndReopenHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	reopened := NewEngine(testClock())
+	reopened := NewEngine(testClock(), fonts.Shipped())
 	if _, err := reopened.Load(configuredBytes); err != nil {
 		t.Fatal(err)
 	}
@@ -1439,7 +1447,7 @@ func columnAuthoringEngine(t *testing.T) (*Engine, string, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine(testClock())
+	engine := NewEngine(testClock(), fonts.Shipped())
 	loaded, err := engine.Load(input)
 	if err != nil {
 		t.Fatal(err)

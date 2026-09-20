@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"github.com/panitw/folio8/folio-go/fonts"
 	"os"
 	"reflect"
 	"strings"
@@ -19,7 +20,7 @@ func TestBooleanFormulasRealEngineHistoryPersistenceAndRefusal(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine(testClock())
+	engine := NewEngine(testClock(), fonts.Shipped())
 	if _, err = engine.Load(original); err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +52,7 @@ func TestBooleanFormulasRealEngineHistoryPersistenceAndRefusal(t *testing.T) {
 		if !bytes.Equal(redone, committed) {
 			t.Fatal("redo lost formula bytes")
 		}
-		reloaded := NewEngine(testClock())
+		reloaded := NewEngine(testClock(), fonts.Shipped())
 		if _, err := reloaded.Load(committed); err != nil {
 			t.Fatal(err)
 		}
@@ -82,7 +83,7 @@ func TestBooleanFormulaValidOverEditorLimitIsAtomic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine(testClock())
+	engine := NewEngine(testClock(), fonts.Shipped())
 	if _, err := engine.Load(original); err != nil {
 		t.Fatal(err)
 	}

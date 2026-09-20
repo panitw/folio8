@@ -515,3 +515,95 @@ func TestTheRefusalNamesEveryAbsentChainMember(t *testing.T) {
 	)
 	assertFaceAbsentRefusal(t, one, oneErr, "Noto Sans SC")
 }
+
+// tableLabelDoc is a one-table document whose single column label is the
+// text under test. The header style names the `body` chain, which is what
+// makes the label's own shaping reach the supplied FontSet at all.
+func tableLabelDoc(chain, label string) string {
+	return `{
+  "assets": {},
+  "bands": {
+    "content": {
+      "elements": [
+        {"id": "e1", "type": "table", "x": 0, "y": 0, "bind": "rows[]", "as": "row", "headerHeight": 28,
+         "style": {"fontFamily": "body", "fontSize": 10, "padding": {"bottom": 4, "left": 3, "right": 3, "top": 4}},
+         "columns": [{"id": "e2", "label": ` + label + `, "width": 200, "align": "left", "bind": "{{row.value}}"}]}
+      ]
+    },
+    "pageFooter": {"elements": [], "height": 20},
+    "pageHeader": {"elements": [], "height": 20}
+  },
+  "fonts": {"body": ` + chain + `},
+  "locale": "en",
+  "nextId": 3,
+  "page": {"margin": {"bottom": 36, "left": 36, "right": 36, "top": 36}, "orientation": "portrait", "size": "A4"},
+  "utcOffset": "+00:00",
+  "version": "1.0"
+}
+`
+}
+
+// TestCanvasTableLabelRefusesForAnAbsentFaceRatherThanBlanking is the row
+// spec-deferred-offline-cache's matrix calls "Canvas table label needing
+// an absent face", and it is the one the CJK-face deferral makes
+// reachable.
+//
+// addCanvasTableLabelLines used to drop `shapeSegments`'s error on the
+// floor with a bare `continue`. That was invisible while the designer's
+// host passed the whole shipped set — a face was never absent — and it
+// becomes a SILENTLY BLANK COLUMN LABEL the moment the designer's engine
+// can be short of a face: the canvas would open, the column would lose
+// its packed label, and nothing would tell the browser which face to go
+// and fetch.
+//
+// BOTH SIDES ARE PINNED HERE. A Latin label over the same partial set
+// still projects — the `continue` arms that degrade for other reasons are
+// untouched — and the CJK label refuses, named and located.
+func TestCanvasTableLabelRefusesForAnAbsentFaceRatherThanBlanking(t *testing.T) {
+	const chain = `["Noto Sans", "Noto Sans Thai", "Noto Sans SC"]`
+	partial := fontSetWithout(t, "Noto Sans SC")
+
+	// THE NEGATIVE CONTROL FIRST: the same document, the same partial set,
+	// a label whose runes the present faces cover. If this refused too,
+	// the row below would be proving "the canvas refuses tables", not
+	// "the canvas refuses an absent face".
+	latin, err := ParseTemplate([]byte(tableLabelDoc(chain, `"Date"`)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	projection, err := canvasWithTextPaint(latin, partial)
+	if err != nil {
+		t.Fatalf("a Latin table label over a partial font set must still project: %v", err)
+	}
+	if len(projection.Components) != 1 || len(projection.Components[0].Columns) != 1 {
+		t.Fatalf("the control projection has no table column to carry a label: %+v", projection.Components)
+	}
+	if lines := projection.Components[0].Columns[0].LabelLines; len(lines) != 1 || lines[0] != "Date" {
+		t.Fatalf("the control column's packed label is %q, so the row below would compare against a projection that never packed one", lines)
+	}
+
+	// THE ROW ITSELF.
+	cjk, err := ParseTemplate([]byte(tableLabelDoc(chain, `"汉"`)))
+	if err != nil {
+		t.Fatalf("a document naming an unsupplied face must still LOAD: %v", err)
+	}
+	_, err = canvasWithTextPaint(cjk, partial)
+	if err == nil {
+		t.Fatal("the canvas projected a CJK table column label with the face absent — the label would be silently blank and nothing would name the face to fetch")
+	}
+	var refusal *RenderError
+	if !errors.As(err, &refusal) {
+		t.Fatalf("the refusal must reach the caller as a *RenderError carrying a code, or the wasm host reports it as an uncoded engine rejection: %T %v", err, err)
+	}
+	if refusal.Diagnostic.Code != DiagCodeTextFaceAbsent {
+		t.Errorf("code = %q, want %q", refusal.Diagnostic.Code, DiagCodeTextFaceAbsent)
+	}
+	if want := `face "Noto Sans SC" is not present in the supplied FontSet`; !strings.Contains(refusal.Diagnostic.Message, want) {
+		t.Errorf("the refusal does not name the absent face (%q missing):\n\t%s", want, refusal.Diagnostic.Message)
+	}
+	// The column id is the location shapeSegments was given, and it is
+	// what makes the refusal point at the label rather than at the table.
+	if !strings.Contains(err.Error(), "e2") {
+		t.Errorf("the refusal does not locate the column it arose in: %v", err)
+	}
+}

@@ -57,6 +57,11 @@ const designerRoot = path.join(here, '..')
 const generatorPath = path.join(designerRoot, 'scripts', 'build-wasm.mjs')
 const engineFontsDir = path.join(designerRoot, '..', 'folio-go', 'fonts')
 const enginePath = path.join(engineFontsDir, 'fonts.go')
+// THE OTHER HALF OF `Shipped()` (spec-deferred-offline-cache, story 5): the
+// `//go:build !nocjkface` file that embeds the CJK face and merges it in. See
+// `shippedFaceNames` for why this half and not its twin.
+const buildTaggedFacesPath = path.join(here, '..', '..', 'folio-go', 'fonts', 'notosanssc.go')
+const buildTaggedFacesSource = fs.readFileSync(buildTaggedFacesPath, 'utf8')
 // `lint`'s asset licence gate, READ AS SOURCE rather than restated here.
 // `manifest.ResolveAssets` (AC25, AD-26) only requires a `LICENSE*`, only
 // requires a `NOTICE*`, and only writes a `lint/MANIFEST.md` row for a file
@@ -442,18 +447,49 @@ function familiesWithNoRule(generator: string, required: ReadonlyArray<string>):
   return required.filter((family) => declared[family] === undefined)
 }
 
-/** The face names `fonts.Shipped()` keys its FontSet by, in the order it writes them. */
-function shippedFaceNames(fontsGo: string): ReadonlyArray<string> {
+/**
+ * The face names `fonts.Shipped()` keys its FontSet by, in the order it writes
+ * them — from BOTH of the files that contribute to it.
+ *
+ * ⚠ THE SET IS SPLIT ACROSS TWO FILES SINCE spec-deferred-offline-cache STORY
+ * 5, and reading only `fonts.go` would now silently answer TEN. `Shipped()`
+ * writes ten keys in its own literal and merges `buildTaggedFaces()` over them;
+ * that function has a `//go:build` pair, and the `!nocjkface` half —
+ * `notosanssc.go` — is the one every build but the designer's engine wasm
+ * compiles. It is the half this reader takes, deliberately: what these ties are
+ * about is the ELEVEN-FACE SHIPPED CONTRACT the browser must mirror, which the
+ * spec leaves untouched, not the ten faces one build happens to embed. The
+ * designer's stylesheet declares an `@font-face` rule for all eleven either
+ * way, because the CJK one is exactly the deferred asset the engine is handed
+ * at run time.
+ */
+function shippedFaceNames(fontsGo: string, taggedGo: string = buildTaggedFacesSource): ReadonlyArray<string> {
   const body = /func Shipped\(\) folio8\.FontSet \{[\s\S]*?\n\}/.exec(fontsGo)?.[0]
   if (body === undefined) throw new Error(`no Shipped() function in ${enginePath}`)
-  return [...body.matchAll(/"([^"]+)":\s*\w+,/g)].map((match) => match[1])
+  const tagged = /func buildTaggedFaces\(\) map\[string\]\[\]byte \{[\s\S]*?\n\}/.exec(taggedGo)?.[0]
+  if (tagged === undefined) throw new Error(`no buildTaggedFaces() function in ${buildTaggedFacesPath}`)
+  return [...body.matchAll(/"([^"]+)":\s*\w+,/g)].map((match) => match[1]).concat([...tagged.matchAll(/"([^"]+)":\s*\w+\}/g)].map((match) => match[1]))
 }
 
-/** Face name -> the file `fonts.go` embeds for it, joining `Shipped()`'s map through the //go:embed directives. */
-function shippedFacePaths(fontsGo: string): Readonly<Record<string, string>> {
-  const embeds = Object.fromEntries([...fontsGo.matchAll(/\/\/go:embed\s+(\S+)\s*\nvar\s+(\w+)\s+\[\]byte/g)].map((match) => [match[2], match[1]]))
+/**
+ * Face name -> the file the engine embeds for it, joining `Shipped()`'s map
+ * through the //go:embed directives.
+ *
+ * ⚠ IT READS BOTH FILES, for the reason `shippedFaceNames` does: since
+ * spec-deferred-offline-cache story 5 the CJK face's embed directive lives in
+ * `notosanssc.go` rather than in `fonts.go`, and a join over `fonts.go` alone
+ * would report the face as having no embed rather than reporting the truth.
+ */
+function shippedFacePaths(fontsGo: string, taggedGo: string = buildTaggedFacesSource): Readonly<Record<string, string>> {
+  const embedded = `${fontsGo}\n${taggedGo}`
+  const embeds = Object.fromEntries([...embedded.matchAll(/\/\/go:embed\s+(\S+)\s*\nvar\s+(\w+)\s+\[\]byte/g)].map((match) => [match[2], match[1]]))
   const body = /func Shipped\(\) folio8\.FontSet \{[\s\S]*?\n\}/.exec(fontsGo)?.[0] ?? ''
-  return Object.fromEntries([...body.matchAll(/"([^"]+)":\s*(\w+),/g)].map((match) => [match[1], embeds[match[2]] ?? `<no //go:embed for ${match[2]}>`]))
+  const tagged = /func buildTaggedFaces\(\) map\[string\]\[\]byte \{[\s\S]*?\n\}/.exec(taggedGo)?.[0] ?? ''
+  const rows: Array<[string, string]> = [
+    ...[...body.matchAll(/"([^"]+)":\s*(\w+),/g)].map((match): [string, string] => [match[1], embeds[match[2]] ?? `<no //go:embed for ${match[2]}>`]),
+    ...[...tagged.matchAll(/"([^"]+)":\s*(\w+)\}/g)].map((match): [string, string] => [match[1], embeds[match[2]] ?? `<no //go:embed for ${match[2]}>`]),
+  ]
+  return Object.fromEntries(rows)
 }
 
 const digest = (file: string) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex')

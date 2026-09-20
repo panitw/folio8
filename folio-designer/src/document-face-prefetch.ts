@@ -31,9 +31,19 @@
  *
  * ⚠ AND IT IS NEVER GROUNDS FOR A REFUSAL (owner decision, 2026-09-19). A
  * canvas face that will not arrive degrades the GLYPHS ON THIS SCREEN and
- * nothing else — `folio-go/fonts/fonts.go` embeds the engine's own copies, so
- * layout, pagination, preview and the PDF are byte-identical either way — and
- * story 2 settled substitute-and-warn as the answer. So every failure here is
+ * nothing else: the engine measures and renders from ITS OWN bytes for every
+ * face, so layout, pagination, preview and the PDF are byte-identical either
+ * way — and story 2 settled substitute-and-warn as the answer.
+ *
+ * ⚠ "ITS OWN BYTES" NO LONGER MEANS "EMBEDDED", AND THE DISTINCTION IS STORY
+ * 5's. `folio-go/fonts/fonts.go` used to embed all eleven faces; the designer's
+ * engine is now built `-tags nocjkface` and embeds ten, receiving the CJK face
+ * from `absent-face-recovery.ts` the first time a document actually needs it.
+ * The sentence above still holds, because a document that reached a PAINT has
+ * already passed the engine's projection — and a document whose face the engine
+ * does not hold does not reach a paint at all, it is refused by name (CAP-7).
+ * There is no state in which this warning is shown over a layout the engine
+ * guessed at. So every failure here is
  * swallowed: the open proceeds, and the warning is the browser's own
  * `loadingerror` report through `canvas-face-misses.ts`.
  *
@@ -126,8 +136,55 @@ export function deferredFaceAssets(canvas: CanvasProjection | undefined, payload
  * settles must not hold an open for ever.
  */
 export async function prefetchDeferredFaces(urls: ReadonlyArray<string>, timeoutMs: number, request: typeof fetch = fetch): Promise<void> {
-  if (urls.length === 0) return
-  if (typeof navigator !== 'undefined' && navigator.onLine === false) return
+  // ⚠ `keep: false` IS NOT A TIDY-UP, IT IS THE HEAP. This path reads every
+  // deferred face a document needs, in parallel, and wants NONE of the bodies:
+  // what it is buying is the cache entry the service worker writes. Collecting
+  // them into a map first would take peak heap from the largest body to the
+  // SUM of them — tens of MiB on an open, for buffers thrown away one line
+  // later.
+  await fetchDeferredFaces(urls, timeoutMs, request, false, false)
+}
+
+/**
+ * THE SAME FETCH, WITH ITS BODIES KEPT (spec-deferred-offline-cache, CAP-6).
+ *
+ * ⚠ THE BYTES WERE ALWAYS IN HAND HERE AND WERE ALWAYS THROWN AWAY, and until
+ * this story that was right: `response.arrayBuffer()` was read only to make the
+ * service worker write the CACHE ENTRY, and the paint that followed took the
+ * face from that cache through the stylesheet. Nothing in the browser wanted
+ * the buffer itself.
+ *
+ * The engine does now. Its wasm no longer embeds the CJK face, so the same
+ * bytes this function already downloads are what `install-face` hands to Go —
+ * and downloading them a second time, for the engine, would re-spend the
+ * 4.72 MiB the whole spec exists to save. So the map is returned, keyed by the
+ * URL each body came from, and `prefetchDeferredFaces` above stays exactly the
+ * void-returning call the open path has always made.
+ *
+ * ⚠ IT STILL NEVER THROWS. A URL whose fetch failed is simply ABSENT from the
+ * map: a caller reads "no bytes for this one" and decides for itself, which is
+ * what `absent-face-recovery.ts` does when it reports a face it could not get.
+ *
+ * ⚠ AND `askOffline` IS WHY THIS TAKES A FLAG AT ALL. The prefetch above
+ * declines to ask an offline browser, because every request would fail after
+ * its own round of retries while an author waited on a document that opens
+ * correctly regardless. The ENGINE's face is the opposite case: the spec
+ * requires that "a CJK document, offline, with the face already cached opens
+ * and renders normally from cache", and the only thing that can answer from
+ * that cache is a request — the service worker serves a held deferred asset
+ * without touching the network. Declining to ask would turn a cached face into
+ * a refusal, which is the one outcome that row rules out.
+ *
+ * ⚠ AND `keep` IS WHY THE BODIES ARE OPTIONAL. The prefetch above reads each
+ * body only to make the service worker write its cache entry and wants none of
+ * them; retaining them all across the `Promise.all` would raise peak heap from
+ * the largest face to the sum of every face a document declares. The recovery
+ * wants exactly one body and keeps it.
+ */
+export async function fetchDeferredFaces(urls: ReadonlyArray<string>, timeoutMs: number, request: typeof fetch = fetch, askOffline = false, keep = true): Promise<ReadonlyMap<string, ArrayBuffer>> {
+  const fetched = new Map<string, ArrayBuffer>()
+  if (urls.length === 0) return fetched
+  if (!askOffline && typeof navigator !== 'undefined' && navigator.onLine === false) return fetched
   const deadline = new AbortController()
   const handle = setTimeout(() => deadline.abort(), timeoutMs)
   try {
@@ -136,8 +193,11 @@ export async function prefetchDeferredFaces(urls: ReadonlyArray<string>, timeout
         const response = await request(url, { credentials: 'omit', signal: deadline.signal })
         // A non-OK response has nothing worth reading and nothing worth saying:
         // the paint that follows will substitute and the browser will report it.
-        if (response.ok) await response.arrayBuffer()
+        if (!response.ok) return
+        const body = await response.arrayBuffer()
+        if (keep) fetched.set(url, body)
       } catch { /* a face that will not arrive is story 2's warning, never this open's failure */ }
     }))
   } finally { clearTimeout(handle) }
+  return fetched
 }

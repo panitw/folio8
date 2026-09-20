@@ -48,8 +48,23 @@ var notoSans []byte
 //go:embed notosansthai/NotoSansThai-Regular.ttf
 var notoSansThai []byte
 
-//go:embed notosanssc/NotoSansSC-Regular.ttf
-var notoSansSC []byte
+// NOTO SANS SC IS NOT EMBEDDED HERE. It lives in its own build-tagged
+// pair beside this file — notosanssc.go (`//go:build !nocjkface`) and
+// notosanssc_absent.go (`//go:build nocjkface`) — because a go:embed
+// directive is package-scope and no linker dead-code elimination can
+// drop the 10,595,932 bytes it pulls in: a build that must not carry
+// them must not COMPILE them, which is what a build constraint on the
+// embed's own file buys and what a filter at the call site cannot
+// (spec-deferred-offline-cache, CAP-6). The pair follows the
+// cgo/!cgo precedent at folio-go/cshared/cmd/folio8/.
+//
+// THE UNTAGGED BUILD IS UNCHANGED, and that is the whole contract:
+// Shipped() returns the same eleven faces it always has, keyed the same
+// way, to every consumer — folio-js, folio-dotnet, the CJK golden
+// fixtures and the eleven-face documentation included. Only the
+// designer's own engine wasm is compiled with `-tags nocjkface`, and
+// it receives the face from its host instead (internal/wasm's injected
+// FontSet).
 
 // Roboto is Story 16.8's fourth shipped face, and it is NOT a derivation:
 // unlike the three Noto faces above, the upstream release publishes a
@@ -157,17 +172,27 @@ var robotoBoldItalic []byte
 // human writing a chain, not an encoding: the family lives in the face's
 // own name table and is asserted there.
 func Shipped() folio8.FontSet {
-	return folio8.FontSet{
+	set := folio8.FontSet{
 		"Noto Sans":             notoSans,
 		"Noto Sans Bold":        notoSansBold,
 		"Noto Sans Italic":      notoSansItalic,
 		"Noto Sans Bold Italic": notoSansBoldItalic,
 		"Noto Sans Thai":        notoSansThai,
 		"Noto Sans Thai Bold":   notoSansThaiBold,
-		"Noto Sans SC":          notoSansSC,
 		"Roboto":                roboto,
 		"Roboto Bold":           robotoBold,
 		"Roboto Italic":         robotoItalic,
 		"Roboto Bold Italic":    robotoBoldItalic,
 	}
+	// THE BUILD-TAGGED FACES ARE MERGED IN, NOT LISTED ABOVE. Under the
+	// default build this adds "Noto Sans SC" and the set is the same
+	// eleven it has always been; under `nocjkface` it adds nothing and
+	// the set is ten. The merge is a loop over a two-file pair rather
+	// than a second Shipped() variant so that everything else about this
+	// function — its keys, its doc, its one-expression call shape — has
+	// exactly one declaration.
+	for key, face := range buildTaggedFaces() {
+		set[key] = face
+	}
+	return set
 }

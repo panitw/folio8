@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/panitw/folio8/folio-go/fonts"
 	"os"
 	"reflect"
 	"strings"
@@ -18,7 +19,7 @@ func TestProportionAuthoringHistoryAndRefusals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine(testClock())
+	engine := NewEngine(testClock(), fonts.Shipped())
 	if _, err := engine.Load(input); err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +89,7 @@ func TestProportionAuthoringHistoryAndRefusals(t *testing.T) {
 			t.Fatalf("redo %d lost sizing state", i)
 		}
 	}
-	reloaded := NewEngine(testClock())
+	reloaded := NewEngine(testClock(), fonts.Shipped())
 	if _, err := reloaded.Load(serialized()); err != nil {
 		t.Fatal(err)
 	}
@@ -106,7 +107,7 @@ func TestProportionStructuralRefusalsPreserveLocatedHistory(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			engine := NewEngine(testClock())
+			engine := NewEngine(testClock(), fonts.Shipped())
 			if _, err := engine.Load(input); err != nil {
 				t.Fatal(err)
 			}

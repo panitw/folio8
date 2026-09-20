@@ -1,4 +1,4 @@
-import { copyBytes, deepFreeze, ENGINE_PROTOCOL_VERSION, parseInbound, type EngineError, type EngineInbound, type EngineOperation, type EngineRequest, type EngineSnapshot, type IdentityPayload, type RenderPayload, type TableColumns, type GroupMovePreview } from './engine-protocol'
+import { copyBytes, deepFreeze, ENGINE_PROTOCOL_VERSION, parseInbound, type EngineError, type EngineInbound, type EngineOperation, type EngineRequest, type EngineSnapshot, type IdentityPayload, type InstallFacePayload, type RenderPayload, type TableColumns, type GroupMovePreview } from './engine-protocol'
 
 export interface WorkerPort {
   postMessage(message: EngineRequest, transfer?: Transferable[]): void
@@ -9,7 +9,28 @@ export interface WorkerPort {
 
 export type EngineResult = Readonly<{ snapshot: EngineSnapshot; bytes?: ArrayBuffer; preview?: Readonly<{ revision: number; identity: string; pdfSha256?: string; diagnostics?: ReadonlyArray<{ severity: 'warning'; code: string; elementId: string; dataPath: string; message: string }>; elapsedMs?: number; version?: string }>; parameterReferences?: Readonly<{ revision: number; names: ReadonlyArray<string> }>; tableColumns?: TableColumns; groupMove?: GroupMovePreview }>
 
-type Pending = { operation: EngineOperation; resolve: (result: EngineResult) => void; reject: (error: Error) => void }
+export type EnginePayload = ArrayBuffer | RenderPayload | IdentityPayload | InstallFacePayload
+
+// THE ABSENT-FACE CODE, SPELLED ONCE ON THIS SIDE. It is Go's
+// `DiagCodeTextFaceAbsent` (folio-go/internal/diag/diag.go), arriving as the
+// `code` of a refusal, and it is the ONE code this transport is allowed to
+// answer with anything other than a rejection.
+export const TEXT_FACE_ABSENT = 'TEXT_FACE_ABSENT'
+
+// A recovery is the application's answer to "the engine is short of a face".
+// It is handed the refusal and returns whether it managed to supply what was
+// missing; `true` means retry the request that refused, once.
+//
+// ⚠ THE CLIENT DOES NOT KNOW WHAT A FACE IS, AND MUST NOT. Resolving a name to
+// a release asset, fetching it and deciding that a face the release does not
+// carry is a dead end are all application questions
+// (`src/absent-face-recovery.ts`). What lives here is only the one thing the
+// transport owns: which request to send again, and the guarantee that it is
+// sent again AT MOST ONCE.
+export type AbsentFaceRecovery = (error: EngineError) => Promise<boolean>
+
+type Pending = { operation: EngineOperation; payload?: EnginePayload; retried: boolean; signal?: AbortSignal; resolve: (result: EngineResult) => void; reject: (error: Error) => void }
+type Live = { pending: Pending; detach: () => void }
 type ClientState = 'starting' | 'ready' | 'failed' | 'terminated'
 
 type ProducerRenderError = Error & Readonly<{ code: string; elementId?: string; dataPath?: string; producerRenderFailure: true }>
@@ -27,7 +48,8 @@ export function isProducerRenderFailure(error: unknown): error is ProducerRender
 export class EngineClient {
 	#state: ClientState = 'starting'
 	#nextRequest = 0
-	#pending = new Map<string, Pending>()
+	#pending = new Map<string, Live>()
+	#recover?: AbsentFaceRecovery
 	#order: string[] = []
 	#abandoned = new Set<string>()
 	#ready: Promise<EngineClient>
@@ -49,28 +71,54 @@ export class EngineClient {
   get state(): ClientState { return this.#state }
   whenReady(): Promise<EngineClient> { return this.#ready }
 
-  request(operation: EngineOperation, payload?: ArrayBuffer | RenderPayload | IdentityPayload, signal?: AbortSignal): Promise<EngineResult> {
+  // ONE RECOVERY, INSTALLED ONCE, FOR THE LIFE OF THE CLIENT
+  // (spec-deferred-offline-cache, CAP-6). It is a setter rather than a
+  // constructor argument because the recovery needs the client it recovers for:
+  // installing a face is itself an engine request.
+  onAbsentFace(recover: AbsentFaceRecovery): void { this.#recover = recover }
+
+  request(operation: EngineOperation, payload?: EnginePayload, signal?: AbortSignal): Promise<EngineResult> {
     if (this.#state !== 'ready') return Promise.reject(errorFor('ENGINE_NOT_READY', `Engine is ${this.#state}`))
     if (signal?.aborted) return Promise.reject(errorFor('REQUEST_ABORTED', 'Engine request was abandoned'))
-    const requestId = `request-${++this.#nextRequest}`
-    const payloadCopy = payload ? copyPayload(payload) : undefined
-    const request: EngineRequest = { protocolVersion: ENGINE_PROTOCOL_VERSION, kind: 'request', requestId, operation, ...(payloadCopy ? { payload: payloadCopy } : {}) }
     return new Promise<EngineResult>((resolve, reject) => {
-      const abort = () => {
-        if (this.#pending.delete(requestId)) {
-          this.#abandoned.add(requestId)
-          reject(errorFor('REQUEST_ABORTED', 'Engine request was abandoned'))
-        }
-      }
-      signal?.addEventListener('abort', abort, { once: true })
-      this.#pending.set(requestId, {
-        operation,
-        resolve: (result) => { signal?.removeEventListener('abort', abort); resolve(result) },
-        reject: (error) => { signal?.removeEventListener('abort', abort); reject(error) },
-      })
-      this.#order.push(requestId)
-      try { workerPost(this.worker, request, payloadCopy) } catch { this.#fail('WORKER_POST_FAILED', 'Could not send engine request') }
+      // THE PAYLOAD IS COPIED HERE AND KEPT, and the copy `#send` transfers is
+      // a copy OF THAT. A transferred ArrayBuffer is detached, so a retry has
+      // nothing to resend unless a retained copy exists — and the caller's own
+      // buffer was never a candidate: it has been detached-safe since the day
+      // this class started copying it.
+      this.#send({ operation, payload: payload ? copyPayload(payload) : undefined, retried: false, signal, resolve, reject })
     })
+  }
+
+  #send(pending: Pending): void {
+    const requestId = `request-${++this.#nextRequest}`
+    const payloadCopy = pending.payload ? copyPayload(pending.payload) : undefined
+    const request: EngineRequest = { protocolVersion: ENGINE_PROTOCOL_VERSION, kind: 'request', requestId, operation: pending.operation, ...(payloadCopy ? { payload: payloadCopy } : {}) }
+    const abort = () => {
+      if (this.#pending.delete(requestId)) {
+        this.#abandoned.add(requestId)
+        pending.reject(errorFor('REQUEST_ABORTED', 'Engine request was abandoned'))
+      }
+    }
+    pending.signal?.addEventListener('abort', abort, { once: true })
+    this.#pending.set(requestId, { pending, detach: () => pending.signal?.removeEventListener('abort', abort) })
+    this.#order.push(requestId)
+    try { workerPost(this.worker, request, payloadCopy) } catch { this.#fail('WORKER_POST_FAILED', 'Could not send engine request') }
+  }
+
+  // WHAT HAPPENS BETWEEN A REFUSAL AND ITS ONE RETRY. The recovery is awaited
+  // — it fetches ~10 MiB over the network — so anything can have happened by
+  // the time it answers, and each of those states is checked rather than
+  // assumed: the request may have been abandoned, the client may have failed
+  // or been terminated, and the recovery may simply have had nothing to offer.
+  // In every one of those cases the ORIGINAL refusal is what the caller sees,
+  // never a second error describing the recovery's own disappointment.
+  async #retryAfterRecovery(pending: Pending, error: EngineError): Promise<void> {
+    let recovered = false
+    try { recovered = await this.#recover!(error) } catch { recovered = false }
+    if (pending.signal?.aborted) { pending.reject(errorFor('REQUEST_ABORTED', 'Engine request was abandoned')); return }
+    if (!recovered || this.#state !== 'ready') { pending.reject(rejectionFor(pending.operation, error)); return }
+    this.#send(pending)
   }
 
   terminate(): void {
@@ -100,10 +148,35 @@ export class EngineClient {
     }
     this.#order.shift()
     if (this.#abandoned.delete(message.requestId)) return
-    const pending = this.#pending.get(message.requestId)
-    if (!pending) { this.#fail('PROTOCOL_DUPLICATE_OR_UNKNOWN', 'The engine sent an unknown or duplicate response'); return }
+    const live = this.#pending.get(message.requestId)
+    if (!live) { this.#fail('PROTOCOL_DUPLICATE_OR_UNKNOWN', 'The engine sent an unknown or duplicate response'); return }
     this.#pending.delete(message.requestId)
-    if (!message.ok) { pending.reject(pending.operation === 'render' ? producerRenderErrorFor(message.error.code, safeErrorMessage(message.error), message.error.dataPath, message.error.elementId) : errorFor(message.error.code, safeErrorMessage(message.error), message.error.dataPath, message.error.elementId)); return }
+    live.detach()
+    const pending = live.pending
+    if (!message.ok) {
+      // THE ONE REFUSAL THIS TRANSPORT ANSWERS INSTEAD OF REPORTING
+      // (spec-deferred-offline-cache, CAP-6/CAP-7). The engine has said which
+      // face it is short of; the application can fetch that face; the request
+      // then succeeds. Reporting it to the caller would surface a failure that
+      // is about the DESIGNER's download state and not about their document.
+      //
+      // ⚠ ONCE. `retried` is set before the retry is sent, so a request can
+      // refuse, recover and refuse again — and the second refusal reaches the
+      // caller. A document naming a face the release does not carry therefore
+      // surfaces rather than looping, and so does a fetch that succeeds over
+      // bytes the engine will not accept.
+      //
+      // ⚠ AND NEVER FOR `install-face` ITSELF, which is the request the
+      // recovery makes: a recovery that recursed through its own refusal would
+      // be a loop with an await in it.
+      if (message.error.code === TEXT_FACE_ABSENT && this.#recover && !pending.retried && pending.operation !== 'install-face') {
+        pending.retried = true
+        void this.#retryAfterRecovery(pending, message.error)
+        return
+      }
+      pending.reject(rejectionFor(pending.operation, message.error))
+      return
+    }
 		const mismatch = !matchesOperationPayload(pending.operation, message)
 		if (mismatch) { pending.reject(errorFor('PROTOCOL_OPERATION_MISMATCH', 'The engine response did not match its request')); this.#fail('PROTOCOL_OPERATION_MISMATCH', 'The engine response did not match its request'); return }
     const snapshot = deepFreeze({ ...message.snapshot }) as EngineSnapshot
@@ -144,7 +217,7 @@ export class EngineClient {
   }
 
   #rejectPending(code: string, message: string): void {
-    for (const pending of this.#pending.values()) pending.reject(errorFor(code, message))
+    for (const live of this.#pending.values()) { live.detach(); live.pending.reject(errorFor(code, message)) }
     this.#pending.clear()
     this.#abandoned.clear()
     this.#order = []
@@ -168,16 +241,27 @@ function matchesOperationPayload(operation: EngineOperation, message: Extract<En
     case 'parameter-references': return message.bytes === undefined && message.preview === undefined && message.parameterReferences !== undefined && message.tableColumns === undefined
     case 'group-move-preview': return none && message.groupMove !== undefined
     case 'table-columns': return message.bytes === undefined && message.preview === undefined && message.parameterReferences === undefined && message.tableColumns !== undefined
+    // `install-face` FALLS THROUGH TO HERE, and that is the correct
+    // statement about it: an install is not an edit, so its reply carries a
+    // snapshot and nothing else — which is exactly what `none` already means.
     default: return none
   }
 }
 
-function copyPayload(payload: ArrayBuffer | RenderPayload | IdentityPayload): ArrayBuffer | RenderPayload | IdentityPayload {
-  return isArrayBuffer(payload) ? copyBytes(payload) : 'template' in payload ? { template: copyBytes(payload.template), data: copyBytes(payload.data), params: copyBytes(payload.params) } : { data: copyBytes(payload.data), params: copyBytes(payload.params) }
+// A REJECTION'S PROVENANCE MARKER, in one place now that two call sites make
+// one. Only a rejected producer `render` earns the failed-render UI.
+function rejectionFor(operation: EngineOperation, error: EngineError): Error {
+  return operation === 'render'
+    ? producerRenderErrorFor(error.code, safeErrorMessage(error), error.dataPath, error.elementId)
+    : errorFor(error.code, safeErrorMessage(error), error.dataPath, error.elementId)
 }
 
-function workerPost(worker: WorkerPort, request: EngineRequest, payload?: ArrayBuffer | RenderPayload | IdentityPayload): void {
-  worker.postMessage(request, isArrayBuffer(payload) ? [payload] : payload ? ('template' in payload ? [payload.template, payload.data, payload.params] : [payload.data, payload.params]) : [])
+function copyPayload(payload: EnginePayload): EnginePayload {
+  return isArrayBuffer(payload) ? copyBytes(payload) : 'face' in payload ? { face: payload.face, bytes: copyBytes(payload.bytes) } : 'template' in payload ? { template: copyBytes(payload.template), data: copyBytes(payload.data), params: copyBytes(payload.params) } : { data: copyBytes(payload.data), params: copyBytes(payload.params) }
+}
+
+function workerPost(worker: WorkerPort, request: EngineRequest, payload?: EnginePayload): void {
+  worker.postMessage(request, isArrayBuffer(payload) ? [payload] : payload ? ('face' in payload ? [payload.bytes] : 'template' in payload ? [payload.template, payload.data, payload.params] : [payload.data, payload.params]) : [])
 }
 
 function isArrayBuffer(value: unknown): value is ArrayBuffer { return Object.prototype.toString.call(value) === '[object ArrayBuffer]' }

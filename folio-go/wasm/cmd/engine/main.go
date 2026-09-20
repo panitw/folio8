@@ -13,6 +13,7 @@ import (
 	"time"
 
 	folio8 "github.com/panitw/folio8/folio-go"
+	"github.com/panitw/folio8/folio-go/fonts"
 	"github.com/panitw/folio8/folio-go/internal/designer"
 	"github.com/panitw/folio8/folio-go/internal/text"
 	"github.com/panitw/folio8/folio-go/internal/wasm"
@@ -77,8 +78,44 @@ func elapsedClock() func() int64 {
 	return func() int64 { return time.Since(origin).Nanoseconds() }
 }
 
+// maxInstalledFaceBytes bounds ONE face the browser hands the host. It is
+// deliberately NOT MAX_ENGINE_PAYLOAD_BYTES and deliberately not on the
+// request envelope at all: the CJK face is 10,595,932 raw bytes, over the
+// 8 MiB the base64 envelope admits on both sides, and widening that bound
+// would relax every operation that rides it. This is a second, wider door
+// for one shape of input — raw bytes, no base64 — modelled on
+// wasm/cmd/render/main.go's own bytesArg host.
+//
+// 64 MiB is a backstop against an absurd allocation, not a budget: the
+// largest face this repository has ever shipped is a sixth of it.
+const maxInstalledFaceBytes = 64 << 20
+
+// maxInstalledFaceNameBytes bounds the face name, in BYTES.
+//
+// ⚠ IT IS NOT "THE SAME BOUND THE BROWSER APPLIES", and an earlier version of
+// this comment said it was. engine-protocol.ts bounds a face name by
+// MAX_CANVAS_PROPERTY_STRING, which is 512, and it counts UTF-16 code units
+// where this counts UTF-8 bytes — so the two are different quantities even at
+// equal numbers, and a name could satisfy either and not the other. Matching
+// the number is what keeps every name the browser admits admissible here: 512
+// bytes is at least 512 UTF-16 units' worth for ASCII and more than the
+// browser's own limit can encode for anything shorter, so this never refuses a
+// name the browser let through.
+//
+// It is a transport backstop either way, not a rule about names. The names
+// that actually arrive are FontSet keys Go itself wrote into a refusal, the
+// longest of which is twenty characters.
+const maxInstalledFaceNameBytes = 512
+
 func main() {
-	engine := wasm.NewEngine(elapsedClock())
+	// THE SHELL DECIDES WHAT THE ENGINE EMBEDS, and this line is where the
+	// designer's build states it (spec-deferred-offline-cache, CAP-6).
+	// Compiled `-tags nocjkface` — see ENGINE_BUILD_FLAGS in
+	// folio-designer/scripts/wasm-vcs-stamp.mjs — fonts.Shipped() is TEN
+	// faces here and the CJK face arrives later through installFace.
+	// Compiled without the tag this is the ordinary eleven, and the engine
+	// behaves exactly as it always has.
+	engine := wasm.NewEngine(elapsedClock(), fonts.Shipped())
 	handle := js.FuncOf(func(_ js.Value, args []js.Value) any {
 		if len(args) != 1 || args[0].Type() != js.TypeString {
 			return marshal(response{DiagnosticCode: "WASM_PROTOCOL_INVALID", Message: "expected one JSON request string"})
@@ -90,7 +127,70 @@ func main() {
 		out := dispatch(engine, in)
 		return marshal(out)
 	})
-	js.Global().Set("Folio8WasmHost", js.ValueOf(map[string]any{"handle": handle}))
+	// installFace IS A SECOND ENTRY POINT, NOT A SECOND PROTOCOL. It takes
+	// a face name and a Uint8Array and answers with the SAME `response`
+	// JSON string `handle` answers with, so the worker parses one shape and
+	// the browser-side protocol gains one operation rather than one channel.
+	//
+	// ⚠ RAW BYTES, BY DESIGN. The face is 10.11 MiB; base64 would put a
+	// ~13.5 MiB intermediate string through a `String.fromCharCode` loop on
+	// the worker thread and would still be refused by the 8 MiB envelope
+	// bound at both ends. js.CopyBytesToGo copies the Uint8Array straight
+	// into Go memory — the shape wasm/cmd/render/main.go has used since it
+	// was written — and `handle`'s envelope, its operations and its 8 MiB
+	// bound are untouched.
+	installFace := js.FuncOf(func(_ js.Value, args []js.Value) any {
+		if len(args) != 2 || args[0].Type() != js.TypeString || args[1].Type() != js.TypeObject {
+			return marshal(response{DiagnosticCode: "WASM_PROTOCOL_INVALID", Message: "expected a face name and its bytes"})
+		}
+		// ⚠ Uint8Array, CHECKED BY IDENTITY, BECAUSE js.TypeObject IS NOT ENOUGH.
+		// An ArrayBuffer is also a js.TypeObject and also carries a numeric
+		// `byteLength`, and js.CopyBytesToGo PANICS on one — which in js/wasm
+		// takes the whole engine instance down rather than returning the
+		// diagnostic this entry point promises three lines above. A panic is
+		// not a refusal: the worker would report a dead host for an input the
+		// protocol can perfectly well describe as invalid.
+		//
+		// `InstanceOf` and not the constructor's `name`: a constructor is a JS
+		// FUNCTION, so `Get("constructor").Type()` is js.TypeFunction and a
+		// js.TypeObject test on it rejects every legitimate call — which is
+		// exactly what an earlier version of this guard did, refusing the one
+		// input it exists to admit.
+		uint8Array := js.Global().Get("Uint8Array")
+		if uint8Array.Type() != js.TypeFunction || !args[1].InstanceOf(uint8Array) {
+			return marshal(response{DiagnosticCode: "WASM_PROTOCOL_INVALID", Message: "expected a face name and its bytes"})
+		}
+		name := args[0].String()
+		if name == "" || len(name) > maxInstalledFaceNameBytes {
+			return marshal(failure("WASM_INPUT_INVALID", errors.New("face name is empty or over its bound")))
+		}
+		length := args[1].Get("byteLength")
+		if length.Type() != js.TypeNumber {
+			return marshal(response{DiagnosticCode: "WASM_PROTOCOL_INVALID", Message: "expected a face name and its bytes"})
+		}
+		// THE LENGTH IS CHECKED BEFORE THE BUFFER IS ALLOCATED, for the
+		// reason decodeBase64Bounded checks before DecodeString does.
+		size := length.Int()
+		if size <= 0 || size > maxInstalledFaceBytes {
+			return marshal(failure("WASM_INPUT_INVALID", fmt.Errorf("face bytes exceed %d bytes", maxInstalledFaceBytes)))
+		}
+		face := make([]byte, size)
+		// THE COPY'S OWN COUNT IS THE EVIDENCE, and discarding it was a bug:
+		// a short copy leaves the tail of `face` as zeros, and a zero-padded
+		// font is a face that installs cleanly and then fails somewhere far
+		// from here.
+		if copied := js.CopyBytesToGo(face, args[1]); copied != size {
+			return marshal(failure("WASM_INPUT_INVALID", fmt.Errorf("copied %d of %d face bytes", copied, size)))
+		}
+		if err := engine.InstallFace(name, face); err != nil {
+			return marshal(engineFailure(err))
+		}
+		// The snapshot is the CURRENT one, unchanged and unadvanced: an
+		// install is not an edit. The browser needs it only because every
+		// successful response on this protocol carries one.
+		return marshal(response{OK: true, Snapshot: engine.Snapshot()})
+	})
+	js.Global().Set("Folio8WasmHost", js.ValueOf(map[string]any{"handle": handle, "installFace": installFace}))
 	select {}
 }
 

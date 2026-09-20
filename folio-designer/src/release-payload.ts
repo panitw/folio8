@@ -149,6 +149,34 @@ export const cacheAssetApproachWarning = warnCacheAssets
 // `asset-tiers.md` was re-measured in the same change.
 const minimumCoreCacheAssets = 30
 const maximumCoreCacheAssets = 30
+// THE CORE TIER'S WEIGHT, WHICH NOTHING GUARDED UNTIL NOW
+// (spec-deferred-offline-cache, story 5). The two numbers above bound the
+// blocking set's COUNT and say nothing at all about its size: the wasm is one
+// asset whether it is 3 MiB or 8, so the 4.72 MiB of CJK glyphs that story 5
+// took out of it could be put back with every existing pin still green. The
+// build's own record said as much — `generate-offline-release.mjs` described
+// its Brotli total as "a MEASUREMENT, not a budget, and nothing in this
+// repository compares it to a threshold".
+//
+// ⚠ IT IS A CEILING, NOT AN EQUALITY, and that is the difference between this
+// number and the count above. The count is pinned exactly because an asset
+// entering or leaving the blocking set is always a decision; the WEIGHT moves
+// by a few kilobytes every time the application's own JavaScript changes, and a
+// pin that red every commit would be removed rather than respected.
+//
+// ⚠ THE FIGURE IS MEASURED, NEVER PROJECTED. `npm run build` at story 5 emitted
+// 29 immutable core assets totalling 6,392,910 Brotli bytes (6.097 MiB), down
+// from 11,335,794 (10.811 MiB) before it — the engine wasm alone falling from
+// 8,508,122 to 3,564,400. The ceiling is that measurement plus 160,690 bytes,
+// about 2.5%: room for ordinary bundle movement and nowhere near the ~4.9 MiB
+// that re-embedding the CJK face would add. `/index.html` is outside the sum
+// for the reason it is outside every other Brotli total here — it is the one
+// mutable asset and carries no sidecar.
+//
+// RAISING IT IS THE DELIBERATE ACT THAT ADMITS A HEAVIER FIRST LOAD, exactly as
+// raising `maximumCacheAssets` is the act that admits a longer one. Re-measure
+// before moving it, and move `asset-tiers.md` in the same change.
+const maximumCoreCacheBytes = 6553600
 // EXPORTED FOR THE REASON `cacheAssetApproachWarning` IS, AND WITH THE SAME
 // OBLIGATION: nothing in `src/` reads the `const` lines above (they are shaped
 // for a text reader in another language), so without a consumer `noUnusedLocals`
@@ -160,6 +188,7 @@ const maximumCoreCacheAssets = 30
 // REFERENCES, never second copies: the `const` lines stay the single authority.
 export const coreCacheAssetFloor = minimumCoreCacheAssets
 export const coreCacheAssetCeiling = maximumCoreCacheAssets
+export const coreCacheByteCeiling = maximumCoreCacheBytes
 const reject = (reason: S1PayloadRejection): S1PayloadResult => ({ ok: false, reason })
 
 export function parseS1Payload(value: unknown): S1PayloadResult {

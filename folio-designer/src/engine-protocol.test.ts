@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { ENGINE_PROTOCOL_VERSION, LOCALE_TAGS, MAX_CANVAS_BODY_TEXT_LINES, MAX_ENGINE_CONTENT_WINDOWS, MAX_ENGINE_FONT_CHAIN_ENTRIES, MAX_ENGINE_FONT_FAMILIES, MAX_CANVAS_PROPERTY_STRING, MAX_ENGINE_BINDING_LENGTH, MAX_ENGINE_DATA_PATH_LENGTH, MAX_ENGINE_ELEMENT_ID_LENGTH, MAX_ENGINE_PAYLOAD_BYTES, MAX_ENGINE_RENDER_PDF_BYTES, deepFreeze, parseInbound, parseRequest } from './engine-protocol'
+import { ENGINE_PROTOCOL_VERSION, LOCALE_TAGS, MAX_CANVAS_BODY_TEXT_LINES, MAX_ENGINE_CONTENT_WINDOWS, MAX_ENGINE_FONT_CHAIN_ENTRIES, MAX_ENGINE_FONT_FAMILIES, MAX_CANVAS_PROPERTY_STRING, MAX_ENGINE_BINDING_LENGTH, MAX_ENGINE_DATA_PATH_LENGTH, MAX_ENGINE_ELEMENT_ID_LENGTH, MAX_ENGINE_FACE_BYTES, MAX_ENGINE_PAYLOAD_BYTES, MAX_ENGINE_RENDER_PDF_BYTES, deepFreeze, parseInbound, parseRequest } from './engine-protocol'
 
 // face() builds the PROJECTED shape of a named-face chain entry (Story 8.3:
 // an entry is a discriminated object, not a string). A named face carries no
@@ -1252,5 +1252,47 @@ describe('authored common property evidence', () => {
     const { color: _color, ...missing } = absent
     expect(parseInbound(response(missing))).toBeUndefined()
     expect(parseInbound(response({ ...absent, color: { state: 'value' } }))).toBeUndefined()
+  })
+})
+
+// ---------------------------------------------------------------------------
+// `install-face` (spec-deferred-offline-cache, story 5). The union and its
+// runtime allow-list are both closed, and a new member has to reach both: a
+// type-only addition compiles and is then refused at run time by the very
+// guard that exists to admit it.
+// ---------------------------------------------------------------------------
+describe('the install-face operation', () => {
+  const ok = (payload: unknown) => parseRequest({ protocolVersion: ENGINE_PROTOCOL_VERSION, kind: 'request', requestId: 'request-1', operation: 'install-face', payload })
+
+  it('admits a named face with its bytes', () => {
+    expect(ok({ face: 'Noto Sans SC', bytes: new Uint8Array([1, 2, 3]).buffer })).toBeDefined()
+  })
+
+  it('refuses a face with no name, no bytes, or a key it never declared', () => {
+    expect(ok({ face: '', bytes: new Uint8Array([1]).buffer })).toBeUndefined()
+    expect(ok({ face: 'Noto Sans SC', bytes: new ArrayBuffer(0) })).toBeUndefined()
+    expect(ok({ face: 'Noto Sans SC' })).toBeUndefined()
+    expect(ok({ face: 'Noto Sans SC', bytes: new Uint8Array([1]).buffer, extra: 1 })).toBeUndefined()
+    expect(ok(new Uint8Array([1]).buffer), 'a bare ArrayBuffer carries no face name, so the host would not know what to install').toBeUndefined()
+    expect(ok(undefined)).toBeUndefined()
+  })
+
+  // ⚠ THE FACE PAYLOAD IS BOUNDED BY ITS OWN NUMBER, NOT BY THE ENVELOPE'S.
+  // The CJK face is over 10 MiB, which the 8 MiB request bound forbids — and
+  // widening that bound would relax every operation that rides it, which the
+  // spec names as a thing not to do.
+  it('is bounded well above the request envelope, and the envelope is untouched', () => {
+    expect(MAX_ENGINE_FACE_BYTES).toBeGreaterThan(10_595_932)
+    expect(MAX_ENGINE_PAYLOAD_BYTES, 'the existing envelope bound must stay exactly where it was').toBe(8 * 1024 * 1024)
+    expect(MAX_ENGINE_FACE_BYTES).toBeGreaterThan(MAX_ENGINE_PAYLOAD_BYTES)
+    expect(ok({ face: 'Noto Sans SC', bytes: new ArrayBuffer(MAX_ENGINE_FACE_BYTES + 1) })).toBeUndefined()
+  })
+
+  // No other operation may carry a face payload, and `install-face` may not
+  // carry anything else: both halves of the discrimination, so a widening in
+  // either direction reds.
+  it('is the only operation that takes a face payload', () => {
+    expect(parseRequest({ protocolVersion: ENGINE_PROTOCOL_VERSION, kind: 'request', requestId: 'request-1', operation: 'load', payload: { face: 'Noto Sans SC', bytes: new Uint8Array([1]).buffer } })).toBeUndefined()
+    expect(parseRequest({ protocolVersion: ENGINE_PROTOCOL_VERSION, kind: 'request', requestId: 'request-1', operation: 'install-face' }), 'an install with no payload installs nothing').toBeUndefined()
   })
 })

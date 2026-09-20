@@ -1332,7 +1332,9 @@ func addCanvasTextPaint(t *Template, projection *designer.CanvasProjection, fs F
 	// SPEC-table-rules §4: the table header labels, through the SAME
 	// document font cache as the text above — the canvas and the PDF path
 	// must agree on which faces exist (AD-17).
-	addCanvasTableLabelLines(t, projection, fs, cache)
+	if err := addCanvasTableLabelLines(t, projection, fs, cache); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1596,7 +1598,33 @@ func canvasLabelLines(label string, lines []wrappedLine) []string {
 // shaper and the same packer (packHeaderLabelLines). A table whose header
 // font does not resolve keeps the line-feed split, as a text element whose
 // chain does not resolve degrades rather than failing the canvas.
-func addCanvasTableLabelLines(t *Template, projection *designer.CanvasProjection, fs FontSet, cache *fontCache) {
+//
+// ⚠ WITH ONE EXCEPTION, ADDED BY spec-deferred-offline-cache: A FACE THE
+// SUPPLIED FontSet DOES NOT CARRY REFUSES, AND IS RETURNED.
+//
+// Every `continue` in here is a DEGRADE — the label keeps its line-feed
+// split and the canvas opens — and every one of them is right for what it
+// names: an unresolvable chain, an unmeasurable column width, a header
+// with no family. `shapeSegments`'s error was swallowed alongside them,
+// and that was harmless only while the host passed the whole shipped set:
+// a face was never absent, so the arm never fired for that reason.
+//
+// It fires now. CAP-6 makes the designer's FontSet short of the CJK face
+// until the browser installs it, and CAP-7 makes that condition a REFUSAL
+// with the face named — the entire mechanism by which the browser learns
+// which face to fetch. Swallowed here, a CJK table column label would go
+// silently blank on the canvas and no one would be told which face to go
+// and get. So `TEXT_FACE_ABSENT` is propagated, with the same wrapping the
+// body-text path a few hundred lines above uses, and the body text and the
+// header labels refuse for the same cause in the same way.
+//
+// EVERYTHING ELSE STILL DEGRADES, and that is not an oversight either: a
+// carried face that will not parse, a media type the format admits and the
+// shaper cannot use — those are document properties whose ONLY repair
+// surface is this canvas, and aborting the projection would close the
+// surface the repair happens on (D-8.4.12, the same argument the body-text
+// arm makes at length).
+func addCanvasTableLabelLines(t *Template, projection *designer.CanvasProjection, fs FontSet, cache *fontCache) error {
 	components := make(map[string]*designer.CanvasComponent, len(projection.Components))
 	for i := range projection.Components {
 		components[projection.Components[i].ID] = &projection.Components[i]
@@ -1631,6 +1659,10 @@ func addCanvasTableLabelLines(t *Template, projection *designer.CanvasProjection
 				}
 				segs, _, serr := shapeSegments(string(col.ID), chain, styledChain, col.Label, fs, headerCache, breaksAreConsumed)
 				if serr != nil {
+					var renderErr *RenderError
+					if errors.As(serr, &renderErr) && renderErr.Diagnostic.Code == DiagCodeTextFaceAbsent {
+						return fmt.Errorf("folio8: canvas table column %s: %w", col.ID, serr)
+					}
 					continue
 				}
 				lines := packHeaderLabelLines(segs, col.Label, hs.fontSize, widths[i]-padLeft-padRight)
@@ -1638,6 +1670,7 @@ func addCanvasTableLabelLines(t *Template, projection *designer.CanvasProjection
 			}
 		}
 	}
+	return nil
 }
 
 func clipCanvasPropertyString(value string) string {

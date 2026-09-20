@@ -1,12 +1,12 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { declaredCacheAssetWarning, declaredCoreCacheAssetBounds } from './offline-release-contract.mjs'
+import { coreTierBrotliBytes, declaredCacheAssetWarning, declaredCoreCacheAssetBounds, declaredCoreCacheByteCeiling } from './offline-release-contract.mjs'
 import { documentationFontHostFinding, reportCacheAssetApproach, templateAssetFinding } from './verify-offline-release.mjs'
 import { FORBIDDEN_FONT_HOSTS } from './forbidden-font-hosts.mjs'
 // THE TYPESCRIPT DECLARATION ITSELF, IMPORTED AS A VALUE. See the tie below for
 // why this import is the point rather than a convenience.
-import { cacheAssetApproachWarning, coreCacheAssetCeiling, coreCacheAssetFloor } from '../src/release-payload'
+import { cacheAssetApproachWarning, coreCacheAssetCeiling, coreCacheAssetFloor, coreCacheByteCeiling } from '../src/release-payload'
 
 // ---------------------------------------------------------------------------
 // THE CACHE-ASSET APPROACH WARNING, EXECUTED (Story 11.1, D-11.1.10).
@@ -179,5 +179,55 @@ describe('the core cache-asset pin', () => {
   // guarding one of the two directions.
   it('is declared as an exact pin rather than an envelope with headroom', () => {
     expect(coreCacheAssetFloor, 'both ends equal is what makes any movement of the blocking set fail the build').toBe(coreCacheAssetCeiling)
+  })
+
+  // THE WEIGHT, TIED THE SAME WAY (spec-deferred-offline-cache, story 5).
+  // `coreCacheByteCeiling` is exported for exactly the reason the two above
+  // are: nothing in `src/` reads `maximumCoreCacheBytes`, so this assertion is
+  // the only thing that puts the number the regex reader pulls out of the
+  // file's SOURCE TEXT beside the value the module evaluates to.
+  it('reads the same core byte ceiling the TypeScript module declares', () => {
+    const { maximumCoreCacheBytes } = declaredCoreCacheByteCeiling()
+    expect(maximumCoreCacheBytes, 'scripts/offline-release-contract.mjs reads `maximumCoreCacheBytes` out of src/release-payload.ts as TEXT; this is the value that file actually evaluates to').toBe(coreCacheByteCeiling)
+  })
+
+  // ⚠ WHERE THE CEILING IS ACTUALLY ENFORCED, AND WHY IT IS NOT ENFORCED HERE.
+  // The comparison against a real release lives in `verify-offline-release.mjs`
+  // and in `generate-offline-release.mjs`, both of which run under
+  // `npm run build` and neither of which Vitest executes — and the falsifier is
+  // the `core-tier-bytes-over-ceiling` red proof, which lowers the declaration
+  // below the honest measurement and requires the build to refuse. A copy of
+  // that comparison here would need a built `dist/`, which this suite does not
+  // have and must not require.
+  it('states the guard that enforces it, in the two scripts that run at build time', () => {
+    // `import.meta.dirname`, for the reason the sibling test above states it.
+    const verifier = readFileSync(join(import.meta.dirname, 'verify-offline-release.mjs'), 'utf8')
+    const generator = readFileSync(join(import.meta.dirname, 'generate-offline-release.mjs'), 'utf8')
+    expect(verifier, 'the verifier must compare the core tier to the declared ceiling').toContain('core-tier-bytes-over-ceiling')
+    expect(verifier, 'and it must read the ceiling rather than re-typing it').toContain('declaredCoreCacheByteCeiling(releasePayloadText)')
+    expect(generator, 'the generator must refuse to emit an over-ceiling release, so `build:offline` alone cannot produce one').toContain('declaredCoreCacheByteCeiling(releasePayloadText)')
+    expect(verifier, 'the guard needs a falsifier, and the only honest one moves the declaration rather than the release').toContain("redProof('core-tier-bytes-over-ceiling'")
+    // ⚠ AND THE FALSIFIER MUST REACH BOTH COPIES. The comparison is duplicated
+    // so that `build:offline` alone cannot emit an over-budget release; a
+    // proof that exercised only the verifier would leave the generator's copy
+    // free to be inverted with every proof green.
+    expect(verifier, 'the proof must run the GENERATOR under the lowered ceiling too, or half the guard is unproved').toContain('generateOfflineRelease(dist, { releasePayloadText: loweredCeiling })')
+    // ⚠ AND IT MUST NOT DO IT BY EDITING TRACKED SOURCE. A proof that rewrote
+    // src/release-payload.ts and restored it in a `finally` leaves the lowered
+    // number in a committed file on any SIGINT, and races a `vite dev` or
+    // `vitest --watch` reading it.
+    expect(verifier, 'no red proof may write to the working tree\'s source').not.toContain('writeFileSync(releasePayloadSource')
+  })
+
+  // ⚠ AND THE WEIGHT IS SUMMED IN ONE PLACE. Both scripts call
+  // `coreTierBrotliBytes`, so the number the build records and the number the
+  // verifier compares cannot be two different arithmetics over the same rows.
+  it('sums the core tier through one shared derivation rather than two', () => {
+    expect(coreTierBrotliBytes([
+      { tier: 'core', immutable: true, brotliBytes: 10 },
+      { tier: 'core', immutable: true, brotliBytes: 5 },
+      { tier: 'core', immutable: false },
+      { tier: 'deferred', immutable: true, brotliBytes: 1000 },
+    ]), "the mutable navigation entry carries no sidecar and the deferred tier is not blocking; neither belongs in a first load's weight").toBe(15)
   })
 })

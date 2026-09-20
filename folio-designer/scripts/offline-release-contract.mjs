@@ -265,6 +265,51 @@ export function declaredCoreCacheAssetBounds(source, label = source === undefine
   return { minimumCoreCacheAssets, maximumCoreCacheAssets }
 }
 
+// THE CORE TIER'S BYTE CEILING, READ THROUGH THE SAME LINE-ANCHORED READER
+// (spec-deferred-offline-cache, story 5), and a THIRD separate export for the
+// reason the two above are separate: `declaredCoreCacheAssetBounds`'s return
+// shape is asserted by exact equality, and widening it would break every
+// fixture-driven failure case that has nothing to do with bytes.
+//
+// COUNT AND WEIGHT ARE DIFFERENT QUESTIONS AND HAVE DIFFERENT ANSWERS. The
+// count pin is an equality — an asset entering or leaving the blocking set is
+// always somebody's decision. This is a one-sided bound, because the weight
+// moves with every bundle change and a pin that red every commit would be
+// deleted rather than respected.
+//
+// THE FLOOR IS THE `maximumCoreCacheAssets` COUNT, not a byte figure, and the
+// sanity check is deliberately crude: a ceiling of fewer bytes than the core
+// tier has ASSETS could never be met by any release, so the fault would be in
+// this declaration rather than in any build.
+export function declaredCoreCacheByteCeiling(source, label = source === undefined ? 'src/release-payload.ts' : 'the injected release-payload source') {
+  const text = source === undefined ? readFileSync(releasePayloadSource, 'utf8') : source
+  const maximumCoreCacheBytes = readDeclaredConstant(text, 'maximumCoreCacheBytes', label)
+  const { maximumCoreCacheAssets } = declaredCoreCacheAssetBounds(text, label)
+  if (maximumCoreCacheBytes < maximumCoreCacheAssets) throw new Error(`${label} declares \`maximumCoreCacheBytes\` ${maximumCoreCacheBytes}, fewer bytes than the ${maximumCoreCacheAssets} assets the core tier is pinned to carry: no release could ever satisfy it and the fault is in the declaration rather than in any release`)
+  return { maximumCoreCacheBytes }
+}
+
+// CORE-TIER BROTLI WEIGHT, DERIVED IN ONE PLACE so the build that RECORDS it
+// and the verifier that CHECKS it cannot compute it two ways. `/index.html` is
+// the one mutable asset and carries no Brotli sidecar, so `immutable` is the
+// same filter every other Brotli total in this repository applies.
+//
+// ⚠ THE SET IS SPELLED ONCE, HERE, and the count and the weight are both taken
+// from it. Two independent `tier === 'core' && immutable` filters in a file
+// whose own comment says the derivation lives in one place is the drift this
+// export exists to prevent, written into the export itself.
+function coreTierBrotliAssets(assets) {
+  return assets.filter((asset) => asset.tier === 'core' && asset.immutable)
+}
+
+export function coreTierBrotliBytes(assets) {
+  return coreTierBrotliAssets(assets).reduce((total, asset) => total + asset.brotliBytes, 0)
+}
+
+export function coreTierBrotliAssetCount(assets) {
+  return coreTierBrotliAssets(assets).length
+}
+
 // THE APP VERSION, AND THE ONE RULE THAT MAKES AN UPGRADE MANDATORY.
 //
 // The release `id` is a content hash: it answers "is this the same bytes", which

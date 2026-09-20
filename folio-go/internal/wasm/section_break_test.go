@@ -2,6 +2,7 @@ package wasm
 
 import (
 	"bytes"
+	"github.com/panitw/folio8/folio-go/fonts"
 	"os"
 	"testing"
 )
@@ -14,7 +15,7 @@ func TestSectionBreakCommandsUndoAndRedoByteForByte(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine(testClock())
+	engine := NewEngine(testClock(), fonts.Shipped())
 	if _, err := engine.Load(input); err != nil {
 		t.Fatal(err)
 	}

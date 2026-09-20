@@ -12,6 +12,7 @@ import (
 	"unicode/utf8"
 
 	folio8 "github.com/panitw/folio8/folio-go"
+	"github.com/panitw/folio8/folio-go/fonts"
 	"github.com/panitw/folio8/folio-go/internal/wasm"
 )
 
@@ -23,7 +24,7 @@ func TestWasmHostRoundTripsCanonicalFixture(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := wasm.NewEngine(elapsedClock())
+	engine := wasm.NewEngine(elapsedClock(), fonts.Shipped())
 	nonCanonical := append([]byte("\n  "), input...)
 	loaded := dispatch(engine, request{Operation: "load", PayloadBase64: base64.StdEncoding.EncodeToString(nonCanonical)})
 	if !loaded.OK || loaded.Snapshot.DocumentState != "loaded" {
@@ -67,7 +68,7 @@ func TestWasmHostRoundTripsCanonicalFixture(t *testing.T) {
 // RUNES and visibly elided, which is what makes surviving safe.
 func TestWasmHostSanitizesTemplateDiagnostics(t *testing.T) {
 	t.Run("unparseable-bytes-are-described-not-reflected", func(t *testing.T) {
-		engine := wasm.NewEngine(elapsedClock())
+		engine := wasm.NewEngine(elapsedClock(), fonts.Shipped())
 		malicious := `{"version":"1.0","page":"` + string(bytes.Repeat([]byte("x"), 2048)) + `"`
 		got := dispatch(engine, request{Operation: "load", PayloadBase64: base64.StdEncoding.EncodeToString([]byte(malicious))})
 		if got.OK || got.DiagnosticCode != folio8.DiagCodeTemplateMalformed || got.Message != "The template could not be processed" {
@@ -87,7 +88,7 @@ func TestWasmHostSanitizesTemplateDiagnostics(t *testing.T) {
 		const thai = "\u0e01"
 		value := strings.Repeat(thai, 2048)
 		doc := `{"assets":{},"bands":{"content":{"elements":[{"id":"e1","type":"text","x":0,"y":0,"width":200,"height":40,"value":"v","style":"` + value + `"}]},"pageFooter":{"elements":[],"height":20},"pageHeader":{"elements":[],"height":20}},"fonts":{"body":["Noto Sans"]},"locale":"en","nextId":2,"page":{"margin":{"bottom":36,"left":36,"right":36,"top":36},"orientation":"portrait","size":"A4"},"utcOffset":"+00:00","version":"1.0"}`
-		engine := wasm.NewEngine(elapsedClock())
+		engine := wasm.NewEngine(elapsedClock(), fonts.Shipped())
 		got := dispatch(engine, request{Operation: "load", PayloadBase64: base64.StdEncoding.EncodeToString([]byte(doc))})
 		if got.OK {
 			t.Fatalf("a non-object style must fail the load: %#v", got)
@@ -131,7 +132,7 @@ func TestWasmHostSanitizesTemplateDiagnostics(t *testing.T) {
 		const thai = "\u0e01"
 		id := strings.Repeat(thai, 2048)
 		doc := `{"assets":{},"bands":{"content":{"elements":[{"id":"` + id + `","type":"text","x":0,"y":0,"width":200,"height":40,"value":"v"}]},"pageFooter":{"elements":[],"height":20},"pageHeader":{"elements":[],"height":20}},"fonts":{"body":["Noto Sans"]},"locale":"en","nextId":2,"page":{"margin":{"bottom":36,"left":36,"right":36,"top":36},"orientation":"portrait","size":"A4"},"utcOffset":"+00:00","version":"1.0"}`
-		engine := wasm.NewEngine(elapsedClock())
+		engine := wasm.NewEngine(elapsedClock(), fonts.Shipped())
 		got := dispatch(engine, request{Operation: "load", PayloadBase64: base64.StdEncoding.EncodeToString([]byte(doc))})
 		if got.OK {
 			t.Fatalf("an id that is not an id must fail the load: %#v", got)
@@ -166,7 +167,7 @@ func TestWasmHostSanitizesTemplateDiagnostics(t *testing.T) {
 // TestWasmHostReportsTheLineSpacingRefusalIntact above.
 func TestWasmHostReportsTheTableJustifyRefusalIntact(t *testing.T) {
 	const doc = `{"assets":{},"bands":{"content":{"elements":[{"id":"e1","type":"table","x":0,"y":0,"bind":"rows[]","as":"row","headerHeight":20,"columns":[{"id":"e2","label":"L","width":100,"bind":"{{row.v}}"}],"style":{"fontFamily":"body","fontSize":11,"align":"justify"}}]},"pageFooter":{"elements":[],"height":20},"pageHeader":{"elements":[],"height":20}},"fonts":{"body":["Noto Sans"]},"locale":"en","nextId":3,"page":{"margin":{"bottom":36,"left":36,"right":36,"top":36},"orientation":"portrait","size":"A4"},"utcOffset":"+00:00","version":"2.0"}`
-	engine := wasm.NewEngine(elapsedClock())
+	engine := wasm.NewEngine(elapsedClock(), fonts.Shipped())
 	got := dispatch(engine, request{Operation: "load", PayloadBase64: base64.StdEncoding.EncodeToString([]byte(doc))})
 	if got.OK {
 		t.Fatalf("a table carrying style.align: \"justify\" must fail the load: %#v", got)
@@ -190,7 +191,7 @@ func TestWasmHostReportsTheTableJustifyRefusalIntact(t *testing.T) {
 	// assertions above are equally consistent with a blanket ban, which
 	// Story 7.3, Story 7.4 and two shipped goldens forbid.
 	const textDoc = `{"assets":{},"bands":{"content":{"elements":[{"id":"e1","type":"text","x":0,"y":0,"width":200,"height":40,"value":"v","style":{"fontFamily":"body","fontSize":11,"align":"justify"}}]},"pageFooter":{"elements":[],"height":20},"pageHeader":{"elements":[],"height":20}},"fonts":{"body":["Noto Sans"]},"locale":"en","nextId":2,"page":{"margin":{"bottom":36,"left":36,"right":36,"top":36},"orientation":"portrait","size":"A4"},"utcOffset":"+00:00","version":"2.0"}`
-	textEngine := wasm.NewEngine(elapsedClock())
+	textEngine := wasm.NewEngine(elapsedClock(), fonts.Shipped())
 	textGot := dispatch(textEngine, request{Operation: "load", PayloadBase64: base64.StdEncoding.EncodeToString([]byte(textDoc))})
 	if !textGot.OK {
 		t.Fatalf("a TEXT element's style.align: \"justify\" must still load (FR47): %#v", textGot)
@@ -208,7 +209,7 @@ func TestWasmHostReportsTheTableJustifyRefusalIntact(t *testing.T) {
 // D-7.8.2 retired the field's own code) is what makes the AC reachable;
 // this is where that is observable.
 func TestWasmHostReportsTheLineSpacingRefusalIntact(t *testing.T) {
-	engine := wasm.NewEngine(elapsedClock())
+	engine := wasm.NewEngine(elapsedClock(), fonts.Shipped())
 	doc := `{"assets":{},"bands":{"content":{"elements":[{"id":"e1","type":"text","x":0,"y":0,"width":200,"height":40,"value":"v","style":{"fontFamily":"body","fontSize":11,"lineSpacing":1000.001}}]},"pageFooter":{"elements":[],"height":20},"pageHeader":{"elements":[],"height":20}},"fonts":{"body":["Noto Sans"]},"locale":"en","nextId":2,"page":{"margin":{"bottom":36,"left":36,"right":36,"top":36},"orientation":"portrait","size":"A4"},"utcOffset":"+00:00","version":"1.0"}`
 	got := dispatch(engine, request{Operation: "load", PayloadBase64: base64.StdEncoding.EncodeToString([]byte(doc))})
 	if got.OK {
@@ -234,7 +235,7 @@ func TestWasmHostReportsEngineAuthoredRenderMessages(t *testing.T) {
 	}
 	encode := func(b []byte) string { return base64.StdEncoding.EncodeToString(b) }
 	place := func(changes string) (*wasm.Engine, []byte) {
-		engine := wasm.NewEngine(elapsedClock())
+		engine := wasm.NewEngine(elapsedClock(), fonts.Shipped())
 		if loaded := dispatch(engine, request{Operation: "load", PayloadBase64: encode(starter)}); !loaded.OK {
 			t.Fatalf("load = %#v", loaded)
 		}
@@ -294,7 +295,7 @@ func TestWasmHostReportsEngineAuthoredRenderMessages(t *testing.T) {
 }
 
 func TestTableColumnsRequestRequiresTheExactSelectionEnvelope(t *testing.T) {
-	engine := wasm.NewEngine(elapsedClock())
+	engine := wasm.NewEngine(elapsedClock(), fonts.Shipped())
 	payload := base64.StdEncoding.EncodeToString([]byte(`{"id":"e7"}`))
 	for _, in := range []request{
 		{Operation: "table-columns", TemplateBase64: base64.StdEncoding.EncodeToString([]byte("template")), PayloadBase64: payload},
@@ -330,7 +331,7 @@ func TestTableColumnsRequestRequiresTheExactSelectionEnvelope(t *testing.T) {
 // out of main.go's source so the tie is measured on every story too.
 func TestWasmHostReportsTheDuplicateKeyRefusalAsComponentInvalid(t *testing.T) {
 	const doc = `{"assets":{},"bands":{"content":{"elements":[{"id":"e1","type":"text","x":0,"y":0,"width":200,"height":40,"value":"first","style":{"fontFamily":"body","fontSize":11}},{"id":"e2","type":"text","x":0,"y":60,"width":200,"height":40,"value":"second","style":{"fontFamily":"body","fontSize":11}}]},"pageFooter":{"elements":[],"height":20},"pageHeader":{"elements":[],"height":20}},"fonts":{"body":["Noto Sans"]},"locale":"en","nextId":3,"page":{"margin":{"bottom":36,"left":36,"right":36,"top":36},"orientation":"portrait","size":"A4"},"utcOffset":"+00:00","version":"2.0"}`
-	engine := wasm.NewEngine(elapsedClock())
+	engine := wasm.NewEngine(elapsedClock(), fonts.Shipped())
 	if loaded := dispatch(engine, request{Operation: "load", PayloadBase64: base64.StdEncoding.EncodeToString([]byte(doc))}); !loaded.OK {
 		t.Fatalf("fixture precondition: the document must load, got %#v", loaded)
 	}
@@ -374,7 +375,7 @@ func TestWasmHostReportsTheDuplicateKeyRefusalAsComponentInvalid(t *testing.T) {
 // observable.
 func TestWasmHostReportsThePageSetupDuplicateKeyRefusalAsPageSetupInvalid(t *testing.T) {
 	const doc = `{"assets":{},"bands":{"content":{"elements":[]},"pageFooter":{"elements":[],"height":20},"pageHeader":{"elements":[],"height":20}},"fonts":{"body":["Noto Sans"]},"locale":"en","nextId":1,"page":{"margin":{"bottom":36,"left":36,"right":36,"top":36},"orientation":"portrait","size":"A4"},"utcOffset":"+00:00","version":"2.0"}`
-	engine := wasm.NewEngine(elapsedClock())
+	engine := wasm.NewEngine(elapsedClock(), fonts.Shipped())
 	if loaded := dispatch(engine, request{Operation: "load", PayloadBase64: base64.StdEncoding.EncodeToString([]byte(doc))}); !loaded.OK {
 		t.Fatalf("fixture precondition: the document must load, got %#v", loaded)
 	}
@@ -414,7 +415,7 @@ func TestWasmGroupMovePreviewAndCommitTransport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := wasm.NewEngine(elapsedClock())
+	engine := wasm.NewEngine(elapsedClock(), fonts.Shipped())
 	loaded := dispatch(engine, request{Operation: "load", PayloadBase64: base64.StdEncoding.EncodeToString(input)})
 	if !loaded.OK {
 		t.Fatal(loaded.Message)
@@ -446,7 +447,7 @@ func TestWasmFormulaLongSyntaxCauseSurvivesWireBound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := wasm.NewEngine(elapsedClock())
+	engine := wasm.NewEngine(elapsedClock(), fonts.Shipped())
 	if _, err := engine.Load(input); err != nil {
 		t.Fatal(err)
 	}
@@ -462,7 +463,7 @@ func TestWasmFormulaMultiplePlaceholderCauseSurvivesWireBound(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := wasm.NewEngine(elapsedClock())
+	engine := wasm.NewEngine(elapsedClock(), fonts.Shipped())
 	if _, err := engine.Load(input); err != nil {
 		t.Fatal(err)
 	}

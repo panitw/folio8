@@ -595,6 +595,29 @@ func chainLineMetrics(chain []string, fs FontSet, cache *fontCache) ([]fontset.L
 			return nil, err
 		}
 		if !present {
+			// A FACE THIS BUILD DECLARES BUT DOES NOT CARRY STILL
+			// CONSTRAINS THE MODEL (spec-deferred-offline-cache, CAP-6).
+			//
+			// The skip above is right for a caller's genuine partial
+			// FontSet: a face nobody supplied cannot appear in the element,
+			// so it does not constrain its height. It is WRONG for a build
+			// that dropped the face's glyphs on purpose and can be handed
+			// them later — the designer's engine wasm — because this
+			// arithmetic is a maximum over the chain's present faces, so
+			// dropping one silently changes the layout of documents that
+			// never reach it. Measured: a paragraph of ENGLISH on the chain
+			// [Roboto, Noto Sans Thai, Noto Sans SC] renders to a different
+			// PDF in a ten-face engine than in the eleven-face CLI.
+			//
+			// DeclaredLineMetrics answers only in that build, and only for
+			// the faces it names — twenty-four bytes standing in for
+			// 10,595,932, so the leading is exact and nothing is fetched.
+			// It supplies NO COVERAGE: a rune that must be DRAWN with the
+			// absent face still refuses through shapeSegments, named, which
+			// is when the designer fetches it.
+			if declared, ok := fontset.DeclaredLineMetrics(name); ok {
+				out = append(out, declared)
+			}
 			continue
 		}
 		out = append(out, f.LineMetrics())

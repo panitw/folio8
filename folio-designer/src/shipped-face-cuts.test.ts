@@ -27,6 +27,11 @@ import { shippedFamilyCuts, shippedFamilyCutsOf, shippedFamilyEntry, isShippedFa
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const enginePath = path.join(here, '..', '..', 'folio-go', 'fonts', 'fonts.go')
+// THE OTHER HALF OF `Shipped()` (spec-deferred-offline-cache, story 5): the
+// `//go:build !nocjkface` file that embeds the CJK face and merges it in. See
+// `shippedFaceNames` for why this half and not its twin.
+const buildTaggedFacesPath = path.join(here, '..', '..', 'folio-go', 'fonts', 'notosanssc.go')
+const buildTaggedFacesSource = fs.readFileSync(buildTaggedFacesPath, 'utf8')
 // The binary-verified witness. `shippedSlotFaces` is a closed 13-row table in
 // this test file whose family/subfamily/usWeightClass are checked against what
 // the committed binaries actually say about themselves — so it is where "Roboto
@@ -35,11 +40,28 @@ const enginePath = path.join(here, '..', '..', 'folio-go', 'fonts', 'fonts.go')
 // same reason the Go file is.
 const catalogueTestPath = path.join(here, 'font-catalogue.test.ts')
 
-/** The face names `fonts.Shipped()` keys its FontSet by, in the order it writes them. */
-function shippedFaceNames(fontsGo: string): ReadonlyArray<string> {
+/**
+ * The face names `fonts.Shipped()` keys its FontSet by, in the order it writes
+ * them — from BOTH of the files that contribute to it.
+ *
+ * ⚠ THE SET IS SPLIT ACROSS TWO FILES SINCE spec-deferred-offline-cache STORY
+ * 5, and reading only `fonts.go` would now silently answer TEN. `Shipped()`
+ * writes ten keys in its own literal and merges `buildTaggedFaces()` over them;
+ * that function has a `//go:build` pair, and the `!nocjkface` half —
+ * `notosanssc.go` — is the one every build but the designer's engine wasm
+ * compiles. It is the half this reader takes, deliberately: what these ties are
+ * about is the ELEVEN-FACE SHIPPED CONTRACT the browser must mirror, which the
+ * spec leaves untouched, not the ten faces one build happens to embed. The
+ * designer's stylesheet declares an `@font-face` rule for all eleven either
+ * way, because the CJK one is exactly the deferred asset the engine is handed
+ * at run time.
+ */
+function shippedFaceNames(fontsGo: string, taggedGo: string = buildTaggedFacesSource): ReadonlyArray<string> {
   const body = /func Shipped\(\) folio8\.FontSet \{[\s\S]*?\n\}/.exec(fontsGo)?.[0]
   if (body === undefined) throw new Error(`no Shipped() function in ${enginePath}`)
-  return [...body.matchAll(/"([^"]+)":\s*\w+,/g)].map((m) => m[1])
+  const tagged = /func buildTaggedFaces\(\) map\[string\]\[\]byte \{[\s\S]*?\n\}/.exec(taggedGo)?.[0]
+  if (tagged === undefined) throw new Error(`no buildTaggedFaces() function in ${buildTaggedFacesPath}`)
+  return [...body.matchAll(/"([^"]+)":\s*\w+,/g)].map((match) => match[1]).concat([...tagged.matchAll(/"([^"]+)":\s*\w+\}/g)].map((match) => match[1]))
 }
 
 /** Every face name the mirror writes down: the four bases, then the seven cuts. */

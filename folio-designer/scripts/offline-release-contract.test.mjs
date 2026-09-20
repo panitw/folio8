@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { ASSET_TIER_RULES, ASSET_TIERS, CORE_CATALOGUE_FACE_IDS, classifyAssetTier, isCatalogueAssetUrl, declaredCacheAssetBounds, declaredCacheAssetWarning, declaredCoreCacheAssetBounds, normalizePublicPath, pageIdentity, releaseIdentity } from './offline-release-contract.mjs'
+import { ASSET_TIER_RULES, ASSET_TIERS, CORE_CATALOGUE_FACE_IDS, classifyAssetTier, isCatalogueAssetUrl, declaredCacheAssetBounds, declaredCacheAssetWarning, declaredCoreCacheAssetBounds, declaredCoreCacheByteCeiling, normalizePublicPath, pageIdentity, releaseIdentity } from './offline-release-contract.mjs'
 
 describe('offline release contract', () => {
   it('normalizes the single Windows separator emitted by path.relative', () => {
@@ -339,5 +339,30 @@ describe('declared core cache-asset bounds', () => {
 
   it('names the source it actually read rather than the file it did not', () => {
     expect(() => declaredCoreCacheAssetBounds('const minimumCoreCacheAssets = 29\n')).toThrow(/^the injected release-payload source does not declare `maximumCoreCacheAssets`/)
+  })
+})
+
+// THE CORE TIER'S BYTE CEILING (spec-deferred-offline-cache, story 5). Same
+// line-anchored reader again, so the rename/duplicate/comment-out cases are
+// covered by construction; what is asserted here is the one NEW coherence rule
+// and that the number comes from the real declaration.
+describe('declared core cache byte ceiling', () => {
+  it('reads the ceiling src/release-payload.ts actually declares', () => {
+    expect(declaredCoreCacheByteCeiling()).toEqual({ maximumCoreCacheBytes: reReadDeclared('maximumCoreCacheBytes') })
+  })
+
+  it('throws when the ceiling is absent, naming it', () => {
+    expect(() => declaredCoreCacheByteCeiling('const minimumCoreCacheAssets = 30\nconst maximumCoreCacheAssets = 30\n')).toThrow(/`maximumCoreCacheBytes` as a single live constant: found 0 .*reads as none/)
+  })
+
+  // A CEILING OF FEWER BYTES THAN THERE ARE ASSETS is a declaration no release
+  // could ever satisfy, so it is named as a fault in the declaration rather
+  // than left to fail every build with a message blaming the release.
+  it('refuses a ceiling no release could meet, naming the declaration', () => {
+    expect(() => declaredCoreCacheByteCeiling('const minimumCoreCacheAssets = 30\nconst maximumCoreCacheAssets = 30\nconst maximumCoreCacheBytes = 4\n')).toThrow(/declares `maximumCoreCacheBytes` 4, fewer bytes than the 30 assets the core tier is pinned to carry/)
+  })
+
+  it('does not read the asset count as the byte ceiling', () => {
+    expect(() => declaredCoreCacheByteCeiling('const minimumCoreCacheAssets = 30\nconst maximumCoreCacheAssets = 30\nconst maximumCacheAssets = 90\n')).toThrow(/`maximumCoreCacheBytes` as a single live constant: found 0 /)
   })
 })

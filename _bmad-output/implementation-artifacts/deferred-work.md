@@ -13912,3 +13912,11 @@ name that attributes it to Story 6.7, and the audit trail for 6.7 quietly descri
 - source_spec: `_bmad-output/specs/spec-deferred-offline-cache/stories/4-refuse-a-render-missing-a-face.md`
   summary: docs/rendering-library.{md,html} and docs/folio-format.{md,html} have no twin-equality test, so the two files can silently publish different text.
   evidence: folio-js/test/docs.test.ts and folio-dotnet's DocsTests each police only their own guide's pair. folio-go's guideTwins in docs_examples_test.go asserts only that every exported identifier is NAMED in both files, never that their text matches. This story desynced docs/folio-format.html without any test noticing; it was found by hand. The two policed pairs show the guard's shape.
+
+- source_spec: `_bmad-output/specs/spec-deferred-offline-cache/stories/5-take-the-cjk-face-out-of-the-designers-engine.md`
+  summary: The wasm host's installFace bound checks (name length, byte size) have no executing test, because main()'s js.FuncOf closures are unreachable from any Go test.
+  evidence: main_test.go calls dispatch() directly; nothing calls main(). The same untestable layer holds the pre-existing handle wrapper, so closing it means extracting the closure bodies into testable functions — worth its own change.
+
+- source_spec: `_bmad-output/specs/spec-deferred-offline-cache/stories/5-take-the-cjk-face-out-of-the-designers-engine.md`
+  summary: A document needing two or more absent faces can never recover, because EngineClient retries at most once per request.
+  evidence: Unreachable today — only the CJK face is deferred — but nothing in the code or tests states that precondition, and canvasFaceAssets is the candidate set for every face in the release. If a second face is ever deferred, the second refusal exhausts the retry.

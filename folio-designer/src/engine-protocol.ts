@@ -1,9 +1,21 @@
 export const ENGINE_PROTOCOL_VERSION = 1 as const
 
-export type EngineOperation = 'initialize' | 'load' | 'snapshot' | 'parameter-references' | 'stand-in-data' | 'group-move-preview' | 'table-columns' | 'validate' | 'serialize' | 'command' | 'undo' | 'redo' | 'identity' | 'render' | 'asset'
+export type EngineOperation = 'initialize' | 'load' | 'snapshot' | 'parameter-references' | 'stand-in-data' | 'group-move-preview' | 'table-columns' | 'validate' | 'serialize' | 'command' | 'undo' | 'redo' | 'identity' | 'render' | 'asset' | 'install-face'
 
 export const MAX_ENGINE_REQUEST_ID_LENGTH = 128
 export const MAX_ENGINE_PAYLOAD_BYTES = 8 * 1024 * 1024
+// ONE FACE'S BYTES, AND IT IS DELIBERATELY NOT THE BOUND ABOVE
+// (spec-deferred-offline-cache, CAP-6). The CJK face is 10,595,932 raw bytes,
+// over the 8 MiB the base64 request envelope admits at BOTH ends, and widening
+// that bound would relax every operation that rides it. `install-face` does not
+// ride it: its bytes reach the host as a transferred ArrayBuffer and are copied
+// straight into Go memory, so it carries its own, wider bound and the envelope
+// keeps the one it has.
+//
+// It mirrors `maxInstalledFaceBytes` in folio-go/wasm/cmd/engine/main.go. 64 MiB
+// is a backstop against an absurd allocation rather than a budget: the largest
+// face this release ships is a sixth of it.
+export const MAX_ENGINE_FACE_BYTES = 64 * 1024 * 1024
 export const MAX_ENGINE_RENDER_PDF_BYTES = 32 * 1024 * 1024
 export const MAX_ENGINE_DIAGNOSTICS = 256
 export const MAX_ENGINE_ELEMENT_ID_LENGTH = 128
@@ -258,6 +270,11 @@ export type EngineError = Readonly<{
 
 export type RenderPayload = Readonly<{ template: ArrayBuffer; data: ArrayBuffer; params: ArrayBuffer }>
 export type IdentityPayload = Readonly<{ data: ArrayBuffer; params: ArrayBuffer }>
+// ONE NAMED FACE AND ITS BYTES (spec-deferred-offline-cache, CAP-6). The name
+// is the one Go put on its own `TEXT_FACE_ABSENT` refusal, and the bytes are
+// the deferred release asset that face resolves to — so this payload is always
+// an answer to a refusal the engine itself authored, never a guess.
+export type InstallFacePayload = Readonly<{ face: string; bytes: ArrayBuffer }>
 export type EngineDiagnostic = Readonly<{ severity: 'warning'; code: string; elementId: string; dataPath: string; message: string }>
 // STORY 13.3 — `elapsedMs` AND `version` RIDE THE RENDER-ONLY PAIRED ARM.
 //
@@ -380,7 +397,7 @@ export type EngineRequest = Readonly<{
   kind: 'request'
   requestId: string
   operation: EngineOperation
-  payload?: ArrayBuffer | RenderPayload | IdentityPayload
+  payload?: ArrayBuffer | RenderPayload | IdentityPayload | InstallFacePayload
 }>
 
 export type EngineSnapshot = Readonly<{
@@ -577,6 +594,10 @@ const isFontChainEntry = (value: unknown): boolean => {
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && Object.getPrototypeOf(value) === Object.prototype
 const isArrayBuffer = (value: unknown): value is ArrayBuffer => Object.prototype.toString.call(value) === '[object ArrayBuffer]'
 const isRenderPayload = (value: unknown): value is RenderPayload => isRecord(value) && hasExactKeys(value, ['template', 'data', 'params']) && ['template', 'data', 'params'].every((key) => isArrayBuffer(value[key]) && value[key].byteLength > 0 && value[key].byteLength <= MAX_ENGINE_PAYLOAD_BYTES)
+// The face NAME is bounded by MAX_CANVAS_PROPERTY_STRING, the bound a canvas
+// fragment's `face` already carries, because it IS that string: it comes back
+// out of a refusal Go wrote about a key in its own FontSet.
+export const isInstallFacePayload = (value: unknown): value is InstallFacePayload => isRecord(value) && hasExactKeys(value, ['face', 'bytes']) && typeof value.face === 'string' && value.face.length > 0 && value.face.length <= MAX_CANVAS_PROPERTY_STRING && isArrayBuffer(value.bytes) && value.bytes.byteLength > 0 && value.bytes.byteLength <= MAX_ENGINE_FACE_BYTES
 const isIdentityPayload = (value: unknown): value is IdentityPayload => isRecord(value) && hasExactKeys(value, ['data', 'params']) && ['data', 'params'].every((key) => isArrayBuffer(value[key]) && value[key].byteLength > 0 && value[key].byteLength <= MAX_ENGINE_PAYLOAD_BYTES)
 // DW-70. Go sorts the projected chain names with slices.Sorted over Go
 // strings, which compares them BY BYTE — and those keys are the canonical
@@ -1133,10 +1154,10 @@ export function requestCorrelationId(value: unknown): string | undefined {
 
 export function parseRequest(value: unknown): EngineRequest | undefined {
   if (!isRecord(value) || !hasOnly(value, ['protocolVersion', 'kind', 'requestId', 'operation', 'payload']) || value.protocolVersion !== ENGINE_PROTOCOL_VERSION || value.kind !== 'request' || !isEngineRequestId(value.requestId)) return undefined
-	if (!['initialize', 'load', 'snapshot', 'parameter-references', 'stand-in-data', 'group-move-preview', 'table-columns', 'validate', 'serialize', 'command', 'undo', 'redo', 'identity', 'render', 'asset'].includes(value.operation as string)) return undefined
-  if (value.payload !== undefined && (!isArrayBuffer(value.payload) || value.payload.byteLength > MAX_ENGINE_PAYLOAD_BYTES) && !(value.operation === 'render' && isRenderPayload(value.payload)) && !(value.operation === 'identity' && isIdentityPayload(value.payload))) return undefined
+	if (!['initialize', 'load', 'snapshot', 'parameter-references', 'stand-in-data', 'group-move-preview', 'table-columns', 'validate', 'serialize', 'command', 'undo', 'redo', 'identity', 'render', 'asset', 'install-face'].includes(value.operation as string)) return undefined
+  if (value.payload !== undefined && (!isArrayBuffer(value.payload) || value.payload.byteLength > MAX_ENGINE_PAYLOAD_BYTES) && !(value.operation === 'render' && isRenderPayload(value.payload)) && !(value.operation === 'identity' && isIdentityPayload(value.payload)) && !(value.operation === 'install-face' && isInstallFacePayload(value.payload))) return undefined
 	const needsPayload = value.operation === 'initialize' || value.operation === 'load' || value.operation === 'command' || value.operation === 'table-columns' || value.operation === 'group-move-preview' || value.operation === 'asset'
-  if (value.operation === 'render' ? !isRenderPayload(value.payload) : value.operation === 'identity' ? !isIdentityPayload(value.payload) : needsPayload !== (value.payload !== undefined)) return undefined
+  if (value.operation === 'render' ? !isRenderPayload(value.payload) : value.operation === 'identity' ? !isIdentityPayload(value.payload) : value.operation === 'install-face' ? !isInstallFacePayload(value.payload) : needsPayload !== (value.payload !== undefined)) return undefined
   return value as EngineRequest
 }
 

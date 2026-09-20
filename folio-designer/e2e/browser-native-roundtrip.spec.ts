@@ -329,6 +329,20 @@ test('fresh authored sessions close exactly through admitted Preview and native 
 
   const goldenContext = await browser.newContext()
   const goldenPage = await goldenContext.newPage()
+  // ⚠ THE CJK ASSET IS COUNTED ON THE WIRE, because the acceptance criterion
+  // is "fetched exactly ONCE" and nothing else in this suite can see that
+  // (spec-deferred-offline-cache, story 5). Two independent consumers ask for
+  // the same URL — the engine's absent-face recovery, which needs the bytes,
+  // and the canvas prefetch, which needs the service worker to hold them — and
+  // only the cache collapses them. A caching regression would turn one ~10 MiB
+  // download into two with every assertion in this file still green, which is
+  // the whole 4.72 MiB this spec exists to stop spending.
+  //
+  // It counts REQUESTS THAT LEFT THE PAGE, by URL substring: the asset is
+  // content-addressed under the CJK face's own digest, so the stem identifies
+  // it without pinning Vite's emitted hash suffix.
+  const cjkRequests: string[] = []
+  goldenPage.on('request', (request) => { if (request.url().includes('noto-sans-cjk')) cjkRequests.push(request.url()) })
   await observeOneWorker(goldenPage, 'golden-fresh-session')
   await openWorkspace(goldenPage)
   await expect(goldenPage.getByTestId('engine-snapshot')).toHaveText(/GO SNAPSHOT · REVISION 1/)
@@ -352,7 +366,27 @@ test('fresh authored sessions close exactly through admitted Preview and native 
   expect(goldenSession.filter(({ operation, command }) => operation === 'command' && command).map(({ command }) => new TextDecoder().decode(new Uint8Array(command!)))).toEqual([])
   // ONE session, ONE engine, and the document reached it by `load` — the leg
   // this rewrite added, asserted rather than implied.
+  //
+  // ⚠ STILL EXACTLY ONE `load`, AND THAT IS A CLAIM ABOUT FONTS NOW TOO
+  // (spec-deferred-offline-cache, story 5). The designer's engine wasm no
+  // longer embeds Noto Sans SC, and this fixture's chain names it — yet the
+  // OPEN does not refuse, because `CanvasWithTextPaint` projects AUTHORED
+  // strings and not one of this document's own strings carries a Han rune. The
+  // engine's declared line metrics are what make that open MEASURE identically
+  // to an eleven-face engine's; what keeps it from refusing at all is that no
+  // glyph of the absent face is asked for. A second `load` here would mean one
+  // of those two had stopped being true.
   expect(goldenSession.filter(({ operation }) => operation === 'load' || operation === 'initialize').map(({ operation }) => operation)).toEqual(['initialize', 'load'])
+  // ⚠ AND THE FACE IS FETCHED EXACTLY ONCE, FOR THE RENDER, BECAUSE THIS
+  // DOCUMENT'S SAMPLE DATA REALLY DOES CARRY A HAN RUNE. That is the whole
+  // shape of CAP-6 in one session: nothing is fetched to open or to lay out,
+  // and the glyphs arrive at the moment one must actually be DRAWN — story 4's
+  // rune-level refusal, recovered once and never again.
+  //
+  // THE NATIVE COMPARISON BELOW IS WHAT MAKES IT MEAN SOMETHING: this page's
+  // PDF is checked against the CLI's, and the CLI embeds all eleven faces.
+  expect(goldenSession.filter(({ operation }) => operation === 'install-face')).toHaveLength(1)
+  expect(cjkRequests, `the CJK asset must cross the wire exactly once in a session, and it was requested ${cjkRequests.length} times: ${cjkRequests.join(', ')}`).toHaveLength(1)
   await goldenContext.close()
 
   const alternateContext = await browser.newContext()

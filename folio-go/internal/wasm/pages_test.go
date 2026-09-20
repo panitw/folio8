@@ -3,6 +3,7 @@ package wasm
 import (
 	"bytes"
 	"fmt"
+	"github.com/panitw/folio8/folio-go/fonts"
 	"os"
 	"reflect"
 	"testing"
@@ -18,7 +19,7 @@ func TestIdAddressedCommandsWorkOnALaterPageElementAndUndo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine(testClock())
+	engine := NewEngine(testClock(), fonts.Shipped())
 	if _, err := engine.Load(input); err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +117,7 @@ func TestPageCommandsAreOneUndoEntryEachAndRestoreTheBytes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine(testClock())
+	engine := NewEngine(testClock(), fonts.Shipped())
 	if _, err := engine.Load(input); err != nil {
 		t.Fatal(err)
 	}
@@ -215,7 +216,7 @@ func TestCrossPageMoveAndPagedCreateAreOneUndoEntryEach(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := NewEngine(testClock())
+	engine := NewEngine(testClock(), fonts.Shipped())
 	loaded, err := engine.Load(input)
 	if err != nil {
 		t.Fatal(err)

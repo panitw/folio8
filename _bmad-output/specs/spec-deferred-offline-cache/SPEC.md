@@ -31,7 +31,7 @@ blocking download, for every visitor who will only ever type Latin.
     preview and render an ordinary Latin or Thai document are cached and verified — not once
     the whole release is.
   - **success:** With a cold cache, the designer is interactive after the core tier
-    (30 assets, 10.82 MiB — see `asset-tiers.md`) verifies and no later; the deferred tier is
+    (30 assets, 6.10 MiB — see `asset-tiers.md`) verifies and no later; the deferred tier is
     provably not requested during that first load.
 
 - **CAP-2 — Deferred assets are fetched the first time they are needed, then kept**
@@ -73,9 +73,10 @@ blocking download, for every visitor who will only ever type Latin.
     Thai document needs. The CJK face reaches the engine as supplied bytes, from the same
     deferred asset the canvas already fetches — so the release stops shipping that face twice
     and stops charging the larger of the two copies to every first load.
-  - **success:** The core tier falls from 10.82 MiB to the measured weight of an engine wasm
-    without the CJK face — projected at roughly 6.1 MiB — and a CJK document still lays out,
-    previews and renders byte-identically once its face has been fetched.
+  - **success:** The core tier falls from 10.82 MiB to 6.10 MiB — measured, not projected — and a
+    CJK document still lays out, previews and renders byte-identically once its face has been
+    fetched. A Latin or Thai session fetches nothing at all, because the engine carries the CJK
+    face's line metrics even though it no longer carries the face.
 
 - **CAP-7 — An absent face refuses the render, named and located**
   - **intent:** Once the engine's font set can be short of a face the document declares, a
@@ -90,9 +91,10 @@ blocking download, for every visitor who will only ever type Latin.
 - **Byte-identity survives untouched.** A missing deferred font is refused, never substituted.
   The canvas and the preview keep showing the real production output or nothing at all;
   no fallback face is ever rendered in place of the one the document declares.
-- **A ~6.1 MiB core gate is the accepted destination.** The engine wasm stays in the core tier
-  and stays whole, but sheds its embedded CJK face: 4.72 MiB brotli of its 8.11 MiB sidecar is
-  that one font. Tiering plus the shed face takes the first load to roughly a third of the
+- **A 6.10 MiB core gate is the accepted destination, and it is now measured.** The engine wasm
+  stays in the core tier and stays whole, but sheds its embedded CJK face: 8.11 MiB of sidecar
+  became 3.40 MiB, taking the core tier from 10.81 MiB to 6,401,301 bytes over an unchanged 30
+  assets, and the whole release from 18.62 MiB to 13.92 MiB. A byte ceiling now guards it. Tiering plus the shed face takes the first load to roughly a third of the
   18.63 MiB it began at. This supersedes both `spec-folio`'s "~9 MB first load" and this spec's
   own earlier "~10.82 MiB accepted destination".
 - **The eleven-face shipped contract is untouched.** `fonts.Shipped()` keeps all eleven faces.
@@ -149,7 +151,7 @@ blocking download, for every visitor who will only ever type Latin.
 ## Success signal
 
 A first-time visitor on a cold cache reaches an editable, previewable document after
-transferring roughly 6.1 MiB instead of 18.63 MiB and verifying 30 assets instead of 80 — and a
+transferring 6.10 MiB instead of 18.63 MiB and verifying 30 assets instead of 80 — and a
 session that stays on Latin text never transfers the rest at all, nor the CJK face in either of
 the two places the release used to carry it. An author who has
 used the designer once still opens it, edits, previews and renders with the network

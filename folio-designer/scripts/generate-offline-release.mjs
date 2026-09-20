@@ -3,7 +3,7 @@ import { existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync 
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { serviceWorkerSource } from './offline-service-worker-template.mjs'
-import { RELEASE_RUNTIME, classifyAssetTier, isCatalogueAssetUrl, normalizePublicPath, pageIdentity, readAppVersion, releaseIdentity, sha256 } from './offline-release-contract.mjs'
+import { RELEASE_RUNTIME, classifyAssetTier, coreTierBrotliAssetCount, coreTierBrotliBytes, declaredCoreCacheByteCeiling, isCatalogueAssetUrl, normalizePublicPath, pageIdentity, readAppVersion, releaseIdentity, sha256 } from './offline-release-contract.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const dist = join(root, 'dist')
@@ -31,7 +31,14 @@ function assetTier(url) {
   return tier
 }
 
-export function generateOfflineRelease(outputDir = dist) {
+// `releasePayloadText` is the TEXT of src/release-payload.ts, injectable for
+// one reason only: the `core-tier-bytes-over-ceiling` red proof has to put an
+// honest release on the wrong side of the threshold, and the threshold is the
+// only thing it can move. Injecting it is what keeps that proof from editing a
+// tracked file in the working tree — where a SIGINT would leave the lowered
+// number committed and a running `vite dev` or `vitest --watch` would read it.
+// Undefined, which is every real build, means "read src/release-payload.ts".
+export function generateOfflineRelease(outputDir = dist, { releasePayloadText } = {}) {
   assertPinnedRuntime()
   if (!existsSync(join(outputDir, 'index.html'))) throw new Error('build output is required before offline release generation')
   const workerRevision = sha256(readFileSync(join(root, 'scripts', 'offline-service-worker-template.mjs')))
@@ -206,10 +213,33 @@ export function generateOfflineRelease(outputDir = dist) {
   const catalogueAssets = assets.filter((asset) => isCatalogueAssetUrl(asset.url))
   if (catalogueAssets.length !== declaredCatalogue.length) throw new Error(`font-catalogue.json declares ${declaredCatalogue.length} catalogue faces and the emitted release carries ${catalogueAssets.length} assets under the catalogue prefix`)
   const immutableAssets = assets.filter((asset) => asset.immutable)
+  // THE BLOCKING SET'S WEIGHT, RECORDED AND THEN COMPARED TO A THRESHOLD
+  // (spec-deferred-offline-cache, story 5). Until this story the paragraph a
+  // few lines down was the whole story of every total in this record — "It is a
+  // MEASUREMENT, not a budget, and nothing in this repository compares it to a
+  // threshold" — and that was exactly how 4.72 MiB of CJK glyphs could be put
+  // back into the engine wasm with every pin in the repository still green.
+  //
+  // ⚠ THE BUILD FAILS HERE, NOT ONLY IN THE VERIFIER, and the duplication is
+  // deliberate: `npm run build` runs both, but a developer running
+  // `build:offline` alone would otherwise emit an over-budget release and find
+  // out later. The threshold itself is NOT duplicated — both readings come from
+  // `declaredCoreCacheByteCeiling`, which reads the one declaration in
+  // src/release-payload.ts as text.
+  const coreBrotliBytes = coreTierBrotliBytes(assets)
+  const { maximumCoreCacheBytes } = declaredCoreCacheByteCeiling(releasePayloadText)
+  if (coreBrotliBytes > maximumCoreCacheBytes) throw new Error(`the core tier weighs ${coreBrotliBytes} Brotli bytes, over the declared ceiling of ${maximumCoreCacheBytes} in src/release-payload.ts — this is the blocking download every first-time visitor waits for, and raising \`maximumCoreCacheBytes\` is the deliberate act that admits a heavier one`)
   const brotli = {
     version: 1,
     immutableAssetCount: immutableAssets.length,
     totalBytes: immutableAssets.reduce((total, asset) => total + asset.brotliBytes, 0),
+    // THE ONE NUMBER A FIRST LOAD ACTUALLY COSTS. The total above is the whole
+    // release; this is the part of it a visitor must have before the designer
+    // is usable, and it is the only total here with a threshold behind it.
+    core: {
+      assetCount: coreTierBrotliAssetCount(assets),
+      totalBytes: coreBrotliBytes,
+    },
     catalogue: {
       familyCount: catalogueAssets.length,
       // THE ONE NUMBER. Total Brotli bytes the Story 8.5 catalogue adds to the

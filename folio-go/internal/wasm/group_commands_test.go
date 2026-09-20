@@ -2,6 +2,7 @@ package wasm
 
 import (
 	"bytes"
+	"github.com/panitw/folio8/folio-go/fonts"
 	"os"
 	"reflect"
 	"testing"
@@ -21,7 +22,7 @@ func TestEngineGroupDeleteAndDuplicateAreOneHistoryStep(t *testing.T) {
 		{"duplicateComponents", `{"kind":"duplicateComponents","version":1,"ids":["e1","e2","e5"],"snap":true}`, 3},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			engine := NewEngine(testClock())
+			engine := NewEngine(testClock(), fonts.Shipped())
 			before, err := engine.Load(input)
 			if err != nil {
 				t.Fatal(err)

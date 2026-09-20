@@ -57,7 +57,23 @@ export function assertNoVCSStamp(source, label) {
 // discriminates against a real stamped binary (DW-107), and twice with the flag,
 // to prove the PROPERTY the flag buys (DW-106). A second copy of this argv would
 // be precisely the drift the flag exists to close.
-export const ENGINE_BUILD_FLAGS = ['-buildvcs=false']
+// AND THE TAG THAT KEEPS THE CJK FACE OUT OF IT (spec-deferred-offline-cache,
+// CAP-6). `nocjkface` selects folio-go/fonts/notosanssc_absent.go over
+// notosanssc.go, so the go:embed directive for the 10,595,932-byte SC face is
+// never compiled into THIS binary — 4.72 MiB of the 8.11 MiB Brotli sidecar
+// every first-time visitor used to wait for, and bytes the release already
+// serves a second time as a deferred canvas asset.
+//
+// ⚠ IT IS DECLARED HERE AND NOWHERE ELSE, for the same reason `-buildvcs=false`
+// is: verify-offline-release.mjs builds the engine twice through
+// `buildEngineWasm` to prove the bytes are a function of the source, and a
+// second copy of this argv would let the verified build and the shipped build
+// differ in exactly the way the two-build comparison exists to refuse.
+//
+// ⚠ AND IT IS THE DESIGNER'S BUILD ONLY. `go build ./...`, `go test ./...`,
+// folio-js, folio-dotnet, the CLI and the golden fixtures all compile without
+// it and all keep the eleven-face `fonts.Shipped()` untouched.
+export const ENGINE_BUILD_FLAGS = ['-buildvcs=false', '-tags', 'nocjkface']
 const goModuleRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'folio-go')
 
 export function buildEngineWasm(outputPath, { flags = ENGINE_BUILD_FLAGS, stdio = 'inherit' } = {}) {

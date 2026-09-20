@@ -9,7 +9,7 @@ import { assertPinnedRuntime, generateOfflineRelease } from './generate-offline-
 import { assertNoVCSStamp, buildEngineWasm } from './wasm-vcs-stamp.mjs'
 import { FORBIDDEN_FONT_HOSTS } from './forbidden-font-hosts.mjs'
 import { exampleIds } from './build-examples.mjs'
-import { ASSET_TIERS, DOCUMENTATION_STEMS, RELEASE_RUNTIME, classifyAssetTier, declaredCacheAssetBounds, declaredCacheAssetWarning, declaredCoreCacheAssetBounds, isCatalogueAssetUrl, pageIdentity, parseAppVersion, releaseIdentity, sha256 } from './offline-release-contract.mjs'
+import { ASSET_TIERS, DOCUMENTATION_STEMS, RELEASE_RUNTIME, classifyAssetTier, coreTierBrotliAssetCount, coreTierBrotliBytes, declaredCacheAssetBounds, declaredCacheAssetWarning, declaredCoreCacheAssetBounds, declaredCoreCacheByteCeiling, isCatalogueAssetUrl, pageIdentity, parseAppVersion, releaseIdentity, sha256 } from './offline-release-contract.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const dist = join(root, 'dist')
@@ -87,7 +87,7 @@ export function documentationFontHostFinding(pages) {
   return null
 }
 
-export function verifyOfflineRelease(outputDir = dist, { wasmWitness = false, reportApproach = false } = {}) {
+export function verifyOfflineRelease(outputDir = dist, { wasmWitness = false, reportApproach = false, releasePayloadText } = {}) {
   assertPinnedRuntime()
   const manifestFile = join(outputDir, 'offline-release-manifest.json')
   if (!existsSync(manifestFile)) fail('missing generated manifest')
@@ -408,6 +408,28 @@ export function verifyOfflineRelease(outputDir = dist, { wasmWitness = false, re
   if (catalogue.length === 0) fail('brotli-record-drift: the release carries no Story 8.5 catalogue face at all, so its recorded catalogue weight describes nothing')
   if (brotli.catalogue.familyCount !== catalogue.length) fail(`brotli-record-drift: the Brotli record counts ${brotli.catalogue.familyCount} catalogue faces and the release carries ${catalogue.length}`)
   if (brotli.catalogue.totalBytes !== catalogue.reduce((total, asset) => total + asset.brotliBytes, 0)) fail('brotli-record-drift: the recorded catalogue Brotli total is not the catalogue rows\' arithmetic')
+  // THE CORE TIER'S WEIGHT: recorded truthfully, then held to its ceiling
+  // (spec-deferred-offline-cache, story 5). Two separate guards for two
+  // separate faults — a record that does not describe the release, and a
+  // release that is simply too heavy to ship — because a build log that said
+  // only "over the ceiling" would leave a reader unable to tell which.
+  if (!brotli.core) fail('brotli-record-drift: the release carries no core-tier Brotli record, so the one number a first load costs is unstated')
+  if (brotli.core.assetCount !== coreTierBrotliAssetCount(release.assets)) fail(`brotli-record-drift: the Brotli record counts ${brotli.core.assetCount} immutable core-tier assets and the release carries ${coreTierBrotliAssetCount(release.assets)}`)
+  if (brotli.core.totalBytes !== coreTierBrotliBytes(release.assets)) fail('brotli-record-drift: the recorded core-tier Brotli total is not the core rows\' arithmetic')
+  // THE PIN ITSELF, DERIVED FROM src/release-payload.ts AND NEVER RE-TYPED —
+  // the same argument the core-COUNT pin above is built on. `npm run build`
+  // runs this verifier and never Vitest, so a second copy of the number here
+  // would leave a drifted build green.
+  //
+  // ⚠ IT IS TAKEN FROM THE ROWS, NOT FROM THE RECORD. The arithmetic check
+  // immediately above already holds the two together; computing the ceiling
+  // comparison off `brotli.core.totalBytes` as well would mean a release could
+  // be admitted on the strength of a number it wrote about itself.
+  // `releasePayloadText` is injected by ONE red proof and by nothing else;
+  // undefined means "read src/release-payload.ts", which is every real run.
+  const { maximumCoreCacheBytes } = declaredCoreCacheByteCeiling(releasePayloadText)
+  const coreBytes = coreTierBrotliBytes(release.assets)
+  if (coreBytes > maximumCoreCacheBytes) fail(`core-tier-bytes-over-ceiling: the core tier weighs ${coreBytes} Brotli bytes, over the declared ceiling of ${maximumCoreCacheBytes} — this is the blocking download every first-time visitor waits for before the designer is usable, and \`maximumCoreCacheBytes\` in src/release-payload.ts is the deliberate act that admits a heavier one`)
   // THE CANVAS FACE MAP IS TIED TO THE RELEASE HERE, AND IT HAS TO BE HERE
   // (spec-deferred-offline-cache, story 3).
   //
@@ -577,12 +599,12 @@ function s1RowById(release, id, proof) {
   return row
 }
 
-function redProof(name, mutate, expected) {
+function redProof(name, mutate, expected, options) {
   let restore
   try {
     restore = mutate(dist)
     let message
-    try { verifyOfflineRelease(dist) } catch (error) { message = error.message }
+    try { verifyOfflineRelease(dist, options) } catch (error) { message = error.message }
     if (!message) fail(`red proof ${name} escaped verification`)
     // A mutation can trip several guards at once. Where a proof names the guard
     // it is proving, hold it to that guard rather than to any failure at all.
@@ -688,6 +710,42 @@ export function runRedProofs(baseline = verifyOfflineRelease()) {
       release.assets.push({ url, sha256: '0'.repeat(64), immutable: true, brotliBytes: 1, tier: 'core' })
     }
   }, 'over the declared core maximum of')
+  // THE BYTE CEILING, FALSIFIED BY MOVING THE PIN RATHER THAN THE RELEASE
+  // (spec-deferred-offline-cache, story 5).
+  //
+  // EVERY MUTATION OF THE RELEASE TRIPS AN EARLIER GUARD, and that is a
+  // property of the verifier rather than an obstacle to route around: an
+  // asset's recorded `brotliBytes` is compared to its own emitted sidecar
+  // hundreds of lines before this check, so an inflated row fails as
+  // `brotli-record-drift`, and adding core assets fails as
+  // `core-asset-count-over-bound`. The only way to put the real, honest
+  // measurement on the wrong side of this threshold is to move the threshold —
+  // which is also the exact edit a future story would make to re-admit the CJK
+  // face, so falsifying it this way proves the guard against its own use case.
+  //
+  // ⚠ THE THRESHOLD IS INJECTED, NOT WRITTEN TO DISK. An earlier version of
+  // this proof rewrote src/release-payload.ts and restored it in a `finally`:
+  // a SIGINT or a crash mid-proof would have left `maximumCoreCacheBytes`
+  // lowered in a TRACKED file, and any `vite dev` or `vitest --watch` running
+  // beside it would have read the mutated number. No other proof in this file
+  // touches the working tree's source, and this one no longer does either.
+  //
+  // ⚠ AND BOTH COPIES OF THE GUARD ARE EXERCISED. The comparison is duplicated
+  // deliberately — `npm run build:offline` alone must not be able to emit an
+  // over-budget release — so proving only the verifier's copy would leave the
+  // generator's free to be inverted with every proof green, which is the whole
+  // reason the duplication exists.
+  const loweredCeiling = `const minimumCoreCacheAssets = 30\nconst maximumCoreCacheAssets = 30\nconst maximumCoreCacheBytes = 1000000\n`
+  redProof('core-tier-bytes-over-ceiling', () => undefined, 'core-tier-bytes-over-ceiling', { releasePayloadText: loweredCeiling })
+  {
+    let threw
+    try { generateOfflineRelease(dist, { releasePayloadText: loweredCeiling }) } catch (error) { threw = error.message }
+    // The generator throws BEFORE it writes the manifest, so nothing in dist
+    // needs restoring; the guarded run below re-emits it regardless.
+    generateOfflineRelease(dist)
+    if (!threw) fail('red proof core-tier-bytes-over-ceiling-at-build escaped the generator: `npm run build:offline` would emit a release over its own declared ceiling')
+    if (!threw.includes('over the declared ceiling')) fail(`red proof core-tier-bytes-over-ceiling-at-build failed for the wrong reason: ${threw}`)
+  }
   tierProof('core-asset-count-under-bound', (release) => {
     const dropped = firstTiered(release, 'core', 'core-asset-count-under-bound')
     release.assets = release.assets.filter((asset) => asset.url !== dropped.url)

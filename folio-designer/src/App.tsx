@@ -3101,10 +3101,26 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
     //
     // ⚠ AND IT NEVER FAILS THE OPEN. `prefetchDeferredFaces` swallows every
     // error by contract: a canvas face is not the document's own bytes, the
-    // engine's embedded copies keep layout, pagination, preview and the PDF
-    // exact, and story 2's substitution warning is the settled answer for the
-    // glyphs. Nothing between here and `installDocumentIdentity` may start
-    // throwing for a font.
+    // engine's own copies keep layout, pagination, preview and the PDF exact,
+    // and story 2's substitution warning is the settled answer for the glyphs.
+    // Nothing between here and `installDocumentIdentity` may start throwing for
+    // a font.
+    //
+    // ⚠ WHAT THIS PREFETCHES IS STILL THE BROWSER'S COPY, FOR THE STYLESHEET —
+    // the job it has always had (spec-deferred-offline-cache, story 5).
+    //
+    // The engine now keeps its own copies separately: its wasm no longer embeds
+    // the CJK face, and `EngineClient`'s absent-face recovery fetches and
+    // installs one the moment a request refuses for want of it. If the `load`
+    // above needed a face the engine did not hold, that already happened inside
+    // the await two lines up.
+    //
+    // ⚠ BUT "ALREADY HAPPENED" IS A CLAIM ABOUT THE CANVAS PROJECTION, NOT
+    // ABOUT THE DOCUMENT. `CanvasWithTextPaint` measures AUTHORED strings, so a
+    // Han rune that arrives in sample DATA — a bound table cell, which is how
+    // the statement fixtures carry theirs — reaches no face until the RENDER,
+    // and it is the render that refuses and recovers. Both routes end in the
+    // same one-fetch-per-session install; neither is this line's business.
     await prefetchDeferredFaces(deferredFaceAssets(loaded.snapshot.canvas, payload), ENGINE_FILE_STEP_TIMEOUT_MS)
     installDocumentIdentity()
     setCurrentSnapshot(loaded.snapshot, false, true)
@@ -3894,7 +3910,7 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
             region has to be on the page BEFORE the row arrives for the row to be read
             out. So the `<ul>` mounts empty and stays, and its children are plain list
             items. */}
-          <ul className="canvas-face-misses" role="status" aria-live="polite" aria-label="Fonts the canvas could not paint">{shownFaceMisses.map((family) => <li key={family}><span>{family} could not be loaded, so this canvas is drawing a substitute for it. The layout, the page breaks and the PDF preview are unaffected — they come from the engine's own copy.</span><button type="button" className="diagnostic-dismiss" aria-label={`Dismiss the substitution warning for ${family}`} onClick={() => setDismissedFaceMisses((current) => new Set([...current, family]))}>Dismiss</button></li>)}</ul>
+          <ul className="canvas-face-misses" role="status" aria-live="polite" aria-label="Fonts the canvas could not paint">{shownFaceMisses.map((family) => <li key={family}><span>{family} could not be loaded, so this canvas is drawing a substitute for it. The layout, the page breaks and the PDF preview are unaffected — the engine measures with its own bytes for this face, never with the substitute you are looking at.</span><button type="button" className="diagnostic-dismiss" aria-label={`Dismiss the substitution warning for ${family}`} onClick={() => setDismissedFaceMisses((current) => new Set([...current, family]))}>Dismiss</button></li>)}</ul>
         <div className="canvas-tools" aria-label="Canvas controls"><button className="tool-button" type="button" onClick={() => setZoom((value) => Math.max(0.5, value - 0.1))} aria-label="Zoom out" data-tip="Zoom out"><ToolIcon glyph="zoom-out" /></button><output aria-label="Canvas zoom">{Math.round(zoom * 100)}%</output><button className="tool-button" type="button" onClick={() => setZoom((value) => Math.min(2, value + 0.1))} aria-label="Zoom in" data-tip="Zoom in"><ToolIcon glyph="zoom-in" /></button><button className="tool-button" type="button" onClick={() => setGridVisible((value) => !value)} aria-pressed={gridVisible} aria-label={`Grid ${gridVisible ? 'on' : 'off'}`} data-tip={`Grid ${gridVisible ? 'on' : 'off'}`}><ToolIcon glyph="grid" /></button><button className="tool-button" type="button" onClick={() => setSnapEnabled((value) => !value)} aria-pressed={snapEnabled} aria-label={`Snap ${snapEnabled ? 'on' : 'off'}`} data-tip={toolTip(`Snap ${snapEnabled ? 'on' : 'off'}`, shortcuts.snap)}><ToolIcon glyph="snap" /></button><button className="tool-button" type="button" onClick={duplicateSelection} disabled={selected.length !== 1} aria-label="Duplicate" data-tip={toolTip('Duplicate', shortcuts.duplicate)}><ToolIcon glyph="duplicate" /></button><button className="tool-button" type="button" onClick={breakSelected ? () => deleteSectionBreak(breakPage) : deleteSelection} disabled={selected.length === 0 && !breakSelected} aria-label="Delete" data-tip={toolTip('Delete', `${shortcuts.delete} key`)}><ToolIcon glyph="delete" /></button><button className="tool-button" type="button" onClick={addPage} disabled={addPageReason !== undefined} aria-label="Add page" data-tip={addPageReason ? `Add page: ${addPageReason}` : 'Add page'} aria-describedby={addPageReason ? 'add-page-reason' : undefined}><ToolIcon glyph="add-page" /></button>{addPageReason && <span id="add-page-reason" className="sr-only">{reasonSentence(addPageReason)}</span>}<button ref={deletePageButtonRef} className="tool-button" type="button" onClick={requestDeletePage} disabled={deletePageReason !== undefined} aria-label="Delete page" data-tip={deletePageReason ? `Delete page: ${deletePageReason}` : 'Delete page'} aria-describedby={deletePageReason ? 'delete-page-reason' : undefined}><ToolIcon glyph="delete-page" /></button>{deletePageReason && <span id="delete-page-reason" className="sr-only">{reasonSentence(deletePageReason)}</span>}<span className="tool-hint" role="img" aria-label={toolTip('Nudge', shortcuts.nudge)} data-tip={toolTip('Nudge', shortcuts.nudge)}><ToolIcon glyph="nudge" /></span></div>
         {displayCanvas && stack ? <div className="canvas-body" style={{ width: `calc(${canvasDisplay.css(displayCanvas.width, zoom)} + ${2 * CANVAS_GUTTER}px)`, paddingInline: `${CANVAS_GUTTER}px` }} onPointerDown={(event) => beginRectangle(event, undefined, 0, true)}><div className="sheet-stack" style={{ '--sheet-stack-gap': `${SHEET_STACK_GAP}px`, width: canvasDisplay.css(displayCanvas.width, zoom) } as CSSProperties} onPointerDown={(event) => beginRectangle(event)}>{stack.sheets.map((sheet) => sheetSurface(displayCanvas, stack, sheet))}{canvasSelection.rectangle && <div className="canvas-selection-rectangle" aria-label="Selection rectangle" style={{ left: canvasDisplay.css(canvasSelection.rectangle.left, zoom), top: canvasDisplay.css(canvasSelection.rectangle.top, zoom), width: canvasDisplay.css(canvasSelection.rectangle.right - canvasSelection.rectangle.left, zoom), height: canvasDisplay.css(canvasSelection.rectangle.bottom - canvasSelection.rectangle.top, zoom) }} />}</div></div> : <p className="canvas-awaiting" role="status">Waiting for Go page geometry.</p>}
 

@@ -1,13 +1,24 @@
 /// <reference lib="webworker" />
 
-import { ENGINE_PROTOCOL_VERSION, MAX_ENGINE_RENDER_PDF_BYTES, type EngineDiagnostic, type EngineError, type EngineRequest, type EngineSnapshot, type IdentityPayload, type RenderPayload, type TableColumns, type GroupMovePreview } from './engine-protocol'
+import { ENGINE_PROTOCOL_VERSION, MAX_ENGINE_RENDER_PDF_BYTES, type EngineDiagnostic, type EngineError, type EngineRequest, type EngineSnapshot, type IdentityPayload, type InstallFacePayload, type RenderPayload, type TableColumns, type GroupMovePreview } from './engine-protocol'
 import { EngineRequestAdmission } from './engine-worker-admission'
 import { EngineWorkerQueue } from './engine-worker-queue'
 import { runtimeAssetUrls } from './generated/offline-assets'
 
 declare const Go: new () => { importObject: WebAssembly.Imports; run(instance: WebAssembly.Instance): void }
 
-type WasmHost = { handle(request: string): string }
+// `installFace` IS A SECOND ENTRY POINT, NOT A SECOND PROTOCOL
+// (spec-deferred-offline-cache, CAP-6). It answers with the same response JSON
+// `handle` answers with, so everything below this line parses one shape.
+//
+// ⚠ IT EXISTS TO AVOID `bytesToBase64`, WHICH IS THE WHOLE POINT. That function
+// is a `String.fromCharCode` loop over every byte; the CJK face is 10.11 MiB,
+// so routing it through the envelope would build a ~13.5 MiB intermediate
+// string on this thread — and would then be refused by the envelope's 8 MiB
+// bound at both ends anyway. A Uint8Array over the already-transferred
+// ArrayBuffer is copied into Go memory by `js.CopyBytesToGo` with no
+// intermediate at all.
+type WasmHost = { handle(request: string): string; installFace(face: string, bytes: Uint8Array): string }
 // The WASM host's own reply shape. `tableColumns` is the PROTOCOL type's table
 // object, not a fourth structural copy of it: this line used to re-declare the
 // ten column keys inline, so every record that widened the projection — the Go
@@ -110,10 +121,13 @@ async function execute(request: EngineRequest): Promise<void> {
   try {
     const render = request.operation === 'render' ? request.payload as RenderPayload : undefined
     const identity = request.operation === 'identity' ? request.payload as IdentityPayload : undefined
-    const payloadBase64 = request.payload instanceof ArrayBuffer ? bytesToBase64(request.payload) : undefined
-    const envelope = JSON.stringify({ operation: request.operation, ...(payloadBase64 ? { payloadBase64 } : {}), ...(render ? { templateBase64: bytesToBase64(render.template), dataBase64: bytesToBase64(render.data), paramsBase64: bytesToBase64(render.params) } : {}), ...(identity ? { dataBase64: bytesToBase64(identity.data), paramsBase64: bytesToBase64(identity.params) } : {}) })
+    // THE ONE OPERATION THAT DOES NOT BUILD AN ENVELOPE. Its bytes are handed
+    // to the host as they arrived — transferred, uncopied, unencoded.
+    const installFace = request.operation === 'install-face' ? request.payload as InstallFacePayload : undefined
+    const payloadBase64 = installFace === undefined && request.payload instanceof ArrayBuffer ? bytesToBase64(request.payload) : undefined
+    const envelope = installFace ? '' : JSON.stringify({ operation: request.operation, ...(payloadBase64 ? { payloadBase64 } : {}), ...(render ? { templateBase64: bytesToBase64(render.template), dataBase64: bytesToBase64(render.data), paramsBase64: bytesToBase64(render.params) } : {}), ...(identity ? { dataBase64: bytesToBase64(identity.data), paramsBase64: bytesToBase64(identity.params) } : {}) })
     stage = 'host'
-    const raw = host!.handle(envelope)
+    const raw = installFace ? host!.installFace(installFace.face, new Uint8Array(installFace.bytes)) : host!.handle(envelope)
     stage = 'response'
     const result = JSON.parse(raw) as WasmResponse
     stage = 'reply'

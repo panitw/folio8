@@ -15,8 +15,8 @@ import (
 	"fmt"
 
 	folio8 "github.com/panitw/folio8/folio-go"
-	"github.com/panitw/folio8/folio-go/fonts"
 	"github.com/panitw/folio8/folio-go/internal/designer"
+	"github.com/panitw/folio8/folio-go/internal/fontset"
 )
 
 const historyLimit = 100
@@ -130,7 +130,7 @@ func (e *Engine) GroupMovePreview(command []byte) (GroupMoveResult, error) {
 	if err := e.checkMoveRevision(command); err != nil {
 		return GroupMoveResult{}, err
 	}
-	move, err := designer.PreviewComponentMove(e.template, command, fonts.Shipped())
+	move, err := designer.PreviewComponentMove(e.template, command, e.faces)
 	if err != nil {
 		return GroupMoveResult{}, err
 	}
@@ -161,12 +161,29 @@ func (e *Engine) PreviewIdentity(data, params []byte) (string, uint64, error) {
 	if len(data) == 0 || len(params) == 0 {
 		return "", 0, fmt.Errorf("folio8 wasm: identity inputs must be non-empty")
 	}
-	return designer.PreviewIdentity(e.bytes, folio8.Data(data), folio8.Params(params), fonts.Shipped()), e.revision, nil
+	return designer.PreviewIdentity(e.bytes, folio8.Data(data), folio8.Params(params), e.faces), e.revision, nil
 }
 
 // Engine owns one live template and its canonical bytes for one worker.
 type Engine struct {
-	clock    func() int64
+	clock func() int64
+	// faces is THE font set this engine measures, paints and renders with —
+	// one set, held for the session, read at every one of the seven sites
+	// that used to call fonts.Shipped() directly
+	// (spec-deferred-offline-cache, CAP-6).
+	//
+	// IT IS INJECTED, LIKE clock, AND FOR THE SAME REASON. This package is
+	// under internal/ and states no opinion about which faces a build
+	// embeds; wasm/cmd/engine, the shell, decides — and since that shell is
+	// compiled `-tags nocjkface`, what it passes is a TEN-face set. The
+	// eleventh arrives later, from the browser, through InstallFace.
+	//
+	// IT IS ALSO WHY Apply AND GroupMovePreview COST NOTHING EXTRA. Both are
+	// hot — Apply fires about every 200 ms while typing — and both used to
+	// rebuild the whole shipped map per call. Holding it makes the CJK face
+	// a session-lifetime install rather than a per-request payload, which
+	// the 8 MiB request envelope forbids in any case.
+	faces    folio8.FontSet
 	template *folio8.Template
 	bytes    []byte
 	revision uint64
@@ -184,7 +201,62 @@ type Engine struct {
 // (lint/internal/rules/forbiddenimports.go) bans `time` everywhere under
 // folio-go/internal/, this package included. wasm/cmd/engine, the imperative
 // js/wasm shell outside internal/, is the one place that reads a real clock.
-func NewEngine(clock func() int64) *Engine { return &Engine{clock: clock} }
+// faces is the set this engine measures and renders with. The caller keeps
+// no handle on it: the map is copied, so a host that reuses its own
+// fonts.Shipped() result cannot mutate the engine's set afterwards, and
+// InstallFace cannot write back into the caller's.
+func NewEngine(clock func() int64, faces folio8.FontSet) *Engine {
+	held := make(folio8.FontSet, len(faces)+1)
+	for name, face := range faces {
+		held[name] = face
+	}
+	return &Engine{clock: clock, faces: held}
+}
+
+// InstallFace holds one named face for the rest of this session, merged
+// OVER the set NewEngine was given (spec-deferred-offline-cache, CAP-6).
+//
+// THIS IS THE ONE WAY A FACE ENTERS AFTER CONSTRUCTION, and it exists
+// because the designer's engine wasm no longer embeds the CJK face: the
+// browser fetches it from the deferred release asset that already carries
+// the identical bytes and hands it here, once, the first time a render or
+// a projection refuses for want of it.
+//
+// IT IS IDEMPOTENT AND IT DOES NOT REPROJECT. Installing the same face
+// twice is the same state as installing it once, and neither advances the
+// revision, touches history, or redraws the canvas: the caller retries the
+// request that refused, and that request produces the projection. A
+// silent reprojection here would hand the browser a snapshot it never
+// asked for and could not correlate.
+//
+// THE BYTES ARE COPIED. They arrive as a Uint8Array copied into Go memory
+// by the shell, and copying again here costs one allocation per SESSION
+// while guaranteeing the engine's set can never alias a caller's slice.
+//
+// ⚠ AND THEY ARE PARSED BEFORE THEY ARE STORED. A truncated, corrupted or
+// simply wrong download would otherwise become a permanently installed bad
+// face for the whole session — the worker is never restarted — and the
+// failure would land deep inside a later render, in a shape the browser's
+// absent-face recovery cannot read. Failing on the INSTALL puts it where
+// the recovery already handles it: the request rejects, the recovery
+// reports that it supplied nothing, and the original TEXT_FACE_ABSENT
+// refusal is what the author is told.
+func (e *Engine) InstallFace(name string, face []byte) error {
+	if name == "" {
+		return fmt.Errorf("folio8 wasm: a face must be installed under a name")
+	}
+	if len(face) == 0 {
+		return fmt.Errorf("folio8 wasm: face %q was supplied with no bytes", name)
+	}
+	if _, err := fontset.New(name, face); err != nil {
+		return fmt.Errorf("folio8 wasm: face %q was supplied with bytes that are not a usable font: %w", name, err)
+	}
+	if e.faces == nil {
+		e.faces = folio8.FontSet{}
+	}
+	e.faces[name] = append([]byte(nil), face...)
+	return nil
+}
 
 // Initialize and Load parse through the public engine boundary before storing
 // a canonical copy. A caller's byte slice is never retained or aliased.
@@ -200,7 +272,7 @@ func (e *Engine) load(input []byte) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
-	projection, err := designer.CanvasWithTextPaint(tpl, fonts.Shipped())
+	projection, err := designer.CanvasWithTextPaint(tpl, e.faces)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -256,7 +328,7 @@ func (e *Engine) Render(template, data, params []byte) ([]byte, RenderResult, er
 	// transfer would satisfy the word "elapsed" while describing the browser's
 	// transport rather than the engine's work.
 	started := e.clock()
-	result, err := folio8.Render(tpl, folio8.Data(data), folio8.Params(params), fonts.Shipped())
+	result, err := folio8.Render(tpl, folio8.Data(data), folio8.Params(params), e.faces)
 	elapsed := (e.clock() - started) / 1_000_000
 	if err != nil {
 		return nil, RenderResult{}, err
@@ -322,7 +394,7 @@ func (e *Engine) Apply(command []byte) (Snapshot, error) {
 	if commandKind.Kind == "pageSetup" {
 		projection, err = designer.ApplyPageSetupCommand(candidate, command)
 	} else {
-		projection, err = designer.ApplyComponentCommand(candidate, command, fonts.Shipped())
+		projection, err = designer.ApplyComponentCommand(candidate, command, e.faces)
 	}
 	if err != nil {
 		return Snapshot{}, err
@@ -346,7 +418,7 @@ func (e *Engine) Apply(command []byte) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
-	projection, err = designer.CanvasWithTextPaint(installed, fonts.Shipped())
+	projection, err = designer.CanvasWithTextPaint(installed, e.faces)
 	if err != nil {
 		return Snapshot{}, err
 	}
@@ -385,7 +457,7 @@ func (e *Engine) restore(canonical []byte) (Snapshot, error) {
 	if err != nil {
 		return Snapshot{}, err
 	}
-	projection, err := designer.CanvasWithTextPaint(tpl, fonts.Shipped())
+	projection, err := designer.CanvasWithTextPaint(tpl, e.faces)
 	if err != nil {
 		return Snapshot{}, err
 	}
