@@ -599,6 +599,20 @@ brand, err := os.<span class="tk-fn">ReadFile</span>(<span class="tk-str">"Brand
 	log.<span class="tk-fn">Fatal</span>(err)
 }
 fontSet[<span class="tk-str">"Brand Sans"</span>] = brand <span class="tk-com">// referenced by a chain such as "body": ["Brand Sans", "Noto Sans Thai"]</span></pre></div>
+    <p>Reading a whole directory of faces is the same idea with the file-by-file part done for you. <code>folio-go/fontdir</code> is a separate, opt-in package — importing it does not pull in the shipped faces — and its one function turns a directory into a <code>folio8.FontSet</code>:</p>
+    <div class="sample"><pre data-lang="go">faces := fonts.<span class="tk-fn">Shipped</span>()
+supplied, skipped, err := fontdir.<span class="tk-fn">Set</span>(<span class="tk-str">"/srv/fonts"</span>)
+<span class="tk-kw">if</span> err != <span class="tk-lit">nil</span> {
+	log.<span class="tk-fn">Fatal</span>(err) <span class="tk-com">// the directory itself is missing or unreadable</span>
+}
+<span class="tk-kw">for</span> _, s := <span class="tk-kw">range</span> skipped {
+	log.<span class="tk-fn">Println</span>(<span class="tk-str">"skipped font:"</span>, s) <span class="tk-com">// a file that is not a face this build can read</span>
+}
+maps.<span class="tk-fn">Copy</span>(faces, supplied) <span class="tk-com">// second wins: a face on disk replaces a shipped face of the same name</span></pre></div>
+    <p>Each face is keyed by the name <strong>its own binary declares</strong> — <code>name</code> table record 1, plus record 2 when the subfamily is not <code>Regular</code> — so <code>Sarabun-Bold.ttf</code> is keyed <code>Sarabun Bold</code>, and renaming that file on disk does not change its key. The keys have exactly the shape <code>fonts.Shipped()</code>'s keys have, so a chain entry cannot tell a face from disk apart from a shipped one.</p>
+    <p>The read is one directory deep: no recursion into subdirectories, no reading the machine's installed fonts, no network. <strong>No symlink is followed</strong>, including one pointing inside the directory itself — copy faces in rather than linking them — but a link whose name looks like a face is reported rather than silently dropped. A file that is not a face this build can read — a corrupt download, a variable build, a face declaring no family, a face whose name records carry control characters — is <strong>skipped and reported</strong>, never fatal, because one bad file in a font directory must not stop every render. So is a font-shaped file that is not a candidate: a <code>.woff</code>, a <code>.woff2</code> or a <code>.ttc</code> collection. Genuinely unrelated files — a <code>LICENSE</code>, a <code>NOTICE</code>, a <code>.txt</code>, a subdirectory — are ignored silently. Merging is yours: <code>fontdir.Set</code> returns that directory's set and nothing else.</p>
+    <p>The checks are the renderer's own load-time checks, not a render: a face that passes them is one this build can read, not one guaranteed to draw every character you ask of it.</p>
+    <p>The engine still never reads the filesystem. <code>fontdir</code> is a host-side helper that produces an ordinary <code>FontSet</code>; what reaches <code>Render</code> is a value you could have built by hand.</p>
     <p>The <code>FontSet</code> may be <strong>empty, or nil</strong>. There is still no default font set and no lookup on the machine the render runs on, but a template that carries every face it names — one saved with embedding on — has nothing for a font set to contribute, so such a call is not refused before the engine has tried to resolve the chains.</p>
     <p>A character that no face in its chain covers is omitted, never drawn as a box, and reported with the warning <code>TEXT_MISSING_GLYPH</code> — but only when every face the chain declares was supplied. If any declared face is missing from the <code>FontSet</code>, an uncovered character fails the render instead, with the error <code>TEXT_FACE_ABSENT</code>: the engine cannot know whether the absent face would have covered it, so it refuses rather than ship a PDF with the text silently gone. A bold or italic request that the covering entry declares no face for is drawn in that entry's regular face with the warning <code>TEXT_STYLE_FACE_UNDECLARED</code>. <code>TEXT_FACE_ABSENT</code> is a <code>*folio8.RenderError</code> naming the absent faces, the element and <code>style.fontFamily</code>; bytes that are not a usable font still fail as a plain error, so keep your fallback branch for that.</p>
     <h3>When a face is missing, choose what happens</h3>
@@ -973,12 +987,13 @@ for _, d := range result.Diagnostics {
 
   <section id="api-reference">
     <h2>API reference</h2>
-    <p>This section lists every exported identifier in the two packages of the <code>github.com/panitw/folio8/folio-go</code> module:</p>
+    <p>This section lists every exported identifier in the three packages of the <code>github.com/panitw/folio8/folio-go</code> module:</p>
     <div class="tablewrap"><table>
       <thead><tr><th>Import path</th><th>Package</th><th>Role</th></tr></thead>
       <tbody>
         <tr><td><code>github.com/panitw/folio8/folio-go</code></td><td><code>folio8</code></td><td>Parsing, rendering, validation, diagnostics and template helpers.</td></tr>
         <tr><td><code>github.com/panitw/folio8/folio-go/fonts</code></td><td><code>fonts</code></td><td>The shipped font faces, as a ready-made <code>folio8.FontSet</code>. Opt-in: package <code>folio8</code> never imports it.</td></tr>
+        <tr><td><code>github.com/panitw/folio8/folio-go/fontdir</code></td><td><code>fontdir</code></td><td>Builds a <code>folio8.FontSet</code> from a directory of font files on disk. Opt-in, and independent of <code>fonts</code>: importing it adds no font bytes to your binary.</td></tr>
       </tbody>
     </table></div>
     <p><strong>Stability.</strong> The API is frozen at <code>folio-go/v1.0.0</code>: <code>folio8.Version</code> is <code>"1.0.0"</code>. The rendering and validation entry points, the font input and the diagnostic types are the whole public surface. The canvas and authoring engine behind folio8 Designer is internal to the module and is not part of this API.</p>
@@ -1083,6 +1098,19 @@ for _, d := range result.Diagnostics {
     </table></div>
     <p>A chain entry must name one of these keys verbatim. Weight and slope come from the variants a chain entry <em>declares</em> (for example an entry object with <code>bold: "Roboto Bold"</code>); the engine never derives <code>"Roboto Bold"</code> from <code>"Roboto"</code>.</p>
     <p>Each call builds a fresh map, but the byte slices are shared package data: never modify them. Importing <code>fonts</code> adds roughly 14.8 MB of raw font bytes to a binary.</p>
+    <h4 id="fontdirset"><code>fontdir.Set</code></h4>
+    <div class="sample"><pre data-lang="go"><span class="tk-kw">func</span> <span class="tk-fn">Set</span>(dir <span class="tk-type">string</span>) (folio8.<span class="tk-type">FontSet</span>, []<span class="tk-type">Skipped</span>, <span class="tk-type">error</span>)</pre></div>
+    <p>Reads <code>dir</code> and returns the faces it holds, keyed by the name each binary declares for itself, together with every file that was left out and why. Only <code>.ttf</code> and <code>.otf</code> regular files directly in <code>dir</code> are candidates. A <code>.woff</code>, <code>.woff2</code>, <code>.ttc</code> or <code>.otc</code> file, and a symlink whose name looks like a face, are reported as skipped; subdirectories and unrelated files are ignored silently. A missing or unreadable directory is the returned error, and names the path. An empty directory is an empty <code>FontSet</code> and no error.</p>
+    <p>The key is the face's <code>name</code> table record 1 (the family), plus record 2 (the subfamily) when that is anything other than <code>Regular</code>, joined by a space — the same shape <code>fonts.Shipped()</code> uses. It never comes from the filename. The Windows English record (platform 3, encoding 1, language <code>0x0409</code>) is preferred, so a face carrying localized names is still keyed in English. Surrounding whitespace is trimmed, and a face whose name records carry control characters is skipped rather than keyed. Two files that produce the same key resolve deterministically: the first in lexical filename order wins and the other is reported as skipped.</p>
+    <p><code>Set</code> returns that directory's set and nothing else; combine it with another set yourself, with <code>maps.Copy(faces, supplied)</code>, where second wins.</p>
+    <h4 id="skipped"><code>Skipped</code></h4>
+    <div class="sample"><pre data-lang="go"><span class="tk-kw">type</span> <span class="tk-type">Skipped</span> <span class="tk-kw">struct</span> {
+	<span class="tk-type">File</span>   <span class="tk-type">string</span>
+	<span class="tk-type">Reason</span> <span class="tk-type">string</span>
+}
+
+<span class="tk-kw">func</span> (s <span class="tk-type">Skipped</span>) <span class="tk-fn">String</span>() <span class="tk-type">string</span></pre></div>
+    <p>One font file the directory held and the returned <code>FontSet</code> does not carry. <code>File</code> is its path under the directory as you named it, and <code>Reason</code> says what was wrong — unreadable bytes, a variable build, a face declaring no family, or a face another file already keyed. <code>String</code> renders the pair as one log line. A skip is never fatal and never silent: what you do with the report is yours, including failing your own build on it.</p>
     <h3 id="diagnostics-and-errors">Diagnostics and errors</h3>
     <h4 id="diagnostic"><code>Diagnostic</code></h4>
     <div class="sample"><pre data-lang="go"><span class="tk-kw">type</span> <span class="tk-type">Diagnostic</span> <span class="tk-kw">struct</span> {
@@ -1205,6 +1233,7 @@ _ = res</pre></div>
   <section id="command-line-tool">
     <h2>Command-line tool</h2>
     <p>The module also contains a <code>folio8</code> command with <code>validate</code> and <code>render</code> subcommands (<code>go run github.com/panitw/folio8/folio-go/cmd/folio8@v1.0.0 render -data data.json -o out.pdf template.folio</code>). It is a thin wrapper over <code>Validate</code> and <code>Render</code>; its flags are described in the repository README.</p>
+    <p>Both subcommands take <code>-fonts &lt;dir&gt;</code>, which renders with the faces in that directory in addition to the shipped eleven, through <code>fontdir.Set</code> above: a face there whose declared name matches a shipped one replaces it. A missing or unreadable directory fails the run. A file inside it that is not a face this build can read is reported on stderr and skipped, as is a directory that yields no faces at all; neither fails the run on its own — but <code>-strict</code> counts both, so a typo'd font directory fails a build that asked for strict.</p>
   </section>
 <!-- /body -->
 

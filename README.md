@@ -149,14 +149,24 @@ your binary only if you ask for them — and covers `Data` vs `Params`, the
 ### Render from the command line
 
 ```
-folio8 validate [-data <path>] [-params <path>] [-strict] <template.folio>
-folio8 render   [-data <path>] [-params <path>] [-o <path>] [-strict] <template.folio>
+folio8 validate [-data <path>] [-params <path>] [-fonts <dir>] [-strict] <template.folio>
+folio8 render   [-data <path>] [-params <path>] [-fonts <dir>] [-o <path>] [-strict] <template.folio>
 ```
 
 `SOURCE_DATE_EPOCH` supplies the reserved `documentDate` param when no other
-route has — it never overwrites one you passed explicitly. `-strict` turns
-warnings (a dropped character, say) into a non-zero exit. Exit codes: `0`
-success, `1` validation or render failure, `2` usage error.
+route has — it never overwrites one you passed explicitly.
+
+`-fonts` names a directory of `.ttf`/`.otf` faces to render with in addition to
+the shipped eleven. Each is keyed by the name its own binary declares, not by
+its filename, and **a face there whose name matches a shipped face replaces it**.
+A missing or unreadable directory **fails the run**. A file inside it that is not
+a readable face is reported on stderr and skipped, as is a directory that yields
+no faces at all; neither fails the run on its own.
+
+`-strict` turns warnings (a dropped character, say) into a non-zero exit, and
+counts a skipped font or an empty font directory as one — so a typo'd `-fonts`
+path fails a build that asked for strict. Exit codes: `0` success, `1` validation
+or render failure, `2` usage error.
 
 ### Run the designer
 

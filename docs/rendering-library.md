@@ -371,6 +371,43 @@ if err != nil {
 fontSet["Brand Sans"] = brand // referenced by a chain such as "body": ["Brand Sans", "Noto Sans Thai"]
 ```
 
+Reading a whole directory of faces is the same idea with the file-by-file part done for you.
+`folio-go/fontdir` is a separate, opt-in package — importing it does not pull in the shipped faces —
+and its one function turns a directory into a `folio8.FontSet`:
+
+```go
+faces := fonts.Shipped()
+supplied, skipped, err := fontdir.Set("/srv/fonts")
+if err != nil {
+	log.Fatal(err) // the directory itself is missing or unreadable
+}
+for _, s := range skipped {
+	log.Println("skipped font:", s) // a file that is not a face this build can read
+}
+maps.Copy(faces, supplied) // second wins: a face on disk replaces a shipped face of the same name
+```
+
+Each face is keyed by the name **its own binary declares** — `name` table record 1, plus record 2
+when the subfamily is not `Regular` — so `Sarabun-Bold.ttf` is keyed `Sarabun Bold`, and renaming
+that file on disk does not change its key. The keys have exactly the shape `fonts.Shipped()`'s keys
+have, so a chain entry cannot tell a face from disk apart from a shipped one.
+
+The read is one directory deep: no recursion into subdirectories, no reading the machine's installed
+fonts, no network. **No symlink is followed**, including one pointing inside the directory itself —
+copy faces in rather than linking them — but a link whose name looks like a face is reported rather
+than silently dropped. A file that is not a face this build can read — a corrupt download, a
+variable build, a face declaring no family, a face whose name records carry control characters — is
+**skipped and reported**, never fatal, because one bad file in a font directory must not stop every
+render. So is a font-shaped file that is not a candidate: a `.woff`, a `.woff2` or a `.ttc`
+collection. Genuinely unrelated files — a `LICENSE`, a `NOTICE`, a `.txt`, a subdirectory — are
+ignored silently. Merging is yours: `fontdir.Set` returns that directory's set and nothing else.
+
+The checks are the renderer's own load-time checks, not a render: a face that passes them is one
+this build can read, not one guaranteed to draw every character you ask of it.
+
+The engine still never reads the filesystem. `fontdir` is a host-side helper that produces an
+ordinary `FontSet`; what reaches `Render` is a value you could have built by hand.
+
 The `FontSet` may be **empty, or nil**. There is still no default font set and no lookup on the
 machine the render runs on, but a template that carries every face it names — one saved with
 embedding on — has nothing for a font set to contribute, so such a call is not refused before the
@@ -919,12 +956,13 @@ The frame meaning of `style.border` applies to every table, including templates 
 
 ## API reference
 
-This section lists every exported identifier in the two packages of the `github.com/panitw/folio8/folio-go` module:
+This section lists every exported identifier in the three packages of the `github.com/panitw/folio8/folio-go` module:
 
 | Import path | Package | Role |
 |---|---|---|
 | `github.com/panitw/folio8/folio-go` | `folio8` | Parsing, rendering, validation, diagnostics and template helpers. |
 | `github.com/panitw/folio8/folio-go/fonts` | `fonts` | The shipped font faces, as a ready-made `folio8.FontSet`. Opt-in: package `folio8` never imports it. |
+| `github.com/panitw/folio8/folio-go/fontdir` | `fontdir` | Builds a `folio8.FontSet` from a directory of font files on disk. Opt-in, and independent of `fonts`: importing it adds no font bytes to your binary. |
 
 **Stability.** The API is frozen at `folio-go/v1.0.0`: `folio8.Version` is `"1.0.0"`. The rendering and validation entry points, the font input and the diagnostic types are the whole public surface. The canvas and authoring engine behind folio8 Designer is internal to the module and is not part of this API.
 
@@ -1088,6 +1126,31 @@ A chain entry must name one of these keys verbatim. Weight and slope come from t
 
 Each call builds a fresh map, but the byte slices are shared package data: never modify them. Importing `fonts` adds roughly 14.8 MB of raw font bytes to a binary.
 
+#### `fontdir.Set`
+
+```go
+func Set(dir string) (folio8.FontSet, []Skipped, error)
+```
+
+Reads `dir` and returns the faces it holds, keyed by the name each binary declares for itself, together with every file that was left out and why. Only `.ttf` and `.otf` regular files directly in `dir` are candidates. A `.woff`, `.woff2`, `.ttc` or `.otc` file, and a symlink whose name looks like a face, are reported as skipped; subdirectories and unrelated files are ignored silently. A missing or unreadable directory is the returned error, and names the path. An empty directory is an empty `FontSet` and no error.
+
+The key is the face's `name` table record 1 (the family), plus record 2 (the subfamily) when that is anything other than `Regular`, joined by a space — the same shape `fonts.Shipped()` uses. It never comes from the filename. The Windows English record (platform 3, encoding 1, language `0x0409`) is preferred, so a face carrying localized names is still keyed in English. Surrounding whitespace is trimmed, and a face whose name records carry control characters is skipped rather than keyed. Two files that produce the same key resolve deterministically: the first in lexical filename order wins and the other is reported as skipped.
+
+`Set` returns that directory's set and nothing else; combine it with another set yourself, with `maps.Copy(faces, supplied)`, where second wins.
+
+#### `Skipped`
+
+```go
+type Skipped struct {
+	File   string
+	Reason string
+}
+
+func (s Skipped) String() string
+```
+
+One font file the directory held and the returned `FontSet` does not carry. `File` is its path under the directory as you named it, and `Reason` says what was wrong — unreadable bytes, a variable build, a face declaring no family, or a face another file already keyed. `String` renders the pair as one log line. A skip is never fatal and never silent: what you do with the report is yours, including failing your own build on it.
+
 ### Diagnostics and errors
 
 #### `Diagnostic`
@@ -1239,3 +1302,10 @@ The module also contains a `folio8` command with `validate` and `render` subcomm
 (`go run github.com/panitw/folio8/folio-go/cmd/folio8@v1.0.0 render -data data.json -o out.pdf template.folio`).
 It is a thin wrapper over `Validate` and `Render`; its flags are described in the
 [repository README](../README.md#render-from-the-command-line).
+
+Both subcommands take `-fonts <dir>`, which renders with the faces in that directory in addition to
+the shipped eleven, through `fontdir.Set` above: a face there whose declared name matches a shipped
+one replaces it. A missing or unreadable directory fails the run. A file inside it that is not a
+face this build can read is reported on stderr and skipped, as is a directory that yields no faces
+at all; neither fails the run on its own — but `-strict` counts both, so a typo'd font directory
+fails a build that asked for strict.

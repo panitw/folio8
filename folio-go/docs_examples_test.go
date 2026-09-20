@@ -25,7 +25,7 @@ import (
 // These tests keep those statements true: every example is rendered here and
 // its page count, placement and diagnostic codes are asserted, every example
 // file must appear verbatim in the guide, and every exported identifier of the
-// folio8 and fonts packages must be named in the guide.
+// folio8, fonts and fontdir packages must be named in the guide.
 
 func docsDir(t *testing.T) string {
 	t.Helper()
@@ -397,7 +397,7 @@ func exportedIdentifiers(t *testing.T, dir string) []string {
 func TestDocsGuideNamesEveryExportedIdentifier(t *testing.T) {
 	root := filepath.Join(repoRootFromTest(t), "folio-go")
 	total := 0
-	for _, pkg := range []string{".", "fonts"} {
+	for _, pkg := range []string{".", "fonts", "fontdir"} {
 		ids := exportedIdentifiers(t, filepath.Join(root, pkg))
 		if len(ids) == 0 {
 			t.Fatalf("package %s exports nothing — the census read the wrong directory", pkg)
@@ -418,8 +418,10 @@ func TestDocsGuideNamesEveryExportedIdentifier(t *testing.T) {
 	// spec-deferred-offline-cache CAP-7 minted DiagCodeTextFaceAbsent,
 	// taking it to 59. spec-font-sources-and-embedding's first story
 	// minted DiagCodeTextFaceSubstituted and the FaceFallback selector
-	// (the type and its two constants), taking it to 63.
-	if total < 63 {
+	// (the type and its two constants), taking it to 63. Its second
+	// story added package fontdir — Set, Skipped, Skipped.String and
+	// Skipped's two fields — taking it to 68.
+	if total < 68 {
 		t.Fatalf("census found only %d identifiers", total)
 	}
 }

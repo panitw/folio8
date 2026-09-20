@@ -13,7 +13,8 @@ import (
 )
 
 // publicSurfacePins names the frozen public API of folio-go/v1.0.0: every
-// exported identifier of package folio8 and package fonts, by kind and name.
+// exported identifier of package folio8, package fonts and package fontdir,
+// by kind and name.
 // It pins identifiers only — not signatures, types or constant values, which
 // other tests cover. D-1.1.c fixes this surface at the tag, and the tag commits
 // to semver, so removing or renaming any line below needs a /v2 import path.
@@ -99,6 +100,18 @@ var publicSurfacePins = []string{
 
 	// package fonts
 	"fonts func Shipped",
+
+	// package fontdir — spec-font-sources-and-embedding story 2's
+	// DELIBERATE addition to the frozen surface (an addition, never a
+	// break: no v1 identifier moves). A host-side directory loader is
+	// public API by necessity — an integrator calls it — and it is its
+	// own package so that a consumer who wants it does not also get the
+	// fonts package's ~14.8 MB of embedded faces.
+	"fontdir func Set",
+	"fontdir type Skipped",
+	"fontdir method Skipped.String",
+	"fontdir field Skipped.File",
+	"fontdir field Skipped.Reason",
 }
 
 // scanPublicSurface lists every exported identifier declared by the non-test
@@ -215,15 +228,16 @@ func surfaceTypeName(expr ast.Expr) string {
 	}
 }
 
-// TestOnlyRootAndFontsAreImportableLibraryPackages closes the census's other
-// door: the census scans package folio8 and package fonts only, so a new
+// TestOnlyCensusedPackagesAreImportableLibraryPackages closes the census's
+// other door: the census scans the packages named in `allowed` below and no
+// others (folio8, fonts and fontdir today), so a new
 // importable library package anywhere under folio-go/ (as folio-go/wasm was
 // before client-libraries story 1) would ship public API without reddening it.
 // Directories Go itself ignores (a leading "." or "_", testdata) and anything
 // under internal/ are skipped; command packages (package main) are allowed.
-func TestOnlyRootAndFontsAreImportableLibraryPackages(t *testing.T) {
+func TestOnlyCensusedPackagesAreImportableLibraryPackages(t *testing.T) {
 	root := filepath.Join(repoRootFromTest(t), "folio-go")
-	allowed := map[string]bool{".": true, "fonts": true}
+	allowed := map[string]bool{".": true, "fonts": true, "fontdir": true}
 	seen := map[string]bool{}
 	fset := token.NewFileSet()
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
@@ -270,12 +284,12 @@ func TestOnlyRootAndFontsAreImportableLibraryPackages(t *testing.T) {
 
 // TestPublicSurfaceMatchesTheFrozenV1Census is the pinned surface census
 // RELEASING.md's precondition 2 relies on: it reddens the commit that adds an
-// exported identifier to package folio8 or package fonts (UNEXPECTED) or
-// removes one (GONE).
+// exported identifier to package folio8, package fonts or package fontdir
+// (UNEXPECTED) or removes one (GONE).
 func TestPublicSurfaceMatchesTheFrozenV1Census(t *testing.T) {
 	root := filepath.Join(repoRootFromTest(t), "folio-go")
 	var got []string
-	for _, pkg := range []struct{ dir, name string }{{".", "folio8"}, {"fonts", "fonts"}} {
+	for _, pkg := range []struct{ dir, name string }{{".", "folio8"}, {"fonts", "fonts"}, {"fontdir", "fontdir"}} {
 		scanned := scanPublicSurface(t, filepath.Join(root, pkg.dir), pkg.name)
 		// VACUITY GUARD, per package: a scan of the wrong directory, or one that
 		// stopped recognising a declaration form, must never read as a surface
@@ -304,5 +318,5 @@ func TestPublicSurfaceMatchesTheFrozenV1Census(t *testing.T) {
 			t.Errorf("EXPECTED public identifier %q is GONE — removing or renaming a v1 identifier is a breaking change that needs a /v2 import path, not an edit to this list.", w)
 		}
 	}
-	t.Logf("public surface census: %d identifiers across package folio8 and package fonts", len(got))
+	t.Logf("public surface census: %d identifiers across packages folio8, fonts and fontdir", len(got))
 }

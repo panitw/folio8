@@ -35,7 +35,10 @@
 // call, so "folio8 validate" can never accept an environment combination
 // "folio8 render" would refuse (this story's review, Finding 6) —
 // nothing between flag parsing and the Validate/Render dispatch may
-// diverge by subcommand.
+// diverge by subcommand. The FONT SET is assembled there too, for the
+// same reason: -fonts is a flag on both subcommands, and a directory
+// "folio8 validate" accepted while "folio8 render" ignored it would be
+// the same defect in a new place.
 package main
 
 import (
@@ -44,11 +47,13 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"strconv"
 	"time"
 
 	folio8 "github.com/panitw/folio8/folio-go"
+	"github.com/panitw/folio8/folio-go/fontdir"
 	"github.com/panitw/folio8/folio-go/fonts"
 )
 
@@ -104,8 +109,16 @@ func run(args []string, stdout, stderr io.Writer, getenv func(string) string) in
 
 func printUsage(w io.Writer) {
 	fmt.Fprintln(w, "usage: folio8 <validate|render> [flags] <template.folio>")
-	fmt.Fprintln(w, "  validate [-data <path>] [-params <path>] [-strict] <template.folio>")
-	fmt.Fprintln(w, "  render [-data <path>] [-params <path>] [-o <path>] [-strict] <template.folio>")
+	fmt.Fprintln(w, "  validate [-data <path>] [-params <path>] [-fonts <dir>] [-strict] <template.folio>")
+	fmt.Fprintln(w, "  render [-data <path>] [-params <path>] [-fonts <dir>] [-o <path>] [-strict] <template.folio>")
+	fmt.Fprintln(w, "")
+	fmt.Fprintln(w, "-fonts names a directory of .ttf/.otf files to render with, IN ADDITION to the")
+	fmt.Fprintln(w, "eleven shipped faces. Each face is keyed by the name its own binary declares,")
+	fmt.Fprintln(w, "never by its filename, and a same-named face there replaces the shipped one.")
+	fmt.Fprintln(w, "A missing or unreadable directory FAILS the run. A file inside it that is not a")
+	fmt.Fprintln(w, "face this build can read is SKIPPED and reported on stderr, as is a directory")
+	fmt.Fprintln(w, "that yields no faces at all; neither fails the run on its own -- but -strict")
+	fmt.Fprintln(w, "counts both, so a typo'd font directory fails a build that asked for strict.")
 	fmt.Fprintln(w, "")
 	fmt.Fprintln(w, "SOURCE_DATE_EPOCH, if set, supplies the reserved params key \"documentDate\"")
 	fmt.Fprintln(w, "(both /CreationDate and /ModDate) WHEN NO ROUTE HAS ALREADY SUPPLIED ONE.")
@@ -140,24 +153,77 @@ func loadJSONOrEmpty(path string) ([]byte, error) {
 // identically regardless of which subcommand is running. Before this,
 // only runRender saw getenv at all, so `folio8 validate` could accept
 // an env/params combination `folio8 render` would refuse.
-func resolveInputs(templatePath, dataPath, paramsPath string, getenv func(string) string) (tplBytes []byte, data folio8.Data, params folio8.Params, err error) {
+func resolveInputs(templatePath, dataPath, paramsPath, fontsDir string, getenv func(string) string, stderr io.Writer) (tplBytes []byte, data folio8.Data, params folio8.Params, faces folio8.FontSet, fontNotices int, err error) {
 	tplBytes, err = os.ReadFile(templatePath)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, 0, err
 	}
 	dataBytes, err := loadJSONOrEmpty(dataPath)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, 0, err
 	}
 	paramsBytes, err := loadJSONOrEmpty(paramsPath)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, 0, err
 	}
 	paramsBytes, err = injectDocumentDateFromEnv(paramsBytes, getenv)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, 0, err
 	}
-	return tplBytes, folio8.Data(dataBytes), folio8.Params(paramsBytes), nil
+	faces, fontNotices, err = resolveFontSet(fontsDir, stderr)
+	if err != nil {
+		return nil, nil, nil, nil, 0, err
+	}
+	return tplBytes, folio8.Data(dataBytes), folio8.Params(paramsBytes), faces, fontNotices, nil
+}
+
+// resolveFontSet is the -fonts flag, and it lives INSIDE resolveInputs so
+// that it cannot be wired into one subcommand and not the other — the
+// same reason SOURCE_DATE_EPOCH lives there (D-3.7.6 part 2).
+//
+// THE SHELL COMPOSES; THE LIBRARY DOES NOT (R3). folio-go/fontdir turns
+// the directory into a folio8.FontSet and the engine still never reads a
+// file: what reaches Validate/Render is an ordinary value, exactly as if
+// the caller had built the map themselves.
+//
+// PRECEDENCE IS maps.Copy's, which is this repo's standing one and not a
+// rule invented here: SECOND WINS, so a face in the directory replaces a
+// shipped face of the same name. That is the direction an integrator who
+// went to the trouble of naming a directory means — their Roboto, not
+// ours — and it is the same "second wins" fonts.Shipped() itself uses to
+// merge its build-tagged faces.
+//
+// A SKIPPED FILE IS PRINTED AND THE RUN CONTINUES. One corrupt file in a
+// font directory must not stop a nightly run; a corrupt file nobody hears
+// about must not happen either. The report goes to stderr, never stdout,
+// which carries only PDF bytes (D-3.7.4).
+func resolveFontSet(dir string, stderr io.Writer) (folio8.FontSet, int, error) {
+	faces := fonts.Shipped()
+	if dir == "" {
+		return faces, 0, nil
+	}
+	supplied, skipped, err := fontdir.Set(dir)
+	if err != nil {
+		return nil, 0, err
+	}
+	notices := len(skipped)
+	for _, s := range skipped {
+		fmt.Fprintf(stderr, "SKIPPED FONT %s\n", s)
+	}
+	// A DIRECTORY THAT YIELDED NOTHING IS SAID OUT LOUD. Without this
+	// line a typo'd path and a correct one are indistinguishable: the
+	// run succeeds either way, painting from the shipped faces, and the
+	// brand face's absence surfaces months later as a customer
+	// complaint. It is not an error, because an empty directory is a
+	// legal configuration (a host that has not staged its fonts yet is
+	// still a host); it is a notice, and -strict is what turns it into a
+	// failure for a build that wants one.
+	if len(supplied) == 0 {
+		fmt.Fprintf(stderr, "NO FONTS FOUND in %s — rendering with the shipped faces alone\n", dir)
+		notices++
+	}
+	maps.Copy(faces, supplied)
+	return faces, notices, nil
 }
 
 // printDiagnostics is DW-17's first discharge (D-3.7.4, AC6): every
@@ -204,7 +270,8 @@ func runValidate(args []string, stdout, stderr io.Writer, getenv func(string) st
 	fset.SetOutput(io.Discard)
 	dataPath := fset.String("data", "", "path to a JSON report data file")
 	paramsPath := fset.String("params", "", "path to a JSON params file")
-	strict := fset.Bool("strict", false, "exit non-zero if any Warning is present")
+	fontsDir := fset.String("fonts", "", "directory of .ttf/.otf faces to render with, in addition to the shipped faces")
+	strict := fset.Bool("strict", false, "exit non-zero if any Warning, skipped font or empty font directory is present")
 	if err := fset.Parse(args); err != nil {
 		// QA Nit 7 (this story's review): -h/--help is ALSO
 		// flag.ErrHelp, a usage request rather than a usage MISTAKE —
@@ -226,19 +293,19 @@ func runValidate(args []string, stdout, stderr io.Writer, getenv func(string) st
 	}
 	templatePath := fset.Arg(0)
 
-	tplBytes, data, params, err := resolveInputs(templatePath, *dataPath, *paramsPath, getenv)
+	tplBytes, data, params, faces, fontNotices, err := resolveInputs(templatePath, *dataPath, *paramsPath, *fontsDir, getenv, stderr)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return exitCodeForInputError(err)
 	}
 
-	diags, verr := folio8.Validate(tplBytes, data, params, fonts.Shipped())
+	diags, verr := folio8.Validate(tplBytes, data, params, faces)
 	if verr != nil {
 		fmt.Fprintln(stderr, verr)
 		return exitFailure
 	}
 	printDiagnostics(stderr, diags)
-	if *strict && len(diags) > 0 {
+	if *strict && (len(diags) > 0 || fontNotices > 0) {
 		return exitFailure
 	}
 	return exitOK
@@ -249,8 +316,9 @@ func runRender(args []string, stdout, stderr io.Writer, getenv func(string) stri
 	fset.SetOutput(io.Discard)
 	dataPath := fset.String("data", "", "path to a JSON report data file")
 	paramsPath := fset.String("params", "", "path to a JSON params file")
+	fontsDir := fset.String("fonts", "", "directory of .ttf/.otf faces to render with, in addition to the shipped faces")
 	outPath := fset.String("o", "", "output PDF path (default: stdout)")
-	strict := fset.Bool("strict", false, "exit non-zero if any Warning is present")
+	strict := fset.Bool("strict", false, "exit non-zero if any Warning, skipped font or empty font directory is present")
 	if err := fset.Parse(args); err != nil {
 		// QA Nit 7 (this story's review): -h/--help is ALSO
 		// flag.ErrHelp, a usage request rather than a usage MISTAKE —
@@ -272,7 +340,7 @@ func runRender(args []string, stdout, stderr io.Writer, getenv func(string) stri
 	}
 	templatePath := fset.Arg(0)
 
-	tplBytes, data, params, err := resolveInputs(templatePath, *dataPath, *paramsPath, getenv)
+	tplBytes, data, params, faces, fontNotices, err := resolveInputs(templatePath, *dataPath, *paramsPath, *fontsDir, getenv, stderr)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return exitCodeForInputError(err)
@@ -283,7 +351,7 @@ func runRender(args []string, stdout, stderr io.Writer, getenv func(string) stri
 		return exitFailure
 	}
 
-	res, rerr := folio8.Render(tpl, data, params, fonts.Shipped())
+	res, rerr := folio8.Render(tpl, data, params, faces)
 	if rerr != nil {
 		fmt.Fprintln(stderr, rerr)
 		return exitFailure
@@ -305,7 +373,7 @@ func runRender(args []string, stdout, stderr io.Writer, getenv func(string) stri
 		}
 	}
 
-	if *strict && len(res.Diagnostics) > 0 {
+	if *strict && (len(res.Diagnostics) > 0 || fontNotices > 0) {
 		return exitFailure
 	}
 	return exitOK

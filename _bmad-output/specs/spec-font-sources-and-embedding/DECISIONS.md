@@ -168,3 +168,107 @@ so a declared-but-unparseable asset is a document fault with nothing to substitu
 text, `verticalModel`'s empty-metrics arm is not reached at all. Verified across
 `{"", "Hi"} x {Strict, Substitute}`. The `deferred-work.md` entry was rewritten to say so rather
 than left standing as open work that does not exist.
+
+## Story 2 — decisions taken while planning
+
+### A-9 — A new leaf package, added to the census deliberately
+
+**Decision:** the disk loader is a new importable package under `folio-go/`, and
+`TestOnlyRootAndFontsAreImportableLibraryPackages`'s allowlist is extended to admit it.
+
+**Rejected:** putting it in `folio-go/fonts` (forces a consumer who wants only a disk loader to
+pull in ~14.8 MB of embedded faces — the exact cost `fonts.go`'s header calls load-bearing); and
+putting it in the root `folio8` package (would put filesystem-font code inside the engine's own
+package, which is the distinction this whole spec draws).
+
+**Reasoning:** the census test's own failure text says *"Move it under internal/, or add it to the
+census deliberately."* `internal/` is not available — the whole point is that integrators import
+it. So this is the deliberate branch, taken with the allowlist and `publicSurfacePins` extended in
+the same commit rather than worked around.
+
+### A-10 — Keyed by the binary's name table, not by filename
+
+**Decision:** a disk face is keyed by sfnt name ID 1, plus name ID 2 when the subfamily is not
+`Regular` — `Sarabun`, `Sarabun Bold` — matching the shape `fonts.Shipped()` already uses.
+
+**Rejected:** keying by filename stem. It is simpler, needs no new code, and would have let the
+integrator control keys directly by renaming files.
+
+**Reasoning:** `fonts/fonts.go:170-175` is emphatic that nothing may derive a family from a key and
+that *"the machine-readable family is the face's own sfnt name ID 1"* — it names
+`strings.TrimSuffix(key, " Bold")` as the specific anti-pattern, because it reinstates a
+naming-convention weight carrier the project foreclosed. A loader that trusted filenames makes the
+same mistake one layer out: a file a human renamed becomes a different face, or silently shadows
+another. It also has to match what the designer writes in story 3, which reads the same name table.
+
+**Cost accepted:** name ID 1 is not reachable from any exported symbol today, so this story adds
+family/subfamily accessors to `internal/fontset.Font` beside the existing `PostScriptName`. That
+is new surface inside the seam, which is why it is recorded here rather than assumed.
+
+### A-11 — No merge helper, and no CLI fallback flag
+
+**Decision:** the loader returns the directory's set and nothing else; callers combine sets with
+`maps.Copy`. And `FaceFallback` gets no CLI flag in this story.
+
+**Reasoning:** "second wins" is already the repo's merge precedent in two places (`fonts.go:200`,
+`internal/wasm/engine.go`), so inventing a precedence rule here would be a third answer to a
+settled question. The CLI fallback flag is tempting because it would make the disk path
+demonstrable end to end, but story 2's success criterion needs no substitution — the face is
+present — and adding it would smuggle story 1 surface into story 2.
+
+### A-12 — `Skipped.Reason` left as prose, against my own judgement
+
+**Decision:** rejected review finding #16 — a caller who wants to fail their build on "a real font
+was rejected" but tolerate "a variable build" must string-match English sentences the validators
+own. `Skipped` keeps `Reason string` and gains no programmatic cause.
+
+**Why I think the finding is right:** the guide tells integrators they can act on skips, and acting
+on prose owned by another package is not something a careful caller should have to do. A wrapped
+`Err error` field would make it `errors.Is`-able, and it is much cheaper to add before the v1
+public surface freezes than after.
+
+**Why I rejected it anyway:** the workflow's routing rules bar it from `patch` — the fix adds
+public surface the spec does not settle — and the only other route is `intent_gap`, which means
+stopping to ask the owner. The standing instruction for this run is not to stop. Rejecting it
+visibly, with the cost written down, is more honest than smuggling a public-surface decision
+through as a patch.
+
+**What the owner may want to do:** add the field before `folio-go` 2.0.0 ships. After that it is a
+surface change rather than a surface choice.
+
+### A-13 — Two findings rejected on the workflow's own rules, not on the merits
+
+**Decision:** rejected review finding #17 (AC4 claims `go test ./...` passes, but `internal/text`'s
+`P6g` corpus floor is red) and #18 (Tasks say fixtures live under `testdata/`; they are built into
+`t.TempDir()`).
+
+**Reasoning:** #17 is *true* — the acceptance criterion as written is false — but the workflow
+says to reject any finding whose fix is to edit this build's spec, and the failure is pre-existing,
+unrelated to the diff, confirmed red at the baseline commit, and already disclosed in this same
+spec's Verification section. #18 is not a defect at all: building fixtures from bytes already in
+the repo is precisely what makes the filename-independence assertions mean anything, so the
+implementer's deviation from my planning guess was the better call.
+
+### A-14 — Two judgement calls delegated to the implementer, and what they chose
+
+**Context:** two review findings had no single right answer, so the patch message asked the
+implementer to decide and say which way it went, rather than my guessing from outside the code.
+
+**Symlinks — kept the strict rule.** A font-named symlink is never followed, including one
+resolving inside the directory. Rejected: accepting in-directory links, which deploy scripts do use
+to stage fonts. The reasoning given, and I agree with it: "inside" has no cheap correct answer once
+the directory is itself a link. The compensating change is that a font-named symlink is now
+*reported as skipped* rather than vanishing silently, so an operator staging by symlink is told,
+instead of seeing an empty set. Documented in the package doc, both doc twins and the README.
+
+**`-strict` — a skipped font now fails a strict run.** So does an empty font directory. Without
+`-strict` both remain stderr notices and the run succeeds. This is the more opinionated of the two
+available answers: it means a CI job that adds `-fonts` and `-strict` starts failing the day a
+brand face goes missing, which is the point of `-strict`. Stated in the usage text, the flag help,
+the README and both doc twins, and pinned by a test across both subcommands and both notice kinds.
+
+**Also worth recording — a promise dropped rather than kept.** The guide had said a face passing
+the loader's checks would fail at *load* rather than at render. Rather than add a `cmap`/outline
+check to make that true, the implementer narrowed the claim: these are the renderer's load-time
+checks, and a face that passes is one this build can *read*, not one guaranteed to *draw*. Dropping
+an over-promise is the right call over widening a validator to match marketing copy.

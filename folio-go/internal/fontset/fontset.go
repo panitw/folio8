@@ -16,7 +16,9 @@
 package fontset
 
 import (
+	"encoding/binary"
 	"fmt"
+	"unicode/utf16"
 
 	"github.com/boxesandglue/textshape/ot"
 	"github.com/boxesandglue/textshape/subset"
@@ -43,7 +45,9 @@ type Font struct {
 	unitsPerEm uint16 // validated: MinUnitsPerEm <= unitsPerEm <= MaxUnitsPerEm
 	created    int64  // head.created, offset 20, LONGDATETIME (F-5)
 	modified   int64  // head.modified, offset 28, LONGDATETIME (F-5)
-	psName     string // name table record 6, read directly (see readPostScriptName)
+	psName     string // name table record 6, read directly (see readNames)
+	family     string // name table record 1, read directly (see readNames)
+	subfamily  string // name table record 2, read directly (see readNames)
 
 	// hmtx is the face's horizontal metrics, parsed ONCE at construction
 	// from the table itself via ot.ParseHmtxFromFont, which returns
@@ -231,7 +235,7 @@ func New(name string, data []byte) (*Font, error) {
 		return nil, verr
 	}
 
-	psName, perr := readPostScriptName(parsed)
+	family, subfamily, psName, perr := readNames(parsed)
 	if perr != nil {
 		return nil, fmt.Errorf("fontset: font %q: read name table: %w", name, perr)
 	}
@@ -248,6 +252,8 @@ func New(name string, data []byte) (*Font, error) {
 		created:    created,
 		modified:   modified,
 		psName:     psName,
+		family:     family,
+		subfamily:  subfamily,
 		hmtx:       hmtx,
 		numGlyphs:  parsed.NumGlyphs(),
 		shaper:     shaper,
@@ -276,7 +282,7 @@ func New(name string, data []byte) (*Font, error) {
 // Read, and deliberately NOT required, each for a ruled reason:
 //
 //	name  — Story 2.2 deliberately tolerates a nameless program:
-//	        readPostScriptName returns "", which is observably absent.
+//	        readNames returns "", which is observably absent.
 //	        Requiring it would reverse a ruled disposition (D-2.3a.1,
 //	        verbatim: "Do not require `name`").
 //	cmap  — (*ot.Face).Cmap() returns nil when the table is absent, which
@@ -385,7 +391,7 @@ func requireReadableTables(name string, font *ot.Font) error {
 // INTEGER the hmtx table actually carries.
 //
 // IT DECLINES (*ot.Face).HorizontalAdvance, AND THIS IS STORY 2.2's
-// readPostScriptName PATTERN APPLIED A THIRD TIME — read the table
+// readNames PATTERN APPLIED A THIRD TIME — read the table
 // directly, take the integer, decline the accessor. There are two
 // independent reasons, and the second is the one that would have
 // survived even if AD-23 did not exist:
@@ -464,6 +470,29 @@ func (f *Font) Shaper() *text.Shaper { return f.shaper }
 // other vendor type through the seam (AC17a, D-1.5.10).
 func (f *Font) PostScriptName() string { return f.psName }
 
+// Family returns the face's own typographic family — `name` table record
+// 1 — read off the supplied font program itself, and Subfamily returns
+// record 2, the cut within that family (`Regular`, `Bold`, `Bold
+// Italic`, …).
+//
+// THEY EXIST SO THAT NOTHING OUTSIDE THIS SEAM HAS TO GUESS A FAMILY.
+// fonts.go states the rule these two discharge: a FontSet key is a
+// readable string for a human writing a chain and must never be parsed,
+// because "the machine-readable family is the face's own sfnt name ID 1"
+// (D-B). A host building a FontSet from font files on disk needs that
+// assertion, and the only alternatives — splitting a key, or trimming a
+// filename — are the very anti-pattern D-B forecloses, one layer out.
+//
+// Either returns "" when the supplied program carries no such record;
+// the caller decides what to do about that (folio-go/fontdir treats an
+// absent family as a face it cannot key, and skips it, reported). Like
+// PostScriptName, these return plain strings and never leak *ot.Font,
+// *ot.Name or any other vendor type through the seam (AC17a, D-1.5.10).
+func (f *Font) Family() string { return f.family }
+
+// Subfamily returns `name` table record 2 — see Family.
+func (f *Font) Subfamily() string { return f.subfamily }
+
 // parseHead reads and parses the head table once. *ot.Font and *ot.Head
 // never leave this function or its two callers below (AC17a).
 func parseHead(font *ot.Font) (*ot.Head, error) {
@@ -484,9 +513,19 @@ func readHeadTimes(font *ot.Font) (created, modified int64, err error) {
 	return head.Created, head.Modified, nil
 }
 
-// readPostScriptName reads `name` table record 6 directly, rather than
-// through (*ot.Face).PostscriptName(). That vendor accessor returns the
-// literal string "Unknown" when the parsed font carries no name table
+// readNames reads every `name` table record folio8 cares about in ONE
+// parse: record 6 (the PostScript name, for the PDF's /BaseFont),
+// record 1 (the family) and record 2 (the subfamily).
+//
+// ONE PARSE, NOT THREE. Every face the engine loads comes through here,
+// and two of these three values exist for one caller outside the engine
+// (folio-go/fontdir, which keys a FontSet by the family). Parsing the
+// same table twice to serve them would put that caller's cost on every
+// render, which is why this is one function and not one per record.
+//
+// Record 6 is read through (*ot.Name).PostScriptName rather than
+// (*ot.Face).PostscriptName. That vendor accessor returns the literal
+// string "Unknown" when the parsed font carries no name table
 // (ot/metrics.go:415-420) — a silent substitution of exactly the kind
 // the readUnitsPerEm comment below documents for Upem(), and one that
 // would put the PDF name /Unknown into /BaseFont while every assertion
@@ -496,22 +535,96 @@ func readHeadTimes(font *ot.Font) (created, modified int64, err error) {
 // A missing or unparseable `name` table is NOT an ingestion error: it is
 // not part of what this seam validates (AC16/AC17 validate unitsPerEm),
 // and a face that renders correctly should not become unloadable over a
-// metadata table. The guard that this value is RIGHT for the faces folio8
+// metadata table. The guard that record 6 is RIGHT for the faces folio8
 // actually ships is the semantic acceptance assertion on the produced
 // PDF (D-000.22), which pins /BaseFont to ^[A-Z]{6}\+<name6>$ per face.
-func readPostScriptName(font *ot.Font) (string, error) {
+func readNames(font *ot.Font) (family, subfamily, psName string, err error) {
 	if !font.HasTable(ot.TagName) {
-		return "", nil
+		return "", "", "", nil
 	}
-	data, err := font.TableData(ot.TagName)
-	if err != nil {
-		return "", err
+	data, terr := font.TableData(ot.TagName)
+	if terr != nil {
+		return "", "", "", terr
 	}
-	parsed, err := ot.ParseName(data)
-	if err != nil {
-		return "", err
+	parsed, perr := ot.ParseName(data)
+	if perr != nil {
+		return "", "", "", perr
 	}
-	return parsed.PostScriptName(), nil
+	// 1 = Font Family name, 2 = Font Subfamily name (OpenType spec,
+	// `name` table, Name IDs). Spelled as the numbers the spec uses,
+	// exactly as ReadLicenceStatement spells 13 and 0.
+	family = preferredName(data, 1, parsed.Get(1))
+	subfamily = preferredName(data, 2, parsed.Get(2))
+	return family, subfamily, parsed.PostScriptName(), nil
+}
+
+// nameRecordSize and nameHeaderSize are the `name` table's fixed
+// geometry: a 6-byte header (format, count, stringOffset) followed by
+// `count` 12-byte records.
+const (
+	nameHeaderSize = 6
+	nameRecordSize = 12
+)
+
+// preferredName picks the WINDOWS ENGLISH record for nameID — platform
+// 3 (Windows), encoding 1 (Unicode BMP), language 0x0409 (en-US) — and
+// returns `fallback`, the vendor's own answer, when there is no such
+// record.
+//
+// WHY THIS EXISTS, WHICH IS NOT A STYLE PREFERENCE. (*ot.Name) holds ONE
+// entry per nameID, keyed by nameID alone with no platform or language
+// in the key, so each decodable record overwrites the last and the FINAL
+// one in table order wins — a property of the file's record layout and
+// of nothing this project chose (the same limit ReadLicenceStatement
+// records for record 13). For a licence string that is merely a missed
+// contradiction. For a FAMILY it is a wrong ANSWER: a face carrying
+// localized family records is keyed in whichever script happened to come
+// last in the table, and a chain entry naming it in English then matches
+// nothing. Picking the record by platform and language is the only way
+// to make the key a property of the face rather than of its record
+// order.
+//
+// It reads the record ARRAY, never the strings the vendor already
+// decodes for every other nameID, and it falls back to the vendor on any
+// shape it does not recognise — so this is a selector over records, not
+// a second authority on what a face says about itself.
+func preferredName(table []byte, nameID uint16, fallback string) string {
+	if len(table) < nameHeaderSize {
+		return fallback
+	}
+	count := int(binary.BigEndian.Uint16(table[2:4]))
+	stringOffset := int(binary.BigEndian.Uint16(table[4:6]))
+	if nameHeaderSize+count*nameRecordSize > len(table) {
+		return fallback
+	}
+	for i := 0; i < count; i++ {
+		rec := table[nameHeaderSize+i*nameRecordSize:]
+		if binary.BigEndian.Uint16(rec[0:2]) != 3 || // platform: Windows
+			binary.BigEndian.Uint16(rec[2:4]) != 1 || // encoding: Unicode BMP
+			binary.BigEndian.Uint16(rec[4:6]) != 0x0409 || // language: en-US
+			binary.BigEndian.Uint16(rec[6:8]) != nameID {
+			continue
+		}
+		length := int(binary.BigEndian.Uint16(rec[8:10]))
+		offset := stringOffset + int(binary.BigEndian.Uint16(rec[10:12]))
+		if length%2 != 0 || offset < 0 || offset+length > len(table) {
+			return fallback
+		}
+		return decodeUTF16BE(table[offset : offset+length])
+	}
+	return fallback
+}
+
+// decodeUTF16BE decodes a Windows-platform name string. Surrogate pairs
+// are joined; an unpaired surrogate is dropped rather than turned into
+// U+FFFD, because a name record that cannot be decoded should read as
+// missing, never as a plausible-looking replacement.
+func decodeUTF16BE(b []byte) string {
+	units := make([]uint16, 0, len(b)/2)
+	for i := 0; i+1 < len(b); i += 2 {
+		units = append(units, binary.BigEndian.Uint16(b[i:i+2]))
+	}
+	return string(utf16.Decode(units))
 }
 
 // readUnitsPerEm reads the head table's unitsPerEm field (offset 18)
