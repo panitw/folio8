@@ -26,6 +26,7 @@ package fonts
 
 import (
 	_ "embed"
+	"maps"
 
 	folio8 "github.com/panitw/folio8/folio-go"
 )
@@ -191,8 +192,11 @@ func Shipped() folio8.FontSet {
 	// than a second Shipped() variant so that everything else about this
 	// function — its keys, its doc, its one-expression call shape — has
 	// exactly one declaration.
-	for key, face := range buildTaggedFaces() {
-		set[key] = face
-	}
+	// maps.Copy, not a range: AD-1/NFR1.d forbids ranging a map value
+	// anywhere in this module, and the lint module's map-range scan is
+	// what enforces it. Copying every key makes the order irrelevant, but
+	// the rule is absolute so that no reader has to decide that case by
+	// case.
+	maps.Copy(set, buildTaggedFaces())
 	return set
 }

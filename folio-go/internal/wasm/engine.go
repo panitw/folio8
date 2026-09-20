@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 
 	folio8 "github.com/panitw/folio8/folio-go"
 	"github.com/panitw/folio8/folio-go/internal/designer"
@@ -206,10 +207,10 @@ type Engine struct {
 // fonts.Shipped() result cannot mutate the engine's set afterwards, and
 // InstallFace cannot write back into the caller's.
 func NewEngine(clock func() int64, faces folio8.FontSet) *Engine {
+	// maps.Copy, not a range: AD-1/NFR1.d forbids ranging a map value
+	// under internal/, and copying every key makes the order irrelevant.
 	held := make(folio8.FontSet, len(faces)+1)
-	for name, face := range faces {
-		held[name] = face
-	}
+	maps.Copy(held, faces)
 	return &Engine{clock: clock, faces: held}
 }
 

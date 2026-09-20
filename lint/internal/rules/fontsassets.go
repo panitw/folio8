@@ -46,10 +46,19 @@ const RuleFontsAssetNotSfnt = "fonts-asset-not-a-font"
 // embeds font data" to internal/ packages only).
 const fontsAssetLocation = "folio-go/fonts"
 
-// fontsAssetEmbedSource is the file whose //go:embed directives DEFINE
-// which faces ship. It is the source of truth for the expected set, and
+// fontsAssetEmbedSource NAMES the //go:embed directives that DEFINE which
+// faces ship. It is the source of truth for the expected set, and
 // deliberately not a list maintained here — see expectedShippedFaces.
-const fontsAssetEmbedSource = "folio-go/fonts/fonts.go"
+//
+// ⚠ IT IS THE PACKAGE, NOT ONE FILE, SINCE spec-deferred-offline-cache
+// CAP-6. The directives lived in fonts.go alone until the CJK face moved
+// behind a //go:build pair (fonts/notosanssc.go and notosanssc_absent.go)
+// so the designer's engine can be built without it. Reading one file then
+// reported that face's bytes as an unaccounted file on disk. Every
+// non-test .go file in the package is read, regardless of build tag, so
+// a face is accounted for when ANY build embeds it — which is the honest
+// question for a file that is committed to the repository.
+const fontsAssetEmbedSource = "folio-go/fonts"
 
 // fontsAssetFontExtensions are the binary font formats a shipped face
 // under fontsAssetLocation may carry — matching
@@ -89,12 +98,41 @@ type FontsAssetsStats struct {
 // deleted from disk is caught HERE (the directive still names it) rather
 // than only by a build error somewhere else.
 func expectedShippedFaces(root string) ([]string, error) {
-	path := filepath.Join(root, filepath.FromSlash(fontsAssetEmbedSource))
-	f, err := os.Open(path)
+	dir := filepath.Join(root, filepath.FromSlash(fontsAssetEmbedSource))
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
+		return nil, err
+	}
+	var sources []string
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		sources = append(sources, name)
+	}
+	sort.Strings(sources)
+
+	var out []string
+	for _, name := range sources {
+		found, ferr := embeddedFacesInFile(filepath.Join(dir, name))
+		if ferr != nil {
+			return nil, ferr
+		}
+		out = append(out, found...)
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+// embeddedFacesInFile reads one .go file's //go:embed directives and
+// returns the exact font-file paths they name.
+func embeddedFacesInFile(path string) ([]string, error) {
+	f, err := os.Open(path)
+	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = f.Close() }()
@@ -133,7 +171,6 @@ func expectedShippedFaces(root string) ([]string, error) {
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
-	sort.Strings(out)
 	return out, nil
 }
 
@@ -223,7 +260,7 @@ func ScanFontsAssets(root string) ([]Finding, FontsAssetsStats, error) {
 		findings = append(findings, Finding{
 			Path: fontsAssetEmbedSource,
 			Rule: RuleFontsAssetMissing,
-			Message: fontsAssetEmbedSource + ": no //go:embed directive naming a font file could be read, so the " +
+			Message: fontsAssetEmbedSource + ": no //go:embed directive naming a font file could be read in any of its .go files, so the " +
 				"expected shipped-face set is EMPTY and this guard would verify nothing (AC5, D-000.9)",
 		})
 	}
@@ -292,7 +329,7 @@ func ScanFontsAssets(root string) ([]Finding, FontsAssetsStats, error) {
 		findings = append(findings, Finding{
 			Path: full, Rule: RuleFontsAssetUnaccounted,
 			Message: full + ": file present at the declared shipped-fonts location is not accounted for (AC5) — expected " +
-				"a face named by a //go:embed directive in " + fontsAssetEmbedSource + ", a LICENSE* file, a NOTICE* file, " +
+				"a face named by a //go:embed directive in any .go file of " + fontsAssetEmbedSource + ", a LICENSE* file, a NOTICE* file, " +
 				"or a .go source file",
 		})
 	}
