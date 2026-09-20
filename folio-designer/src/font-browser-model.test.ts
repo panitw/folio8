@@ -27,7 +27,7 @@ const webRow = (family: string, category: string, scripts: ReadonlyArray<'latin'
 
 const storedRecord = (family: string, scripts: ReadonlyArray<string>, style = 'Regular'): StoredFace => ({
   key: 'a'.repeat(64), family, style, licence: 'OFL-1.1', licenceText: 'terms', copyright: 'c',
-  source: 'google/fonts — ofl/x/X-Regular.ttf, fetched 2026-09-03', mediaType: 'font/ttf', scripts,
+  source: 'google/fonts — ofl/x/X-Regular.ttf, fetched 2026-09-03', authorAcknowledged: false, mediaType: 'font/ttf', scripts,
   fetchedAt: '2026-09-03', byteLength: 4,
 })
 

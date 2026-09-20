@@ -45,8 +45,23 @@ export type ImportedFace = Readonly<{
   bytes: ArrayBuffer
 }>
 
-/** An imported face with the acknowledgement stamped on it: everything the store and `embedFontFamily` need. */
-export type AcknowledgedFace = ImportedFace & Readonly<{ source: string }>
+/**
+ * An imported face with the acknowledgement stamped on it: everything the store
+ * and `embedFontFamily` need.
+ *
+ * ⚠ `authorAcknowledged` IS THE FACT AND `source` IS THE SENTENCE ABOUT IT
+ * (story 6, D4). They are stamped together, by one writer, and they say the
+ * same thing in two registers: one a boolean the engine reads to admit a face
+ * whose binary declares terms Folio would otherwise refuse, the other prose a
+ * person reads in a document's font record. The boolean exists so that nothing
+ * downstream ever has to parse the prose back — which would be a second
+ * authority over one fact, and is what story 5's D3 forbids.
+ *
+ * IT IS `true` AND NEVER A VARIABLE. There is no shape in which an
+ * unacknowledged face reaches this type: accepting the dialog is what produces
+ * one, and declining imports nothing.
+ */
+export type AcknowledgedFace = ImportedFace & Readonly<{ source: string; authorAcknowledged: true }>
 
 /** The faces of one family, grouped by the binaries' own name records rather than by anything the author typed. */
 export type ImportedFamily = Readonly<{ family: string; faces: ReadonlyArray<ImportedFace> }>
@@ -127,7 +142,7 @@ export const authorSuppliedFaceSource = (today: string): string =>
  * `font-provenance.test.ts` scrapes this file for.
  */
 export const acknowledgedFace = (face: ImportedFace, today: string): AcknowledgedFace =>
-  ({ ...face, source: authorSuppliedFaceSource(today) })
+  ({ ...face, source: authorSuppliedFaceSource(today), authorAcknowledged: true })
 
 /**
  * A name record carrying a C0 or C1 control character or a DEL, which `fontdir`

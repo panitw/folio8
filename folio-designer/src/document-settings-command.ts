@@ -51,3 +51,38 @@ export function documentUTCOffsetCommand(utcOffset: string): ArrayBuffer {
 export function documentEmbedFontsCommand(embedFonts: boolean): ArrayBuffer {
   return commandBytes('setDocumentEmbedFonts', [['embedFonts', jsonBoolean(embedFonts)]])
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE STRIP WARNING (story 6, D5).
+//
+// STRIPPING IS THE ONE GENUINELY DESTRUCTIVE ACT IN THIS EPIC: the faces the
+// document carries are deleted, and the only way back is document undo. So it
+// is announced before the first one — and only the first, because an author who
+// has been told once and toggles the setting again knows what they are asking
+// for, and a modal on every toggle is a modal nobody reads.
+//
+// THE COUNT IS THE FACT THE AUTHOR NEEDS and the entries are not listed: the
+// answer is all-or-nothing either way, which is `CompleteFontsDialog`'s own
+// reasoning applied to the opposite direction.
+export const STRIP_FACES_TITLE = 'Remove the faces this document carries?'
+
+export const stripFacesQuestion = (count: number, unresolvable = 0): string => [
+  `${count === 1 ? 'One chain entry carries a face' : `${count} chain entries carry faces`} inside this document.`,
+  `Turning embedding off replaces ${count === 1 ? 'it' : 'them'} with the face name and deletes the face itself, so the document will need those faces supplied wherever it is rendered.`,
+  // ⚠ SAID BECAUSE IT IS A LOSS THE AUTHOR CANNOT SEE COMING. An entry that
+  // carries a face may also declare the ASSET keys of its bold and italic, and
+  // the rewrite cannot carry those over — there is no command that writes a
+  // name entry's variants onto an entry that already exists. Pressing B again
+  // redeclares them by name.
+  `Any bold or italic a carried entry declared is discarded with it, until you ask for that weight again.`,
+  // ⚠ AND THE ONE THAT WOULD OTHERWISE BE DISCOVERED FROM A WRONG-LOOKING PAGE.
+  unresolvable === 0 ? '' : `${unresolvable === 1 ? 'One of those faces is' : `${unresolvable} of those faces are`} not on this machine and not one this release ships, so the preview here will stop drawing ${unresolvable === 1 ? 'it' : 'them'} too.`,
+  // ⚠ NOT "one undo puts everything back": the strip and the setting are TWO
+  // commands and therefore two history entries. Promising one step in the one
+  // dialog whose job is informed consent would be a false statement the author
+  // acts on.
+  `Undo puts the faces back; the setting itself is a separate step in the document's history.`,
+].filter((line) => line !== '').join(' ')
+
+export const STRIP_FACES_CONFIRM_LABEL = 'Remove the faces'
+export const STRIP_FACES_DECLINE_LABEL = 'Keep embedding'

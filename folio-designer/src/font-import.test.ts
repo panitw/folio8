@@ -230,6 +230,20 @@ describe('`source` for the author-supplied tier', () => {
     expect(JSON.stringify({ ...stamped, bytes: undefined })).not.toContain('Sarabun-Bold.ttf')
   })
 
+  // spec-font-sources-and-embedding STORY 6, D4 — THE ASSERTION IS A FIELD AND
+  // NOT A SENTENCE TO BE PARSED BACK.
+  //
+  // `source` is prose about the acknowledgement; `authorAcknowledged` is the
+  // fact the engine reads to admit a face whose binary declares terms it would
+  // otherwise refuse. They are stamped together by one writer, and the boolean
+  // exists so nothing downstream ever has to read the prose — which would be a
+  // second authority over one fact.
+  it('stamps the acknowledgement itself beside the sentence about it', () => {
+    const [read] = importFontFiles([picked('a.ttf', face('Sarabun', 'Regular'))]).families[0].faces
+    expect('authorAcknowledged' in read, 'an unacknowledged face carries no acknowledgement at all').toBe(false)
+    expect(acknowledgedFace(read, '2026-09-21').authorAcknowledged).toBe(true)
+  })
+
   it('is stamped at the ACKNOWLEDGEMENT and not at the pick, so no day can be recorded that nobody acknowledged on', () => {
     // An unacknowledged face carries no `source` at all — there is no shape in
     // which the pick's day could be the one recorded.

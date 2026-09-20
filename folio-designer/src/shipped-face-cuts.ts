@@ -99,6 +99,22 @@ export function shippedFamilyCutsOf(family: string): ShippedFamilyCuts | undefin
   return shippedFamilyCuts.find((row) => row.family === family)
 }
 
+/**
+ * EVERY `fonts.Shipped()` KEY THIS RELEASE CARRIES — the families above AND
+ * their declared cuts, which are FontSet keys in their own right.
+ *
+ * ⚠ IT IS A MEMBERSHIP TEST AND NOT A SHAPE TEST, and the distinction is
+ * load-bearing. `shipped-face-family.ts`'s `isShippedFaceName` asks whether a
+ * string has the SHAPE of a face name, which every brand typeface an author
+ * imports also has; asking it "does the engine already hold this face" answers
+ * yes for `Brand Grotesk` and the face is never handed over.
+ */
+export const shippedFaceNames: ReadonlySet<string> = new Set(shippedFamilyCuts.flatMap((row) => [row.family, row.bold, row.italic, row.boldItalic].filter((name): name is string => name !== undefined)))
+
+export function isShippedFace(name: string): boolean {
+  return shippedFaceNames.has(name)
+}
+
 export function isShippedFamily(family: string): boolean {
   return shippedFamilyCutsOf(family) !== undefined
 }

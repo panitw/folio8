@@ -3735,14 +3735,15 @@ describe('application shell', () => {
     expect(embedFontsRowValue('true', false)).toBe('true')
   })
 
-  it('says the embed setting is inert, in the panel, for as long as it is', async () => {
-    // THE NOTE IS PINNED BECAUSE IT IS A CLAIM, not decoration. Go's
-    // TestTheEmbedSettingIsUnreadableFromTheRenderedBytes pins the inertness in
-    // the engine; this pins the sentence that tells the author about it. When a
-    // later story gives the setting teeth, BOTH must be changed deliberately —
-    // otherwise this note survives as a lie the panel keeps telling.
+  it('says what the embed setting does, in the panel, now that it does something', async () => {
+    // THE NOTE IS PINNED BECAUSE IT IS A CLAIM, not decoration. It used to say
+    // the setting was inert, which was true for exactly one story;
+    // spec-font-sources-and-embedding story 6 gave it teeth at the embed
+    // gesture, and the sentence moved with the behaviour rather than surviving
+    // as a lie the panel keeps telling.
     render(<App engine={engine()} initialSnapshot={snapshot(1)} />)
-    expect(screen.getByText(/Nothing acts on it yet: a save still carries every face the document uses/)).toBeInTheDocument()
+    expect(screen.getByText(/the file records the face NAME and whatever renders it must supply that face/)).toBeInTheDocument()
+    expect(screen.queryByText(/Nothing acts on it yet/)).toBeNull()
   })
 
   it('does not assert that a document which does not exist embeds', async () => {

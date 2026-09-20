@@ -358,7 +358,7 @@ describe('filters, sort, views and the empty state', () => {
     ({ family, published, refused: [{ style: 'Bold', reason: 'gone upstream', permanence: 'permanent' }], recordedAt: '2026-09-19' })
   const storedFace = (family: string, style: string): StoredFace => ({
     key: 'a'.repeat(64), family, style, licence: 'OFL-1.1', licenceText: 'terms', copyright: 'c',
-    source: 'google/fonts — ofl/x/X-Regular.ttf, fetched 2026-09-03', mediaType: 'font/ttf', scripts: ['latin'],
+    source: 'google/fonts — ofl/x/X-Regular.ttf, fetched 2026-09-03', authorAcknowledged: false, mediaType: 'font/ttf', scripts: ['latin'],
     fetchedAt: '2026-09-03', byteLength: 4,
   })
 
@@ -599,7 +599,7 @@ describe('with no network the browser says so, and the faces this machine holds 
     faces: [{
       key: 'b'.repeat(64), family: 'Kanit', style: 'Regular', licence: 'OFL-1.1', licenceText: 'terms',
       copyright: 'c', source: 'google/fonts — ofl/kanit/Kanit-Regular.ttf, fetched 2026-09-03',
-      mediaType: 'font/ttf', scripts: ['latin', 'thai'], fetchedAt: '2026-09-03', byteLength: 4,
+      authorAcknowledged: false, mediaType: 'font/ttf', scripts: ['latin', 'thai'], fetchedAt: '2026-09-03', byteLength: 4,
     } satisfies StoredFace],
     census: { family: 'Kanit', published: ['Regular'], refused: [], recordedAt: '2026-09-03' },
   }

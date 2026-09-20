@@ -528,3 +528,89 @@ out explicitly, and the review's verification-gap layer reached the same disposi
 **Why this is worth flagging to the owner rather than just scheduling:** until story 6 lands, stories
 3 and 5 are each complete and the product still cannot do the thing the spec exists for. That is the
 normal shape of a sliced epic, but it means neither story alone is demonstrable end to end.
+
+## Story 6 — decisions taken while planning
+
+### A-31 — The setting acts at the gesture, not at the save — a correction to SPEC.md's own wording
+
+**Decision:** with embedding off, the *embed gesture* writes a name entry and embeds nothing. There
+is no save-time transform.
+
+**Why:** embedding in the designer is synchronous with the author's action — `dispatchEmbed` and the
+cut fragments fire when a family is applied or **B** is pressed, and nothing is deferred to save.
+SPEC.md CAP-2 says *"toggling the option and saving changes only whether the referenced faces appear
+in `assets`"*, which assumes a transform at write time. That was my loose phrasing when I wrote the
+spec, not a design anyone chose.
+
+**What survives:** the observable promise. A document authored with the setting off carries no
+faces; one authored with it on carries them. Only the moment changes.
+
+**What it buys:** the commands already exist. `addFontChain` and `addFontChainEntry` take a bare face
+string, and `FontChainEntryAsk` structurally has no `asset` arm (Go enforces the same at
+`component_commands.go:5397-5401`). So "name only" is an existing path, not a new one — where a
+save-time transform would have meant rewriting a seam this story has no reason to touch.
+
+### A-32 — The strip is rewrite-then-drop, as one undo unit
+
+**Decision:** stripping replaces each asset chain entry with its name entry and then lets the
+existing `dropUnnamedFontAssets` remove what nothing names, all inside one `applyCommands` unit.
+
+**Rejected:** a save-time garbage collection of unreferenced assets. `serialize.go` preserves
+orphans unconditionally to keep the `Parse(Serialize(d))==d` fixed point, pinned by
+`internal/template/assets_test.go:110,117`. Breaking that to make stripping convenient would trade a
+format invariant for a UI affordance.
+
+**Why one unit matters:** a half-stripped document — some entries renamed, some assets still carried
+— is not a state an author should be able to reach, and `applyCommands` applies to a parsed copy of
+a snapshot, so it is all-or-nothing and lands as a single undo entry.
+
+### A-33 — Scope call: A-30's acknowledgement wiring rides in story 6
+
+**Decision:** kept the `StoredFace` acknowledgement field, the three call-site derivations and the
+pinning test inside story 6 rather than splitting them into a seventh story.
+
+**Reasoning:** story 6 is the story that makes the epic demonstrable end to end, and shipping it
+without the wiring would leave the same gap A-30 describes — an engine honouring an acknowledgement
+no product path can produce. They are one user-visible outcome: an author imports a brand face and
+can actually use it. The cost is that story 6 is the largest of the six.
+
+### A-34 — The one finding that nearly became a loopback, and why it did not
+
+**Finding:** in name mode a **B** press appended a *sibling chain entry* instead of declaring the
+cut on the base entry. The engine selects bold from an entry's own `Bold` field (`model.go:232-247`)
+and never from a later entry, so bold still drew in the base face, the panel kept reporting the cut
+missing so the press repeated, duplicates accumulated toward the 64-entry bound, and the stray entry
+silently changed glyph fallback order for the whole chain.
+
+**Why it looked like `intent_gap`:** story 6's frozen I/O matrix promises "name entry for the bold
+cut", while its own Boundaries forbid a new command — and declaring a cut on an *existing* entry has
+no command. A contradiction inside the frozen block routes to `intent_gap`, which means stopping to
+ask the owner, which this run is instructed not to do.
+
+**Why it was a patch after all:** `FontChainEntryAsk` accepts `{face, bold?, italic?, boldItalic?}`,
+so a cut can be declared at chain *creation*. Rebuilding the chain — park it with `renameFontChain`
+carrying its elements, recreate it with the cut declared, move the elements back, delete the parked
+one — uses four commands that already exist, and `applyCommands` makes the whole rebuild atomic and
+one undo. The matrix row was reachable; the implementation had picked the wrong mechanism.
+
+**Worth recording because the near-miss is the lesson:** "no command exists for X" was true of the
+obvious shape and false of the composition. Routing to `intent_gap` on the first reading would have
+stopped the run for a question that had an answer in the codebase.
+
+## Epic summary — what an owner should look at first
+
+All six stories are implemented, reviewed by three independent layers each, and committed. One
+`bad_spec` loopback (story 1), no `intent_gap`. Verification at the end of story 6: `folio-go`
+green except the pre-existing `internal/text` `P6g` corpus floor (red at the baseline commit, in a
+package this epic never touched); byte-identity matrix green; `folio-designer` 2264 tests;
+`folio-js` 112; `folio-dotnet` 149; lint and typecheck clean.
+
+**The three things most worth a human's judgement, all recorded above:**
+1. **A-7** — a lenient render widens the line box whenever a chain member is absent, even when
+   nothing substitutes, so its bytes differ from a strict render with no diagnostic. Safe (never too
+   small) and opt-in only, but surprising. Fixing it properly restructures the table vertical model.
+2. **A-21** — an imported face whose family name collides with a catalogue or shipped family is
+   **refused**. An author who licenses their own cut of Kanit or Inter cannot import it. Making it
+   work means `FontSource` carrying the tier as part of its identity — its own story.
+3. **A-12** — `Skipped.Reason` is prose only. Cheaper to give it a programmatic cause before the
+   `2.0.0` surface freezes than after.

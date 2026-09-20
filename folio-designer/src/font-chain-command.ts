@@ -88,28 +88,87 @@ const chainEntry = (entry: FontChainEntryAsk): string => {
   return jsonObject(fields)
 }
 
+// THE CHAIN-LEVEL EDITS CARRY FRAGMENT TERMINALS TOO, for `embedFontCut`'s
+// reason: one field list, two terminals, so a command sent alone and the same
+// command inside an `applyCommands` unit cannot drift by a key.
+//
+// THE UNIT THAT NEEDS ALL THREE IS THE NAME-MODE CUT DECLARATION. An existing
+// entry's `bold`/`italic`/`boldItalic` cannot be edited — there is no such
+// command and this story adds none — so declaring a cut on a chain that
+// already exists means REBUILDING that chain: rename it aside, declare it
+// again with the cut on its base entry, carry the elements back, drop the
+// aside. Four members, every one of them a command that already existed, and
+// all-or-nothing because a unit applies to a parsed copy of one snapshot.
+const addFontChainFields = (name: string, entries: ReadonlyArray<FontChainEntryAsk>): ReadonlyArray<JsonField> =>
+  [['name', quote(name)], ['entries', jsonArray(entries.map(chainEntry))]]
+
 export function addFontChainCommand(name: string, entries: ReadonlyArray<FontChainEntryAsk>): ArrayBuffer {
-  return commandBytes('addFontChain', [['name', quote(name)], ['entries', jsonArray(entries.map(chainEntry))]])
+  return commandBytes('addFontChain', addFontChainFields(name, entries))
 }
+
+/** The same command as a fragment, for nesting inside a unit. See `addFontChainFields`. */
+export function addFontChainFragment(name: string, entries: ReadonlyArray<FontChainEntryAsk>): string {
+  return commandFragment('addFontChain', addFontChainFields(name, entries))
+}
+
+const renameFontChainFields = (name: string, to: string): ReadonlyArray<JsonField> =>
+  [['name', quote(name)], ['to', quote(to)]]
 
 export function renameFontChainCommand(name: string, to: string): ArrayBuffer {
-  return commandBytes('renameFontChain', [['name', quote(name)], ['to', quote(to)]])
+  return commandBytes('renameFontChain', renameFontChainFields(name, to))
 }
+
+/** The same command as a fragment, for nesting inside a unit. See `addFontChainFields`. */
+export function renameFontChainFragment(name: string, to: string): string {
+  return commandFragment('renameFontChain', renameFontChainFields(name, to))
+}
+
+const deleteFontChainFields = (name: string): ReadonlyArray<JsonField> => [['name', quote(name)]]
 
 export function deleteFontChainCommand(name: string): ArrayBuffer {
-  return commandBytes('deleteFontChain', [['name', quote(name)]])
+  return commandBytes('deleteFontChain', deleteFontChainFields(name))
 }
 
+/** The same command as a fragment, for nesting inside a unit. See `addFontChainFields`. */
+export function deleteFontChainFragment(name: string): string {
+  return commandFragment('deleteFontChain', deleteFontChainFields(name))
+}
+
+// THE TWO ENTRY EDITS HAVE FRAGMENT TERMINALS TOO, AND FOR `embedFontCut`'s
+// REASON (spec-font-sources-and-embedding story 6, D3). A command sent alone
+// and the same command sent inside an `applyCommands` unit must be the SAME
+// BYTES, so each field list is written once and both terminals read it.
+//
+// THE UNIT THAT NEEDS THEM IS THE STRIP: turning embedding off rewrites every
+// asset chain entry as the NAME of the face it carried, and that is an insert
+// and a remove per entry, all inside one unit so a half-stripped document is
+// not a state an author can reach.
+const addFontChainEntryFields = (name: string, at: number, face: string): ReadonlyArray<JsonField> =>
+  [['name', quote(name)], ['index', index(at)], ['face', quote(face)]]
+
 export function addFontChainEntryCommand(name: string, at: number, face: string): ArrayBuffer {
-  return commandBytes('addFontChainEntry', [['name', quote(name)], ['index', index(at)], ['face', quote(face)]])
+  return commandBytes('addFontChainEntry', addFontChainEntryFields(name, at, face))
+}
+
+/** The same command as a fragment, for nesting inside a unit. See `addFontChainEntryFields`. */
+export function addFontChainEntryFragment(name: string, at: number, face: string): string {
+  return commandFragment('addFontChainEntry', addFontChainEntryFields(name, at, face))
 }
 
 export function moveFontChainEntryCommand(name: string, from: number, to: number): ArrayBuffer {
   return commandBytes('moveFontChainEntry', [['name', quote(name)], ['from', index(from)], ['to', index(to)]])
 }
 
+const removeFontChainEntryFields = (name: string, at: number): ReadonlyArray<JsonField> =>
+  [['name', quote(name)], ['index', index(at)]]
+
 export function removeFontChainEntryCommand(name: string, at: number): ArrayBuffer {
-  return commandBytes('removeFontChainEntry', [['name', quote(name)], ['index', index(at)]])
+  return commandBytes('removeFontChainEntry', removeFontChainEntryFields(name, at))
+}
+
+/** The same command as a fragment, for nesting inside a unit. See `addFontChainEntryFields`. */
+export function removeFontChainEntryFragment(name: string, at: number): string {
+  return commandFragment('removeFontChainEntry', removeFontChainEntryFields(name, at))
 }
 
 // STORY 8.6 — THE PICK.

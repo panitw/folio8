@@ -108,6 +108,10 @@ describe('importing font files from the author\'s own machine', () => {
     // NO FILESYSTEM PATH, NO FILENAME, NO MACHINE IDENTITY.
     expect(stored.source).not.toContain('whatever.ttf')
     expect(stored.source).toContain("the author's own machine")
+    // AND THE ASSERTION ITSELF IS ON THE RECORD (story 6, D4). The sentence in
+    // `source` is prose; this is the fact the engine reads, and without it the
+    // acknowledgement the author just made is lost before the embed.
+    expect(stored.authorAcknowledged, 'the acknowledgement the author made must be recorded, not only described').toBe(true)
   })
 
   it('takes ONE acknowledgement for four cuts picked in one gesture, and lists the family ONCE with four cuts', async () => {
@@ -263,7 +267,7 @@ describe('importing font files from the author\'s own machine', () => {
     // publishes four cuts, with its Bold permanently refused upstream — exactly
     // what an install through this designer writes.
     await seed(
-      { key: await storedFaceKey(regular), family: 'Brand Grotesk', style: 'Regular', licence: 'OFL-1.1', licenceText: 'terms', copyright: 'Copyright', source: 'google/fonts — ofl/brand/Brand-Regular.ttf, fetched 2026-09-03', mediaType: 'font/ttf', scripts: ['latin'], fetchedAt: '2026-09-03', byteLength: regular.byteLength, bytes: regular },
+      { key: await storedFaceKey(regular), family: 'Brand Grotesk', style: 'Regular', licence: 'OFL-1.1', licenceText: 'terms', copyright: 'Copyright', source: 'google/fonts — ofl/brand/Brand-Regular.ttf, fetched 2026-09-03', authorAcknowledged: false, mediaType: 'font/ttf', scripts: ['latin'], fetchedAt: '2026-09-03', byteLength: regular.byteLength, bytes: regular },
       { family: 'Brand Grotesk', published: ['Regular', 'Bold', 'Italic', 'Bold Italic'], refused: [{ style: 'Bold', reason: 'upstream publishes no Bold', permanence: 'permanent' }], recordedAt: '2026-09-03' },
     )
     const browser = openFontBrowser(pickerYielding(ttf('italic.ttf', brandFace('Brand Grotesk', 'Italic'))))

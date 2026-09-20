@@ -24,7 +24,7 @@ const carried = (assetKey: string, family: string) => ({ face: '', assetKey, fam
 const chains = (...entries: ReadonlyArray<ReadonlyArray<ReturnType<typeof shipped> | ReturnType<typeof carried>>>): CanvasProjection['fontChains'] =>
   entries.map((list, index) => ({ name: `chain${index}`, entries: list }))
 
-const storedFace = (family: string, style: string): StoredFace => ({ key: `${family}-${style}`.toLowerCase(), family, style, licence: 'OFL-1.1', licenceText: 'terms', copyright: 'Copyright', source: 'upstream', mediaType: 'font/ttf', scripts: ['latin'], fetchedAt: '2026-09-20', byteLength: 10 })
+const storedFace = (family: string, style: string): StoredFace => ({ key: `${family}-${style}`.toLowerCase(), family, style, licence: 'OFL-1.1', licenceText: 'terms', copyright: 'Copyright', source: 'upstream', authorAcknowledged: false, mediaType: 'font/ttf', scripts: ['latin'], fetchedAt: '2026-09-20', byteLength: 10 })
 const census = (family: string, published: ReadonlyArray<string>, refused: FamilyCensus['refused'] = []): FamilyCensus => ({ family, published, refused, recordedAt: '2026-09-20' })
 const storedSource = (family: string, styles: ReadonlyArray<string>, row?: FamilyCensus): FamilySource =>
   row === undefined ? { tier: 'stored', family, faces: styles.map((style) => storedFace(family, style)) } : { tier: 'stored', family, faces: styles.map((style) => storedFace(family, style)), census: row }

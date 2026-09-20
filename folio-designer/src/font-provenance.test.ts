@@ -198,8 +198,8 @@ describe('`source` names provenance and never a retrieval path', () => {
     // declaration and the emission.
     const imported = fs.readFileSync(path.join(here, 'font-import.ts'), 'utf8')
     expect(sourceMentions(imported), 'font-import.ts must build `source` through authorSuppliedFaceSource and nowhere else; the first entry is the AcknowledgedFace field declaration, listed rather than filtered so no second writer can dress itself as one').toEqual([
-      'string }>',
-      'authorSuppliedFaceSource(today) })',
+      'string',
+      'authorSuppliedFaceSource(today)',
     ])
   })
 })

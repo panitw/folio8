@@ -314,6 +314,21 @@ export type StoredFace = Readonly<{
   copyright: string
   /** Provenance, carried BYTE-IDENTICALLY. See `put`. */
   source: string
+  /**
+   * WHETHER THE AUTHOR ACKNOWLEDGED THEIR RIGHT TO THIS FACE AT IMPORT
+   * (spec-font-sources-and-embedding story 6, D4).
+   *
+   * ⚠ IT IS A FIELD AND NOT AN INFERENCE FROM `source`. `source` is TEXT — the
+   * sentence `authorSuppliedFaceSource` writes — and parsing it back to decide
+   * whether a face may be embedded would be a second authority over one fact,
+   * which story 5's D3 forbids. The store records the answer; nothing reads the
+   * prose.
+   *
+   * A CATALOGUE FACE IS ALWAYS `false`, and that is permanent rather than
+   * pending: the acknowledgement is an assertion the AUTHOR makes about a file
+   * they supplied, and a face this product distributes carries none.
+   */
+  authorAcknowledged: boolean
   mediaType: string
   scripts: ReadonlyArray<string>
   /** The day the bytes were fetched, `YYYY-MM-DD`. */
@@ -445,6 +460,23 @@ function soundFace(value: unknown): StoredFace | undefined {
   for (const field of identity) if (typeof candidate[field] !== 'string' || candidate[field] === '') return undefined
   const transcribed = ['licence', 'licenceText', 'copyright'] as const
   for (const field of transcribed) if (typeof candidate[field] !== 'string') return undefined
+  // ⚠ AND A THIRD CLASS: A FIELD THAT MAY BE ABSENT ALTOGETHER (story 6, D4).
+  //
+  // `authorAcknowledged` joins the record in this story, and EVERY RECORD
+  // WRITTEN BEFORE IT CARRIES NO SUCH KEY — the store is probed by shape rather
+  // than by version and this schema change is additive, so there is no upgrade
+  // in which to stamp one. Holding an old record to a strict `typeof … ===
+  // 'boolean'` would read every face an author already downloaded as CORRUPT
+  // and drop it, which is precisely the defect story 3 found in the licence
+  // trio and fixed. Absent means the author asserted nothing, which is the
+  // truth about a record written before the assertion existed and the safe
+  // direction besides: the engine's licence guard stays in force for it.
+  //
+  // ANYTHING THAT IS NOT `true` IS `false`. A record carrying a string
+  // `"true"`, a number or a null is not one this build wrote, and reading a
+  // non-boolean as an acknowledgement would let a value nobody asserted
+  // override a guard.
+  const acknowledged = candidate.authorAcknowledged === true
   if (!storedKeyShape.test(candidate.key as string)) return undefined
   if (!Array.isArray(candidate.scripts) || !candidate.scripts.every((script) => typeof script === 'string')) return undefined
   if (typeof candidate.byteLength !== 'number' || !Number.isSafeInteger(candidate.byteLength) || candidate.byteLength <= 0) return undefined
@@ -456,6 +488,7 @@ function soundFace(value: unknown): StoredFace | undefined {
     licenceText: candidate.licenceText as string,
     copyright: candidate.copyright as string,
     source: candidate.source as string,
+    authorAcknowledged: acknowledged,
     mediaType: candidate.mediaType as string,
     scripts: [...(candidate.scripts as string[])],
     fetchedAt: candidate.fetchedAt as string,

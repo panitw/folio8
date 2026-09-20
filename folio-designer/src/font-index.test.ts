@@ -523,6 +523,7 @@ describe('the faces this machine already holds', () => {
     licenceText: 'SIL Open Font License',
     copyright: 'Copyright',
     source: `google/fonts — ofl/${family.toLowerCase()}/x.ttf, fetched 2026-09-03`,
+    authorAcknowledged: false,
     mediaType: 'font/ttf',
     scripts: ['latin'],
     fetchedAt: '2026-09-03',

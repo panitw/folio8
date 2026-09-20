@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addFontChainCommand, addFontChainEntryCommand, deleteFontChainCommand, embedFontCutCommand, embedFontCutFragment, embedFontFamilyCommand, moveFontChainEntryCommand, removeFontChainEntryCommand, renameFontChainCommand } from './font-chain-command'
+import { addFontChainCommand, addFontChainEntryCommand, addFontChainEntryFragment, deleteFontChainCommand, embedFontCutCommand, embedFontCutFragment, embedFontFamilyCommand, moveFontChainEntryCommand, removeFontChainEntryCommand, removeFontChainEntryFragment, renameFontChainCommand } from './font-chain-command'
 
 const text = (payload: ArrayBuffer): string => new TextDecoder().decode(payload)
 const parsed = (payload: ArrayBuffer): Record<string, unknown> => JSON.parse(text(payload)) as Record<string, unknown>
@@ -294,5 +294,26 @@ describe('the cut command attaches one variant asset key and carries its own ter
     for (const variant of [cut, { ...cut, index: 7, cut: 'boldItalic' as const, chain: awkward }]) {
       expect(embedFontCutFragment(variant)).toBe(text(embedFontCutCommand(variant)))
     }
+  })
+})
+
+// spec-font-sources-and-embedding STORY 6 — THE TWO ENTRY EDITS GAINED FRAGMENT
+// TERMINALS, AND THE PROPERTY THAT MATTERS IS BYTE IDENTITY.
+//
+// The strip composes an `applyCommands` unit out of these two, so a command
+// sent alone and the same command sent inside a unit must be the SAME BYTES: a
+// pair of builders each listing its own fields is a pair that can drift by one
+// key, into an arity refusal visible only on whichever path was not under test.
+describe('the entry edits encode identically alone and inside a unit', () => {
+  it('writes the same bytes from the command and the fragment, awkward names included', () => {
+    for (const name of ['body', awkward, controlled]) {
+      expect(addFontChainEntryFragment(name, 2, awkward)).toBe(text(addFontChainEntryCommand(name, 2, awkward)))
+      expect(removeFontChainEntryFragment(name, 3)).toBe(text(removeFontChainEntryCommand(name, 3)))
+    }
+  })
+
+  it('keeps each fragment at its own arity, `kind` and `version` counted', () => {
+    expect(Object.keys(JSON.parse(addFontChainEntryFragment('body', 0, 'Inter')) as Record<string, unknown>)).toEqual(['kind', 'version', 'name', 'index', 'face'])
+    expect(Object.keys(JSON.parse(removeFontChainEntryFragment('body', 1)) as Record<string, unknown>)).toEqual(['kind', 'version', 'name', 'index'])
   })
 })

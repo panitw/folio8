@@ -17,22 +17,22 @@ import { bandBoundaryCeiling, boundaryOffset, proposedBandHeight } from './band-
 import { removeSectionBreakCommand, setSectionBreakAnchorCommand, setSectionBreakCommand } from './section-break-command'
 import { addPageCommand, deletePageCommand, setPageBreakCommand } from './page-command'
 import { contentBandHeight, proposedSectionBreak, sectionBreakOnPage, sectionBreakPlacement } from './section-break'
-import { documentLocaleCommand, documentUTCOffsetCommand, documentEmbedFontsCommand } from './document-settings-command'
+import { documentLocaleCommand, documentUTCOffsetCommand, documentEmbedFontsCommand, STRIP_FACES_CONFIRM_LABEL, STRIP_FACES_DECLINE_LABEL, STRIP_FACES_TITLE, stripFacesQuestion } from './document-settings-command'
 import { bindComponentScalarCommand, bindTableCollectionCommand, createComponentCommand, deleteComponentCommand, deleteComponentsCommand, dropComponentCommand, duplicateComponentCommand, duplicateComponentsCommand, moveComponentCommand, setComponentBoundsCommand, type PaletteKind } from './component-command'
 import { ORIGIN_FLOOR_FIELDS, POSITIVE_LENGTH_FIELDS, isPropertyField, updateComponentPropertiesCommand, updateComponentPropertiesFragment, type PropertyField, type PropertyIntent, type PropertyIntents } from './component-property-command'
 import { FontBrowser } from './FontBrowser'
 import { type FontChainCommitError, type FontChainControl } from './font-chain-control'
 import { commandUnitBytes } from './command-json'
-import { addFontChainCommand, embedFontCutFragment, embedFontFamilyCommand, type FontChainEntryAsk } from './font-chain-command'
+import { addFontChainCommand, addFontChainEntryFragment, addFontChainFragment, deleteFontChainFragment, embedFontCutFragment, embedFontFamilyCommand, removeFontChainEntryFragment, renameFontChainFragment, type FontChainEntryAsk } from './font-chain-command'
 import { catalogueFaces, scriptFallbackFaces, type CatalogueFace } from './generated/font-catalogue'
 import { familyIsComplete, familyIsInstalled, indexRowFor, localTierHolds, offeredFamilies, regularCutOf, sourceScripts, type FamilySource } from './font-index'
 import { initialLocalFaceHoldings, localFaceIsHeld, readLocalFaceHoldings, type LocalFaceHoldings } from './held-local-faces'
 import { watchCanvasFaceMisses } from './canvas-face-misses'
 import { deferredFaceAssets, prefetchDeferredFaces } from './document-face-prefetch'
 import { COMPLETION_CONFIRM_LABEL, COMPLETION_DECLINE_LABEL, COMPLETION_OFFLINE, COMPLETION_QUESTION_TITLE, completionProgress, completionQuestion, completionSettled, completionShortfall, incompleteDocumentFamilies } from './document-face-completion'
-import { isShippedFamily, shippedFamilyEntry } from './shipped-face-cuts'
+import { isShippedFace, isShippedFamily, shippedFaceNames, shippedFamilyEntry } from './shipped-face-cuts'
 import { browserRows } from './font-browser-model'
-import { CATALOGUE_CUT_STYLES, cutsBesideTheRegular, fetchWebFamily, ribbiCutOf, type StyleCut } from './font-source'
+import { CATALOGUE_CUT_STYLES, cutsBesideTheRegular, fetchWebFamily, ribbiCutOf, styleCuts, type StyleCut } from './font-source'
 import { censusIsComplete, openFontStore, storeWriteRefusal, storedFaceKey, type FamilyCensus, type FontStore, type StoredFace } from './font-store'
 import { previewFaceFamily } from './preview-face-family'
 import { openPreviewFaceRegistry, type PreviewFaceBytes, type PreviewFaceRegistry, type PreviewFaceStatus } from './preview-face-registry'
@@ -671,7 +671,13 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
   // and a settled outcome left standing would describe the wrong file. Work
   // already in flight keeps whatever it fetches — the store and the release
   // cache are document-independent — but it may no longer write here.
-  const installDocumentIdentity = () => { documentIdentity.current++; clipboardRef.current = undefined; focusBandRef.current = 'content'; setCompletionRequest(undefined); setCompletionStatus(undefined) }
+  // ⚠ THE STRIP QUESTION IS CLEARED WITH THE DOCUMENT, exactly as the
+  // completion question is, and for the same two reasons: a modal asking about
+  // a document that is gone is a lie on screen, and an unanswered promise
+  // leaves `applyPageSetup` in flight for ever. The warning flag is reset here
+  // too — D5 warns before the FIRST strip of a document, and a session-wide
+  // flag would strip every later document of the session in silence.
+  const installDocumentIdentity = () => { documentIdentity.current++; clipboardRef.current = undefined; focusBandRef.current = 'content'; setCompletionRequest(undefined); setCompletionStatus(undefined); setStripRequest(undefined); const waiting = stripAnswer.current; stripAnswer.current = undefined; waiting?.(false); stripWarned.current = false; installedNamedFaces.current = new Set() }
   const [documentGenerationValue, setDocumentGenerationValue] = useState(0)
   // The asset keys whose faces have ACTUALLY reached the page's font set.
   // Not the keys the document declares: a fragment may only ask for a derived
@@ -759,6 +765,19 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
   // given after the document was replaced cannot install a status on the new
   // one. Both are cleared by `installDocumentIdentity` for the same reason.
   const [completionRequest, setCompletionRequest] = useState<Readonly<{ generation: number; families: ReadonlyArray<FamilySource> }>>()
+  // THE STRIP QUESTION, AND THE ANSWER IT IS STILL WAITING FOR (story 6, D5).
+  //
+  // ⚠ IT IS A PROMISE, NOT A CALLBACK, because the asker is MID-SEQUENCE.
+  // `applyPageSetup` sends up to six commands in order and stops at the first
+  // refusal; the question has to be answered BEFORE the embed row is sent, and
+  // the only way to pause an async sequence on an author's answer is to await
+  // one. The resolver is held in a ref so a re-render cannot lose it.
+  const [stripRequest, setStripRequest] = useState<Readonly<{ count: number; unresolvable: number }>>()
+  const stripAnswer = useRef<(accepted: boolean) => void>(undefined)
+  // ⚠ ASKED ONCE PER SESSION, WHICH IS D5 EXACTLY: warned before the FIRST
+  // strip, and only the first. A ref rather than state — nothing renders from
+  // it, and a re-render must not re-arm a question the author has answered.
+  const stripWarned = useRef(false)
   // ⚠ THIS IS NOT `fileStatus` AND MUST NOT BECOME IT. The open writes there
   // and it auto-retires after 6 s, so a completion writing to it would stomp
   // the open's own outcome — and a completion still fetching would be retired
@@ -1069,6 +1088,79 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
       return read?.ok ? read.value?.bytes : undefined
     }, setMachineFaces)
   }, [machineFaceListing])
+
+  /**
+   * A FACE THE DOCUMENT NAMES RATHER THAN CARRIES IS HANDED TO THE ENGINE FROM
+   * THIS MACHINE'S OWN STORE (spec-font-sources-and-embedding story 6).
+   *
+   * ⚠ WITHOUT THIS, TOGGLING THE SETTING MOVES THE PREVIEW, which is the one
+   * thing CAP-2 says it must never do. With embedding off a pick writes a face
+   * NAME, and the engine resolves a name out of the `FontSet` it was given —
+   * which holds the eleven shipped faces and whatever has been installed into
+   * it. A brand typeface off the author's own disk is in neither, so the render
+   * would refuse or substitute for a face sitting in the store three feet away.
+   * Installing it is what makes the two modes preview identically.
+   *
+   * THE DOCUMENT IS WHAT ASKS, NOT THE STORE. Only the faces this document's
+   * chains actually NAME are installed — never every face the machine holds —
+   * so a store full of typefaces costs a document that names none of them
+   * nothing at all.
+   *
+   * SHIPPED NAMES ARE SKIPPED because the engine already holds them, and every
+   * install is remembered for the session: the engine's set survives, so a
+   * second attempt would re-read bytes to install a face it already has.
+   *
+   * IT IS A DEGRADE AND NEVER A REFUSAL. A face the store cannot produce, or
+   * one the engine will not accept, leaves the render to answer for itself —
+   * the absent-face path and CAP-4's substitution are the authorities on that,
+   * and a modal here would report a preview problem as an editing failure.
+   */
+  // EVERY FACE NAME A RENDER HERE COULD ACTUALLY RESOLVE: the faces this
+  // release ships, plus the ones this machine holds and hands to the engine
+  // below. It is what the strip asks before it renames a carried face into a
+  // name, so an author is told when a strip would move the preview.
+  const suppliedFaceNames = useMemo(() => new Set([...shippedFaceNames, ...storedFaces.map((held) => importedFaceName(held.family, held.style))]), [storedFaces])
+  const namedFaceListing = [...new Set((canvas?.fontChains ?? []).flatMap((chain) => chain.entries).flatMap((entry) => entry.assetKey.length > 0 ? [] : [entry.face, entry.bold, entry.italic, entry.boldItalic]).filter((name) => name.length > 0 && !isShippedFace(name)))].sort().join('\u0000')
+  const installedNamedFaces = useRef(new Set<string>())
+  // WHICH ENGINE THE SET ABOVE IS ABOUT. The engine's own font set survives the
+  // document, which is why the record of what has been installed is a session
+  // ref rather than per-document — but it does NOT survive the ENGINE, and a
+  // ref remembering an install into a worker that is gone would claim a face is
+  // held that nothing holds.
+  const installedInto = useRef<EngineClient | undefined>(undefined)
+  useEffect(() => {
+    if (!engine || namedFaceListing === '') return
+    if (installedInto.current !== engine) { installedInto.current = engine; installedNamedFaces.current = new Set() }
+    let live = true
+    void (async () => {
+      const store = await fontStore.current
+      if (!store || !live) return
+      for (const name of namedFaceListing.split('\u0000')) {
+        if (!live || installedNamedFaces.current.has(name)) continue
+        const held = storedFacesRef.current.find((face) => importedFaceName(face.family, face.style) === name)
+        if (held === undefined) continue
+        const read = await store.get(held.key)
+        if (!live || !read.ok || read.value === undefined) continue
+        try {
+          await engine.request('install-face', { face: name, bytes: read.value.bytes })
+          installedNamedFaces.current.add(name)
+          invalidatePreview()
+        } catch (error) {
+          // ⚠ REMEMBERED AND SAID ONCE, NEVER SWALLOWED AND NEVER RETRIED IN
+          // SILENCE. The bytes arrived and the engine would not have them, so
+          // asking again cannot change the answer — an un-remembered failure
+          // would re-read those bytes on every projection change for the life
+          // of the document, with nothing anywhere saying why the preview is
+          // drawn in another face. It is a console note rather than a modal
+          // because the render's own substitution diagnostic is the authority
+          // on what the page came out in.
+          installedNamedFaces.current.add(name)
+          console.info(`${name} could not be handed to the engine, so this preview will not draw it: ${componentDiagnostic(error)}`)
+        }
+      }
+    })()
+    return () => { live = false }
+  }, [engine, namedFaceListing, machineFaceListing])
 
   // The canvas asks one question — "is there a face registered under this asset
   // key" — and both registrations can answer it.
@@ -2406,6 +2498,26 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
   // binding commit already take, in the shape they take it: a generation
   // captured before the first await and re-read after every one, plus an
   // in-flight flag so a second press cannot start a second sequence.
+  /**
+   * THE STRIP QUESTION, ASKED AND AWAITED (story 6, D5).
+   *
+   * `applyPageSetup` is a sequence of awaits and this is one more of them: the
+   * dialog is rendered, the resolver is parked in a ref, and the sequence
+   * resumes on whichever button the author presses. Escape and the backdrop
+   * both reach `onDecline`, so there is no answer-less exit.
+   */
+  const askToStripCarriedFaces = (count: number, unresolvable: number): Promise<boolean> => new Promise<boolean>((resolve) => {
+    stripAnswer.current = resolve
+    setStripRequest({ count, unresolvable })
+  })
+
+  const answerStripQuestion = (accepted: boolean) => {
+    setStripRequest(undefined)
+    const waiting = stripAnswer.current
+    stripAnswer.current = undefined
+    waiting?.(accepted)
+  }
+
   const applyPageSetup = async () => {
     if (!engine || !canvas || fileBusy || pageSetupInFlight.current) return
     setCommitError(undefined)
@@ -2438,6 +2550,68 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
       // document nobody asked to change. The two string rows need no such test:
       // an empty locale or offset is a value the ENGINE refuses by naming the
       // field, which is the right answer, while `false` is a value it accepts.
+      // TURNING EMBEDDING OFF ON A DOCUMENT THAT CARRIES FACES IS ASKED ABOUT
+      // BEFORE ANYTHING IS SENT (story 6, D3/D5).
+      //
+      // THE QUESTION COMES FIRST AND THE COMMANDS FOLLOW, which is what makes a
+      // decline cost nothing: nothing has been written when the author answers,
+      // so "keep embedding" leaves the setting exactly where the engine had it
+      // and the document byte-identical. The other rows of this gesture are
+      // unaffected — a margin the author also typed still applies, because it
+      // is a different change and they did not decline it.
+      //
+      // ⚠ THE STRIP IS PLANNED FROM THE PROJECTION THIS GESTURE READ, and it is
+      // planned BEFORE the question rather than after so the author is never
+      // asked about a rewrite this designer cannot express. A carried face the
+      // projection cannot name is not stripped half-way: the whole gesture
+      // refuses and says so.
+      const embedFontsRow = () => documentEmbedFontsCommand(draft.embedFonts === 'true')
+      let stripDeclined = false
+      const turningEmbeddingOff = embedFontsRowValue(draft.embedFonts, canvas.embedFonts) === 'false' && canvas.embedFonts !== false
+      const planned = turningEmbeddingOff ? stripCarriedFacesUnit(canvas.fontChains, suppliedFaceNames) : undefined
+      if (typeof planned === 'string') { setCommitError(planned); return }
+      if (planned !== undefined && planned.count > 0) {
+        // ⚠ THE PLAN IS MADE OF POSITIONS, SO THE DOCUMENT MAY NOT MOVE UNDER
+        // IT. It is built from the projection this gesture read and applied
+        // after an await the AUTHOR controls — a modal that can stay open for
+        // minutes — and any chain edit landing in between makes every index in
+        // it point at a different entry. `documentGeneration` only catches a
+        // REPLACED document; the revision catches an edited one.
+        const plannedRevision = snapshotRef.current?.revision
+        // WARNED BEFORE THE FIRST STRIP AND ONLY THE FIRST (D5), PER DOCUMENT.
+        // A session-wide flag would strip every later document of the session
+        // in silence, which is the opposite of what D5 asks for.
+        const accepted = stripWarned.current || await askToStripCarriedFaces(planned.count, planned.unresolvable)
+        if (documentGeneration.current !== requestDocument) return
+        if (!accepted) {
+          stripDeclined = true
+          // THE BOX GOES BACK TO WHAT THE ENGINE HOLDS. Leaving it unticked on
+          // a document that still embeds would have the panel reporting a
+          // setting the author had just declined to make.
+          updateDraft('embedFonts', String(canvas.embedFonts))
+        } else if (snapshotRef.current?.revision !== plannedRevision) {
+          setCommitError('The document changed while that question was open, so nothing was stripped. Apply page setup again.')
+          return
+        } else {
+          // THE STRIP GOES FIRST, BEFORE THE SETTING IT BELONGS TO. If it is
+          // refused, the document still carries its faces AND still declares
+          // that it carries them — consistent, and nothing to roll back. The
+          // other order leaves a document saying `embedFonts: false` while
+          // carrying every asset, with no rollback available.
+          const priorRevision = snapshotRef.current?.revision
+          let result
+          try {
+            result = await engine.request('command', commandUnitBytes(planned.members))
+          } catch (error) { if (documentGeneration.current === requestDocument) setCommitError(componentDiagnostic(error)); return }
+          if (documentGeneration.current !== requestDocument) return
+          // ARMED ON SUCCESS, NEVER ON ACCEPTANCE. A strip the engine refused
+          // stripped nothing, so it must not consume the one warning this
+          // document gets.
+          stripWarned.current = true
+          if (result.snapshot.revision !== priorRevision) invalidatePreview()
+          setCurrentSnapshot(result.snapshot, true)
+        }
+      }
       for (const [typed, projected, build] of [
         [draft.locale, canvas.locale, () => documentLocaleCommand(draft.locale as LocaleTag)],
         [draft.utcOffset, canvas.utcOffset, () => documentUTCOffsetCommand(draft.utcOffset)],
@@ -2446,9 +2620,13 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
         // stays one string comparison for all three rows rather than growing a
         // type switch — and the comparand is `String(canvas.embedFonts)`, the
         // engine's value spelled the same way, never a value this panel chose.
-        [embedFontsRowValue(draft.embedFonts, canvas.embedFonts), String(canvas.embedFonts), () => documentEmbedFontsCommand(draft.embedFonts === 'true')],
+        [embedFontsRowValue(draft.embedFonts, canvas.embedFonts), String(canvas.embedFonts), embedFontsRow],
       ] as ReadonlyArray<readonly [string, string, () => ArrayBuffer]>) {
         if (typed === projected) continue
+        // A DECLINED STRIP SKIPS THIS ROW AND NOTHING ELSE. The setting is the
+        // only thing the author said no to; the margins and heights they typed
+        // in the same gesture are a different change.
+        if (stripDeclined && build === embedFontsRow) continue
         const priorRevision = snapshotRef.current?.revision
         let result
         try {
@@ -2683,7 +2861,79 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
   }
 
   /** A face resolved from any tier, carrying everything `embedFontFamily` refuses a document without. */
-  type ResolvedFace = Readonly<{ family: string; style: string; licence: string; licenceText: string; copyright: string; source: string; mediaType: string; bytes: ArrayBuffer; scripts: ReadonlyArray<string> }>
+  //
+  // ⚠ `authorAcknowledged` IS PART OF THE FACE, NOT OF THE CALL SITE
+  // (spec-font-sources-and-embedding story 6, and story 5's D3). Every embed
+  // dispatch below reads it off this object, so the assertion an author made at
+  // import travels with the bytes from the store to the wire and there is
+  // exactly one answer per face. Passing a literal at a call site — which is
+  // what the three `TODO(story 6)` notes marked — is what made a face the
+  // author acknowledged arrive as `false` and be refused with no explanation.
+  //
+  // EVERY CATALOGUE TIER SETS IT `false` WHERE THE FACE IS BUILT, never here:
+  // a face this product distributes carries no acknowledgement, and that is the
+  // permanent answer rather than a placeholder.
+  type ResolvedFace = Readonly<{ family: string; style: string; licence: string; licenceText: string; copyright: string; source: string; authorAcknowledged: boolean; mediaType: string; bytes: ArrayBuffer; scripts: ReadonlyArray<string> }>
+
+  /**
+   * WHETHER THIS DOCUMENT CARRIES ITS FACES OR MERELY NAMES THEM
+   * (spec-font-sources-and-embedding CAP-2, story 6, D1).
+   *
+   * READ OFF THE LIVE PROJECTION, NEVER OFF THE PAGE-SETUP DRAFT. The draft is
+   * what the author has typed and not yet applied; the projection is what the
+   * ENGINE holds, which is the only thing a gesture landing right now is
+   * entitled to act on. Reading the draft would make an untouched checkbox
+   * decide what a font pick writes.
+   *
+   * ABSENT MEANS EMBED, which is the format's own default (`parse.go`) and the
+   * answer for every document written before the key existed. It is spelled
+   * `!== false` rather than `=== true` so a projection this designer somehow
+   * received without the key behaves as the format says, not as `undefined`
+   * would coerce.
+   */
+  const documentEmbedsFonts = (): boolean => snapshotRef.current?.canvas?.embedFonts !== false
+
+  /**
+   * THE CHAIN ENTRY A NAME-ONLY DOCUMENT WRITES FOR A FACE (story 6, D2).
+   *
+   * THE NAME IS THE STORE'S FAMILY-PLUS-STYLE KEY, and that is a contract
+   * rather than a convention: a host builds its `FontSet` from a directory with
+   * `fontdir.Set`, which keys a face by its binary's name ID 1 plus name ID 2
+   * when the subfamily is anything but `Regular`. `importedFaceName` is that
+   * rule in TypeScript, and story 3's import already keys the store by it —
+   * three implementations, one rule. A face named any other way would not
+   * resolve on exactly the deployment this spec exists to serve.
+   *
+   * ⚠ IT DECLARES THE CUTS THIS MACHINE HOLDS, AND THAT IS NOT DECORATION.
+   * A chain entry's `bold`/`italic`/`boldItalic` are the ONLY place a document
+   * can say what to draw a bold run in, and the command vocabulary has no way
+   * to add one to an entry that already exists — `addFontChainEntry` writes a
+   * bare face and there is no edit-a-variant command. So an entry that did not
+   * declare its cuts at the moment it was written could never gain them, and a
+   * name-only document could never bold. The cuts are named, never carried: no
+   * byte reaches `assets` on this path.
+   *
+   * A VARIANT MAY NOT NAME ITS OWN ENTRY'S BASE — the engine refuses that at
+   * `fonts.<chain>[i].<cut>` — so a family whose Bold record happens to key to
+   * the base name contributes no variant rather than a refusal.
+   *
+   * NO PATH, NO FILENAME, NO MACHINE IDENTITY. Every string here is a face
+   * name read out of a binary's own name table.
+   */
+  const namedFaceEntry = (family: string, style: string): FontChainEntryAsk => {
+    const base = importedFaceName(family, style)
+    const variants: { face: string; bold?: string; italic?: string; boldItalic?: string } = { face: base }
+    let declared = false
+    for (const cut of styleCuts) {
+      const held = storedFacesRef.current.find((face) => face.family === family && face.style === ribbiCutOf(cut))
+      if (held === undefined) continue
+      const name = importedFaceName(held.family, held.style)
+      if (name === base) continue
+      variants[cut] = name
+      declared = true
+    }
+    return declared ? variants : base
+  }
 
   /**
    * THE ONE EMBED DISPATCH, so the three paths that can reach the command cannot
@@ -2712,17 +2962,16 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
    */
   const dispatchEmbed = async (face: ResolvedFace, responseGeneration: number, selectionKey: string, announce: 'panel' | 'caller'): Promise<string | undefined> => {
     const tail = proposedFallbackTail(face.scripts)
-    // TODO(story 6): `authorAcknowledged` is hard-coded `false` here because
-    // this path serves the CATALOGUE tier, for which `false` is the right and
-    // permanent answer. It is wrong for an author-supplied face: story 3 writes
-    // imported faces into the same `font-store` as catalogue ones and
-    // `StoredFace` carries no acknowledgement field, so a face the author
-    // imported and acknowledged reaches this line as `false` and is refused by
-    // the engine with no explanation. Story 6 must carry the acknowledgement
-    // from `font-import.ts`'s `acknowledgedFace` through the store and into
-    // this argument — ONE source of truth about one face (D3), never a second
-    // inference from `source`.
-    return sendFontChain(embedFontFamilyCommand({ chain: face.family, family: face.family, style: face.style, licence: face.licence, licenceText: face.licenceText, copyright: face.copyright, source: face.source, authorAcknowledged: false, mediaType: face.mediaType, bytes: face.bytes, tail }), { action: 'embed' }, responseGeneration, selectionKey, announce)
+    // THE SETTING DECIDES WHETHER THIS GESTURE CARRIES THE FACE OR NAMES IT
+    // (story 6, D1). Both arms are the same gesture and the same seam; what
+    // differs is what lands in the file.
+    if (!documentEmbedsFonts()) return sendFontChain(addFontChainCommand(face.family, [namedFaceEntry(face.family, face.style), ...tail]), { action: 'embed' }, responseGeneration, selectionKey, announce)
+    // `authorAcknowledged` COMES OFF THE FACE. It is `false` for every
+    // catalogue face — permanently, because a face this product distributes
+    // carries no assertion of the author's — and `true` for one the author
+    // imported and acknowledged, which is the whole of what makes a brand
+    // typeface with blank terms embeddable at all.
+    return sendFontChain(embedFontFamilyCommand({ chain: face.family, family: face.family, style: face.style, licence: face.licence, licenceText: face.licenceText, copyright: face.copyright, source: face.source, authorAcknowledged: face.authorAcknowledged, mediaType: face.mediaType, bytes: face.bytes, tail }), { action: 'embed' }, responseGeneration, selectionKey, announce)
   }
 
   /**
@@ -2959,7 +3208,7 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
     // on. The record is what a later re-pick and the panel read, and it is the
     // reason the family does not re-offer for ever.
     for (const skipped of outcome.refused) console.info(`${source.family}: the ${skipped.style} cut was not installed (${skipped.permanence === 'permanent' ? 'settled; it will not be asked for again' : 'transient; it will be fetched again the next time this family is picked'}). ${skipped.reason}`)
-    const installed: ReadonlyArray<ResolvedFace> = outcome.faces.map((cut) => ({ ...cut, scripts }))
+    const installed: ReadonlyArray<ResolvedFace> = outcome.faces.map((cut) => ({ ...cut, scripts, authorAcknowledged: false }))
     const census: FamilyCensus = { family: source.family, published: [...outcome.published], refused: outcome.refused.map((entry) => ({ style: entry.style, reason: entry.reason, permanence: entry.permanence })), recordedAt: new Date().toISOString().slice(0, 10) }
     // THE REGULAR IS WHAT THE DEGRADED PATH BELOW EMBEDS, AND IT IS RESOLVED BY
     // `style`. On a re-pick of a short family the Regular is already held and
@@ -3110,7 +3359,11 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
         const read = regular === undefined ? undefined : await (await fontStore.current)?.get(regular.key)
         if (read?.ok && read.value !== undefined) {
           const held = read.value
-          embedded = { family: held.family, style: held.style, licence: held.licence, licenceText: held.licenceText, copyright: held.copyright, source: held.source, mediaType: held.mediaType, bytes: held.bytes, scripts: held.scripts }
+          // THE ACKNOWLEDGEMENT TRAVELS FROM THE SAME RECORD THE BYTES DO, which
+          // is the property story 5's D3 asks for: one read carries the face, its
+          // terms and whether the author asserted a right to it, so a record and a
+          // binary can never be paired from two reads.
+          embedded = { family: held.family, style: held.style, licence: held.licence, licenceText: held.licenceText, copyright: held.copyright, source: held.source, authorAcknowledged: held.authorAcknowledged, mediaType: held.mediaType, bytes: held.bytes, scripts: held.scripts }
         } else {
           // THE REGULAR AND NOTHING ELSE, for the same reason the document
           // carries the Regular alone: this heal replaces one dropped record,
@@ -3121,7 +3374,11 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
           const refetchedRegular = regularCutOf(outcome.faces)
           if (refetchedRegular === undefined) return refuse(`${source.family} could not be put into this document: upstream no longer publishes the upright Regular this machine held.`)
           if (refetchedRegular.layoutDivergence !== undefined) console.info(refetchedRegular.layoutDivergence)
-          embedded = { ...refetchedRegular, scripts: scriptsOfSource(source) }
+          // A REFETCH IS A CATALOGUE FETCH, so the face it produces carries no
+          // acknowledgement — the store record that held one is gone, and
+          // re-asserting it from a network fetch would be this designer inventing
+          // an assertion the author never made on these bytes.
+          embedded = { ...refetchedRegular, scripts: scriptsOfSource(source), authorAcknowledged: false }
           refetched = true
         }
       } else if (source.tier === 'local') {
@@ -3135,7 +3392,7 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
         } catch (error) {
           return refuse(`${face.family} could not be read from the offline bundle: ${error instanceof Error ? error.message : String(error)}`)
         }
-        embedded = { family: face.family, style: face.style, licence: face.licence, licenceText: face.licenceText, copyright: face.copyright, source: face.source, mediaType: 'font/ttf', bytes, scripts: face.scripts }
+        embedded = { family: face.family, style: face.style, licence: face.licence, licenceText: face.licenceText, copyright: face.copyright, source: face.source, authorAcknowledged: false, mediaType: 'font/ttf', bytes, scripts: face.scripts }
       } else {
         // UNREACHABLE BY EITHER CALLER, AND NAMED RATHER THAN SKIPPED. The family
         // control routes a `web` row to `installFamily`, so arriving here with one
@@ -3234,6 +3491,26 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
     const refuse = (message: string) => { refuseFontChain(message, responseGeneration, selectionKey, 'panel'); return undefined }
     if (!engine) return refuse('This designer has no engine to send the change to.')
     if (fileBusy || fontChainBusyRef.current) return refuse('That cut was not put into this document: the designer was busy with another change. Try it again.')
+    // WITH EMBEDDING OFF THE PRESS NAMES THE CUT AND READS NO BYTES AT ALL
+    // (story 6, D1). It is still ONE UNIT and still ONE UNDO ENTRY — the chain
+    // rebuild and the property commit travel together exactly as the embed and
+    // the property do — but no store is opened, no cache is asked and nothing
+    // is added to `assets`.
+    //
+    // ⚠ IT DECLARES THE CUT ON THE ENTRY'S OWN `bold`/`italic`/`boldItalic`,
+    // AND ANYTHING ELSE IS A NO-OP DRESSED AS A FEATURE. The engine selects a
+    // weight from the field on the entry that COVERED the rune
+    // (`internal/template/model.go`'s `Variant`), never from a later entry, so
+    // appending a sibling entry named `Brand Grotesk Bold` would draw bold in
+    // the base face, leave `chainDeclaresCut` still answering "missing" so the
+    // next press appended another one, and quietly change the chain's glyph
+    // fallback order for every rune the base face does not cover.
+    if (!documentEmbedsFonts()) {
+      const projected = snapshotRef.current?.canvas
+      const unit = projected === undefined ? 'This designer has no projection of the document to declare that cut against.' : nameModeCutUnit(plans, projected)
+      if (typeof unit === 'string') return refuse(unit)
+      return await applyProperties(ids, intent, responseGeneration, selectionKey, commandUnitBytes([...unit, updateComponentPropertiesFragment(ids, intent)]))
+    }
     // THE BUSY FLAG IS HELD ACROSS THE STORE READS, not only the command, for
     // `addFamilyToDocument`'s reason: what follows is one or more awaited reads,
     // and a second pick or a second press resolving inside that window would
@@ -3278,9 +3555,11 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
           // must record ONE vocabulary whichever tier served the bytes, and the
           // store's is the one every existing `.folio` already carries. See
           // `CATALOGUE_CUT_STYLES`.
-          // TODO(story 6): `false` is correct for this catalogue row and wrong
-          // for an author-supplied face — see `dispatchEmbed`'s TODO for what
-          // must replace it.
+          // `authorAcknowledged` IS `false` BECAUSE THIS IS A CATALOGUE ROW, and
+          // that is derived from the tier rather than typed at the call site: a
+          // `CatalogueFace` carries no acknowledgement field because a face this
+          // product distributes never bears one. The stored arm below reads the
+          // record's own answer.
           members.push(embedFontCutFragment({
             chain: plan.chain, index: plan.index, cut: plan.cut,
             family: plan.face.family, style: ribbiCutOf(plan.cut), licence: plan.face.licence, licenceText: plan.face.licenceText,
@@ -3324,13 +3603,15 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
         // is a listing row and carries every field; the read is what carries
         // the BYTES, and taking the terms from the same object as the bytes is
         // what stops a record and a binary ever being paired from two reads.
-        // TODO(story 6): the record travels from the store, and the store does
-        // not yet hold an acknowledgement — see `dispatchEmbed`'s TODO. `false`
-        // is right for every catalogue face this path serves today.
+        // AND THE ACKNOWLEDGEMENT TRAVELS WITH IT, for the same reason and off
+        // the same object. A bold cut of a family the author imported is as
+        // author-supplied as its Regular was, and reading the flag off the
+        // record the bytes came out of is what makes that true without anything
+        // re-deciding it here.
         members.push(embedFontCutFragment({
           chain: plan.chain, index: plan.index, cut: plan.cut,
           family: held.family, style: held.style, licence: held.licence, licenceText: held.licenceText,
-          copyright: held.copyright, source: held.source, authorAcknowledged: false, mediaType: held.mediaType, bytes: held.bytes,
+          copyright: held.copyright, source: held.source, authorAcknowledged: held.authorAcknowledged, mediaType: held.mediaType, bytes: held.bytes,
         }))
       }
       members.push(updateComponentPropertiesFragment(ids, intent))
@@ -3678,7 +3959,7 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
     const outcome = await fetchWebFamily(source.family, undefined, undefined, held)
     if (!outcome.ok) return false
     const scripts = scriptsOfSource(source)
-    const installed: ReadonlyArray<ResolvedFace> = outcome.faces.map((cut) => ({ ...cut, scripts }))
+    const installed: ReadonlyArray<ResolvedFace> = outcome.faces.map((cut) => ({ ...cut, scripts, authorAcknowledged: false }))
     const kept = new Set(held)
     for (const cut of installed) {
       // `refresh` FALSE PER CUT: the census write below refreshes once, for the
@@ -4809,7 +5090,7 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
             itself belongs to the DATA panel.
             "Configure columns" stays live throughout: the TABLE is still the
             component selection, so `openTableEditor`'s
-            `selectedRef.current[0] !== id` guard is untouched. */}<span className="column-identity-name">Column</span><span className="column-identity-meta">{selectedTableColumn.label === '' ? selectedTableColumn.columnId : selectedTableColumn.label}</span></p>}{mode === 'preview' ? <><p className="section-label">PREVIEW INPUTS</p><ParameterEditor referenceState={parameterReferenceState} accepted={previewParams} draft={previewParamsDraft} error={previewParamsError} onDraft={acceptPreviewParameters} onNamedValue={setNamedParameter} /><p className="honest-note">Parameters are local Preview input and are not part of the template.</p></> : selectedBreak !== undefined && breakPage !== undefined ? <SectionBreakProperties key={`${documentGenerationValue}:${breakPage}:${selectedBreak.offset}`} offset={selectedBreak.offset} anchor={selectedBreak.anchored} onCommit={(draft) => void commitComponent(setSectionBreakCommand(draft, false, breakPage))} onAnchor={(anchor) => void commitComponent(setSectionBreakAnchorCommand(anchor, breakPage))} /> : selected.length > 0 && canvas ? <ComponentProperties key={`${documentGenerationValue}:${selected.join(',')}`} components={canvas.components.filter((component) => selected.includes(component.id))} fontFamilies={canvas.fontFamilies} fontChains={canvas.fontChains} carriedFaces={paintableFaces} specimenBytes={familyControlSpecimenBytes} defaultFontSize={canvas.defaultFontSize} defaultLineSpacing={canvas.defaultLineSpacing} onCommit={applyProperties} onCommitCuts={commitPropertiesEmbeddingCuts} onUseFamily={(source) => embedInstalledFamily(source, documentGeneration.current, selected.join(','))} onDeclareFamily={(source) => declareShippedFamily(source, documentGeneration.current, selected.join(','))} onOpenFontBrowser={() => { refreshHeldLocalFamilies(); setFontBrowserOpen(true) }} browserOpen={fontBrowserOpen} storedFaces={storedFaces} familyCensuses={familyCensuses} localFaceHoldings={localFaceHoldings} onFamilyListOpened={refreshHeldLocalFamilies} fontChainError={fontChainError} fontChainBusy={fontChainBusy || fileBusy} documentGeneration={documentGenerationValue} propertyError={propertyError} drag={drag} groupPreview={canvasSelection.group} onEditTable={(id) => void openTableEditor(id)} onPickImage={(id) => void applyImageAsset(id)} imageAvailable={imageFileAccess !== undefined} assetBusy={assetBusy} assetError={assetError} /> : <><div className="component-identity"><ToolIcon glyph="blank" /><span className="component-identity-name">Page</span><span className="component-identity-meta">{pageSelection !== undefined ? `page ${pageSelection + 1} of ${pageCount}` : `document · ${pageCount} ${pageCount === 1 ? 'page' : 'pages'}`}</span></div>{canvas && pageSelection !== undefined && <PageSection page={pageSelection} pageBreak={canvas.pageBreaks?.[pageSelection] ?? true} disabled={fileBusy} onPageBreak={(value) => void commitComponent(setPageBreakCommand(pageSelection, value))} />}<PageSetup preset={preset} orientation={orientation} draft={draft} onPreset={setPreset} onOrientation={setOrientation} onDraft={updateDraft} onApply={applyPageSetup} disabled={!canvas || fileBusy} /></>}</div>
+            `selectedRef.current[0] !== id` guard is untouched. */}<span className="column-identity-name">Column</span><span className="column-identity-meta">{selectedTableColumn.label === '' ? selectedTableColumn.columnId : selectedTableColumn.label}</span></p>}{mode === 'preview' ? <><p className="section-label">PREVIEW INPUTS</p><ParameterEditor referenceState={parameterReferenceState} accepted={previewParams} draft={previewParamsDraft} error={previewParamsError} onDraft={acceptPreviewParameters} onNamedValue={setNamedParameter} /><p className="honest-note">Parameters are local Preview input and are not part of the template.</p></> : selectedBreak !== undefined && breakPage !== undefined ? <SectionBreakProperties key={`${documentGenerationValue}:${breakPage}:${selectedBreak.offset}`} offset={selectedBreak.offset} anchor={selectedBreak.anchored} onCommit={(draft) => void commitComponent(setSectionBreakCommand(draft, false, breakPage))} onAnchor={(anchor) => void commitComponent(setSectionBreakAnchorCommand(anchor, breakPage))} /> : selected.length > 0 && canvas ? <ComponentProperties key={`${documentGenerationValue}:${selected.join(',')}`} components={canvas.components.filter((component) => selected.includes(component.id))} fontFamilies={canvas.fontFamilies} fontChains={canvas.fontChains} embedFonts={canvas.embedFonts !== false} carriedFaces={paintableFaces} specimenBytes={familyControlSpecimenBytes} defaultFontSize={canvas.defaultFontSize} defaultLineSpacing={canvas.defaultLineSpacing} onCommit={applyProperties} onCommitCuts={commitPropertiesEmbeddingCuts} onUseFamily={(source) => embedInstalledFamily(source, documentGeneration.current, selected.join(','))} onDeclareFamily={(source) => declareShippedFamily(source, documentGeneration.current, selected.join(','))} onOpenFontBrowser={() => { refreshHeldLocalFamilies(); setFontBrowserOpen(true) }} browserOpen={fontBrowserOpen} storedFaces={storedFaces} familyCensuses={familyCensuses} localFaceHoldings={localFaceHoldings} onFamilyListOpened={refreshHeldLocalFamilies} fontChainError={fontChainError} fontChainBusy={fontChainBusy || fileBusy} documentGeneration={documentGenerationValue} propertyError={propertyError} drag={drag} groupPreview={canvasSelection.group} onEditTable={(id) => void openTableEditor(id)} onPickImage={(id) => void applyImageAsset(id)} imageAvailable={imageFileAccess !== undefined} assetBusy={assetBusy} assetError={assetError} /> : <><div className="component-identity"><ToolIcon glyph="blank" /><span className="component-identity-name">Page</span><span className="component-identity-meta">{pageSelection !== undefined ? `page ${pageSelection + 1} of ${pageCount}` : `document · ${pageCount} ${pageCount === 1 ? 'page' : 'pages'}`}</span></div>{canvas && pageSelection !== undefined && <PageSection page={pageSelection} pageBreak={canvas.pageBreaks?.[pageSelection] ?? true} disabled={fileBusy} onPageBreak={(value) => void commitComponent(setPageBreakCommand(pageSelection, value))} />}<PageSetup preset={preset} orientation={orientation} draft={draft} onPreset={setPreset} onOrientation={setOrientation} onDraft={updateDraft} onApply={applyPageSetup} disabled={!canvas || fileBusy} /></>}</div>
         <div className="panel-body" role="tabpanel" id="inspector-panel-data" aria-labelledby="inspector-tab-data" hidden={inspectorTab !== 'data'}><DataPanel sample={sampleData} error={sampleError} busy={sampleBusy} available={Boolean(sampleFileAccess)} selectedComponentId={selected.length === 1 ? selected[0] : undefined} selectedComponentType={selectedComponent?.type} selectedBinding={selectedComponent?.type === 'table' ? selectedComponent.tableBind : selectedComponent?.binding} bindingError={bindingError} bindingBusy={bindingBusy} runtimeParameters={{ status: parameterReferenceState.status, names: parameterReferenceState.names, values: parameterValues(previewParams) }} columnScope={columnBindScope} saveDisabled={fileBusy || !fileAccess} onLoad={() => void loadSample()} onSave={() => void saveSampleData()} onConnect={(segments) => void bindPickedPath(segments)} onConnectColumn={(field) => void bindPickedColumn(field)} /></div>
         {/* STORY 13.3 — THE EVIDENCE RAIL, A SIBLING OF THE TABPANELS AND NEVER
             INSIDE ONE.
@@ -4867,6 +5148,7 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
         document has changed and a remembered "no" would outlive its reason.
         An accept clears it too and starts the fetching un-awaited, so the
         author is editing again in the same tick they answered. */}
+    {stripRequest !== undefined && <StripFacesDialog count={stripRequest.count} unresolvable={stripRequest.unresolvable} onDecline={() => answerStripQuestion(false)} onConfirm={() => answerStripQuestion(true)} />}
     {completionRequest !== undefined && <CompleteFontsDialog count={completionRequest.families.length} onDecline={() => setCompletionRequest(undefined)} onConfirm={() => { const request = completionRequest; setCompletionRequest(undefined); void completeDocumentFamilies(request) }} />}
     {offlineState === 'update-available' && (loadState?.mandatory === true || !updateDismissed) && <UpdateDialog version={loadState?.pendingVersion} mandatory={loadState?.mandatory === true} dirty={dirty} document={title} onLater={() => setUpdateDismissed(true)} onUpgrade={() => { void activatePendingRelease() }} onSave={(saveAs) => { void save(saveAs) }} />}
     {/* THE FONT COUNT, AND NOTHING ELSE NEW (Story 16.4). It is read off
@@ -5096,7 +5378,7 @@ function scanJSONValue(raw: string, cursor: number): number | undefined {
 }
 
 function PageSetup({ preset, orientation, draft, onPreset, onOrientation, onDraft, onApply, disabled }: { preset: string; orientation: string; draft: Draft; onPreset: (value: string) => void; onOrientation: (value: string) => void; onDraft: (key: keyof Draft, value: string) => void; onApply: () => void; disabled: boolean }) {
-  return <section className="property-section property-section-page-setup"><p className="section-label">PAGE SETUP</p><p className="honest-note">Component properties require a selection.</p><div className="property-grid"><label>Preset<select aria-label="Page preset" value={preset} onChange={(event) => onPreset(event.target.value)}><option value="A4">A4</option><option value="Letter">Letter</option><option value="custom">Custom</option></select></label><label>Orientation<select aria-label="Page orientation" value={orientation} onChange={(event) => onOrientation(event.target.value)}><option value="portrait">Portrait</option><option value="landscape">Landscape</option></select></label><label>Locale<select aria-label="Document locale" value={draft.locale} onChange={(event) => onDraft('locale', event.target.value)}>{draft.locale === '' && <option value="" disabled>Not set</option>}{LOCALE_TAGS.map((tag) => <option key={tag} value={tag}>{tag}</option>)}</select></label><Field label="UTC offset (±HH:MM)" value={draft.utcOffset} inputMode="text" onChange={(value) => onDraft('utcOffset', value)}/><label className="embed-fonts-setting"><input type="checkbox" aria-label="Embed fonts in the document" checked={draft.embedFonts === 'true'} disabled={draft.embedFonts === ''} onChange={(event) => onDraft('embedFonts', String(event.target.checked))}/>Embed fonts in the document</label></div><p className="honest-note">Recorded in the document and applied on Apply page setup. Nothing acts on it yet: a save still carries every face the document uses, whichever way this is set.</p>{preset === 'custom' && <><Field label="Width (pt)" value={draft.width} onChange={(value) => onDraft('width', value)}/><Field label="Height (pt)" value={draft.height} onChange={(value) => onDraft('height', value)}/></>}<div className="property-grid"><Field label="Top margin (pt)" value={draft.top} onChange={(value) => onDraft('top', value)}/><Field label="Right margin (pt)" value={draft.right} onChange={(value) => onDraft('right', value)}/><Field label="Bottom margin (pt)" value={draft.bottom} onChange={(value) => onDraft('bottom', value)}/><Field label="Left margin (pt)" value={draft.left} onChange={(value) => onDraft('left', value)}/></div>{(draft.pageHeader !== undefined || draft.pageFooter !== undefined) && <div className="property-grid">{draft.pageHeader !== undefined && <Field label="Page header height (pt)" value={draft.pageHeader} onChange={(value) => onDraft('pageHeader', value)}/>}{draft.pageFooter !== undefined && <Field label="Page footer height (pt)" value={draft.pageFooter} onChange={(value) => onDraft('pageFooter', value)}/>}</div>}<button type="button" className="file-button" onClick={onApply} disabled={disabled}>Apply page setup</button><p className="honest-note">Grid and snap are editor preferences; document undo is available in the document bar.</p></section>
+  return <section className="property-section property-section-page-setup"><p className="section-label">PAGE SETUP</p><p className="honest-note">Component properties require a selection.</p><div className="property-grid"><label>Preset<select aria-label="Page preset" value={preset} onChange={(event) => onPreset(event.target.value)}><option value="A4">A4</option><option value="Letter">Letter</option><option value="custom">Custom</option></select></label><label>Orientation<select aria-label="Page orientation" value={orientation} onChange={(event) => onOrientation(event.target.value)}><option value="portrait">Portrait</option><option value="landscape">Landscape</option></select></label><label>Locale<select aria-label="Document locale" value={draft.locale} onChange={(event) => onDraft('locale', event.target.value)}>{draft.locale === '' && <option value="" disabled>Not set</option>}{LOCALE_TAGS.map((tag) => <option key={tag} value={tag}>{tag}</option>)}</select></label><Field label="UTC offset (±HH:MM)" value={draft.utcOffset} inputMode="text" onChange={(value) => onDraft('utcOffset', value)}/><label className="embed-fonts-setting"><input type="checkbox" aria-label="Embed fonts in the document" checked={draft.embedFonts === 'true'} disabled={draft.embedFonts === ''} onChange={(event) => onDraft('embedFonts', String(event.target.checked))}/>Embed fonts in the document</label></div><p className="honest-note">Recorded in the document and applied on Apply page setup. With it on, a face you use is carried inside the file. With it off, the file records the face NAME and whatever renders it must supply that face.</p>{preset === 'custom' && <><Field label="Width (pt)" value={draft.width} onChange={(value) => onDraft('width', value)}/><Field label="Height (pt)" value={draft.height} onChange={(value) => onDraft('height', value)}/></>}<div className="property-grid"><Field label="Top margin (pt)" value={draft.top} onChange={(value) => onDraft('top', value)}/><Field label="Right margin (pt)" value={draft.right} onChange={(value) => onDraft('right', value)}/><Field label="Bottom margin (pt)" value={draft.bottom} onChange={(value) => onDraft('bottom', value)}/><Field label="Left margin (pt)" value={draft.left} onChange={(value) => onDraft('left', value)}/></div>{(draft.pageHeader !== undefined || draft.pageFooter !== undefined) && <div className="property-grid">{draft.pageHeader !== undefined && <Field label="Page header height (pt)" value={draft.pageHeader} onChange={(value) => onDraft('pageHeader', value)}/>}{draft.pageFooter !== undefined && <Field label="Page footer height (pt)" value={draft.pageFooter} onChange={(value) => onDraft('pageFooter', value)}/>}</div>}<button type="button" className="file-button" onClick={onApply} disabled={disabled}>Apply page setup</button><p className="honest-note">Grid and snap are editor preferences; document undo is available in the document bar.</p></section>
 }
 
 type PanelComponent = CanvasProjection['components'][number]
@@ -5340,7 +5622,7 @@ const valignSegments: ReadonlyArray<SegmentSpec> = [{ value: 'top', label: 'Vert
 function PropertySection({ title, tone, children }: { title: string; tone?: 'bind'; children: ReactNode }) {
   return <section className={`property-section property-section-${title.toLowerCase()}${tone === 'bind' ? ' property-section-bind' : ''}`}><p className="section-label">{title}</p>{children}</section>
 }
-function ComponentProperties({ components, fontFamilies, fontChains, carriedFaces, specimenBytes, defaultFontSize, defaultLineSpacing, onCommit, onCommitCuts, onUseFamily, onDeclareFamily, onOpenFontBrowser, browserOpen, storedFaces, familyCensuses, localFaceHoldings, onFamilyListOpened, fontChainError, fontChainBusy, documentGeneration, propertyError, drag, groupPreview, onEditTable, onPickImage, imageAvailable, assetBusy, assetError }: { components: ReadonlyArray<PanelComponent>; fontFamilies: ReadonlyArray<string>; fontChains: CanvasProjection['fontChains']; carriedFaces: ReadonlySet<string>; specimenBytes: PreviewFaceBytes; defaultFontSize: number; defaultLineSpacing: number; onCommit: CommitProperties; onCommitCuts: CommitPropertiesEmbeddingCuts; onUseFamily: (source: FamilySource) => Promise<string | undefined>; onDeclareFamily: (source: FamilySource) => Promise<string | undefined>; onOpenFontBrowser: () => void; browserOpen: boolean; storedFaces: ReadonlyArray<StoredFace>; familyCensuses: ReadonlyArray<FamilyCensus>; localFaceHoldings: LocalFaceHoldings; onFamilyListOpened: () => void; fontChainError?: FontChainCommitError; fontChainBusy: boolean; documentGeneration: number; propertyError?: PropertyCommitError; drag?: DragState; groupPreview?: GroupPreview; onEditTable: (id: string) => void; onPickImage: (id: string) => void; imageAvailable: boolean; assetBusy: boolean; assetError?: Readonly<{ id: string; message: string }> }) {
+function ComponentProperties({ components, fontFamilies, fontChains, embedFonts, carriedFaces, specimenBytes, defaultFontSize, defaultLineSpacing, onCommit, onCommitCuts, onUseFamily, onDeclareFamily, onOpenFontBrowser, browserOpen, storedFaces, familyCensuses, localFaceHoldings, onFamilyListOpened, fontChainError, fontChainBusy, documentGeneration, propertyError, drag, groupPreview, onEditTable, onPickImage, imageAvailable, assetBusy, assetError }: { components: ReadonlyArray<PanelComponent>; fontFamilies: ReadonlyArray<string>; fontChains: CanvasProjection['fontChains']; embedFonts: boolean; carriedFaces: ReadonlySet<string>; specimenBytes: PreviewFaceBytes; defaultFontSize: number; defaultLineSpacing: number; onCommit: CommitProperties; onCommitCuts: CommitPropertiesEmbeddingCuts; onUseFamily: (source: FamilySource) => Promise<string | undefined>; onDeclareFamily: (source: FamilySource) => Promise<string | undefined>; onOpenFontBrowser: () => void; browserOpen: boolean; storedFaces: ReadonlyArray<StoredFace>; familyCensuses: ReadonlyArray<FamilyCensus>; localFaceHoldings: LocalFaceHoldings; onFamilyListOpened: () => void; fontChainError?: FontChainCommitError; fontChainBusy: boolean; documentGeneration: number; propertyError?: PropertyCommitError; drag?: DragState; groupPreview?: GroupPreview; onEditTable: (id: string) => void; onPickImage: (id: string) => void; imageAvailable: boolean; assetBusy: boolean; assetError?: Readonly<{ id: string; message: string }> }) {
   const ids = components.map((component) => component.id)
   const types = new Set(components.map((component) => component.type))
   const all = (predicate: (type: PanelComponent['type']) => boolean) => [...types].every(predicate)
@@ -5394,8 +5676,8 @@ function ComponentProperties({ components, fontFamilies, fontChains, carriedFace
   // controls, because marking only one implies the other is fine — states its
   // reason ONCE for the pair. Two DIFFERENT missing cuts still state two
   // sentences: they are two different facts.
-  const missingBoldCut = selectionMissingCut(components, 'bold', fontChains, storedFaces, familyCensuses, localFaceHoldings.complete)
-  const missingItalicCut = selectionMissingCut(components, 'italic', fontChains, storedFaces, familyCensuses, localFaceHoldings.complete)
+  const missingBoldCut = selectionMissingCut(components, 'bold', fontChains, storedFaces, familyCensuses, localFaceHoldings.complete, embedFonts)
+  const missingItalicCut = selectionMissingCut(components, 'italic', fontChains, storedFaces, familyCensuses, localFaceHoldings.complete, embedFonts)
   // Deduplicated BY CUT, and the pair share the state as well as the sentence:
   // the combined cut implicates both controls and has one reason, so a Map
   // keyed by the cut keeps the "once for the pair" rule the Set used to.
@@ -5415,7 +5697,7 @@ function ComponentProperties({ components, fontFamilies, fontChains, carriedFace
   // only App holds the live generation and selection the awaited read has to be
   // checked against.
   const commitWithFirstUse: CommitProperties = (toggleIds, intent, generation, key) =>
-    onCommitCuts(firstUseCutPlans(components, intent, fontChains, storedFaces, localFaceHoldings.complete), toggleIds, intent, generation, key)
+    onCommitCuts(firstUseCutPlans(components, intent, fontChains, storedFaces, localFaceHoldings.complete, embedFonts), toggleIds, intent, generation, key)
   return <>
     <div className="component-identity">{single ? <PaletteIcon kind={single.type} /> : undefined}<span className="component-identity-name">{single ? single.type : `${components.length} selected`}</span><span className="component-identity-meta">{single ? `${single.id} · band: ${single.band}` : [...types].join(' · ')}</span></div>
     <PropertySection title="POSITION"><div className="property-grid">{positionFields.map(draftFor)}{all((type) => type !== 'table') && (line ? lineSizeFields(lineOrientation(line)) : sizeFields).map(draftFor)}</div>{line && <OrientationProperty component={line} ids={ids} onCommit={onCommit} documentGeneration={documentGeneration} error={errorFor('width') && errorFor('height') ? scopedError : undefined} />}</PropertySection>
@@ -6200,11 +6482,212 @@ type ProjectedChainEntry = CanvasProjection['fontChains'][number]['entries'][num
  */
 type EmbeddedChainBase = Readonly<{ chain: string; index: number; entry: ProjectedChainEntry; family: string }>
 
-function embeddedChainBase(family: string | undefined, chains: CanvasProjection['fontChains']): EmbeddedChainBase | undefined {
+/**
+ * A CHAIN ENTRY AS THE PROJECTION SHOWS IT, TURNED BACK INTO SOMETHING A
+ * COMMAND CAN ASK FOR.
+ *
+ * ONLY A NAME ENTRY SURVIVES THE TRIP. `FontChainEntryAsk` has no `asset` arm —
+ * structurally, on both sides of the wall — so an entry the document CARRIES
+ * cannot be restated by any command, and a caller holding one gets `undefined`
+ * rather than a lossy approximation of it.
+ */
+function chainEntryAsk(entry: CanvasProjection['fontChains'][number]['entries'][number]): FontChainEntryAsk | undefined {
+  if (entry.assetKey.length > 0 || entry.face.length === 0) return undefined
+  const variants: { face: string; bold?: string; italic?: string; boldItalic?: string } = { face: entry.face }
+  let declared = false
+  for (const cut of styleCuts) {
+    if (entry[cut].length === 0) continue
+    variants[cut] = entry[cut]
+    declared = true
+  }
+  return declared ? variants : entry.face
+}
+
+/** A chain name this document does not already use, so the rebuild below can park a chain aside without colliding. */
+function unusedChainName(taken: ReadonlyArray<string>, base: string): string {
+  let candidate = `${base} (rebuilding)`
+  for (let attempt = 2; taken.includes(candidate); attempt += 1) candidate = `${base} (rebuilding ${attempt})`
+  return candidate
+}
+
+/**
+ * DECLARING A CUT BY NAME ON A CHAIN THAT ALREADY EXISTS (story 6, D1).
+ *
+ * ⚠ THE COMMAND VOCABULARY CANNOT EDIT AN ENTRY'S VARIANTS, and this story adds
+ * no command that can. `addFontChainEntry` writes a bare face; `embedFontCut`
+ * writes an ASSET variant and carries bytes. What can be expressed is a chain
+ * DECLARED WHOLE — `addFontChain` takes `FontChainEntryAsk`, which carries
+ * `bold`/`italic`/`boldItalic` — so the cut is declared by rebuilding the
+ * chain, out of commands that all already existed:
+ *
+ *   1. `renameFontChain` parks the chain aside. It CARRIES every element that
+ *      names it, which is why nothing is orphaned in between.
+ *   2. `addFontChain` declares the chain again, under its own name, with the
+ *      cut on the base entry.
+ *   3. `updateComponentProperties` brings the elements back to it.
+ *   4. `deleteFontChain` drops the parked one, which by then nothing names.
+ *
+ * ALL FOUR RIDE IN ONE `applyCommands` UNIT, so this is atomic and is ONE undo
+ * entry: there is no reachable state in which the chain is parked, duplicated
+ * or missing.
+ *
+ * ⚠ IT REFUSES RATHER THAN GUESSES IN TWO CASES, AND BOTH ARE STATED TO THE
+ * AUTHOR. A chain holding an entry the document CARRIES cannot be restated at
+ * all (`chainEntryAsk`), which a mixed chain — an undone strip, or an opened
+ * `embedFonts: false` document that carries assets — really can be. And a
+ * referrer this projection cannot see (a table's `headerStyle.fontFamily` has
+ * no place in `CanvasProjection`) still names the parked chain at step 4, so
+ * the engine refuses the delete and the whole unit with it — the document is
+ * untouched and the author is told, rather than left with a duplicate chain.
+ */
+function nameModeCutUnit(plans: ReadonlyArray<CutEmbedPlan>, projected: CanvasProjection): ReadonlyArray<string> | string {
+  const members: string[] = []
+  // ONE REBUILD PER CHAIN, however many cuts that chain needs. Two presses on
+  // one chain rebuilt twice would have the second rebuild restate a chain the
+  // first one had already changed, from a projection that predates it.
+  for (const chain of [...new Set(plans.map((plan) => plan.chain))]) {
+    const declared = projected.fontChains.find((candidate) => candidate.name === chain)
+    if (declared === undefined) return `${chain} is not a chain this document declares, so no cut could be declared on it.`
+    const asks = declared.entries.map(chainEntryAsk)
+    if (asks.some((ask) => ask === undefined)) return `${chain} carries a face inside this document, and a chain that carries a face cannot be redeclared by name. Turn embedding back on to use that cut, or remove the carried face first.`
+    const rebuilt = asks as ReadonlyArray<FontChainEntryAsk>
+    const base = rebuilt[plans.find((plan) => plan.chain === chain)!.index]
+    const baseFace = typeof base === 'string' ? base : base.face
+    const variants: { face: string; bold?: string; italic?: string; boldItalic?: string } = typeof base === 'string' ? { face: base } : { ...base }
+    for (const plan of plans) {
+      if (plan.chain !== chain) continue
+      const name = importedFaceName(plan.face.family, ribbiCutOf(plan.cut))
+      // A VARIANT MAY NOT NAME ITS OWN ENTRY'S BASE — the engine refuses that
+      // at `fonts.<chain>[i].<cut>` — and such a cut declares nothing anyway.
+      if (name === baseFace) continue
+      variants[plan.cut] = name
+    }
+    const entries = rebuilt.map((ask, index) => index === plans.find((plan) => plan.chain === chain)!.index ? variants : ask)
+    const referrers = projected.components.filter((component) => component.fontFamily === chain).map((component) => component.id)
+    if (referrers.length === 0) return `Nothing in this document is set in ${chain}, so there is no cut to declare.`
+    const parked = unusedChainName(projected.fontFamilies, chain)
+    members.push(
+      renameFontChainFragment(chain, parked),
+      addFontChainFragment(chain, entries),
+      updateComponentPropertiesFragment(referrers, { field: 'fontFamily', operation: 'set', value: chain }),
+      deleteFontChainFragment(parked),
+    )
+  }
+  return members
+}
+
+/**
+ * THE STRIP — TURNING EVERY CARRIED FACE INTO THE NAME OF ITSELF
+ * (spec-font-sources-and-embedding story 6, D3).
+ *
+ * REWRITE, THEN DROP, AND BOTH HALVES ALREADY EXIST. Each asset chain entry is
+ * replaced by the NAME entry for the face it carried, and the engine's own
+ * `dropUnnamedFontAssets` — which `removeFontChainEntry` already calls — deletes
+ * every asset nothing names any more. Nothing here deletes an asset, computes a
+ * reference count or decides what is orphaned: an asset a second chain still
+ * names is retained by the engine's own predicate, which is why the drop goes
+ * through it rather than through a rule this module would have to keep true.
+ *
+ * ⚠ INSERT BEFORE REMOVE, AND THE ORDER IS FORCED. `removeFontChainEntry`
+ * refuses to empty a chain — a chain with no entries is not one
+ * `style.fontFamily` may name — so removing first would refuse every chain
+ * whose only entry is the embedded face, which is the ordinary case. Inserting
+ * the name at the entry's own index shifts the asset entry to `index + 1`,
+ * where it is then removed; the name lands in exactly the position the asset
+ * held, and every LATER index in that chain is unmoved.
+ *
+ * ⚠ A REWRITTEN ENTRY DECLARES NO CUTS, WHICH IS A REAL LOSS AND IS STATED
+ * RATHER THAN HIDDEN — in the warning the author accepts and in
+ * `docs/folio-format.md`. An asset entry's `bold`/`italic`/`boldItalic` are
+ * asset keys, and `addFontChainEntry` writes a bare face name. A stripped
+ * document therefore draws bold runs in its base face until the author presses
+ * **B** again, which in name mode redeclares the chain with the cut on it.
+ *
+ * IT RETURNS A SENTENCE INSTEAD OF A UNIT WHENEVER THE STRIP WOULD BE WRONG,
+ * and the caller states it BEFORE the author is asked anything. Three cases:
+ * a record this designer cannot turn into a face name, and a unit longer than
+ * the engine's own `applyCommands` bound — which has to be caught at PLAN time,
+ * because discovering it after the author accepted would refuse a destructive
+ * act they had already consented to.
+ */
+
+/** The engine's own bound on an `applyCommands` unit (`component_commands.go`). A longer plan is refused here rather than after the author has accepted. */
+const MAX_COMMAND_UNIT_MEMBERS = 64
+
+/**
+ * THE FACE NAME A CARRIED ENTRY WOULD BE REWRITTEN AS, or `undefined` when its
+ * record does not say enough to name one.
+ *
+ * ⚠ `family` IS NOT ABSENT WHEN THE RECORD HAS NONE — IT IS THE ASSET KEY.
+ * `projectFontChainEntry` seeds `Family = entry.AssetKey` and overwrites it only
+ * when the asset's `font` record carries a non-empty family, so a record naming
+ * no family reaches this designer as a 64-character SHA-256 and an
+ * `entry.family.length === 0` test would never fire. Writing that hash into the
+ * chain as a face name would produce a document no host directory can resolve.
+ *
+ * AND A HALF-EMPTY RECORD IS REFUSED THE SAME WAY, BY ONE RULE RATHER THAN TWO.
+ * An empty `style` is the projection of a record that states no style, and
+ * `importedFaceName` would read that as the family's Regular — which for a
+ * document carrying only a Bold cut names a face that is not the one it holds.
+ * A record that does not state BOTH halves of the key cannot be keyed, and
+ * refusing is the direction that destroys nothing.
+ */
+function strippedFaceName(entry: CanvasProjection['fontChains'][number]['entries'][number]): string | undefined {
+  if (entry.family.length === 0 || entry.family === entry.assetKey || entry.style.length === 0) return undefined
+  return importedFaceName(entry.family, entry.style)
+}
+
+export type StripPlan = Readonly<{ members: ReadonlyArray<string>; count: number; unresolvable: number }>
+
+function stripCarriedFacesUnit(chains: CanvasProjection['fontChains'], supplied: ReadonlySet<string>): StripPlan | string {
+  const members: string[] = []
+  let unresolvable = 0
+  let count = 0
+  for (const chain of chains) {
+    for (const [index, entry] of chain.entries.entries()) {
+      if (entry.assetKey.length === 0) continue
+      const name = strippedFaceName(entry)
+      if (name === undefined) return 'This document carries a face whose own record does not name both a family and a style, so it cannot be replaced by a face name. Nothing was changed.'
+      count += 1
+      // ⚠ A NAME NOTHING HERE CAN SUPPLY MOVES THE PREVIEW, which the story's
+      // boundaries forbid outright — so it is COUNTED and said out loud in the
+      // warning rather than discovered when the page comes out in another face.
+      // "Supplied" is the engine's own set: the faces this release ships plus
+      // the ones this machine holds and hands over through `install-face`.
+      if (!supplied.has(name)) unresolvable += 1
+      members.push(addFontChainEntryFragment(chain.name, index, name), removeFontChainEntryFragment(chain.name, index + 1))
+    }
+  }
+  if (members.length > MAX_COMMAND_UNIT_MEMBERS) {
+    return `This document carries ${count} faces, and replacing them all at once is more than one change the engine will accept. Remove some of them by hand first. Nothing was changed.`
+  }
+  return { members, count, unresolvable }
+}
+
+// ⚠ WHICH ENTRY IS "THE BASE" DEPENDS ON WHAT THE DOCUMENT CARRIES
+// (spec-font-sources-and-embedding story 6, D1). With embedding ON the base is
+// the first EMBEDDED entry, because a cut is attached to an asset entry and the
+// bytes are what resolve it. With embedding OFF there are no asset entries at
+// all — the gesture writes names — so the base is the first NAME entry, and the
+// family is the chain's own name, which is what a name-mode pick wrote it as.
+//
+// THE DISCRIMINANT DECIDES, NOT THE STRING'S SHAPE. An entry carries a `face`
+// name OR an `assetKey`, exactly one of them non-empty, and each arm asks for
+// its own one — never for "the first entry", which would cross the namespaces
+// on a document that mixes them.
+function embeddedChainBase(family: string | undefined, chains: CanvasProjection['fontChains'], embedFonts = true): EmbeddedChainBase | undefined {
   if (family === undefined) return undefined
   const chain = chains.find((candidate) => candidate.name === family)
   if (chain === undefined) return undefined
-  const index = chain.entries.findIndex((entry) => entry.assetKey.length > 0)
+  // ⚠ THE NAME ARM TAKES ENTRY ZERO OR NOTHING, AND `findIndex` WOULD BE A
+  // DEFECT HERE. A chain can be MIXED — undo a strip, or open an
+  // `embedFonts: false` document that carries assets — and for
+  // `[asset(Brand), name(Noto Sans Thai)]` the first NAME entry is the script
+  // fallback, not the entry the text renders in. Declaring a cut against that
+  // entry would bold the Thai fallback and leave the Latin unchanged. A
+  // name-mode pick always writes its face first, so the base is entry zero;
+  // anything else means this chain is not one this mode can act on.
+  const index = embedFonts ? chain.entries.findIndex((entry) => entry.assetKey.length > 0) : (chain.entries[0]?.face.length ?? 0) > 0 ? 0 : -1
   const entry = index < 0 ? undefined : chain.entries[index]
   if (entry === undefined) return undefined
   return { chain: chain.name, index, entry, family: entry.family.length > 0 ? entry.family : chain.name }
@@ -6343,7 +6826,7 @@ function cutEmbedPlan(base: EmbeddedChainBase | undefined, cut: StyleCut, stored
  * SENTENCE. Nothing here re-derives that bound: a designer-side copy of it
  * would be a second authority that can only drift.
  */
-function firstUseCutPlans(components: ReadonlyArray<PanelComponent>, intent: PropertyIntent | PropertyIntents, chains: CanvasProjection['fontChains'], storedFaces: ReadonlyArray<StoredFace>, completeLocalFamilies: ReadonlySet<string>): ReadonlyArray<CutEmbedPlan> {
+function firstUseCutPlans(components: ReadonlyArray<PanelComponent>, intent: PropertyIntent | PropertyIntents, chains: CanvasProjection['fontChains'], storedFaces: ReadonlyArray<StoredFace>, completeLocalFamilies: ReadonlySet<string>, embedFonts = true): ReadonlyArray<CutEmbedPlan> {
   const one = 'field' in intent ? intent : undefined
   if (one === undefined || one.operation !== 'set' || one.value !== true) return []
   if (one.field !== 'bold' && one.field !== 'italic') return []
@@ -6351,7 +6834,7 @@ function firstUseCutPlans(components: ReadonlyArray<PanelComponent>, intent: Pro
   const plans = new Map<string, CutEmbedPlan>()
   for (const component of components) {
     const cut = requiredCutFor(component, field)
-    const plan = cutEmbedPlan(embeddedChainBase(component.fontFamily, chains), cut, storedFaces, completeLocalFamilies)
+    const plan = cutEmbedPlan(embeddedChainBase(component.fontFamily, chains, embedFonts), cut, storedFaces, completeLocalFamilies)
     // THE CUT COMES FIRST, AND THAT IS WHAT MAKES THE KEY INJECTIVE — not
     // anything about chain names, which are family names and routinely carry
     // spaces (`Noto Sans Thai`). No member of the closed cut set contains a
@@ -6550,10 +7033,10 @@ function requiredCutFor(component: PanelComponent, field: 'bold' | 'italic'): St
  */
 type MissingCut = Readonly<{ cut: StyleCut; absence: CutAbsence }>
 
-function missingCutFor(component: PanelComponent, field: 'bold' | 'italic', chains: CanvasProjection['fontChains'], storedFaces: ReadonlyArray<StoredFace>, censuses: ReadonlyArray<FamilyCensus>, completeLocalFamilies: ReadonlySet<string>): MissingCut | undefined {
+function missingCutFor(component: PanelComponent, field: 'bold' | 'italic', chains: CanvasProjection['fontChains'], storedFaces: ReadonlyArray<StoredFace>, censuses: ReadonlyArray<FamilyCensus>, completeLocalFamilies: ReadonlySet<string>, embedFonts = true): MissingCut | undefined {
   const cut = requiredCutFor(component, field)
   if (chainDeclaresCut(component.fontFamily, cut, chains)) return undefined
-  const base = embeddedChainBase(component.fontFamily, chains)
+  const base = embeddedChainBase(component.fontFamily, chains, embedFonts)
   if (cutEmbedPlan(base, cut, storedFaces, completeLocalFamilies) !== undefined) return undefined
   return { cut, absence: cutAbsenceState(base, cut, storedFaces, censuses, completeLocalFamilies) }
 }
@@ -6574,9 +7057,9 @@ function missingCutFor(component: PanelComponent, field: 'bold' | 'italic', chai
  * to the axis the census opened, and it can only ever REMOVE a sentence, never
  * produce a false one.
  */
-function selectionMissingCut(components: ReadonlyArray<PanelComponent>, field: 'bold' | 'italic', chains: CanvasProjection['fontChains'], storedFaces: ReadonlyArray<StoredFace>, censuses: ReadonlyArray<FamilyCensus>, completeLocalFamilies: ReadonlySet<string>): MissingCut | undefined {
+function selectionMissingCut(components: ReadonlyArray<PanelComponent>, field: 'bold' | 'italic', chains: CanvasProjection['fontChains'], storedFaces: ReadonlyArray<StoredFace>, censuses: ReadonlyArray<FamilyCensus>, completeLocalFamilies: ReadonlySet<string>, embedFonts = true): MissingCut | undefined {
   if (components.length === 0) return undefined
-  const missing = components.map((component) => missingCutFor(component, field, chains, storedFaces, censuses, completeLocalFamilies))
+  const missing = components.map((component) => missingCutFor(component, field, chains, storedFaces, censuses, completeLocalFamilies, embedFonts))
   const first = missing[0]
   return first !== undefined && missing.every((one) => one?.cut === first.cut && one.absence === first.absence) ? first : undefined
 }
@@ -7531,6 +8014,38 @@ function UnsavedChangesDialog({ document: name, onKeep, onDiscard }: { document:
 // NOTHING IS SAID ABOUT WHICH FAMILIES. The count is the fact the author needs
 // to answer, and naming up to a dozen families in a modal would be a list they
 // cannot act on one by one — the answer is all-or-nothing either way.
+// THE STRIP QUESTION (spec-font-sources-and-embedding story 6, D5).
+//
+// `CompleteFontsDialog`'s shape, for `CompleteFontsDialog`'s reasons: the SAFE
+// answer — keep embedding, change nothing — is focused first, Escape means it,
+// Tab toggles between the two buttons, and every key is stopped here so none
+// reaches the canvas behind it. In-app, never `window.confirm`.
+//
+// ⚠ THE SAFE ANSWER IS THE DECLINE, AND HERE THAT MATTERS MORE THAN IT DOES
+// THERE. Completing a document's typefaces adds bytes; this deletes them. An
+// author who dismisses this dialog without reading it has changed nothing at
+// all — not the setting, not the document.
+function StripFacesDialog({ count, unresolvable, onConfirm, onDecline }: { count: number; unresolvable: number; onConfirm: () => void; onDecline: () => void }) {
+  const decline = useRef<HTMLButtonElement>(null)
+  const confirm = useRef<HTMLButtonElement>(null)
+  useEffect(() => { decline.current?.focus() }, [])
+  const holdFocus = (event: { target: EventTarget; preventDefault: () => void }) => {
+    if (event.target instanceof Element && event.target.closest('.page-dialog') === null) { event.preventDefault(); decline.current?.focus() }
+  }
+  return <section tabIndex={-1} className="page-dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="strip-faces-title" aria-describedby="strip-faces-description" onPointerDown={holdFocus} onMouseDown={holdFocus} onKeyDownCapture={(event) => {
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onDecline(); return }
+    if (event.key !== 'Tab') { event.stopPropagation(); return }
+    event.preventDefault(); event.stopPropagation()
+    ;(document.activeElement === confirm.current ? decline.current : confirm.current)?.focus()
+  }}>
+    <div className="page-dialog">
+      <h2 id="strip-faces-title">{STRIP_FACES_TITLE}</h2>
+      <p id="strip-faces-description" className="honest-note">{stripFacesQuestion(count, unresolvable)}</p>
+      <div className="page-dialog-actions"><button ref={decline} type="button" onClick={onDecline}>{STRIP_FACES_DECLINE_LABEL}</button><button ref={confirm} type="button" className="page-dialog-confirm" onClick={onConfirm}>{STRIP_FACES_CONFIRM_LABEL}</button></div>
+    </div>
+  </section>
+}
+
 function CompleteFontsDialog({ count, onConfirm, onDecline }: { count: number; onConfirm: () => void; onDecline: () => void }) {
   const decline = useRef<HTMLButtonElement>(null)
   const confirm = useRef<HTMLButtonElement>(null)

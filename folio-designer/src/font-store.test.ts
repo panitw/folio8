@@ -53,6 +53,7 @@ const record = async (overrides: Partial<StoredFaceRecord> = {}): Promise<Stored
   licenceText: 'This Font Software is licensed under the SIL Open Font License, Version 1.1.',
   copyright: 'Copyright 2026 The Folio Authors',
   source: 'google/fonts — ofl/kanit/Kanit-Regular.ttf, fetched 2026-09-03',
+  authorAcknowledged: false,
   mediaType: 'font/ttf',
   scripts: ['latin', 'thai'],
   fetchedAt: '2026-09-03',
@@ -335,6 +336,57 @@ describe('which of a record\'s strings may be empty', () => {
       const listed = await store.list()
       expect(listed.ok && listed.value, `a record with no \`${field}\` at all is a shape this build cannot read and must be dropped`).toEqual([])
     }
+  })
+
+  // ⚠ AND A THIRD CLASS, WHICH IS THE OPPOSITE OF THE ONE ABOVE
+  // (spec-font-sources-and-embedding story 6, D4). `authorAcknowledged` joins
+  // the record in that story and EVERY RECORD WRITTEN BEFORE IT HAS NO SUCH
+  // KEY: the store is probed by shape rather than by version and the schema
+  // change is additive, so there is no upgrade in which to stamp one. Holding a
+  // legacy record to a strict boolean check would read every typeface an author
+  // already downloaded as corrupt and drop it — precisely the defect the
+  // licence trio's split above was written to fix, arriving through a new
+  // field.
+  it('keeps a record written before the acknowledgement existed, and reads it as asserting nothing', async () => {
+    const store = await freshStore()
+    const sound = await record()
+    const { authorAcknowledged: _absent, ...legacy } = sound
+    const written = await store.put(legacy as unknown as StoredFaceRecord)
+    expect(written.ok, written.ok ? '' : written.reason).toBe(true)
+    const listed = await store.list()
+    expect(listed.ok).toBe(true)
+    if (!listed.ok) return
+    expect(listed.value, 'a record written before this field existed must still be listed').toHaveLength(1)
+    expect(listed.value[0].authorAcknowledged, 'absent means the author asserted nothing').toBe(false)
+    // AND `get` ROUTES THROUGH THE SAME CHECK, so the bytes come back too — a
+    // tolerance at one door and not the other is a face that lists and cannot
+    // be used.
+    const read = await store.get(listed.value[0].key)
+    expect(read.ok && read.value !== undefined, 'the same tolerance must hold on the read path').toBe(true)
+    expect(read.ok && read.value?.authorAcknowledged).toBe(false)
+  })
+
+  it('reads anything that is not the boolean `true` as no acknowledgement at all', async () => {
+    // A RECORD CARRYING A STRING, A NUMBER OR A NULL IS NOT ONE THIS BUILD
+    // WROTE, and admitting a non-boolean as an acknowledgement would let a
+    // value nobody asserted override the engine's licence guard.
+    for (const value of ['true', 1, null, {}]) {
+      const store = await freshStore()
+      const written = await store.put({ ...await record(), authorAcknowledged: value } as unknown as StoredFaceRecord)
+      expect(written.ok).toBe(true)
+      const listed = await store.list()
+      expect(listed.ok && listed.value[0]?.authorAcknowledged, `\`${JSON.stringify(value)}\` must not be read as an acknowledgement`).toBe(false)
+    }
+  })
+
+  it('carries a real acknowledgement through a write and a read, unchanged', async () => {
+    const store = await freshStore()
+    const written = await store.put(await record({ authorAcknowledged: true, licence: '', licenceText: '', copyright: '' }))
+    expect(written.ok).toBe(true)
+    const listed = await store.list()
+    expect(listed.ok && listed.value[0]?.authorAcknowledged, 'the assertion the author made must survive its own store').toBe(true)
+    const read = await store.get(listed.ok ? listed.value[0].key : '')
+    expect(read.ok && read.value?.authorAcknowledged).toBe(true)
   })
 
   it('still rejects an EMPTY identity field, because a record that cannot be addressed or resolved is corrupt', async () => {
