@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addFontChainCommand, addFontChainEntryCommand, deleteFontChainCommand, embedFontFamilyCommand, moveFontChainEntryCommand, removeFontChainEntryCommand, renameFontChainCommand } from './font-chain-command'
+import { addFontChainCommand, addFontChainEntryCommand, deleteFontChainCommand, embedFontCutCommand, embedFontCutFragment, embedFontFamilyCommand, moveFontChainEntryCommand, removeFontChainEntryCommand, renameFontChainCommand } from './font-chain-command'
 
 const text = (payload: ArrayBuffer): string => new TextDecoder().decode(payload)
 const parsed = (payload: ArrayBuffer): Record<string, unknown> => JSON.parse(text(payload)) as Record<string, unknown>
@@ -179,5 +179,90 @@ describe('the embed command carries everything the document must record', () => 
     const command = parsed(embedFontFamilyCommand({ ...face, tail: [] }))
     expect(command['tail']).toEqual([])
     expect(Object.keys(command)).toHaveLength(12)
+  })
+})
+
+// SPEC-INSTALL-ALL-FACE-CUTS STORY 2 — THE CUT, ON THE WIRE.
+//
+// The EIGHTH builder. Its arity is the contract for the same reason the pick's
+// is: `componentFields(raw, 13)` counts every top-level key and refuses a
+// payload carrying any other number outright, as an UNLOCATED arity error that
+// names no key — so a builder that grew or lost one would be refused in full
+// and the author would be told nothing about which.
+describe('the cut command attaches one variant asset key and carries its own terms', () => {
+  const cut = {
+    chain: 'Sarabun',
+    index: 0,
+    cut: 'bold' as const,
+    family: 'Sarabun',
+    style: 'Bold',
+    licence: 'OFL-1.1',
+    licenceText: 'This Font Software is licensed under the SIL Open Font License, Version 1.1.',
+    copyright: 'Copyright 2018 The Sarabun Project Authors',
+    source: 'google/fonts — ofl/sarabun/Sarabun-Bold.ttf, fetched 2026-09-20',
+    mediaType: 'font/ttf',
+    bytes: new Uint8Array([0x00, 0x01, 0x00, 0x00, 0xff]).buffer,
+  }
+
+  it('sends thirteen fields, in order, with the face as base64', () => {
+    const command = parsed(embedFontCutCommand(cut))
+    expect(Object.keys(command)).toEqual(['kind', 'version', 'name', 'index', 'cut', 'family', 'style', 'licence', 'licenceText', 'copyright', 'source', 'mediaType', 'data'])
+    expect(Object.keys(command)).toHaveLength(13)
+    expect(command).toEqual({
+      kind: 'embedFontCut',
+      version: 1,
+      name: 'Sarabun',
+      index: 0,
+      cut: 'bold',
+      family: 'Sarabun',
+      style: 'Bold',
+      licence: 'OFL-1.1',
+      licenceText: cut.licenceText,
+      copyright: cut.copyright,
+      source: cut.source,
+      mediaType: 'font/ttf',
+      // base64 of 00 01 00 00 ff — the same encoder the pick uses.
+      data: 'AAEAAP8=',
+    })
+  })
+
+  it('carries the index as a JSON number, never as a string', () => {
+    // Go reads it with commandInt, which requires an integer literal. A quoted
+    // index is a refusal, and it is the kind of refusal that reads to an author
+    // as "the engine would not take my font".
+    expect(text(embedFontCutCommand({ ...cut, index: 3 }))).toContain('"index":3')
+    expect(text(embedFontCutCommand({ ...cut, index: 3 }))).not.toContain('"index":"3"')
+  })
+
+  it('spells each of the three cuts the format declares', () => {
+    for (const key of ['bold', 'italic', 'boldItalic'] as const) {
+      expect(parsed(embedFontCutCommand({ ...cut, cut: key })).cut).toBe(key)
+    }
+  })
+
+  it('escapes a quote, a backslash and a C0 control in every author-supplied position', () => {
+    for (const value of [awkward, controlled, `${awkward}${controlled}`]) {
+      const command = parsed(embedFontCutCommand({ ...cut, chain: value, family: value, copyright: value, source: value }))
+      expect(command.name).toBe(value)
+      expect(command.family).toBe(value)
+      expect(command.copyright).toBe(value)
+      expect(command.source).toBe(value)
+    }
+    // The C0 control travels as its escape, not as a raw byte.
+    expect(text(embedFontCutCommand({ ...cut, chain: controlled }))).toContain('\\u0001')
+    expect(text(embedFontCutCommand({ ...cut, chain: controlled }))).not.toContain(controlled)
+  })
+
+  // ⚠ THE TWIN IS THE SAME BYTES OR IT IS A SECOND BUILDER.
+  //
+  // The fragment exists so the command can be NESTED inside a unit, and a unit
+  // member is refused by the engine on exactly the terms a standalone command
+  // is. If the two spellings could differ by a field, an author would meet an
+  // arity refusal only on whichever path was not the one under test — which is
+  // why the field list is written once, and this asserts the consequence.
+  it('emits a fragment byte-identical to the standalone command', () => {
+    for (const variant of [cut, { ...cut, index: 7, cut: 'boldItalic' as const, chain: awkward }]) {
+      expect(embedFontCutFragment(variant)).toBe(text(embedFontCutCommand(variant)))
+    }
   })
 })

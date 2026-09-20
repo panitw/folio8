@@ -12,7 +12,8 @@
 // and answers with its own located sentence; the browser deliberately does not,
 // and a `Number()` round trip here would be exactly that second authority,
 // silently turning a typed `1e3` into a 1000pt width.
-import { commandBytes, jsonArray, jsonBoolean, jsonNumber, jsonObject, jsonString } from './command-json'
+import type { JsonField } from './command-json'
+import { commandBytes, commandFragment, jsonArray, jsonBoolean, jsonNumber, jsonObject, jsonString } from './command-json'
 
 // STORY 14.2 TURNED THIS UNION INTO A LIST AND DERIVED THE UNION FROM IT.
 //
@@ -114,9 +115,29 @@ export const ORIGIN_FLOOR_FIELDS: ReadonlyArray<PropertyField> = ['x', 'y']
 // document. That is asserted against Go's own source in the test file rather
 // than believed here. `jsonObject` throws on a duplicate key, so the same field
 // cannot be named twice in one command whatever the caller intends.
-export function updateComponentPropertiesCommand(ids: ReadonlyArray<string>, intent: PropertyIntent | PropertyIntents): ArrayBuffer {
+// ONE FIELD LIST, TWO TERMINALS (spec-install-all-face-cuts story 2). The
+// property commit now also travels INSIDE a unit — pressing B on a family whose
+// bold is held sends the cut embed and this command as one undoable unit — and
+// a unit's members are command objects nested in another command, so this
+// builder needs a fragment twin beside its `ArrayBuffer` one.
+//
+// THE LIST IS NOT WRITTEN TWICE, AND THAT IS THE POINT RATHER THAN THE SAVING.
+// The engine counts every top-level key and refuses any other arity, so two
+// hand-copied field lists can drift by one key into a refusal the author meets
+// only on whichever path was not under test. A command sent alone and the same
+// command sent in a unit are the SAME BYTES, by construction.
+const updateComponentPropertiesFields = (ids: ReadonlyArray<string>, intent: PropertyIntent | PropertyIntents): ReadonlyArray<JsonField> => {
   const intents = 'field' in intent ? [intent] : intent
-  return commandBytes('updateComponentProperties', [['ids', jsonArray(ids.map(jsonString))], ['changes', jsonObject(intents.map((one) => [one.field, changeFor(one)] as const))]])
+  return [['ids', jsonArray(ids.map(jsonString))], ['changes', jsonObject(intents.map((one) => [one.field, changeFor(one)] as const))]]
+}
+
+export function updateComponentPropertiesCommand(ids: ReadonlyArray<string>, intent: PropertyIntent | PropertyIntents): ArrayBuffer {
+  return commandBytes('updateComponentProperties', updateComponentPropertiesFields(ids, intent))
+}
+
+/** The same command as a fragment, for nesting inside a unit. See `updateComponentPropertiesFields`. */
+export function updateComponentPropertiesFragment(ids: ReadonlyArray<string>, intent: PropertyIntent | PropertyIntents): string {
+  return commandFragment('updateComponentProperties', updateComponentPropertiesFields(ids, intent))
 }
 
 function changeFor(intent: PropertyIntent): string {

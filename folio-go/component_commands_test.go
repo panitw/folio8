@@ -4314,3 +4314,461 @@ func TestClearTableColumnBindingKeepsAggregateSourceValidation(t *testing.T) {
 		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// SPEC-INSTALL-ALL-FACE-CUTS STORY 2: EMBEDDING A CUT ON FIRST USE.
+
+// embedCutCommand builds the command the designer sends when the author
+// presses B on a family whose bold is held. Written out in full for
+// embedCommand's reason — componentFields(raw, 13) counts kind and version
+// too, so a builder that quietly dropped a key would move the refusal a test
+// is measuring — and the style/licence are parameters because the two admission
+// gates below read them.
+func embedCutCommand(t *testing.T, chain string, index int, cut string, face []byte) string {
+	t.Helper()
+	return embedCutCommandDeclaring(t, chain, index, cut, face, "Bold", "OFL-1.1")
+}
+
+func embedCutCommandDeclaring(t *testing.T, chain string, index int, cut string, face []byte, style, licence string) string {
+	t.Helper()
+	return `{"kind":"embedFontCut","version":1,"name":` + quoteForCommand(t, chain) +
+		`,"index":` + strconv.Itoa(index) + `,"cut":` + quoteForCommand(t, cut) +
+		`,"family":"Noto Sans Thai","style":` + quoteForCommand(t, style) +
+		`,"licence":` + quoteForCommand(t, licence) +
+		`,"licenceText":"This Font Software is licensed under the SIL Open Font License, Version 1.1."` +
+		`,"copyright":"Copyright 2022 The Noto Project Authors","source":"catalogue"` +
+		`,"mediaType":"font/ttf","data":"` + base64.StdEncoding.EncodeToString(face) + `"}`
+}
+
+// embeddedChainTemplate is the precondition every test below shares: a chain
+// whose first entry carries a face of its own, which is the only shape a cut
+// can be attached to.
+func embeddedChainTemplate(t *testing.T) (*Template, []byte, string) {
+	t.Helper()
+	tpl := fontChainTemplate(t)
+	base := testShippedNotoSansThai
+	fontChainAccepted(t, tpl, embedCommand(t, "Noto Sans Thai", base, `["Noto Sans SC"]`))
+	return tpl, base, embeddedKeyOf(base)
+}
+
+// TestEmbedFontCutAttachesTheCutAndWritesItsOwnRecord is the story's first
+// matrix row and the write half of AC1: ONE command puts a second face in the
+// document, under its own content hash, carrying its OWN six-field licence
+// record — and the entry that already had a face now declares the cut.
+func TestEmbedFontCutAttachesTheCutAndWritesItsOwnRecord(t *testing.T) {
+	tpl, _, baseKey := embeddedChainTemplate(t)
+	bold := testShippedNotoSans
+	boldKey := embeddedKeyOf(bold)
+
+	fontChainAccepted(t, tpl, embedCutCommand(t, "Noto Sans Thai", 0, "bold", bold))
+
+	chain := tpl.doc.Fonts["Noto Sans Thai"]
+	if chain[0].AssetKey != baseKey {
+		t.Fatalf("the BASE moved: entry.AssetKey = %q, want %q — the embedded Regular is never touched", chain[0].AssetKey, baseKey)
+	}
+	if chain[0].Bold != boldKey {
+		t.Fatalf("entry.Bold = %q, want the cut's own content hash %q", chain[0].Bold, boldKey)
+	}
+	if chain[0].Italic != "" || chain[0].BoldItalic != "" {
+		t.Errorf("a command asked for ONE cut and declared others: %#v", chain[0])
+	}
+	asset, ok := tpl.doc.Assets[boldKey]
+	if !ok {
+		t.Fatalf("the cut was declared but its bytes were not stored under %s — a chain naming an asset the document does not carry is a located load error", boldKey)
+	}
+	if asset.MediaType != "font/ttf" {
+		t.Errorf("mediaType = %q, want font/ttf", asset.MediaType)
+	}
+	// AD-26 / I-7: A VARIANT ASSET KEY IS AN EMBEDDED FACE, so it carries the
+	// terms the loader requires of one. A cut written without them puts a
+	// document the engine's own parser refuses one step away.
+	if !asset.Font.Set || asset.Font.Null {
+		t.Fatal("the cut's asset carries no font record at all")
+	}
+	for _, want := range []struct {
+		name  string
+		value template.Presence[string]
+	}{
+		{"family", asset.Font.Value.Family},
+		{"style", asset.Font.Value.Style},
+		{"licence", asset.Font.Value.Licence},
+		{"licenceText", asset.Font.Value.LicenceText},
+		{"copyright", asset.Font.Value.Copyright},
+		{"source", asset.Font.Value.Source},
+	} {
+		if !want.value.Set || want.value.Null || strings.TrimSpace(want.value.Value) == "" {
+			t.Errorf("the cut's record carries no %s", want.name)
+		}
+	}
+	if asset.Font.Value.Style.Value != "Bold" {
+		t.Errorf("the cut's recorded style = %q, want Bold", asset.Font.Value.Style.Value)
+	}
+	// THE DOCUMENT NOW CARRIES TWO FACES AND NAMES BOTH. EmbeddedAssetKeys is
+	// the model's own enumeration and is what every safety walk asks.
+	if keys := chain[0].EmbeddedAssetKeys(); !slices.Equal(keys, []string{baseKey, boldKey}) {
+		t.Errorf("EmbeddedAssetKeys() = %v, want the base then the cut", keys)
+	}
+}
+
+// TestEmbedFontCutIsProjectedToTheCanvas closes the loop the panel reads: the
+// projection is where `chainDeclaresCut` looks, so a command that wrote the
+// model and did not reach the canvas would leave the absence sentence standing
+// over a cut the document carries.
+func TestEmbedFontCutIsProjectedToTheCanvas(t *testing.T) {
+	tpl, _, _ := embeddedChainTemplate(t)
+	bold := testShippedNotoSans
+	projection := fontChainAccepted(t, tpl, embedCutCommand(t, "Noto Sans Thai", 0, "bold", bold))
+	for _, chain := range projection.FontChains {
+		if chain.Name != "Noto Sans Thai" {
+			continue
+		}
+		if chain.Entries[0].Bold != embeddedKeyOf(bold) {
+			t.Fatalf("the projected entry declares bold %q, want %q", chain.Entries[0].Bold, embeddedKeyOf(bold))
+		}
+		return
+	}
+	t.Fatal("the chain the cut was attached to is not in the projection at all")
+}
+
+// TestEmbedFontCutRefusesACutAlreadyDeclaredOverDifferentBytes is the spec's
+// "an embedded face is never replaced". The asset key IS the content, so a
+// silent overwrite is a silently different document — and the embedded vintage
+// is frozen precisely so a no-op open/save round trip stays byte-identical.
+func TestEmbedFontCutRefusesACutAlreadyDeclaredOverDifferentBytes(t *testing.T) {
+	tpl, _, _ := embeddedChainTemplate(t)
+	first := testShippedNotoSans
+	fontChainAccepted(t, tpl, embedCutCommand(t, "Noto Sans Thai", 0, "bold", first))
+
+	second := testRobotoFontBytes
+	failure := fontChainRefusal(t, tpl, embedCutCommandDeclaring(t, "Noto Sans Thai", 0, "bold", second, "Bold", "Apache-2.0"))
+	if !strings.Contains(failure.Message, "already declares a bold") {
+		t.Errorf("the refusal does not say the cut is taken: %s", failure.Message)
+	}
+	// ⚠ THE LITERAL, NOT fontChainEntryPath's OWN OUTPUT. Every other assertion
+	// about an entry path in this file computes the expectation by calling the
+	// helper, so rewriting the helper to truncate the INDEX away — the exact
+	// defect its own doc comment warns about — would leave all of them green.
+	// One assertion has to say what the path IS.
+	if failure.DataPath != "fonts.Noto Sans Thai[0]" {
+		t.Errorf("the refusal is located at %q, want the ENTRY path \"fonts.Noto Sans Thai[0]\"", failure.DataPath)
+	}
+	if tpl.doc.Fonts["Noto Sans Thai"][0].Bold != embeddedKeyOf(first) {
+		t.Error("the refused command replaced the declared cut anyway")
+	}
+	if _, exists := tpl.doc.Assets[embeddedKeyOf(second)]; exists {
+		t.Error("a refused cut stored its bytes anyway")
+	}
+}
+
+// TestEmbedFontCutNoOpsOnACutAlreadyDeclaredOverTheSameBytes is the matrix's
+// "cut already declared" row: the designer plans to send the property alone,
+// and this is the BACKSTOP that makes the plan safe rather than load-bearing.
+//
+// THE BYTE COMPARISON IS THE ASSERTION. wasm.Engine.Apply pushes no history
+// entry when the canonical bytes do not move, so "no second undo entry" is a
+// consequence of the document standing still and is measured that way.
+func TestEmbedFontCutNoOpsOnACutAlreadyDeclaredOverTheSameBytes(t *testing.T) {
+	tpl, _, _ := embeddedChainTemplate(t)
+	bold := testShippedNotoSans
+	command := embedCutCommand(t, "Noto Sans Thai", 0, "bold", bold)
+	fontChainAccepted(t, tpl, command)
+	before, err := SerializeTemplate(tpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fontChainAccepted(t, tpl, command)
+
+	after, err := SerializeTemplate(tpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Error("re-declaring the SAME cut over the SAME bytes moved the document, so it would cost a second revision and a second undo entry")
+	}
+}
+
+// TestEmbedFontCutRefusesTheEntrysOwnBase is the matrix's "cut bytes equal the
+// base" row. The designer never sends it; this is D-11.2.11's rule reaching the
+// command door so the refusal is LOCATED, rather than arriving from the
+// transaction's reparse as the unlocated "font chains did not pass format
+// validation".
+func TestEmbedFontCutRefusesTheEntrysOwnBase(t *testing.T) {
+	tpl, base, _ := embeddedChainTemplate(t)
+	failure := fontChainRefusal(t, tpl, embedCutCommand(t, "Noto Sans Thai", 0, "bold", base))
+	if !strings.Contains(failure.Message, "own base") {
+		t.Errorf("the refusal does not name the self-reference: %s", failure.Message)
+	}
+	if failure.DataPath != fontChainEntryPath("Noto Sans Thai", 0) {
+		t.Errorf("the refusal is located at %q, want the entry", failure.DataPath)
+	}
+}
+
+// TestEmbedFontCutRefusesAFaceEntry is AD-8 at this door: a face entry's
+// variants are FontSet face names, never assets keys, and shippedFamilyEntry
+// already declares them at declare time. `body` is the fixture's face-only
+// chain.
+func TestEmbedFontCutRefusesAFaceEntry(t *testing.T) {
+	tpl := fontChainTemplate(t)
+	failure := fontChainRefusal(t, tpl, embedCutCommand(t, "body", 0, "bold", testShippedNotoSans))
+	for _, want := range []string{"AD-8", "FontSet face names"} {
+		if !strings.Contains(failure.Message, want) {
+			t.Errorf("the refusal does not name %s: %s", want, failure.Message)
+		}
+	}
+	if failure.DataPath != fontChainEntryPath("body", 0) {
+		t.Errorf("the refusal is located at %q, want the entry", failure.DataPath)
+	}
+}
+
+// TestEmbedFontCutRefusesACutOutsideTheClosedSet keeps the door's vocabulary
+// the format's. The refusal states what the author MAY write and does not echo
+// what they did — Story 8.3's rule, and the asked-for value is unbounded text.
+func TestEmbedFontCutRefusesACutOutsideTheClosedSet(t *testing.T) {
+	tpl, _, _ := embeddedChainTemplate(t)
+	for _, asked := range []string{"semibold", "regular", "Bold", "asset", "face"} {
+		failure := fontChainRefusal(t, tpl, embedCutCommand(t, "Noto Sans Thai", 0, asked, testShippedNotoSans))
+		for _, want := range commandFontChainCutKeys() {
+			if !strings.Contains(failure.Message, `"`+want+`"`) {
+				t.Errorf("%q: the refusal does not offer %q: %s", asked, want, failure.Message)
+			}
+		}
+	}
+}
+
+// TestEmbedFontCutRefusesAnUnknownChainAndAnOutOfRangeIndex reuses the
+// vocabulary every other chain command refuses with, which is the point: the
+// chain is resolved by declaredFontChain and the index by fontChainIndex, so
+// this command cannot drift from addFontChainEntry / move / remove in what an
+// out-of-range index means.
+func TestEmbedFontCutRefusesAnUnknownChainAndAnOutOfRangeIndex(t *testing.T) {
+	tpl, _, _ := embeddedChainTemplate(t)
+	missing := fontChainRefusal(t, tpl, embedCutCommand(t, "nothing", 0, "bold", testShippedNotoSans))
+	if !strings.Contains(missing.Message, `no font chain named "nothing" is declared`) {
+		t.Errorf("unknown chain refusal = %s", missing.Message)
+	}
+	for _, index := range []int{-1, 2, 99} {
+		failure := fontChainRefusal(t, tpl, embedCutCommand(t, "Noto Sans Thai", index, "bold", testShippedNotoSans))
+		if !strings.Contains(failure.Message, "entry index is out of range") {
+			t.Errorf("index %d: refusal = %s", index, failure.Message)
+		}
+	}
+}
+
+// TestEmbedFontCutClearsTheSameBarAsTheBase is the spec's central constraint:
+// a variant asset key clears the SAME admission gates as the entry's own face.
+// A weaker door here would be a way to put an unrenderable, variable or
+// mislicensed bold into a document the strict door refuses to accept.
+//
+// THE THREE GATES ARE EXERCISED THROUGH THE SAME FIXTURES THE PICK USES, so a
+// gate deleted from this handler cannot be covered by the pick's own tests.
+func TestEmbedFontCutClearsTheSameBarAsTheBase(t *testing.T) {
+	at := fontChainEntryPath("Noto Sans Thai", 0)
+	t.Run("a variable face", func(t *testing.T) {
+		tpl, _, _ := embeddedChainTemplate(t)
+		failure := fontChainRefusal(t, tpl, embedCutCommand(t, "Noto Sans Thai", 0, "bold", testNotoSansThaiVariableFontBytes))
+		for _, want := range []string{"`fvar`", "fonttools varLib.instancer"} {
+			if !strings.Contains(failure.Message, want) {
+				t.Errorf("the refusal does not mention %s: %s", want, failure.Message)
+			}
+		}
+		if failure.DataPath != at {
+			t.Errorf("located at %q, want the entry", failure.DataPath)
+		}
+	})
+	t.Run("bytes that contradict the declared licence", func(t *testing.T) {
+		tpl, _, _ := embeddedChainTemplate(t)
+		// Roboto's own name table names the Apache License, so declaring it
+		// OFL-1.1 is a true contradiction over real committed bytes.
+		failure := fontChainRefusal(t, tpl, embedCutCommandDeclaring(t, "Noto Sans Thai", 0, "bold", testRobotoFontBytes, "Bold", "OFL-1.1"))
+		for _, want := range []string{"OFL-1.1", "Apache License"} {
+			if !strings.Contains(failure.Message, want) {
+				t.Errorf("the refusal does not name %s: %s", want, failure.Message)
+			}
+		}
+		if _, exists := tpl.doc.Assets[embeddedKeyOf(testRobotoFontBytes)]; exists {
+			t.Error("the refused face was written to t.doc.Assets anyway")
+		}
+	})
+	t.Run("a blank record field", func(t *testing.T) {
+		tpl, _, _ := embeddedChainTemplate(t)
+		blank := strings.Replace(embedCutCommand(t, "Noto Sans Thai", 0, "bold", testShippedNotoSans),
+			`"copyright":"Copyright 2022 The Noto Project Authors"`, `"copyright":"   "`, 1)
+		failure := fontChainRefusal(t, tpl, blank)
+		if !strings.Contains(failure.Message, "copyright must be a non-empty string") {
+			t.Errorf("refusal = %s", failure.Message)
+		}
+	})
+	t.Run("bytes this build cannot read as a face", func(t *testing.T) {
+		tpl, _, _ := embeddedChainTemplate(t)
+		failure := fontChainRefusal(t, tpl, embedCutCommand(t, "Noto Sans Thai", 0, "bold", []byte("not a face at all")))
+		if failure.Message == "" {
+			t.Error("unreadable bytes were admitted with no reason")
+		}
+	})
+}
+
+// TestEmbedFontCutCountsThirteenFields keeps the arity part of the contract.
+// componentFields is an exact count, so this is the refusal a designer builder
+// that gained or lost a key would earn — unlocated, like every other arity
+// refusal, because nothing has been read yet.
+func TestEmbedFontCutCountsThirteenFields(t *testing.T) {
+	tpl, _, _ := embeddedChainTemplate(t)
+	full := embedCutCommand(t, "Noto Sans Thai", 0, "bold", testShippedNotoSans)
+	for _, command := range []string{
+		strings.Replace(full, `"index":0,`, ``, 1),
+		strings.Replace(full, `"source":"catalogue"`, `"source":"catalogue","extra":"x"`, 1),
+	} {
+		_, err := applyComponentCommand(tpl, []byte(command))
+		if err == nil || !strings.Contains(err.Error(), "unknown or missing fields") {
+			t.Errorf("arity refusal = %v", err)
+		}
+	}
+}
+
+// TestRemovingAnEntryDropsTheCutItDeclaredToo is DW-80's second edition, the
+// half that keeps a document from accumulating faces nothing can reach.
+//
+// RED-PROVED BY DELETION (2026-09-20): restoring dropUnnamedFontAssets' old
+// `entry.AssetKey`-only body leaves the bold behind and reds this test, while
+// the base half stays green — which is what says the two arms are measured
+// apart.
+func TestRemovingAnEntryDropsTheCutItDeclaredToo(t *testing.T) {
+	tpl, _, baseKey := embeddedChainTemplate(t)
+	bold := testShippedNotoSans
+	boldKey := embeddedKeyOf(bold)
+	fontChainAccepted(t, tpl, embedCutCommand(t, "Noto Sans Thai", 0, "bold", bold))
+
+	fontChainAccepted(t, tpl, `{"kind":"removeFontChainEntry","version":1,"name":"Noto Sans Thai","index":0}`)
+
+	if _, ok := tpl.doc.Assets[baseKey]; ok {
+		t.Error("the base face nothing names any longer was left in the document")
+	}
+	if _, ok := tpl.doc.Assets[boldKey]; ok {
+		t.Error("the CUT nothing names any longer was left in the document — un-naming an entry un-names every key it declared, not only its base")
+	}
+}
+
+// TestACutASecondChainStillNamesIsRetained is the story's last acceptance
+// criterion and the DANGEROUS direction: under-reporting a reference deletes a
+// live face and no compile error announces it.
+//
+// RED-PROVED BY DELETION (2026-09-20): narrowing assetKeyReferenced back to
+// `entry.Embedded() && entry.AssetKey == key` reds this test — the second
+// chain's declared bold becomes invisible and the drop takes it.
+func TestACutASecondChainStillNamesIsRetained(t *testing.T) {
+	tpl, _, baseKey := embeddedChainTemplate(t)
+	bold := testShippedNotoSans
+	boldKey := embeddedKeyOf(bold)
+	fontChainAccepted(t, tpl, embedCutCommand(t, "Noto Sans Thai", 0, "bold", bold))
+
+	// A SECOND chain declaring the SAME cut, written into the model directly:
+	// embedFontFamily refuses a chain name it already holds and embedFontCut
+	// needs a base entry, so no pair of commands reaches this state, and the
+	// state is entirely legal in the format.
+	tpl.doc.Fonts["alsoThai"] = []template.FontChainEntry{{AssetKey: baseKey, Bold: boldKey}, template.FaceEntry("Noto Sans SC")}
+
+	fontChainAccepted(t, tpl, `{"kind":"removeFontChainEntry","version":1,"name":"Noto Sans Thai","index":0}`)
+
+	if _, ok := tpl.doc.Assets[boldKey]; !ok {
+		t.Fatal("a CUT a second chain still names was deleted")
+	}
+	if _, ok := tpl.doc.Assets[baseKey]; !ok {
+		t.Fatal("a BASE face a second chain still names was deleted")
+	}
+}
+
+// TestThePickDedupeDoesNotSeeAnotherChainsDeclaredCut is why the two
+// predicates are two predicates.
+//
+// The safety walk had to become variant-aware; the DEDUPE must not. A family
+// whose upright Regular happens to be the bytes some other family declared as
+// its bold is a family this document does NOT carry, and answering "already
+// here" would make the pick do nothing at all — no asset, no chain, no error,
+// and a control that looks broken.
+//
+// RED-PROVED BY SUBSTITUTION (2026-09-20): pointing embedFontFamily's dedupe at
+// assetKeyReferenced reds this test and nothing else in the suite.
+func TestThePickDedupeDoesNotSeeAnotherChainsDeclaredCut(t *testing.T) {
+	tpl, _, _ := embeddedChainTemplate(t)
+	shared := testShippedNotoSans
+	fontChainAccepted(t, tpl, embedCutCommand(t, "Noto Sans Thai", 0, "bold", shared))
+
+	// The SAME bytes, now picked as a family's own Regular under a new name.
+	fontChainAccepted(t, tpl, embedCommand(t, "Noto Sans", shared, `["Noto Sans SC"]`))
+
+	chain, ok := tpl.doc.Fonts["Noto Sans"]
+	if !ok {
+		t.Fatal("the pick created no chain at all: the dedupe answered \"already in the document\" about bytes that are only some OTHER entry's cut")
+	}
+	if len(chain) == 0 || chain[0].AssetKey != embeddedKeyOf(shared) {
+		t.Fatalf("the pick's chain does not name the picked face: %#v", chain)
+	}
+}
+
+// TestTheTwoAssetPredicatesDisagreeExactlyWhereTheyShould states the split as a
+// property rather than leaving it to the two behavioural tests above. An
+// assertion whose two sides could be equal is not an assertion (D-11.2.8), so
+// both directions are measured: they agree on a base key and disagree on a
+// variant one.
+func TestTheTwoAssetPredicatesDisagreeExactlyWhereTheyShould(t *testing.T) {
+	tpl, _, baseKey := embeddedChainTemplate(t)
+	bold := testShippedNotoSans
+	boldKey := embeddedKeyOf(bold)
+	fontChainAccepted(t, tpl, embedCutCommand(t, "Noto Sans Thai", 0, "bold", bold))
+
+	if !assetKeyReferenced(tpl, baseKey) || !embeddedBaseKeyReferenced(tpl, baseKey) {
+		t.Error("the two predicates disagree about a BASE key, which both must see")
+	}
+	if !assetKeyReferenced(tpl, boldKey) {
+		t.Error("the SAFETY walk cannot see a declared cut, so the orphan drop would delete a live face")
+	}
+	if embeddedBaseKeyReferenced(tpl, boldKey) {
+		t.Error("the DEDUPE predicate sees a declared cut, so a pick over those bytes would silently create no chain")
+	}
+}
+
+// TestAnEntryPathKeepsItsIndexWhenTheNameIsTooLong is the claim
+// fontChainEntryPath's doc comment makes, measured rather than asserted in
+// prose: the NAME is what gets cut, never the index. A path truncated to
+// `fonts.<a very long name>` would silently become the CHAIN-level path, and
+// the author would be told a chain has a problem when one entry of it does.
+//
+// ⚠ IT IS NOT WRITTEN THROUGH THE FUNCTION'S OWN ARITHMETIC. The properties
+// asserted are structural — ends in the index, fits the host's bound, still
+// valid UTF-8 — so re-deriving the expected string from the helper would make
+// every one of them vacuous.
+func TestAnEntryPathKeepsItsIndexWhenTheNameIsTooLong(t *testing.T) {
+	for _, row := range []struct {
+		name string
+		face string
+	}{
+		{"over-long ASCII", strings.Repeat("x", maxComponentDataPathBytes*2)},
+		// A MULTI-BYTE NAME, because the cut is made in BYTES and a naive
+		// slice would split a rune. Thai is the script this product exists
+		// for, and every one of these code points is three bytes.
+		{"over-long Thai", strings.Repeat("ก", maxComponentDataPathBytes)},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			path := fontChainEntryPath(row.face, 7)
+			if !strings.HasSuffix(path, "[7]") {
+				t.Errorf("the index was truncated away: %q ends %q, want [7] — a path that loses its index silently becomes the chain-level path", path, path[max(0, len(path)-8):])
+			}
+			if len(path) > maxComponentDataPathBytes {
+				t.Errorf("the path is %d bytes, past the host's %d-byte DataPath cut — the host would cut it again, and its cut does not know about the index", len(path), maxComponentDataPathBytes)
+			}
+			if !utf8.ValidString(path) {
+				t.Errorf("the path is not valid UTF-8: %q — the cut split a rune", path)
+			}
+			if !strings.HasPrefix(path, "fonts.") {
+				t.Errorf("the path lost its prefix: %q", path)
+			}
+		})
+	}
+	// NON-VACUITY IN BOTH DIRECTIONS: a name that FITS is not truncated at all,
+	// so the assertions above are measuring the truncating arm and not an
+	// arm that never runs.
+	if path := fontChainEntryPath("body", 0); path != "fonts.body[0]" {
+		t.Errorf("a short name was disturbed: %q", path)
+	}
+}

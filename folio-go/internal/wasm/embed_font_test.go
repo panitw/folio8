@@ -1,10 +1,12 @@
 package wasm
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
 	"os"
+	"strconv"
 	"testing"
 
 	"github.com/panitw/folio8/folio-go/fonts"
@@ -156,4 +158,124 @@ func TestEngineApplyEmbedFontFamilyRePickPushesNoSecondEntry(t *testing.T) {
 	if _, _, err := engine.AssetBytes(key); err == nil {
 		t.Errorf("one undo after two picks still carries the face — the re-pick pushed a second history entry (snapshot %#v)", undone)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// SPEC-INSTALL-ALL-FACE-CUTS STORY 2 AT THE HISTORY BOUNDARY.
+
+// embedCutCommandBytes is the second half of pressing B: one variant asset key
+// attached to an entry that already carries a face.
+func embedCutCommandBytes(chain string, index int, cut string, face []byte) []byte {
+	return []byte(`{"kind":"embedFontCut","version":1,"name":"` + chain + `"` +
+		`,"index":` + strconv.Itoa(index) + `,"cut":"` + cut + `"` +
+		`,"family":"Noto Sans Thai","style":"Bold","licence":"OFL-1.1"` +
+		`,"licenceText":"This Font Software is licensed under the SIL Open Font License, Version 1.1."` +
+		`,"copyright":"Copyright 2022 The Noto Project Authors","source":"catalogue"` +
+		`,"mediaType":"font/ttf","data":"` + base64.StdEncoding.EncodeToString(face) + `"}`)
+}
+
+// TestEngineApplyCutEmbedAndPropertyIsOneUndoEntry is D-owner-1 end to end, and
+// the ONLY place the claim can be measured: "pressing B is one undo entry"
+// belongs to wasm.Engine.Apply's single pushUndo, not to the command door.
+//
+// THE DOCUMENT COMES BACK BYTE-IDENTICAL, which is the whole acceptance
+// criterion — "one undo restores the document byte-for-byte". Asserting only
+// that the asset is gone would be satisfied by an undo that left `bold: true`
+// standing over a face the document no longer carries: the exact half-state a
+// unit exists to make unreachable.
+func TestEngineApplyCutEmbedAndPropertyIsOneUndoEntry(t *testing.T) {
+	engine := fontChainEngine(t)
+	base := embeddedCatalogueFace(t)
+	baseKey := fmt.Sprintf("%x", sha256.Sum256(base))
+
+	// The precondition: a family in the document, and a component set in it.
+	// Two ordinary commands, two ordinary undo entries — this story changes
+	// neither, and they are not what is being measured.
+	if _, err := engine.Apply(embedFontCommand("Noto Sans Thai", base)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.Apply([]byte(`{"kind":"updateComponentProperties","version":1,"ids":["e7"],"changes":{"fontFamily":{"op":"set","value":"Noto Sans Thai"}}}`)); err != nil {
+		t.Fatal(err)
+	}
+	before := engine.Snapshot()
+	original, _, err := engine.Serialize()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	bold := shippedFace(t, "Noto Sans")
+	boldKey := fmt.Sprintf("%x", sha256.Sum256(bold))
+	unit := commandUnitJSON(
+		string(embedCutCommandBytes("Noto Sans Thai", 0, "bold", bold)),
+		`{"kind":"updateComponentProperties","version":1,"ids":["e7"],"changes":{"bold":{"op":"set","value":true}}}`,
+	)
+
+	applied, err := engine.Apply(unit)
+	if err != nil {
+		t.Fatalf("the pair was refused: %v", err)
+	}
+	if applied.Revision != before.Revision+1 {
+		t.Fatalf("revision = %d, want exactly one past %d — pressing B is ONE committed mutation", applied.Revision, before.Revision)
+	}
+	if !applied.CanUndo || applied.CanRedo {
+		t.Fatalf("history after the pair = %#v", applied)
+	}
+	if raw, _, err := engine.AssetBytes(boldKey); err != nil || len(raw) != len(bold) {
+		t.Fatalf("the document does not carry the cut: %d bytes, %v", len(raw), err)
+	}
+	if raw, _, err := engine.AssetBytes(baseKey); err != nil || len(raw) != len(base) {
+		t.Fatalf("the embedded Regular was disturbed: %d bytes, %v", len(raw), err)
+	}
+	committed, _, err := engine.Serialize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(committed, []byte(`"bold": true`)) {
+		t.Fatal("the property half did not land: the author pressed B and nothing was bolded")
+	}
+
+	undone, err := engine.Undo()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if undone.CanUndo != true {
+		t.Fatal("the two precondition commands should still be undoable behind the pair")
+	}
+	restored, _, err := engine.Serialize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(restored, original) {
+		t.Fatal("ONE undo did not restore the document byte-for-byte: the embed and the property commit are one undo step or they are two")
+	}
+	if _, _, err := engine.AssetBytes(boldKey); err == nil {
+		t.Error("ONE undo left the cut's bytes behind")
+	}
+
+	redone, err := engine.Redo()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if redone.Revision != undone.Revision+1 {
+		t.Fatalf("redo revision = %d, want %d", redone.Revision, undone.Revision+1)
+	}
+	replayed, _, err := engine.Serialize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(replayed, committed) {
+		t.Fatal("redo did not replay BOTH halves of the pair")
+	}
+}
+
+// shippedFace is a second real face, distinct from the base, so the cut's bytes
+// are genuinely different bytes — a bold whose digest equals the regular's is
+// refused as a self-reference and would measure nothing here.
+func shippedFace(t *testing.T, name string) []byte {
+	t.Helper()
+	face, ok := fonts.Shipped()[name]
+	if !ok || len(face) == 0 {
+		t.Fatalf("the shipped set carries no %s", name)
+	}
+	return face
 }

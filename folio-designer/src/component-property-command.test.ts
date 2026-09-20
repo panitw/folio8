@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { updateComponentPropertiesCommand, type PropertyIntent } from './component-property-command'
+import { updateComponentPropertiesCommand, updateComponentPropertiesFragment, type PropertyIntent } from './component-property-command'
 
 const decode = (value: ArrayBuffer): string => new TextDecoder().decode(value)
 
@@ -142,5 +142,52 @@ describe('updateComponentPropertiesCommand', () => {
   it('keeps the explicit format null operation distinct from clear and set', () => {
     expect(decode(updateComponentPropertiesCommand(['e1'], { field: 'background', operation: 'null' }))).toContain('"background":{"op":"null"}')
     expect(decode(updateComponentPropertiesCommand(['e1'], { field: 'borderEdges', operation: 'set', value: ['top', 'bottom'] }))).toContain('"value":["top","bottom"]')
+  })
+})
+
+// SPEC-INSTALL-ALL-FACE-CUTS STORY 2 — THE SAME COMMAND, NESTED.
+//
+// The first use of a cut sends the cut embed and this command as one
+// `applyCommands` unit, so that pressing B costs ONE undo entry. A unit's
+// members are command objects nested inside another command, which is why this
+// builder gained a fragment twin.
+//
+// ⚠ THE TWIN IS THE SAME BYTES OR IT IS A SECOND BUILDER. Both terminals are
+// defined over ONE field list for exactly this reason: the engine counts every
+// top-level key and refuses any other arity, so two hand-copied lists could
+// drift by a key and the author would meet the refusal only on whichever path
+// was not the one under test. The list being shared is the mechanism; this is
+// the property it exists to have, asserted across every shape the builder can
+// emit rather than on one happy case.
+describe('the property commit travels identically alone and inside a unit', () => {
+  const intents: ReadonlyArray<PropertyIntent> = [
+    { field: 'bold', operation: 'set', value: true },
+    { field: 'bold', operation: 'clear' },
+    { field: 'background', operation: 'null' },
+    { field: 'width', operation: 'set', value: '120.5' },
+    { field: 'lineSpacing', operation: 'set', value: '1.5' },
+    { field: 'fontFamily', operation: 'set', value: 'a"b\\c' },
+    { field: 'borderEdges', operation: 'set', value: ['top', 'bottom'] },
+  ]
+
+  it('emits a fragment byte-identical to the standalone command, for every intent shape', () => {
+    for (const intent of intents) {
+      expect(updateComponentPropertiesFragment(['e1'], intent)).toBe(decode(updateComponentPropertiesCommand(['e1'], intent)))
+    }
+  })
+
+  it('agrees for a multi-id selection and for a multi-field intent', () => {
+    const many = ['e1', 'e2', 'e3']
+    expect(updateComponentPropertiesFragment(many, { field: 'italic', operation: 'set', value: true }))
+      .toBe(decode(updateComponentPropertiesCommand(many, { field: 'italic', operation: 'set', value: true })))
+    const pair: readonly [PropertyIntent, PropertyIntent] = [{ field: 'width', operation: 'set', value: '10' }, { field: 'height', operation: 'set', value: '20' }]
+    expect(updateComponentPropertiesFragment(many, pair)).toBe(decode(updateComponentPropertiesCommand(many, pair)))
+  })
+
+  it('is a well-formed command object in its own right', () => {
+    const object = JSON.parse(updateComponentPropertiesFragment(['e1'], { field: 'bold', operation: 'set', value: true })) as Record<string, unknown>
+    expect(Object.keys(object)).toEqual(['kind', 'version', 'ids', 'changes'])
+    expect(object.kind).toBe('updateComponentProperties')
+    expect(object.version).toBe(1)
   })
 })

@@ -1982,3 +1982,639 @@ describe('Story 16.7 — every row shows the typeface it names', () => {
     }
   })
 })
+
+// ---------------------------------------------------------------------------
+// SPEC-INSTALL-ALL-FACE-CUTS STORY 2 — EMBEDDING A CUT ON FIRST USE, AND THE
+// THREE ABSENCES THE CENSUS CAN NOW TELL APART.
+//
+// These claims are about the DESIGNER and cannot be asserted anywhere smaller.
+// "Pressing B embeds the held bold" spans the projection, the machine store and
+// the command seam; "the sentence names which absence this is" spans the census
+// the store holds and the panel that reads it. They live in this file because a
+// real fake IndexedDB stands up here and the store is where both answers come
+// from.
+describe('a cut the machine holds reaches the document on first use', () => {
+  // A 64-hex key, which is the shape an asset key really has — the panel
+  // compares the held cut's key against this one, and a base that could not be
+  // an asset key would make that comparison meaningless.
+  const BASE_KEY = '1111111111111111111111111111111111111111111111111111111111111111'
+  const kanitBoldBytes = sfntWithNames([{ platform: 3, nameID: 0, value: 'Copyright 2020 The Kanit Project Authors, Bold' }])
+  const kanitRegularBytes = sfntWithNames([{ platform: 3, nameID: 0, value: 'Copyright 2020 The Kanit Project Authors, Regular' }])
+  const kanitItalicBytes = sfntWithNames([{ platform: 3, nameID: 0, value: 'Copyright 2020 The Kanit Project Authors, Italic' }])
+  const kanitBoldItalicBytes = sfntWithNames([{ platform: 3, nameID: 0, value: 'Copyright 2020 The Kanit Project Authors, Bold Italic' }])
+
+  const base64Of = (bytes: ArrayBuffer): string => {
+    let binary = ''
+    for (const byte of new Uint8Array(bytes)) binary += String.fromCharCode(byte)
+    return btoa(binary)
+  }
+
+  const kanitCut = (key: string, style: string, bytes: ArrayBuffer): StoredFaceRecord => ({
+    key,
+    family: 'Kanit',
+    style,
+    licence: 'OFL-1.1',
+    licenceText: kanitLicence,
+    copyright: 'Copyright 2020 The Kanit Project Authors',
+    source: `google/fonts — ofl/kanit/Kanit-${style}.ttf, fetched 2026-09-20`,
+    mediaType: 'font/ttf',
+    scripts: ['latin'],
+    fetchedAt: '2026-09-20',
+    byteLength: bytes.byteLength,
+    bytes,
+  })
+
+  /** Writes face records and, when given one, a census — the two things an install leaves behind. */
+  const seedMachine = async (records: ReadonlyArray<StoredFaceRecord>, census?: { published: ReadonlyArray<string>; refused: ReadonlyArray<{ style: string; reason: string; permanence: 'permanent' | 'transient' }> }): Promise<FontStore> => {
+    const opened = await openFontStore(globalThis.indexedDB)
+    if (!opened.ok) throw new Error(opened.reason)
+    for (const record of records) {
+      const written = await opened.value.put(record)
+      expect(written.ok, 'the fixture face must really be in the store before the designer opens it').toBe(true)
+    }
+    if (census !== undefined) {
+      const recorded = await opened.value.putCensus({ family: 'Kanit', published: census.published, refused: census.refused, recordedAt: '2026-09-20' })
+      expect(recorded.ok, 'the fixture census must really be in the store').toBe(true)
+    }
+    return opened.value
+  }
+
+  // ⚠ A ONE-ENTRY CHAIN IS THE MINIMUM SHAPE, NOT THE SHAPE A PICK WRITES.
+  // `embedFontFamily` appends `proposedFallbackTail` — the shipped faces for
+  // the scripts the picked face does not cover — so a real pick's chain has
+  // two or three entries and, since Story 11.4, those tail entries DECLARE
+  // their own cuts. `kanitRealisticChain` below is that shape, and it is the
+  // only fixture here that can tell an entry-level question from a chain-wide
+  // one.
+  const kanitChain = (declared: Readonly<{ bold?: string; italic?: string; boldItalic?: string }> = {}) => ({
+    name: 'Kanit',
+    entries: [{ face: '', assetKey: BASE_KEY, family: 'Kanit', style: 'Regular', bold: declared.bold ?? '', italic: declared.italic ?? '', boldItalic: declared.boldItalic ?? '' }],
+  })
+
+  // ⚠ THE CHAIN A PICK ACTUALLY WRITES, AND THE ONE FIXTURE THAT CAN SEE THE
+  // ENTRY-VERSUS-CHAIN DEFECT.
+  //
+  // `Noto Sans Thai` is a shipped face that DECLARES A BOLD, and every pick
+  // whose face does not cover Thai proposes it behind the embedded entry. So a
+  // plan built on "does the CHAIN declare this cut" answers yes for almost
+  // every catalogue family, never builds a plan, and pressing B embeds nothing
+  // and says nothing — while I, for which no tail entry declares a cut, goes on
+  // working. On a one-entry chain the two rules return the same answer, and an
+  // assertion whose two sides could be equal is not an assertion (D-11.2.8).
+  const kanitRealisticChain = () => ({
+    name: 'Kanit',
+    entries: [
+      { face: '', assetKey: BASE_KEY, family: 'Kanit', style: 'Regular', bold: '', italic: '', boldItalic: '' },
+      { face: 'Noto Sans Thai', assetKey: '', family: '', style: '', bold: 'Noto Sans Thai Bold', italic: '', boldItalic: '' },
+      { face: 'Noto Sans SC', assetKey: '', family: '', style: '', bold: '', italic: '', boldItalic: '' },
+    ],
+  })
+  const kanitText = { ...textComponent, fontFamily: 'Kanit' }
+
+  const mountKanit = (request: unknown, chains = [kanitChain()]) => {
+    const componentCanvas = { ...canvas, fontFamilies: chains.map((chain) => chain.name), fontChains: chains, components: [kanitText] }
+    render(<App engine={engine(request)} blankBytes={new Uint8Array([1, 2, 3]).buffer} initialSnapshot={{ documentState: 'loaded', revision: 1, byteLength: 3, canvas: componentCanvas }} />)
+    fireEvent.click(screen.getByLabelText(/^text component e1/))
+  }
+
+  // The asset prefetch is answered so the base key's request does not reject
+  // into the console; the payloads this file reads are the `command` ones.
+  const cutRequest = (chains = [kanitChain()]) => vi.fn(async (operation: string) => {
+    if (operation === 'asset') return { snapshot: { documentState: 'loaded' as const, revision: 1, byteLength: 3, canvas: { ...canvas, fontFamilies: chains.map((chain) => chain.name), fontChains: chains, components: [kanitText] } }, bytes: kanitRegularBytes }
+    return { snapshot: { documentState: 'loaded' as const, revision: operation === 'command' ? 2 : 1, byteLength: 3, canvas: { ...canvas, fontFamilies: chains.map((chain) => chain.name), fontChains: chains, components: [kanitText] } } }
+  })
+
+  const NO_BOLD = 'No bold face in this family — the engine paints the regular face and warns.'
+  const UNFETCHED_BOLD = 'This family has a bold face, but it is not on this machine — the engine paints the regular face and warns. Add the family again to fetch it.'
+  const UNUSABLE_BOLD = 'This family has a bold face this designer cannot use — the engine paints the regular face and warns. Trying again will not help.'
+  // D-owner-4's fourth state. It claims NOTHING about upstream in either
+  // direction and names the one action that changes what this designer knows.
+  const UNCHECKED_BOLD = 'This designer has not checked whether this family has a bold face — the engine paints the regular face and warns. Add the family again to find out.'
+
+  // The three handles Story 11.3 established, unchanged: the class jsdom can
+  // see, the one announcement path, and the visible wording it points at.
+  const expectCut = (label: 'Bold' | 'Italic', sentence: string | undefined) => {
+    const control = screen.getByRole('button', { name: label })
+    if (sentence === undefined) {
+      expect(control.className, `${label} must be the plain control`).not.toContain('property-toggle-unavailable')
+      expect(control.getAttribute('aria-describedby'), `${label} must describe no absence`).toBeNull()
+      return
+    }
+    expect(control.className, `${label} must be in the unavailable state`).toContain('property-toggle-unavailable')
+    expect(control).not.toBeDisabled()
+    const described = control.getAttribute('aria-describedby')
+    expect(described, `${label} must point at the reason`).not.toBeNull()
+    expect(document.getElementById(described!)).toHaveTextContent(sentence)
+  }
+
+  it('says nothing about a bold the machine holds and the document has not embedded yet', async () => {
+    const boldKey = await storedFaceKey(kanitBoldBytes)
+    await seedMachine([kanitCut(boldKey, 'Bold', kanitBoldBytes), kanitCut(await storedFaceKey(kanitRegularBytes), 'Regular', kanitRegularBytes)], { published: ['Regular', 'Bold'], refused: [] })
+    mountKanit(cutRequest())
+
+    // THE POSITIVE CONTROL IS THE STARTING STATE, and it doubles as this test's
+    // settle condition: before the store has been listed the panel knows of no
+    // held bold and correctly says so, so waiting for the sentence to GO is
+    // waiting for the listing to arrive rather than for a render that never
+    // had it.
+    expect(screen.getByText(NO_BOLD)).toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByText(NO_BOLD)).toBeNull())
+    expectCut('Bold', undefined)
+    // AND THE ITALIC BESIDE IT STILL WARNS: this machine holds no italic, so the
+    // two controls must disagree. Without it this test would also pass over a
+    // change that simply stopped reporting absences.
+    expectCut('Italic', 'No italic face in this family — the engine paints the regular face and warns.')
+  })
+
+  it('sends the cut embed and the property commit as ONE unit, in that order', async () => {
+    const boldKey = await storedFaceKey(kanitBoldBytes)
+    await seedMachine([kanitCut(boldKey, 'Bold', kanitBoldBytes)], { published: ['Regular', 'Bold'], refused: [] })
+    const request = cutRequest()
+    mountKanit(request)
+    await waitFor(() => expect(screen.queryByText(NO_BOLD)).toBeNull())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bold' }))
+    await waitFor(() => expect(embedPayloads(request)).toHaveLength(1))
+
+    // ONE COMMAND REACHED THE ENGINE, which is what one revision and one undo
+    // entry rest on: `wasm.Engine.Apply` pushes one undo per accepted command,
+    // so two commands here would be two undo steps whatever the engine did.
+    const unit = embedPayloads(request)[0]!
+    expect(unit.kind).toBe('applyCommands')
+    const members = unit.commands as ReadonlyArray<Record<string, unknown>>
+    expect(members).toHaveLength(2)
+
+    // THE EMBED COMES FIRST, AND THE ORDER IS FORCED BY THE ENGINE: an entry may
+    // only declare a cut the document actually carries, and a unit applies its
+    // members in order against one document.
+    expect(members[0]).toEqual({
+      kind: 'embedFontCut', version: 1,
+      name: 'Kanit', index: 0, cut: 'bold',
+      family: 'Kanit', style: 'Bold',
+      licence: 'OFL-1.1', licenceText: kanitLicence,
+      copyright: 'Copyright 2020 The Kanit Project Authors',
+      source: 'google/fonts — ofl/kanit/Kanit-Bold.ttf, fetched 2026-09-20',
+      mediaType: 'font/ttf',
+      // THE BYTES ARE THE HELD ONES, read out of the store rather than fetched.
+      data: base64Of(kanitBoldBytes),
+    })
+    expect(members[1]).toEqual({ kind: 'updateComponentProperties', version: 1, ids: ['e1'], changes: { bold: { op: 'set', value: true } } })
+  })
+
+  it('sends the property alone when the document already declares the cut', async () => {
+    const boldKey = await storedFaceKey(kanitBoldBytes)
+    await seedMachine([kanitCut(boldKey, 'Bold', kanitBoldBytes)], { published: ['Regular', 'Bold'], refused: [] })
+    const declared = [kanitChain({ bold: boldKey })]
+    const request = cutRequest(declared)
+    mountKanit(request, declared)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bold' }))
+    await waitFor(() => expect(embedPayloads(request)).toHaveLength(1))
+    // NO UNIT AND NO SECOND COPY OF THE FACE. The engine's idempotent no-op is
+    // the backstop for this, not the plan: a document must not gain bytes it
+    // already carries because a toggle was pressed twice.
+    expect(embedPayloads(request)[0]!.kind).toBe('updateComponentProperties')
+  })
+
+  it('sends no embed when clearing a toggle', async () => {
+    const boldKey = await storedFaceKey(kanitBoldBytes)
+    await seedMachine([kanitCut(boldKey, 'Bold', kanitBoldBytes)], { published: ['Regular', 'Bold'], refused: [] })
+    const bolded = [kanitChain()]
+    const request = cutRequest(bolded)
+    const componentCanvas = { ...canvas, fontFamilies: ['Kanit'], fontChains: bolded, components: [{ ...kanitText, bold: true }] }
+    render(<App engine={engine(request)} blankBytes={new Uint8Array([1, 2, 3]).buffer} initialSnapshot={{ documentState: 'loaded', revision: 1, byteLength: 3, canvas: componentCanvas }} />)
+    fireEvent.click(screen.getByLabelText(/^text component e1/))
+    await waitFor(() => expect(screen.queryByText(NO_BOLD)).toBeNull())
+
+    // Pressing a pressed B CLEARS the property. A document must never gain a
+    // face because something was switched off.
+    fireEvent.click(screen.getByRole('button', { name: 'Bold' }))
+    await waitFor(() => expect(embedPayloads(request)).toHaveLength(1))
+    expect(embedPayloads(request)[0]).toEqual({ kind: 'updateComponentProperties', version: 1, ids: ['e1'], changes: { bold: { op: 'clear' } } })
+  })
+
+  it('refuses at the control, and sends nothing, when the held face has gone from the store', async () => {
+    const boldKey = await storedFaceKey(kanitBoldBytes)
+    const store = await seedMachine([kanitCut(boldKey, 'Bold', kanitBoldBytes)], { published: ['Regular', 'Bold'], refused: [] })
+    const request = cutRequest()
+    mountKanit(request)
+    await waitFor(() => expect(screen.queryByText(NO_BOLD)).toBeNull())
+
+    // THE STORE SELF-HEALS BY DROPPING, so a listing row whose bytes are gone is
+    // an ordinary condition rather than a hypothetical — this is that state,
+    // produced past the designer.
+    expect((await store.remove(boldKey)).ok).toBe(true)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bold' }))
+    expect(await screen.findByText(/Kanit bold is not on this machine any more/)).toBeInTheDocument()
+    // AND THE PROPERTY DID NOT COMMIT EITHER. The embed and the commit are one
+    // unit; half of one is exactly what a unit exists to make unreachable.
+    expect(embedPayloads(request)).toHaveLength(0)
+  })
+
+  it('keeps the existing sentence, word for word, when upstream publishes no bold', async () => {
+    // THE ITALIC IS THE SETTLE CONDITION AND THE DISCRIMINATOR AT ONCE. Before
+    // the store has been listed the panel knows of no held cut and says so about
+    // BOTH; waiting for the italic sentence to go is waiting for the listing,
+    // and the bold sentence surviving that wait is the measurement. Without the
+    // second cut this test would pass over a panel that had read nothing.
+    const italicKey = await storedFaceKey(kanitItalicBytes)
+    await seedMachine(
+      [kanitCut(await storedFaceKey(kanitRegularBytes), 'Regular', kanitRegularBytes), kanitCut(italicKey, 'Italic', kanitItalicBytes)],
+      { published: ['Regular', 'Italic'], refused: [] },
+    )
+    mountKanit(cutRequest())
+    await waitFor(() => expectCut('Italic', undefined))
+    // The census is the authority on what the family publishes and it names no
+    // bold, so the sentence that names the family is the true one — and it is
+    // asserted as the EXACT string, because "with its words unchanged" is the
+    // acceptance criterion.
+    expectCut('Bold', NO_BOLD)
+    expect(screen.getByText(NO_BOLD)).toBeInTheDocument()
+  })
+
+  it('names a bold this machine could not fetch, and offers the re-pick as the way out', async () => {
+    await seedMachine([kanitCut(await storedFaceKey(kanitRegularBytes), 'Regular', kanitRegularBytes)], {
+      published: ['Regular', 'Bold'],
+      refused: [{ style: 'Bold', reason: 'the request timed out', permanence: 'transient' }],
+    })
+    mountKanit(cutRequest())
+    await waitFor(() => expectCut('Bold', UNFETCHED_BOLD))
+    // THE SENTENCE CHANGED ITS SUBJECT AND THE OLD ONE IS GONE: the family is
+    // not the one at fault here, and saying it is was the falsehood D-owner-3
+    // exists to remove.
+    expect(screen.queryByText(NO_BOLD)).toBeNull()
+  })
+
+  it('names a bold this engine cannot use, and offers no retry', async () => {
+    await seedMachine([kanitCut(await storedFaceKey(kanitRegularBytes), 'Regular', kanitRegularBytes)], {
+      published: ['Regular', 'Bold'],
+      refused: [{ style: 'Bold', reason: 'the face carries a variable axis', permanence: 'permanent' }],
+    })
+    mountKanit(cutRequest())
+    // PERMANENCE, NEVER PROSE, DECIDES. The two refusals above and here differ
+    // in exactly one field, and the sentences they produce differ in what they
+    // offer the author to do next.
+    await waitFor(() => expectCut('Bold', UNUSABLE_BOLD))
+    expect(screen.queryByText(UNFETCHED_BOLD)).toBeNull()
+    expect(screen.queryByText(NO_BOLD)).toBeNull()
+  })
+
+  // D-owner-4, AND IT IS A FALSEHOOD REMOVED RATHER THAN A STATE ADDED.
+  //
+  // Three routes reach the panel with face records and no census row: the v1 to
+  // v2 store migration is purely additive and writes none, a failed `putCensus`
+  // leaves the faces written and the row absent, and `installFamily`'s
+  // partial-write path refuses and returns BEFORE `recordFamilyCensus`. Reading
+  // any of them as "not fetched" renders *"This family HAS a bold face"* — a
+  // claim about UPSTREAM from a designer that has asked upstream nothing.
+  it('says it has not checked when there are face records and no census row', async () => {
+    await seedMachine([kanitCut(await storedFaceKey(kanitRegularBytes), 'Regular', kanitRegularBytes)])
+    mountKanit(cutRequest())
+    await waitFor(() => expectCut('Bold', UNCHECKED_BOLD))
+    // NEITHER OF THE TWO CLAIMS IS MADE. The fourth sentence exists because
+    // both of these would have been inventions: one says the family has the
+    // cut, the other says it has none.
+    expect(screen.queryByText(UNFETCHED_BOLD)).toBeNull()
+    expect(screen.queryByText(NO_BOLD)).toBeNull()
+  })
+
+  // THE OTHER SIDE OF THE SAME BRANCH, AND IT IS A DIFFERENT FACT. No census
+  // AND no face records is a family the store has never heard of — the
+  // committed catalogue tier, whose faces are upstream files committed to this
+  // repository byte for byte and whose absences are therefore genuine (settled
+  // fork 4), or a chain from nowhere this designer knows. Today's sentence is
+  // the weakest claim available and stays.
+  it('keeps today\'s sentence for a family the store has never heard of', async () => {
+    await seedMachine([kanitCut(await storedFaceKey(kanitRegularBytes), 'Regular', kanitRegularBytes)], { published: ['Regular', 'Bold'], refused: [] })
+    // A DIFFERENT FAMILY IS IN THE STORE, which is what makes this a
+    // measurement: the listing really has arrived, and it carries nothing for
+    // the family the component names.
+    const strangerChain = { name: 'Stranger', entries: [{ face: '', assetKey: BASE_KEY, family: 'Stranger', style: 'Regular', bold: '', italic: '', boldItalic: '' }] }
+    const stranger = { ...textComponent, fontFamily: 'Stranger' }
+    const componentCanvas = { ...canvas, fontFamilies: ['Stranger'], fontChains: [strangerChain], components: [stranger] }
+    render(<App engine={engine(cutRequest())} blankBytes={new Uint8Array([1, 2, 3]).buffer} initialSnapshot={{ documentState: 'loaded', revision: 1, byteLength: 3, canvas: componentCanvas }} />)
+    fireEvent.click(screen.getByLabelText(/^text component e1/))
+    await waitFor(async () => expect((await faceRecordsOnThisMachine()).map((record) => record.family)).toContain('Kanit'))
+    expectCut('Bold', NO_BOLD)
+    expect(screen.queryByText(UNCHECKED_BOLD)).toBeNull()
+  })
+
+  it('reads a bold whose bytes ARE the regular as genuine absence', async () => {
+    // Upstream publishing a Bold byte-identical to the Regular: the engine
+    // refuses the self-reference (D-11.2.11), the designer never sends it, and
+    // a bold identical to the regular is no bold — so the sentence that names
+    // the family is the true one.
+    //
+    // ⚠ THE HELD ITALIC IS THE POSITIVE CONTROL, and without it this test
+    // cannot pass for the right reason: NO_BOLD is also the state before the
+    // listing arrives, so settling on the store alone would let a panel that
+    // never consults it go green. The italic sentence going away is the panel
+    // reading the store; the bold sentence surviving that is the measurement.
+    await seedMachine(
+      [kanitCut(BASE_KEY, 'Bold', kanitBoldBytes), kanitCut(await storedFaceKey(kanitItalicBytes), 'Italic', kanitItalicBytes)],
+      { published: ['Regular', 'Bold', 'Italic'], refused: [] },
+    )
+    mountKanit(cutRequest())
+    await waitFor(() => expectCut('Italic', undefined))
+    expectCut('Bold', NO_BOLD)
+  })
+
+  // ⚠ THE CHAIN A REAL PICK WRITES, AND THE ONE CASE THAT CAN SEE THE
+  // ENTRY-VERSUS-CHAIN DEFECT.
+  //
+  // `proposedFallbackTail` puts `Noto Sans Thai` behind every embedded face
+  // whose scripts exclude Thai, and that entry DECLARES A BOLD. A plan built on
+  // "does the CHAIN declare this cut" therefore answers yes for most of the
+  // catalogue, builds nothing, and leaves B doing nothing and saying nothing
+  // while I still works. Every other fixture in this file is a one-entry chain,
+  // on which the entry rule and the chain rule agree — so this case is the
+  // whole coverage for the distinction.
+  it('embeds the base entry\'s bold even when a FALLBACK entry already declares one', async () => {
+    const boldKey = await storedFaceKey(kanitBoldBytes)
+    // THE HELD ITALIC IS THE SETTLE CONDITION. No entry of this chain declares
+    // an italic, so I warns until the listing lands and then goes plain —
+    // whereas B never warns here at all (the fallback declares a bold), so the
+    // bold sentence cannot be waited on.
+    await seedMachine(
+      [kanitCut(boldKey, 'Bold', kanitBoldBytes), kanitCut(await storedFaceKey(kanitItalicBytes), 'Italic', kanitItalicBytes)],
+      { published: ['Regular', 'Bold', 'Italic'], refused: [] },
+    )
+    const realistic = [kanitRealisticChain()]
+    // THE FIXTURE'S DISCRIMINATING POWER IS PINNED BEFORE IT IS USED: the base
+    // entry declares no bold and a LATER entry does, so the two rules genuinely
+    // disagree on it.
+    expect(realistic[0]!.entries[0]!.bold, 'the BASE entry must declare no bold').toBe('')
+    expect(realistic[0]!.entries.some((entry) => entry.bold.length > 0), 'a TAIL entry must declare one').toBe(true)
+
+    const request = cutRequest(realistic)
+    mountKanit(request, realistic)
+    await waitFor(() => expectCut('Italic', undefined))
+    fireEvent.click(screen.getByRole('button', { name: 'Bold' }))
+    await waitFor(() => expect(embedPayloads(request)).toHaveLength(1))
+
+    const unit = embedPayloads(request)[0]!
+    expect(unit.kind, 'the press must still assemble a unit: the fallback\'s bold is not the base entry\'s').toBe('applyCommands')
+    const members = unit.commands as ReadonlyArray<Record<string, unknown>>
+    expect(members).toHaveLength(2)
+    expect(members[0]).toMatchObject({ kind: 'embedFontCut', name: 'Kanit', index: 0, cut: 'bold', data: base64Of(kanitBoldBytes) })
+  })
+
+  // THE THIRD CUT, WHOSE RIBBI SPELLING IS THE ONE THAT CAN GO WRONG SILENTLY.
+  // `'Bold Italic'` carries a space and a second capital; mis-spelling it in
+  // `RIBBI_CUT_NAMES` resolves to no stored record at all, so the combined cut
+  // simply stops embedding while every `bold` and `italic` case stays green.
+  it('embeds the BOLD ITALIC cut for an already-italic component', async () => {
+    const key = await storedFaceKey(kanitBoldItalicBytes)
+    await seedMachine([kanitCut(key, 'Bold Italic', kanitBoldItalicBytes)], { published: ['Regular', 'Bold Italic'], refused: [] })
+    const chains = [kanitChain()]
+    const request = cutRequest(chains)
+    const componentCanvas = { ...canvas, fontFamilies: ['Kanit'], fontChains: chains, components: [{ ...kanitText, italic: true }] }
+    render(<App engine={engine(request)} blankBytes={new Uint8Array([1, 2, 3]).buffer} initialSnapshot={{ documentState: 'loaded', revision: 1, byteLength: 3, canvas: componentCanvas }} />)
+    fireEvent.click(screen.getByLabelText(/^text component e1/))
+    // Until the listing lands the panel knows of no held combined cut and says
+    // so; the sentence going away is that listing arriving.
+    await waitFor(() => expectCut('Bold', undefined))
+
+    // B ON AN ALREADY-ITALIC ELEMENT ASKS THE CHAIN FOR `boldItalic`, not for
+    // `bold` — the cut is the one the RESULTING combination needs.
+    fireEvent.click(screen.getByRole('button', { name: 'Bold' }))
+    await waitFor(() => expect(embedPayloads(request)).toHaveLength(1))
+    const members = embedPayloads(request)[0]!.commands as ReadonlyArray<Record<string, unknown>>
+    expect(members[0]).toMatchObject({ kind: 'embedFontCut', cut: 'boldItalic', style: 'Bold Italic', data: base64Of(kanitBoldItalicBytes) })
+  })
+
+  // THE COMBINED CUT KEEPS ITS STATED WAY OUT IN EVERY STATE. Returning early
+  // for the new states skipped the `boldItalic` branch, so the one cut whose
+  // exit is "turn off either one" lost it in exactly the three states that were
+  // added — and a state with no stated exit is the grey-out DESIGN.md forbids.
+  it('states the way out of the combined cut in every absence state', async () => {
+    await seedMachine([kanitCut(await storedFaceKey(kanitRegularBytes), 'Regular', kanitRegularBytes)], {
+      published: ['Regular', 'Bold Italic'],
+      refused: [{ style: 'Bold Italic', reason: 'the request timed out', permanence: 'transient' }],
+    })
+    const chains = [kanitChain()]
+    const request = cutRequest(chains)
+    // BOTH FLAGS ON, so BOTH controls ask the chain for the combined cut and
+    // the "once for the pair" rule is what is being read. With only one flag
+    // set the other control asks for its own axis and the pair would not be
+    // implicated at all.
+    const componentCanvas = { ...canvas, fontFamilies: ['Kanit'], fontChains: chains, components: [{ ...kanitText, bold: true, italic: true }] }
+    render(<App engine={engine(request)} blankBytes={new Uint8Array([1, 2, 3]).buffer} initialSnapshot={{ documentState: 'loaded', revision: 1, byteLength: 3, canvas: componentCanvas }} />)
+    fireEvent.click(screen.getByLabelText(/^text component e1/))
+
+    const combined = 'This family has a bold italic face, but it is not on this machine — the engine paints the regular face and warns. Add the family again to fetch it. Turn off either one.'
+    await waitFor(() => expectCut('Bold', combined))
+    // STATED ONCE FOR THE PAIR, through one announcement path, exactly as the
+    // `unpublished` combined sentence is.
+    expectCut('Italic', combined)
+    expect(screen.getAllByText(combined)).toHaveLength(1)
+  })
+
+  // `a bold` BUT `an italic`. The article is derived from the cut's name, and
+  // nothing else in this file reads an italic-cut sentence in a new state — so
+  // without this the three sentences could say "a italic face" for ever.
+  it('says "an italic face", not "a italic face"', async () => {
+    await seedMachine([kanitCut(await storedFaceKey(kanitRegularBytes), 'Regular', kanitRegularBytes)], {
+      published: ['Regular', 'Italic'],
+      refused: [{ style: 'Italic', reason: 'the origin refused the request', permanence: 'permanent' }],
+    })
+    mountKanit(cutRequest())
+    const sentence = 'This family has an italic face this designer cannot use — the engine paints the regular face and warns. Trying again will not help.'
+    await waitFor(() => expectCut('Italic', sentence))
+    expect(screen.queryByText(/has a italic/)).toBeNull()
+  })
+
+  // TWO FAMILIES IN ONE SELECTION PRODUCE TWO EMBED MEMBERS AND ONE PROPERTY
+  // COMMAND. `firstUseCutPlans` keys its map on the (cut, chain) PAIR, and with
+  // every other case selecting one component that key is inert: a map keyed on
+  // the cut alone would collapse these two into one and the second family would
+  // be set bold over a face the document does not carry.
+  it('carries one embed member per family and one property command, in that order', async () => {
+    const kanitBoldKey = await storedFaceKey(kanitBoldBytes)
+    const sarabunBoldBytes = sfntWithNames([{ platform: 3, nameID: 0, value: 'Copyright 2018 The Sarabun Project Authors, Bold' }])
+    const sarabunBoldKey = await storedFaceKey(sarabunBoldBytes)
+    const opened = await openFontStore(globalThis.indexedDB)
+    if (!opened.ok) throw new Error(opened.reason)
+    expect((await opened.value.put(kanitCut(kanitBoldKey, 'Bold', kanitBoldBytes))).ok).toBe(true)
+    expect((await opened.value.put({ ...kanitCut(sarabunBoldKey, 'Bold', sarabunBoldBytes), family: 'Sarabun' })).ok).toBe(true)
+    expect((await opened.value.putCensus({ family: 'Kanit', published: ['Regular', 'Bold'], refused: [], recordedAt: '2026-09-20' })).ok).toBe(true)
+    expect((await opened.value.putCensus({ family: 'Sarabun', published: ['Regular', 'Bold'], refused: [], recordedAt: '2026-09-20' })).ok).toBe(true)
+
+    const SARABUN_KEY = '2222222222222222222222222222222222222222222222222222222222222222'
+    const chains = [
+      kanitChain(),
+      { name: 'Sarabun', entries: [{ face: '', assetKey: SARABUN_KEY, family: 'Sarabun', style: 'Regular', bold: '', italic: '', boldItalic: '' }] },
+    ]
+    const second = { ...textComponent, id: 'e2', y: 30_000, fontFamily: 'Sarabun' }
+    const componentCanvas = { ...canvas, fontFamilies: ['Kanit', 'Sarabun'], fontChains: chains, components: [kanitText, second] }
+    const request = vi.fn(async (operation: string) => ({ snapshot: { documentState: 'loaded' as const, revision: operation === 'command' ? 2 : 1, byteLength: 3, canvas: componentCanvas }, bytes: kanitRegularBytes }))
+    render(<App engine={engine(request)} blankBytes={new Uint8Array([1, 2, 3]).buffer} initialSnapshot={{ documentState: 'loaded', revision: 1, byteLength: 3, canvas: componentCanvas }} />)
+    fireEvent.click(screen.getByLabelText(/^text component e1/))
+    fireEvent.click(screen.getByLabelText(/^text component e2/), { shiftKey: true })
+    await waitFor(() => expect(screen.queryByText(NO_BOLD)).toBeNull())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bold' }))
+    await waitFor(() => expect(embedPayloads(request)).toHaveLength(1))
+    const members = embedPayloads(request)[0]!.commands as ReadonlyArray<Record<string, unknown>>
+    expect(members).toHaveLength(3)
+    // THE EMBEDS FIRST AND THE PROPERTY LAST, because a unit applies its
+    // members in order and an entry may only declare a cut the document
+    // already carries.
+    expect(members.slice(0, 2).map((member) => member.name)).toEqual(['Kanit', 'Sarabun'])
+    expect(members[0]).toMatchObject({ kind: 'embedFontCut', cut: 'bold', data: base64Of(kanitBoldBytes) })
+    expect(members[1]).toMatchObject({ kind: 'embedFontCut', cut: 'bold', data: base64Of(sarabunBoldBytes) })
+    expect(members[2]).toMatchObject({ kind: 'updateComponentProperties', ids: ['e1', 'e2'] })
+  })
+
+  // TWO FAMILIES MISSING THE SAME CUT FOR DIFFERENT REASONS HAVE NO ONE TRUE
+  // SENTENCE, so the panel states none — the file's existing mixed-selection
+  // rule ("a selection missing two DIFFERENT cuts has no one true sentence to
+  // state, so it states none") extended to the axis the census opened. With
+  // every other case selecting one component, the "reasons must agree"
+  // conjunct is otherwise inert.
+  it('states no sentence when the selection lacks the same cut for different reasons', async () => {
+    const opened = await openFontStore(globalThis.indexedDB)
+    if (!opened.ok) throw new Error(opened.reason)
+    expect((await opened.value.put(kanitCut(await storedFaceKey(kanitRegularBytes), 'Regular', kanitRegularBytes))).ok).toBe(true)
+    expect((await opened.value.put({ ...kanitCut(await storedFaceKey(kanitItalicBytes), 'Regular', kanitItalicBytes), family: 'Sarabun' })).ok).toBe(true)
+    // Kanit publishes no bold at all; Sarabun publishes one this machine could
+    // not fetch. Both controls are missing `bold`, for two different reasons.
+    expect((await opened.value.putCensus({ family: 'Kanit', published: ['Regular'], refused: [], recordedAt: '2026-09-20' })).ok).toBe(true)
+    expect((await opened.value.putCensus({ family: 'Sarabun', published: ['Regular', 'Bold'], refused: [{ style: 'Bold', reason: 'the request timed out', permanence: 'transient' }], recordedAt: '2026-09-20' })).ok).toBe(true)
+
+    const SARABUN_KEY = '2222222222222222222222222222222222222222222222222222222222222222'
+    const chains = [
+      kanitChain(),
+      { name: 'Sarabun', entries: [{ face: '', assetKey: SARABUN_KEY, family: 'Sarabun', style: 'Regular', bold: '', italic: '', boldItalic: '' }] },
+    ]
+    const second = { ...textComponent, id: 'e2', y: 30_000, fontFamily: 'Sarabun' }
+    const componentCanvas = { ...canvas, fontFamilies: ['Kanit', 'Sarabun'], fontChains: chains, components: [kanitText, second] }
+    render(<App engine={engine(cutRequest())} blankBytes={new Uint8Array([1, 2, 3]).buffer} initialSnapshot={{ documentState: 'loaded', revision: 1, byteLength: 3, canvas: componentCanvas }} />)
+    fireEvent.click(screen.getByLabelText(/^text component e1/))
+    fireEvent.click(screen.getByLabelText(/^text component e2/), { shiftKey: true })
+
+    // THE SETTLE CONDITION IS THE SENTENCE GOING AWAY: before the listing
+    // arrives both families read `unpublished` and AGREE, so NO_BOLD is shown.
+    // It disappears once the census makes them disagree.
+    await waitFor(() => expect(screen.queryByText(NO_BOLD)).toBeNull())
+    expectCut('Bold', undefined)
+    expect(screen.queryByText(UNFETCHED_BOLD)).toBeNull()
+  })
+
+  // THE ENGINE REFUSING A MEMBER IS THE OTHER HALF OF THE REFUSAL SURFACE, and
+  // only the designer-side store miss was covered. The whole unit is refused,
+  // so `bold` never commits and the document is untouched — the half-state a
+  // unit exists to make unreachable — and the refusal is anchored on the
+  // control the author pressed.
+  it('refuses the whole unit when the engine refuses the embed member', async () => {
+    const boldKey = await storedFaceKey(kanitBoldBytes)
+    await seedMachine([kanitCut(boldKey, 'Bold', kanitBoldBytes)], { published: ['Regular', 'Bold'], refused: [] })
+    const chains = [kanitChain()]
+    const committed = { ...canvas, fontFamilies: ['Kanit'], fontChains: chains, components: [kanitText] }
+    const request = vi.fn(async (operation: string, payload?: ArrayBuffer) => {
+      if (operation === 'command') {
+        // The engine's own located refusal, in the shape every other refusal
+        // test in this repository builds: the message IS the Error's message.
+        throw Object.assign(new Error('this face carries an `fvar` table'), { code: 'COMPONENT_INVALID', dataPath: 'fonts.Kanit[0]' })
+      }
+      return { snapshot: { documentState: 'loaded' as const, revision: 1, byteLength: 3, canvas: committed }, bytes: payload }
+    })
+    render(<App engine={engine(request)} blankBytes={new Uint8Array([1, 2, 3]).buffer} initialSnapshot={{ documentState: 'loaded', revision: 1, byteLength: 3, canvas: committed }} />)
+    fireEvent.click(screen.getByLabelText(/^text component e1/))
+    await waitFor(() => expect(screen.queryByText(NO_BOLD)).toBeNull())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bold' }))
+    await waitFor(() => expect(embedPayloads(request)).toHaveLength(1))
+    // THE REFUSAL IS SHOWN, beside the toggle that sent it: a member's refusal
+    // travels out of the unit verbatim and is anchored here by the FIELDS the
+    // intent carried, which is `bold`.
+    expect(await screen.findByText(/`fvar`/)).toBeInTheDocument()
+    // AND THE DOCUMENT DID NOT MOVE. The toggle still reads off, because the
+    // engine installed no new snapshot and the panel shows only committed
+    // values.
+    expect(screen.getByRole('button', { name: 'Bold' })).toHaveAttribute('aria-pressed', 'false')
+  })
+
+  // ⚠ THE (cut, chain) DEDUPE KEY, AND THE ONLY SELECTION THAT CAN SEE IT.
+  //
+  // A two-FAMILY selection does not discriminate: keying on the chain alone
+  // gives the same two plans. What tells the two keys apart is one FAMILY
+  // needing two DIFFERENT cuts, which happens whenever the selection mixes an
+  // already-italic component with an upright one — B asks the first for
+  // `boldItalic` and the second for `bold`. A chain-only key collapses those
+  // into one member, and the component whose cut was dropped is set bold over a
+  // face the document does not carry: the base face, painted with a warning,
+  // with nothing on screen saying why.
+  it('carries BOTH cuts of ONE family when the selection needs two', async () => {
+    const boldKey = await storedFaceKey(kanitBoldBytes)
+    const boldItalicKey = await storedFaceKey(kanitBoldItalicBytes)
+    const italicKey = await storedFaceKey(kanitItalicBytes)
+    await seedMachine(
+      [
+        kanitCut(boldKey, 'Bold', kanitBoldBytes),
+        kanitCut(boldItalicKey, 'Bold Italic', kanitBoldItalicBytes),
+        // The held italic is the settle condition: both components ask for
+        // `italic` on the I control, so they AGREE and the sentence is shown
+        // until the listing lands.
+        kanitCut(italicKey, 'Italic', kanitItalicBytes),
+      ],
+      { published: ['Regular', 'Bold', 'Italic', 'Bold Italic'], refused: [] },
+    )
+    const chains = [kanitChain()]
+    const upright = { ...kanitText, id: 'e1' }
+    const slanted = { ...kanitText, id: 'e2', y: 30_000, italic: true }
+    const componentCanvas = { ...canvas, fontFamilies: ['Kanit'], fontChains: chains, components: [upright, slanted] }
+    const request = vi.fn(async (operation: string) => ({ snapshot: { documentState: 'loaded' as const, revision: operation === 'command' ? 2 : 1, byteLength: 3, canvas: componentCanvas }, bytes: kanitRegularBytes }))
+    render(<App engine={engine(request)} blankBytes={new Uint8Array([1, 2, 3]).buffer} initialSnapshot={{ documentState: 'loaded', revision: 1, byteLength: 3, canvas: componentCanvas }} />)
+    fireEvent.click(screen.getByLabelText(/^text component e1/))
+    fireEvent.click(screen.getByLabelText(/^text component e2/), { shiftKey: true })
+    // ⚠ MATCHED BY PREFIX, because the two components disagree about `italic`
+    // and `BooleanProperty` names a non-uniform control "Italic, mixed". That
+    // disagreement IS the fixture — it is what makes B ask for two different
+    // cuts — so the mixed name is a consequence of the thing under test rather
+    // than something to design around.
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Italic/ }).getAttribute('aria-describedby'), 'the held italic must stop being reported absent once the listing lands').toBeNull())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Bold' }))
+    await waitFor(() => expect(embedPayloads(request)).toHaveLength(1))
+    const members = embedPayloads(request)[0]!.commands as ReadonlyArray<Record<string, unknown>>
+    expect(members, 'two cuts of one family are two members, not one').toHaveLength(3)
+    // ONE CHAIN, TWO CUTS. The names are deliberately identical, which is the
+    // whole point: the chain cannot be what tells these two members apart.
+    expect(members.slice(0, 2).map((member) => member.name)).toEqual(['Kanit', 'Kanit'])
+    expect(members[0]).toMatchObject({ kind: 'embedFontCut', cut: 'bold', data: base64Of(kanitBoldBytes) })
+    expect(members[1]).toMatchObject({ kind: 'embedFontCut', cut: 'boldItalic', data: base64Of(kanitBoldItalicBytes) })
+    expect(members[2]).toMatchObject({ kind: 'updateComponentProperties', ids: ['e1', 'e2'] })
+  })
+
+  // THE TOGGLE SURVIVES A REFUSAL, which is the property `BooleanProperty`'s
+  // `pendingRef` puts at risk: it is taken before the await and cleared only on
+  // RETURN, so anything leaving that call by another route leaves the control
+  // dead for the rest of the session with no message anywhere — an author reads
+  // that as a broken button, not as a refused action.
+  //
+  // MEASURED BY PRESSING IT AGAIN AND WATCHING IT WORK, not by inspecting a
+  // flag. The second press is made to succeed — the dropped record is put back
+  // past the designer, and the stale listing still names it — so a dead control
+  // and a live one produce visibly different results rather than two silences.
+  it('leaves the toggle usable after a refusal', async () => {
+    const boldKey = await storedFaceKey(kanitBoldBytes)
+    const store = await seedMachine([kanitCut(boldKey, 'Bold', kanitBoldBytes)], { published: ['Regular', 'Bold'], refused: [] })
+    const request = cutRequest()
+    mountKanit(request)
+    await waitFor(() => expect(screen.queryByText(NO_BOLD)).toBeNull())
+
+    expect((await store.remove(boldKey)).ok).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Bold' }))
+    expect(await screen.findByText(/Kanit bold is not on this machine any more/)).toBeInTheDocument()
+    expect(embedPayloads(request)).toHaveLength(0)
+
+    // The face comes back; the listing never changed, so the plan is the same
+    // plan and only the read's outcome differs.
+    expect((await store.put(kanitCut(boldKey, 'Bold', kanitBoldBytes))).ok).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Bold' }))
+    await waitFor(() => expect(embedPayloads(request), 'the second press did nothing: the control was left pending by the first').toHaveLength(1))
+    expect(embedPayloads(request)[0]!.kind).toBe('applyCommands')
+  })
+})

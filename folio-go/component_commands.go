@@ -294,6 +294,8 @@ func applyComponentCommand(t *Template, command []byte, fonts ...FontSet) (desig
 		return applyFontChainCommand(t, raw, removeFontChainEntry)
 	case "embedFontFamily":
 		return applyFontChainCommand(t, raw, embedFontFamily)
+	case "embedFontCut":
+		return applyFontChainCommand(t, raw, embedFontCut)
 	case "setBandHeight":
 		return setBandHeight(t, raw)
 	case "setSectionBreak":
@@ -411,6 +413,29 @@ const (
 	maxUnitCommands = 64
 )
 
+// maxUnitPayloadBytes bounds a unit's WHOLE payload, and it exists because
+// every other byte bound in this file is PER MEMBER.
+//
+// ⚠ maxComponentAssetBytes IS A PER-MEMBER DERIVATION AND CANNOT COVER A UNIT.
+// It is the largest DECODED face or picture whose base64-inflated command
+// still fits inside engineProtocolMaxPayloadBytes, so ONE member carrying one
+// asset is guaranteed to arrive. A unit carries several: since
+// spec-install-all-face-cuts story 2 the designer sends one `embedFontCut` per
+// family needing a cut, so a multi-family selection puts three or four faces
+// in one command. Each clears its own per-member bound and the unit can still
+// be many times the envelope — at which point it fails at TRANSPORT, before
+// any handler runs, with no located diagnostic at all. That is exactly the
+// disagreement D-5.13.4 forbids ("the two must not disagree about the
+// threshold"), one level up: this bound is what makes "a file Go accepts can
+// actually arrive" true for a MULTI-FACE unit as well as for a single member.
+//
+// IT IS THE ENVELOPE ITSELF, NOT A DERIVATION FROM IT. The member bytes are
+// already base64 here — this is the encoded command as it travelled — so there
+// is no 4/3 expansion still to come and nothing to subtract for a skeleton
+// that is already part of what was measured. A unit at exactly the envelope
+// size is admitted; anything past it could not have arrived.
+const maxUnitPayloadBytes = engineProtocolMaxPayloadBytes
+
 // carriedCommands answers the ONE question "what commands does this command
 // carry", and it is the SOLE reader of a unit's member list in this repository.
 // A unit carries its members in order; every other command carries itself, and
@@ -491,6 +516,12 @@ func applyCommandUnit(t *Template, raw map[string]json.RawMessage, command []byt
 	}
 	if len(members) > maxUnitCommands {
 		return designer.CanvasProjection{}, componentFailure("", unitCommandPath, fmt.Sprintf("a unit of commands carries at most %d commands and this one carries %d", maxUnitCommands, len(members)))
+	}
+	// THE WHOLE PAYLOAD, NOT THE MEMBERS ADDED UP: `command` is the bytes that
+	// travelled, so this measures what the transport would have had to carry.
+	// See maxUnitPayloadBytes for why the per-member bound cannot answer this.
+	if len(command) > maxUnitPayloadBytes {
+		return designer.CanvasProjection{}, componentFailure("", unitCommandPath, fmt.Sprintf("a unit of commands carries at most %d bytes in total and this one carries %d; the per-command size bound covers one member, not a unit of them", maxUnitPayloadBytes, len(command)))
 	}
 	for _, member := range members {
 		if _, nested, _ := carriedCommands(member); nested {
@@ -1416,13 +1447,26 @@ func setComponentAssetInPlace(t *Template, raw map[string]json.RawMessage) (desi
 // is no third location for those two to gain. What DOES pair with this arm is
 // fontChainReferences, which walks the same map for the same safety reason from
 // the other direction (which elements name a chain).
+//
+// DW-80, SECOND EDITION (spec-install-all-face-cuts story 2). This walk used to
+// ask `entry.Embedded() && entry.AssetKey == key`, which is the entry's BASE
+// key and nothing else — correct only while nothing could write a variant one.
+// `embedFontCut` can, so a chain entry may now name up to four assets, and a
+// walk that saw one of them would answer FALSE for a bold a live chain is still
+// drawing with and the orphan drop would delete it. That is exactly the bug
+// this function's own history paragraph above records, one level down, and the
+// deletion direction is the dangerous one again. It asks EmbeddedAssetKeys()
+// — the model's own enumeration, base first then the closed set in its fixed
+// order — so a fifth cut cannot arrive in the format and be invisible here.
+//
+// ⚠ IT IS DELIBERATELY NOT THE PREDICATE embedFontFamily DEDUPES WITH. That
+// caller asks a DIFFERENT question — "is this pick already in the document?" —
+// and widening it the same way would make a base pick whose Regular bytes
+// happen to equal another family's declared bold silently create no chain at
+// all. See embeddedBaseKeyReferenced below.
 func assetKeyReferenced(t *Template, key string) bool {
-	for _, elements := range [][]template.Element{t.doc.Bands.PageHeader.Elements, contentElements(t), t.doc.Bands.PageFooter.Elements} {
-		for _, el := range elements {
-			if el.Type == template.ElementImage && el.Asset.Set && !el.Asset.Null && el.Asset.Value == key {
-				return true
-			}
-		}
+	if imageAssetKeyReferenced(t, key) {
+		return true
 	}
 	// SORTED KEYS, not a bare map range (AD-1, NFR1.d). The ANSWER here does
 	// not depend on the order — it is an existence question — but the rule is
@@ -1431,11 +1475,55 @@ func assetKeyReferenced(t *Template, key string) bool {
 	// somebody returns the first match instead of a bool.
 	for _, name := range slices.Sorted(maps.Keys(t.doc.Fonts)) {
 		for _, entry := range t.doc.Fonts[name] {
-			// Embedded() is THE discriminant (template.FontChainEntry); a
-			// bare `entry.AssetKey == key` would be the same test written a
-			// second time, and a face entry can never carry an asset key
-			// anyway — the partition is the type's own invariant.
+			// EmbeddedAssetKeys() is THE enumeration (template.FontChainEntry);
+			// it is empty for a face entry, whose siblings are FontSet face
+			// names and name no asset at all, so the discriminant is the type's
+			// own invariant here exactly as it was when this read
+			// `entry.Embedded()`.
+			if slices.Contains(entry.EmbeddedAssetKeys(), key) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// embeddedBaseKeyReferenced is the OTHER question, and splitting it out is
+// spec-install-all-face-cuts story 2's, not a refactor.
+//
+// ONE FUNCTION USED TO ANSWER BOTH. The SAFETY callers ask "may these bytes be
+// deleted?" and must see every key a chain names, variants included. THIS
+// caller — embedFontFamily's dedupe — asks "is this pick already in the
+// document?", and the only thing that answers yes to that is a chain entry
+// whose OWN face is these bytes. A family whose Regular happens to be the
+// bytes some other family declared as its bold is a family this document does
+// NOT carry, and answering yes would return the pick's silent no-op: no asset,
+// no chain, no error, and a font control that appears to have done nothing.
+//
+// SO THE BODY BELOW IS THE OLD ONE, KEPT DELIBERATELY RATHER THAN LEFT BEHIND,
+// and the red-proof that covered it covers it still under this name.
+func embeddedBaseKeyReferenced(t *Template, key string) bool {
+	if imageAssetKeyReferenced(t, key) {
+		return true
+	}
+	for _, name := range slices.Sorted(maps.Keys(t.doc.Fonts)) {
+		for _, entry := range t.doc.Fonts[name] {
 			if entry.Embedded() && entry.AssetKey == key {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// imageAssetKeyReferenced is the arm both predicates share unchanged: an image
+// ELEMENT naming the key, across every band. It is shared rather than written
+// twice because the three-walk warning above is about THIS walk, and a second
+// copy of it is a second place for a later story to forget a new location.
+func imageAssetKeyReferenced(t *Template, key string) bool {
+	for _, elements := range [][]template.Element{t.doc.Bands.PageHeader.Elements, contentElements(t), t.doc.Bands.PageFooter.Elements} {
+		for _, el := range elements {
+			if el.Type == template.ElementImage && el.Asset.Set && !el.Asset.Null && el.Asset.Value == key {
 				return true
 			}
 		}
@@ -4403,16 +4491,21 @@ func removeFontChainEntry(t *Template, raw map[string]json.RawMessage) error {
 //
 // It takes the removed ENTRIES rather than keys so a caller cannot pass a key
 // it derived some other way; a face entry contributes no candidate at all,
-// which Embedded() decides rather than the caller.
+// which EmbeddedAssetKeys() decides rather than the caller.
+//
+// EVERY KEY THE ENTRY NAMED, NOT ONLY ITS BASE (spec-install-all-face-cuts
+// story 2). An entry that declares a bold names TWO assets, and un-naming the
+// entry un-names both at once; collecting only the base would leave a face
+// nothing can reach in the document for ever — the accumulation this function
+// exists to stop, arriving through the cut that story made writable.
 func dropUnnamedFontAssets(t *Template, removed ...template.FontChainEntry) {
 	for _, entry := range removed {
-		if !entry.Embedded() {
-			continue
+		for _, key := range entry.EmbeddedAssetKeys() {
+			if assetKeyReferenced(t, key) {
+				continue
+			}
+			delete(t.doc.Assets, key)
 		}
-		if assetKeyReferenced(t, entry.AssetKey) {
-			continue
-		}
-		delete(t.doc.Assets, entry.AssetKey)
 	}
 }
 
@@ -4540,7 +4633,12 @@ func embedFontFamily(t *Template, raw map[string]json.RawMessage) error {
 	// — because the canonical bytes then do not move — no second history
 	// entry either (wasm.Engine.Apply's no-op short-circuit). The existing
 	// chain is what the author is offered.
-	if assetKeyReferenced(t, key) {
+	//
+	// ⚠ THE NARROW PREDICATE, AND THE NARROWNESS IS THE POINT. See
+	// embeddedBaseKeyReferenced: asking the variant-aware safety walk here
+	// would make a base pick whose Regular bytes equal another family's
+	// declared bold silently create no chain.
+	if embeddedBaseKeyReferenced(t, key) {
 		return nil
 	}
 	if _, exists := t.doc.Fonts[name]; exists {
@@ -4580,14 +4678,203 @@ func embedFontFamily(t *Template, raw map[string]json.RawMessage) error {
 	// chain commands 8.1 already shipped, which is why nothing here is
 	// privileged or locked.
 	//
-	// THE PICKED ENTRY DECLARES NO CUT, and that is not an omission: a pick
-	// embeds ONE face, the catalogue is one upright static Regular per family,
-	// and an entry may only declare a cut the document actually carries.
+	// THE PICKED ENTRY DECLARES NO CUT, AND THAT IS STILL TRUE OF THE PICK —
+	// but it is no longer true of the document for ever.
+	//
+	// ⚠ THIS COMMENT USED TO SAY "a pick embeds ONE face … and an entry may
+	// only declare a cut the document actually carries", offered as a standing
+	// property of the format. The second half is unchanged and is the format's
+	// rule; the first half is now a statement about THIS COMMAND ONLY. A pick
+	// still carries one face, because a family's other cuts are installed on
+	// the machine rather than written into the file (spec-install-all-face-cuts
+	// story 1) and a document earns bytes only when the author uses them. What
+	// puts a cut in the document afterwards is `embedFontCut`, which attaches a
+	// variant asset key to an entry this command wrote — so an entry that
+	// declares no cut HERE may declare one later, and code reading this
+	// function must not infer that a chain entry's cuts are always empty.
 	entries := make([]template.FontChainEntry, 0, len(tail)+1)
 	entries = append(entries, template.AssetEntry(key))
 	entries = append(entries, tail...)
 	t.doc.Fonts[name] = entries
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// SPEC-INSTALL-ALL-FACE-CUTS STORY 2: A SECOND FACE FOR AN ENTRY THAT ALREADY
+// HAS ONE.
+//
+// THE READ SIDE HAS BEEN FINISHED SINCE STORY 11.2 AND ONLY THE WRITE DOOR WAS
+// MISSING. template.FontChainEntry carries Bold/Italic/BoldItalic,
+// EmbeddedAssetKeys() walks them, parse.go enforces their namespace,
+// self-reference and licence rules, and page_setup.go projects them to the
+// canvas. Nothing in the command vocabulary could WRITE one: embedFontFamily
+// refuses a chain name the document already holds — the exact opposite
+// precondition to this command's — and componentFields is an exact count, so
+// that handler could not have grown an optional argument either.
+//
+// SO IT IS A SECOND KIND RATHER THAN A WIDER FIRST ONE, and the trade-off that
+// used to argue the other way is gone. Fusing the embed with the property
+// commit was once the only route to one undo entry; story 6's
+// `applyCommands` unit delivers that for any two commands, so this one is free
+// to be exactly what it is — "attach one variant asset key to one entry" —
+// with one precondition and one refusal set.
+//
+// IT CLEARS THE SAME BAR AS THE BASE, IN THE SAME ORDER, THROUGH THE SAME
+// FUNCTIONS. embeddedFontRecord's six non-blank fields, embeddedFaceBytes'
+// decode and 8 MiB bound, DecodeFontForRender, fontset.RefuseVariableFace and
+// fontset.RefuseContradictedLicence — reused, never restated, because AD-26 /
+// I-7 makes a variant asset key an embedded face in its own right and a
+// weaker door here would be a way to put an unlicensed or unrenderable bold in
+// a document the strict door refuses to accept.
+//
+// AN EMBEDDED FACE IS NEVER REPLACED. A cut already declared over DIFFERENT
+// bytes is refused rather than overwritten (the spec's freeze rule: an asset
+// key IS the content, so a swapped vintage is a changed document and a silent
+// swap is a silently different file). A cut already declared over the SAME
+// bytes is a NO-OP, which is what makes the designer's "send the property
+// alone when the cut is declared" a plan rather than a requirement — the
+// backstop costs nothing and the document does not move, so Apply pushes no
+// second history entry.
+//
+// THE BASE IS NEVER TOUCHED. `index` targets an entry the way
+// addFontChainEntry / move / remove already do, and resolving it yields the
+// entry's own AssetKey — so the self-reference rule D-11.2.11 states at load
+// is checked here for free, with no second wire field carrying the base key.
+func embedFontCut(t *Template, raw map[string]json.RawMessage) error {
+	if err := componentFields(raw, 13); err != nil {
+		return err
+	}
+	name, chain, err := declaredFontChain(t, raw)
+	if err != nil {
+		return err
+	}
+	index, err := fontChainIndex(raw, name, "index", len(chain)-1)
+	if err != nil {
+		return err
+	}
+	// EVERY REFUSAL THIS COMMAND MAKES ABOUT THE TARGET IS LOCATED AT THE
+	// ENTRY, not at the chain: a chain may carry 64 entries and "this entry
+	// already declares a bold" names the wrong thing if it names only the
+	// chain. The refusals the SHARED readers make keep their own chain-level
+	// path, because those functions serve embedFontFamily too and a reader
+	// that located differently per caller would be two readers.
+	at := fontChainEntryPath(name, index)
+	cut, err := commandFontChainCutField(raw, at)
+	if err != nil {
+		return err
+	}
+	entry := chain[index]
+	// A FACE ENTRY'S VARIANTS ARE FONTSET FACE NAMES, NEVER ASSET KEYS (AD-8),
+	// and the loader refuses the cross-namespace sibling outright. A face
+	// entry also already declares its cuts at declare time — shippedFamilyEntry
+	// writes them — so there is nothing this command could add to one.
+	if !entry.Embedded() {
+		return componentFailure("", at, "that entry names a face the renderer supplies, and a face entry's style variants are FontSet face names rather than assets keys (AD-8); only an entry that carries a face of its own can be given a cut")
+	}
+	record, err := embeddedFontRecord(raw, name)
+	if err != nil {
+		return err
+	}
+	mediaType, err := commandString(raw, "mediaType")
+	if err != nil {
+		return componentFailure("", at, err.Error())
+	}
+	decoded, err := embeddedFaceBytes(raw, name)
+	if err != nil {
+		return err
+	}
+	key := fmt.Sprintf("%x", sha256.Sum256(decoded))
+	// THE THREE ADMISSION GATES, IN embedFontFamily's ORDER AND BEFORE
+	// ANYTHING REACHES t.doc.Assets. Read that function for why each one
+	// exists; nothing about a cut changes any of the reasoning.
+	if ferr := template.DecodeFontForRender(mediaType, decoded, template.FontChainSite{AssetKey: key, ChainName: name}); ferr != nil {
+		return componentFailure("", at, ferr.Error())
+	}
+	if verr := fontset.RefuseVariableFace(name, decoded); verr != nil {
+		return componentFailure("", at, verr.Error())
+	}
+	if lerr := fontset.RefuseContradictedLicence(name, record.Licence.Value, decoded); lerr != nil {
+		return componentFailure("", at, lerr.Error())
+	}
+	// D-11.2.11 / DW-241 AT THE COMMAND DOOR, exactly as commandFontChainEntries
+	// already checks it for a tail entry. The loader is the authority and would
+	// refuse this at applyFontChainCommand's reparse, but as the UNLOCATED
+	// "font chains did not pass format validation" — a correct verdict that
+	// names neither the chain nor the entry. A bold whose bytes are the
+	// regular's is no bold at all.
+	if key == entry.AssetKey {
+		return componentFailure("", at, selfReferentialCutReason())
+	}
+	declared := cut.field(&entry)
+	if *declared == key {
+		return nil
+	}
+	if *declared != "" {
+		return componentFailure("", at, "that entry already declares a "+cut.key+" face, and an embedded face is never replaced; the asset key is the face's own content hash, so different bytes would be a different document")
+	}
+	if t.doc.Assets == nil {
+		t.doc.Assets = map[string]template.Asset{}
+	}
+	// INSERTED ONLY IF ABSENT, for embedFontFamily's reason: the key IS the
+	// content, so "already there" and "identical bytes" are one question. Two
+	// chains declaring the same bold share one asset.
+	if _, exists := t.doc.Assets[key]; !exists {
+		t.doc.Assets[key] = template.Asset{
+			MediaType: mediaType,
+			Data:      []string{base64.StdEncoding.EncodeToString(decoded)},
+			Font:      template.Presence[template.FontRecord]{Set: true, Value: record},
+		}
+	}
+	// CLONED, NEVER WRITTEN THROUGH. declaredFontChain hands back the slice the
+	// document holds; mutating it in place would edit the caller's template
+	// before applyFontChainCommand had decided whether to install anything —
+	// and this handler runs against a reparsed candidate precisely so it does
+	// not have to.
+	updated := slices.Clone(chain)
+	*cut.field(&updated[index]) = key
+	t.doc.Fonts[name] = updated
+	return nil
+}
+
+// selfReferentialCutReason is this door's wording for the rule
+// internal/template's selfReferentialVariantReason states at load. It is
+// written here rather than exported from there because the two sentences serve
+// different readers — the loader is talking about a file somebody wrote, this
+// is talking about a command the designer just sent — and D-11.2.11 gives the
+// loader the VERDICT, not the wording.
+func selfReferentialCutReason() string {
+	return "those bytes are the entry's own face, so declaring them as a cut would name the regular at a weight it is not; an entry's style variant may not name its own base (D-11.2.11)"
+}
+
+// commandFontChainCutField reads the `cut` key and resolves it to the field it
+// lands in, against commandFontChainCuts — the command door's single spelling
+// of the closed set. A fourth cut therefore cannot be admitted here without
+// appearing in that table, which TestTheCommandDoorsCutSetIsTheFormatsCutSet
+// ties to the format's own enumeration.
+func commandFontChainCutField(raw map[string]json.RawMessage, at string) (commandFontChainCut, error) {
+	var none commandFontChainCut
+	asked, err := commandString(raw, "cut")
+	if err != nil {
+		return none, componentFailure("", at, err.Error())
+	}
+	for _, candidate := range commandFontChainCuts {
+		if candidate.key == asked {
+			return candidate, nil
+		}
+	}
+	// The asked-for value is NOT echoed. It is unbounded author-reachable text
+	// and the message bound is the host's; the author is told what they MAY
+	// write, which is the rule Story 8.3 set for every refusal in this file.
+	return none, componentFailure("", at, "the cut is not one this format declares; write one of "+commandQuotedKeyList(commandFontChainCutKeys()))
+}
+
+// fontChainEntryPath locates a refusal at ONE ENTRY of a chain. The NAME is
+// what gets cut when the path is too long, never the index: a path truncated to
+// `fonts.<a very long name>` would silently become the chain-level path, and
+// the author would be told a chain has a problem when one entry of it does.
+func fontChainEntryPath(name string, index int) string {
+	suffix := fmt.Sprintf("[%d]", index)
+	return truncateAtRuneBoundary("fonts."+name, maxComponentDataPathBytes-len(suffix)) + suffix
 }
 
 // embeddedFontRecord reads the six keys the document will record about the
@@ -4703,10 +4990,17 @@ func embeddedFontTail(raw map[string]json.RawMessage, name string) ([]template.F
 // this one table, so a fourth cut cannot arrive in the grammar and be dropped
 // by the decoder, or vice versa. TestTheCommandDoorsCutSetIsTheFormatsCutSet
 // ties it to the format's own enumeration.
-var commandFontChainCuts = []struct {
+//
+// ⚠ THE ROW IS A NAMED TYPE because embedFontCut RESOLVES one and carries it,
+// and a function returning an anonymous struct type forces every caller to
+// spell the whole shape back — which is a second, hand-copied spelling of the
+// one table this comment says must be the only one.
+type commandFontChainCut struct {
 	key   string
 	field func(*template.FontChainEntry) *string
-}{
+}
+
+var commandFontChainCuts = []commandFontChainCut{
 	{"bold", func(e *template.FontChainEntry) *string { return &e.Bold }},
 	{"italic", func(e *template.FontChainEntry) *string { return &e.Italic }},
 	{"boldItalic", func(e *template.FontChainEntry) *string { return &e.BoldItalic }},

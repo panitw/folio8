@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { commandBytes, jsonArray, jsonBoolean, jsonNumber, jsonObject, jsonString } from './command-json'
+import { commandBytes, commandFragment, commandUnitBytes, jsonArray, jsonBoolean, jsonNumber, jsonObject, jsonString } from './command-json'
 import { bindComponentScalarCommand, deleteComponentCommand, moveComponentCommand } from './component-command'
 import { setComponentAssetCommand } from './component-asset-command'
 import { updateComponentPropertiesCommand } from './component-property-command'
@@ -279,3 +279,63 @@ function numericFieldsFromSource(): ReadonlyArray<'x' | 'y' | 'width' | 'height'
   })
   return names as ReadonlyArray<'x' | 'y' | 'width' | 'height' | 'fontSize' | 'borderWidth' | 'lineSpacing'>
 }
+
+// SPEC-INSTALL-ALL-FACE-CUTS STORY 2 — THE ONE SEAM THAT MAKES A UNIT
+// ASSEMBLABLE FROM TYPESCRIPT.
+//
+// Before this, `commandBytes` fused "build the object fragment" with "encode
+// it", `encode` was private to the authority, and all 45 builders returned
+// `ArrayBuffer` — so a command NESTED inside another command had no spelling
+// at all. Splitting the fragment out is the whole mechanism; the assertions
+// below are that the split cost the existing builders nothing and that the
+// unit it enables is the shape `folio-go`'s `applyCommands` reads.
+describe('a unit of commands', () => {
+  it('wraps its members verbatim, in order, under the kind the engine dispatches on', () => {
+    const first = commandFragment('addFontChain', [['name', jsonString('caption')], ['entries', jsonArray([jsonString('Noto Sans')])]])
+    const second = commandFragment('deleteFontChain', [['name', jsonString('body')]])
+    expect(text(commandUnitBytes([first, second]))).toBe(
+      '{"kind":"applyCommands","version":1,"commands":[' +
+      '{"kind":"addFontChain","version":1,"name":"caption","entries":["Noto Sans"]},' +
+      '{"kind":"deleteFontChain","version":1,"name":"body"}]}',
+    )
+  })
+
+  it('is three fields, which is the arity componentFields(raw, 3) requires', () => {
+    const unit = JSON.parse(text(commandUnitBytes([commandFragment('deleteFontChain', [['name', jsonString('body')]])]))) as Record<string, unknown>
+    expect(Object.keys(unit)).toEqual(['kind', 'version', 'commands'])
+    expect(unit.version).toBe(1)
+  })
+
+  // A UNIT OF ONE IS ADMITTED BY THE ENGINE (its minimum is one, not two) so a
+  // caller assembling a list whose length it does not know in advance needs no
+  // special case. Nothing here bounds the list: the engine refuses an empty one
+  // and anything past 64 with its own located sentence, and a designer-side
+  // copy of that bound would be a second authority that can only drift.
+  it('carries one member, and an empty list, without inventing a rule of its own', () => {
+    expect(text(commandUnitBytes([commandFragment('deleteFontChain', [['name', jsonString('body')]])])))
+      .toBe('{"kind":"applyCommands","version":1,"commands":[{"kind":"deleteFontChain","version":1,"name":"body"}]}')
+    expect(text(commandUnitBytes([]))).toBe('{"kind":"applyCommands","version":1,"commands":[]}')
+  })
+
+  // ⚠ THE SPLIT MOVED NO BYTES, AND THAT IS ASSERTED RATHER THAN ASSUMED. Every
+  // other builder in this designer goes through `commandBytes`, which is now
+  // defined over `commandFragment`; if the two disagreed by so much as a space,
+  // 45 builders would have changed shape in a story that touched two of them.
+  it('encodes the fragment and the buffer identically for the same command', () => {
+    for (const fields of [[], [['name', jsonString('body')]], [['ids', jsonArray([jsonString('e1')])], ['changes', jsonObject([['bold', jsonObject([['op', jsonString('set')], ['value', 'true']])]])]]] as ReadonlyArray<ReadonlyArray<readonly [string, string]>>) {
+      expect(commandFragment('someKind', fields)).toBe(text(commandBytes('someKind', fields)))
+    }
+  })
+
+  // The author-hostile values this module exists for, reaching the wire through
+  // a NESTED member rather than a top-level command. A member is escaped once
+  // and only once: the fragment is already JSON and `jsonArray` joins fragments
+  // rather than quoting them, so a second pass would double every backslash.
+  it('does not re-escape a member that is already encoded', () => {
+    const hostile = 'a"b\\c'
+    const member = commandFragment('deleteFontChain', [['name', jsonString(hostile)]])
+    const unit = JSON.parse(text(commandUnitBytes([member]))) as { commands: ReadonlyArray<{ name: string }> }
+    expect(unit.commands).toHaveLength(1)
+    expect(unit.commands[0]!.name).toBe(hostile)
+  })
+})

@@ -30,7 +30,7 @@
 // so a pick can DECLARE the cuts a family has instead of writing a chain that
 // can never bold. Both arities are exactly what they were.
 import type { JsonField } from './command-json'
-import { commandBytes, jsonArray, jsonNumber, jsonObject, jsonString } from './command-json'
+import { commandBytes, commandFragment, jsonArray, jsonNumber, jsonObject, jsonString } from './command-json'
 
 const quote = jsonString
 // Go reads these with commandInt, which requires an integer literal. They are
@@ -144,6 +144,65 @@ export function embedFontFamilyCommand(face: {
     ['mediaType', quote(face.mediaType)], ['data', quote(base64(face.bytes))],
     ['tail', jsonArray(face.tail.map(chainEntry))],
   ])
+}
+
+/**
+ * THE CUT AS A COMMAND ASKS FOR IT — spec-install-all-face-cuts story 2.
+ *
+ * The EIGHTH builder, and the second that carries bytes. The rule is
+ * `embedFontFamilyCommand`'s, unchanged: this module knows nothing about what
+ * the content hash of these bytes is, whether the document already declares
+ * that cut, whether the face is variable, or whether the licence contradicts
+ * the binary. Go hashes, decodes, bounds, gates and refuses.
+ *
+ * `index` RATHER THAN A BASE KEY. The entry is targeted by position exactly as
+ * `addFontChainEntry` / `moveFontChainEntry` / `removeFontChainEntry` target
+ * one, and resolving the index yields the base key on the engine's side — so
+ * the self-reference rule is checked for free and the wire carries no field
+ * that could disagree with the document.
+ *
+ * `cut` IS ONE OF THE CLOSED SET spelled once in `variantKeys` above, which is
+ * also what `chainEntry` writes. The engine holds the closed set too and
+ * refuses anything outside it; this type is what stops a caller reaching for
+ * one.
+ */
+export type FontCutAsk = Readonly<{
+  chain: string
+  index: number
+  cut: typeof variantKeys[number]
+  family: string
+  style: string
+  licence: string
+  licenceText: string
+  copyright: string
+  source: string
+  mediaType: string
+  bytes: ArrayBuffer
+}>
+
+// THE FIELD LIST IS WRITTEN ONCE AND HAS TWO TERMINALS, which is the property
+// that matters rather than the saving: a command sent alone and the same
+// command sent inside a unit must be the SAME BYTES, and a pair of builders
+// each listing 11 fields is a pair that can drift by one key — into an arity
+// refusal the author sees only on whichever path was not the one under test.
+//
+// THIRTEEN FIELDS ON THE WIRE: these eleven plus `kind` and `version`, which
+// the envelope adds. `componentFields(raw, 13)` counts every top-level key.
+const embedFontCutFields = (cut: FontCutAsk): ReadonlyArray<JsonField> => [
+  ['name', quote(cut.chain)], ['index', index(cut.index)], ['cut', quote(cut.cut)],
+  ['family', quote(cut.family)], ['style', quote(cut.style)],
+  ['licence', quote(cut.licence)], ['licenceText', quote(cut.licenceText)],
+  ['copyright', quote(cut.copyright)], ['source', quote(cut.source)],
+  ['mediaType', quote(cut.mediaType)], ['data', quote(base64(cut.bytes))],
+]
+
+export function embedFontCutCommand(cut: FontCutAsk): ArrayBuffer {
+  return commandBytes('embedFontCut', embedFontCutFields(cut))
+}
+
+/** The same command as a fragment, for nesting inside a unit. See `embedFontCutFields`. */
+export function embedFontCutFragment(cut: FontCutAsk): string {
+  return commandFragment('embedFontCut', embedFontCutFields(cut))
 }
 
 // base64 over an ArrayBuffer, in chunks. `String.fromCharCode(...bytes)` on a

@@ -446,3 +446,153 @@ func TestExactlyOneFunctionReadsAUnitsMemberList(t *testing.T) {
 		t.Fatal("internal/wasm no longer asks folio8 what a command carries; if the fence was restructured, re-derive this check rather than deleting it — a second parser for a unit's members is exactly what it exists to catch")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// SPEC-INSTALL-ALL-FACE-CUTS STORY 2: THE REAL PAIR.
+//
+// TestCommandUnitFusesTheEmbedAndPropertyShape above stands in for this pair
+// with two kinds that were already writable when story 6 landed. These two
+// tests are the pair itself, now that `embedFontCut` exists: pressing B on a
+// family whose bold is held sends ONE unit carrying the cut embed and the
+// ordinary property commit, and they travel as one undo step WITHOUT being
+// fused into one kind.
+
+// TestCommandUnitEmbedsACutAndCommitsTheProperty is the story's first matrix
+// row at the public seam: one unit, both effects, one document.
+//
+// THE ORDER IS FORCED BY THE ENGINE AND THE TEST MEASURES IT. The cut must be
+// embedded before the property is committed, and a unit applies its members in
+// order against ONE candidate — so an implementation that applied them to
+// separate copies, or reordered them, could not produce this state.
+func TestCommandUnitEmbedsACutAndCommitsTheProperty(t *testing.T) {
+	tpl, _, baseKey := embeddedChainTemplate(t)
+	fontChainAccepted(t, tpl, `{"kind":"updateComponentProperties","version":1,"ids":["e7"],"changes":{"fontFamily":{"op":"set","value":"Noto Sans Thai"}}}`)
+	bold := testShippedNotoSans
+	boldKey := embeddedKeyOf(bold)
+
+	unit := commandUnit(
+		embedCutCommand(t, "Noto Sans Thai", 0, "bold", bold),
+		`{"kind":"updateComponentProperties","version":1,"ids":["e7"],"changes":{"bold":{"op":"set","value":true}}}`,
+	)
+	if _, err := applyComponentCommand(tpl, []byte(unit)); err != nil {
+		t.Fatalf("unit refused: %v", err)
+	}
+
+	entry := tpl.doc.Fonts["Noto Sans Thai"][0]
+	if entry.AssetKey != baseKey {
+		t.Errorf("the base moved to %q; the embedded Regular is never touched", entry.AssetKey)
+	}
+	if entry.Bold != boldKey {
+		t.Fatalf("entry.Bold = %q, want %q — the embed member did not land", entry.Bold, boldKey)
+	}
+	if _, ok := tpl.doc.Assets[boldKey]; !ok {
+		t.Fatal("the cut's bytes are not in the document")
+	}
+	after, err := SerializeTemplate(tpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(after, []byte(`"bold": true`)) {
+		t.Fatal("the property member did not land, so the author pressed B and nothing was bolded")
+	}
+}
+
+// TestCommandUnitRefusesTheWholePairWhenTheCutIsRefused is the matrix's
+// "member refused" row: the WHOLE unit is refused, so `bold` does not commit,
+// the document is unchanged, and the member's refusal travels out verbatim
+// with its own located path.
+//
+// commandUnitRefusal asserts the byte identity, which is the strongest form of
+// "bold was not committed" — a handler that mutated its candidate and then
+// refused would pass a bare "an error came back" check.
+func TestCommandUnitRefusesTheWholePairWhenTheCutIsRefused(t *testing.T) {
+	tpl, _, _ := embeddedChainTemplate(t)
+	fontChainAccepted(t, tpl, `{"kind":"updateComponentProperties","version":1,"ids":["e7"],"changes":{"fontFamily":{"op":"set","value":"Noto Sans Thai"}}}`)
+
+	// A VARIABLE face: admitted by nothing, and refused at the same gate the
+	// pick is refused at.
+	member := embedCutCommand(t, "Noto Sans Thai", 0, "bold", testNotoSansThaiVariableFontBytes)
+	unit := commandUnit(member, `{"kind":"updateComponentProperties","version":1,"ids":["e7"],"changes":{"bold":{"op":"set","value":true}}}`)
+
+	fromUnit := commandUnitRefusal(t, tpl, unit)
+
+	// VERBATIM, MEASURED rather than copied: the same member applied alone to a
+	// fresh document must produce the identical located refusal.
+	alone, _, _ := embeddedChainTemplate(t)
+	fromMember := fontChainRefusal(t, alone, member)
+	var located *designer.ComponentCommandError
+	if !errors.As(fromUnit, &located) {
+		t.Fatalf("the unit's refusal is %T, want the member's own *ComponentCommandError", fromUnit)
+	}
+	if located.Message != fromMember.Message || located.DataPath != fromMember.DataPath || located.ElementID != fromMember.ElementID {
+		t.Fatalf("the member's refusal was not passed through verbatim:\n  unit: %#v\nmember: %#v", located, fromMember)
+	}
+	if located.DataPath != fontChainEntryPath("Noto Sans Thai", 0) {
+		t.Errorf("the refusal lost the member's ENTRY location: %q", located.DataPath)
+	}
+}
+
+// TestAUnitIsBoundedByTheWHOLEPayloadAndNotOnlyPerMember closes the gap the
+// per-member bound structurally cannot see.
+//
+// maxComponentAssetBytes is derived so that ONE member carrying one asset,
+// base64-inflated, still fits inside engineProtocolMaxPayloadBytes. A unit
+// carries several — spec-install-all-face-cuts story 2 sends one embedFontCut
+// per family needing a cut, so a multi-family selection puts three or four
+// faces in one command. Every member can clear its own bound while the unit is
+// many times the envelope, and that unit fails at TRANSPORT with no located
+// diagnostic at all: the threshold disagreement D-5.13.4 forbids, one level up.
+//
+// BOTH SIDES OF THE BOUND ARE MEASURED. A bound asserted only from above is
+// satisfied by a function that refuses everything.
+func TestAUnitIsBoundedByTheWHOLEPayloadAndNotOnlyPerMember(t *testing.T) {
+	// A member that is LEGAL on its own terms and enormous: the chain name is
+	// padding, so nothing else about it can be what is refused. It is checked
+	// against the per-member rule first, below.
+	oversizeMember := func(bytes int) string {
+		return `{"kind":"deleteFontChain","version":1,"name":"` + strings.Repeat("x", bytes) + `"}`
+	}
+
+	t.Run("a unit past the envelope is refused, located, with nothing written", func(t *testing.T) {
+		tpl := fontChainTemplate(t)
+		unit := commandUnit(oversizeMember(maxUnitPayloadBytes/2), oversizeMember(maxUnitPayloadBytes/2), oversizeMember(maxUnitPayloadBytes/2))
+		if len(unit) <= maxUnitPayloadBytes {
+			t.Fatalf("precondition: the fixture unit is %d bytes, which is inside the bound it is meant to exceed", len(unit))
+		}
+		failure := commandUnitLocatedRefusal(t, tpl, unit)
+		for _, want := range []string{"at most", "in total", "one member"} {
+			if !strings.Contains(failure.Message, want) {
+				t.Errorf("the refusal does not say this is a UNIT-level bound rather than a member one (%q): %s", want, failure.Message)
+			}
+		}
+	})
+
+	t.Run("a unit inside the envelope is admitted", func(t *testing.T) {
+		// THE OTHER SIDE, and it is what stops the bound from being "refuse
+		// everything". One ordinary member, well inside the envelope.
+		tpl := fontChainTemplate(t)
+		unit := commandUnit(`{"kind":"addFontChain","version":1,"name":"caption","entries":["Noto Sans"]}`)
+		if len(unit) > maxUnitPayloadBytes {
+			t.Fatalf("precondition: an ordinary one-member unit is already past the bound at %d bytes", len(unit))
+		}
+		if _, err := applyComponentCommand(tpl, []byte(unit)); err != nil {
+			t.Fatalf("an ordinary unit was refused by the payload bound: %v", err)
+		}
+	})
+
+	t.Run("the bound is the envelope and not the per-member derivation", func(t *testing.T) {
+		// ⚠ THE TWO NUMBERS ARE DIFFERENT, AND THE TEST ABOVE IS ONLY A
+		// MEASUREMENT BECAUSE THEY ARE. maxComponentAssetBytes subtracts a
+		// skeleton and applies the 4/3 base64 expansion to reach a DECODED
+		// size; a unit's members are already encoded, so neither adjustment
+		// applies twice and the bound is the envelope itself. If these ever
+		// became equal, a unit-level check would be indistinguishable from a
+		// member-level one.
+		if maxUnitPayloadBytes != engineProtocolMaxPayloadBytes {
+			t.Errorf("maxUnitPayloadBytes = %d, want the envelope %d", maxUnitPayloadBytes, engineProtocolMaxPayloadBytes)
+		}
+		if maxUnitPayloadBytes <= maxComponentAssetBytes {
+			t.Errorf("the unit bound (%d) is not above the per-member decoded bound (%d), so one legal member could not fit in a unit", maxUnitPayloadBytes, maxComponentAssetBytes)
+		}
+	})
+}

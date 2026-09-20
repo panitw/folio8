@@ -56,7 +56,42 @@ var commandJsonNumberEmitter = regexp.MustCompile(`(?s)export const jsonNumber =
 
 // commandJsonEnvelope extracts the envelope every builder shares, which is what
 // makes the version and the kind unspliceable.
-var commandJsonEnvelope = regexp.MustCompile(`(?s)export const commandBytes = \(kind: string, fields: ReadonlyArray<JsonField>\): ArrayBuffer =>\s*\n\s*(.+?)\n`)
+//
+// RE-DERIVED, NOT RELAXED (spec-install-all-face-cuts story 2). The envelope
+// used to be spelled inside `commandBytes`. That builder now delegates to
+// `commandFragment`, because a unit's members are command objects NESTED in
+// another command and the encode had to be separable from the object-building
+// for `applyCommands` to be assemblable at all. The envelope itself did not
+// change — it moved one function — so this extraction follows it, exactly as
+// the failure text below has always instructed. The required spellings are
+// unchanged.
+var commandJsonEnvelope = regexp.MustCompile(`(?s)export const commandFragment = \(kind: string, fields: ReadonlyArray<JsonField>\): string =>\s*\n\s*(.+?)\n`)
+
+// commandJsonEnvelopeIsTheBufferPath closes the hole the split would otherwise
+// open: with the envelope checked in one function, `commandBytes` could be
+// rewritten to build its own and every assertion above would stay green. It is
+// required to be defined OVER the checked envelope, so the bytes a builder puts
+// on the wire are the bytes this test read.
+var commandJsonEnvelopeIsTheBufferPath = regexp.MustCompile(`(?s)export const commandBytes = \(kind: string, fields: ReadonlyArray<JsonField>\): ArrayBuffer =>\s*\n\s*(.+?)\n`)
+
+// commandJsonUnitKind extracts the ONE kind string the designer hardcodes.
+//
+// ⚠ EVERY OTHER KIND REACHES THE WIRE AS A CALLER'S ARGUMENT and is therefore
+// tied to Go by the builder's own test asserting the exact bytes. `applyCommands`
+// is different: `commandUnitBytes` spells it itself, because a unit is the one
+// command whose kind is a property of the function rather than of its caller.
+//
+// SO NOTHING TIED IT TO `unitCommandKind` UNTIL THIS TEST, and the exposure is
+// spec-install-all-face-cuts story 2's own: making a unit assemblable from
+// TypeScript is what put a second spelling of that constant in the tree.
+// Changing the Go constant's VALUE — not its name, which the compiler would
+// catch — leaves both suites green while every unit the designer sends falls
+// through the closed switch to "unknown component command", with the author
+// told nothing about fonts at all.
+//
+// Anchored on `commandUnitBytes` because `applyCommands` may legitimately
+// appear in that module's prose, and an unanchored match would read a comment.
+var commandJsonUnitKind = regexp.MustCompile(`(?s)export const commandUnitBytes = \(members: ReadonlyArray<string>\): ArrayBuffer =>\s*\n\s*encode\(commandFragment\('([^']+)'`)
 
 func TestCommandJsonAuthorityAndTheEnginesRefusalLandTogether(t *testing.T) {
 	path := filepath.Join(repoRootFromTest(t), "folio-designer", "src", "command-json.ts")
@@ -100,12 +135,30 @@ func TestCommandJsonAuthorityAndTheEnginesRefusalLandTogether(t *testing.T) {
 
 	envelope := commandJsonEnvelope.FindSubmatch(source)
 	if envelope == nil {
-		t.Fatal("command-json.ts no longer exports a commandBytes envelope this test can read; if the authority was restructured, re-derive this extraction rather than deleting the check")
+		t.Fatal("command-json.ts no longer exports a commandFragment envelope this test can read; if the authority was restructured, re-derive this extraction rather than deleting the check")
 	}
 	for _, required := range []string{"'kind'", "jsonString(kind)", "'version'", "jsonNumber(1)"} {
 		if !strings.Contains(string(envelope[1]), required) {
 			t.Errorf("the command envelope no longer builds %s through the authority:\n\t%s", required, strings.TrimSpace(string(envelope[1])))
 		}
+	}
+
+	// AND THE BUFFER PATH IS THAT ENVELOPE, not a second one beside it.
+	buffered := commandJsonEnvelopeIsTheBufferPath.FindSubmatch(source)
+	if buffered == nil {
+		t.Fatal("command-json.ts no longer exports a commandBytes this test can read; if the authority was restructured, re-derive this extraction rather than deleting the check")
+	}
+	if got := strings.TrimSpace(string(buffered[1])); !strings.Contains(got, "commandFragment(kind, fields)") {
+		t.Errorf("commandBytes builds its own envelope instead of encoding the checked one:\n\t%s\nEvery assertion above reads commandFragment, so a second envelope here would carry an unchecked kind and version onto the wire", got)
+	}
+
+	// THE UNIT'S KIND, WHICH IS THE ONE STRING BOTH LANGUAGES SPELL.
+	unitKind := commandJsonUnitKind.FindSubmatch(source)
+	if unitKind == nil {
+		t.Fatal("command-json.ts no longer exports a commandUnitBytes whose kind this test can read; if the authority was restructured, re-derive this extraction rather than deleting the check")
+	}
+	if got := string(unitKind[1]); got != unitCommandKind {
+		t.Errorf("the designer sends a unit as %q and this package dispatches on %q — every unit the designer sends would fall through the closed switch to \"unknown component command\", and the author would be told nothing about fonts at all", got, unitCommandKind)
 	}
 
 	// THE GO HALF, asserted against the ENGINE and not against the encoder.

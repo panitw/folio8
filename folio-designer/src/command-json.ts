@@ -112,6 +112,39 @@ export const jsonObject = (fields: ReadonlyArray<JsonField>): string => {
 
 // The envelope every command shares: the kind, the protocol version, then the
 // kind's own fields in the order the builder lists them.
+//
+// ⚠ IT IS SPLIT FROM THE ENCODE, AND THAT SPLIT IS THE WHOLE SEAM THAT MAKES
+// `applyCommands` REACHABLE FROM TYPESCRIPT (spec-install-all-face-cuts story
+// 2). `commandBytes` used to fuse "build the object fragment" with "encode it",
+// `encode` is private to this module, and all 45 builders across 11 files
+// return `ArrayBuffer` — so a unit, whose members are commands NESTED inside
+// another command, had no way to be assembled at all. A caller holding only
+// `ArrayBuffer`s would have had to decode them back to text, which is a second
+// encoder wearing a decoder's clothes.
+//
+// NOTHING ELSE MOVED. `commandBytes` is redefined OVER this function and emits
+// byte-for-byte what it emitted before, which is what keeps the other 44
+// builders untouched by a story that needed two of them.
+export const commandFragment = (kind: string, fields: ReadonlyArray<JsonField>): string =>
+  jsonObject([['kind', jsonString(kind)], ['version', jsonNumber(1)], ...fields])
+
 export const commandBytes = (kind: string, fields: ReadonlyArray<JsonField>): ArrayBuffer =>
-  encode(jsonObject([['kind', jsonString(kind)], ['version', jsonNumber(1)], ...fields]))
+  encode(commandFragment(kind, fields))
+
+// SEVERAL COMMANDS, ONE UNDOABLE UNIT — the engine's `applyCommands`
+// (`folio-go/component_commands.go`'s `unitCommandKind`), put on the wire.
+//
+// THE MEMBERS ARE FRAGMENTS, NOT BUFFERS, for the reason above: a member is a
+// command object nested inside this one, and `jsonArray` already takes
+// fragments. Nothing here knows what a member is, how many are legal, or
+// whether one of them is itself a unit — the engine bounds the list at 1..64,
+// refuses nesting before any member runs, and answers each with its own located
+// sentence. This module's rule is unchanged: it turns an already-decided intent
+// into well-formed JSON transport and owns nothing else.
+//
+// THE KIND IS SPELLED HERE AND NOWHERE ELSE on this side of the wall, which is
+// the same discipline every other kind string in this designer already keeps:
+// one spelling per kind, at the one builder that emits it.
+export const commandUnitBytes = (members: ReadonlyArray<string>): ArrayBuffer =>
+  encode(commandFragment('applyCommands', [['commands', jsonArray(members)]]))
 
