@@ -1,3 +1,4 @@
+import { canvasFaceMetricOverride } from './canvas-face-metrics'
 import { embeddedFaceFamily } from './embedded-face-family'
 
 // THE ONE SEAM IN THIS BUILD THAT REGISTERS A FONT FACE AT RUNTIME
@@ -87,11 +88,21 @@ type PageFontSet = Readonly<{ add: (face: FontFace) => unknown; delete: (face: F
 // reached the font set; `onDeclined` names a key that never will. A caller that
 // wants neither passes neither, and the canvas is exactly that caller.
 //
+// THE METRIC OVERRIDE TRAVELS WITH THE DERIVATION, AND FOR THE SAME REASON.
+// `familyFor` decides WHICH NAMESPACE a face is registered under, and
+// `faceMetrics` decides WHOSE VERTICAL METRICS it is registered with; both
+// default to the canvas's answer because the canvas is this seam's first
+// caller, and the one caller that is not the canvas overrides BOTH together.
+// Splitting them across two seams would let a population acquire one half of
+// its identity — a preview registered in its own namespace with the page's
+// overridden metrics is a specimen that lies about the typeface it is showing.
+// `canvas-face-metrics.ts` is the whole of why the canvas wants them.
+//
 // A RELEASE IS NOT A DECLINE. Every `!active` path returns without calling
 // either: the document was replaced or the row left the page, and reporting that
 // as a refusal would tell an author their typeface was rejected when what
 // happened is that they closed the thing showing it to them.
-export function registerCarriedFaces(assetKeys: ReadonlyArray<string>, readFaceBytes: CarriedFaceBytes, onRegistered: (registered: ReadonlySet<string>) => void, familyFor: (assetKey: string) => string | undefined = embeddedFaceFamily, onDeclined: (assetKey: string) => void = () => undefined): () => void {
+export function registerCarriedFaces(assetKeys: ReadonlyArray<string>, readFaceBytes: CarriedFaceBytes, onRegistered: (registered: ReadonlySet<string>) => void, familyFor: (assetKey: string) => string | undefined = embeddedFaceFamily, onDeclined: (assetKey: string) => void = () => undefined, faceMetrics: Readonly<Record<string, string>> = canvasFaceMetricOverride): () => void {
   let active = true
   const added: FontFace[] = []
   const registered = new Set<string>()
@@ -117,7 +128,7 @@ export function registerCarriedFaces(assetKeys: ReadonlyArray<string>, readFaceB
           // caller.
           const family = familyFor(assetKey)
           if (family === undefined) { onDeclined(assetKey); return undefined }
-          const face = new FontFace(family, bytes)
+          const face = new FontFace(family, bytes, faceMetrics)
           return face.load().then((loaded) => {
             // The document may have been replaced while the bytes were in
             // flight. Adding here would put a superseded document's face into

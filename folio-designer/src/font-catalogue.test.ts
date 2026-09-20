@@ -859,7 +859,7 @@ function shippedSlotSourcePaths(generator: string): Readonly<Record<string, stri
 
 /** The `@font-face` half: the `assets` slot each hand-written rule interpolates -> the family it declares. */
 function slotCssFamilies(generator: string): Readonly<Record<string, string>> {
-  return Object.fromEntries([...generator.matchAll(/@font-face \{ font-family: '([^']+)'; src: url\('\.\/runtime\/\$\{assets\.(\w+)\}'\) format\('truetype'\); font-display: swap; \}/g)].map((match) => [match[2], match[1]]))
+  return Object.fromEntries([...generator.matchAll(/@font-face \{ font-family: '([^']+)'; src: url\('\.\/runtime\/\$\{assets\.(\w+)\}'\) format\('truetype'\); font-display: swap;(?: \$\{canvasFaceMetricOverrideCss\})? \}/g)].map((match) => [match[2], match[1]]))
 }
 
 /**

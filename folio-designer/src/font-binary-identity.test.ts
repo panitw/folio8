@@ -385,7 +385,7 @@ function insideTheLicenceGateWalk(relative: string): boolean {
  * asserts it found ALL of them.
  */
 function familySlots(generator: string): ReadonlyArray<readonly [string, string]> {
-  return [...generator.matchAll(/@font-face \{ font-family: '([^']+)'; src: url\('\.\/runtime\/\$\{assets\.(\w+)\}'\) format\('truetype'\); font-display: swap; \}/g)]
+  return [...generator.matchAll(/@font-face \{ font-family: '([^']+)'; src: url\('\.\/runtime\/\$\{assets\.(\w+)\}'\) format\('truetype'\); font-display: swap;(?: \$\{canvasFaceMetricOverrideCss\})? \}/g)]
     .map((match) => [match[1], match[2]] as const)
 }
 

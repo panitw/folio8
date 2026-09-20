@@ -178,7 +178,15 @@ function declaredFamilies(generator: string): ReadonlyArray<string> {
  * `${assets.<slot>}` buys for the other six.
  */
 function wellFormedRuleFamilies(generator: string): ReadonlyArray<string> {
-  return [...generator.matchAll(/@font-face \{ font-family: '([^']+)'; src: url\('\.\/runtime\/\$\{(?:assets\.\w+|face\.filename)\}'\) format\('truetype'\); font-display: swap; \}/g)].map((m) => m[1])
+  // ⚠ THE OVERRIDE TAIL IS ADMITTED, NOT REQUIRED. `scripts/build-wasm.mjs`
+  // appends `${canvasFaceMetricOverrideCss}` to every rule declaring a face the
+  // PAGE paints with and to none of the three design-system rules
+  // (`src/canvas-face-metrics.ts` argues why, and the defect it closes). This
+  // parse asks whether every declared family is backed by a `${assets.<slot>}`
+  // interpolation, so it must see both shapes; whether each canvas rule really
+  // carries the override is asked of every rule by name in
+  // `src/canvas-face-metrics.test.ts`.
+  return [...generator.matchAll(/@font-face \{ font-family: '([^']+)'; src: url\('\.\/runtime\/\$\{(?:assets\.\w+|face\.filename)\}'\) format\('truetype'\); font-display: swap;(?: \$\{canvasFaceMetricOverrideCss\})? \}/g)].map((m) => m[1])
 }
 
 /**
@@ -649,10 +657,22 @@ describe('the canvas paints with the faces the engine measured', () => {
     // exact list above guards. Both halves of the old single line are still
     // pinned: the face is constructed from the derivation of the key, AND the
     // derivation a caller gets when it asks for nothing is the DOCUMENT's.
+    //
+    // AND THE CANVAS BASELINE FIX SPLIT IT ONCE MORE, ON THE SAME PRINCIPLE.
+    // A second parameter now travels beside the derivation: the VERTICAL
+    // METRICS a face is registered with, overridden for the population that
+    // paints the page so the browser's baseline is the engine's
+    // (`canvas-face-metrics.ts`). It is pinned exactly as the derivation is —
+    // the face is constructed from BOTH, and the answer a caller gets when it
+    // asks for neither is the CANVAS's — because a default that silently
+    // reverted to the browser's own metrics would restore the defect with every
+    // behavioural test still green.
     expect(seam).toMatch(/const family = familyFor\(assetKey\)/)
-    expect(seam).toMatch(/new FontFace\(family, bytes\)/)
+    expect(seam).toMatch(/new FontFace\(family, bytes, faceMetrics\)/)
     expect(seam).toMatch(/familyFor: \(assetKey: string\) => string \| undefined = embeddedFaceFamily/)
+    expect(seam).toMatch(/faceMetrics: Readonly<Record<string, string>> = canvasFaceMetricOverride/)
     expect(seam).toContain('from \'./embedded-face-family\'')
+    expect(seam).toContain('from \'./canvas-face-metrics\'')
     expect(app).toContain('from \'./embedded-face-family\'')
 
     // (d) AND IT CANNOT COLLIDE WITH A BUILD-TIME FAMILY. D-8.4.1's own

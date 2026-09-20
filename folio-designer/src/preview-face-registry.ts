@@ -1,3 +1,4 @@
+import { naturalFaceMetrics } from './canvas-face-metrics'
 import { registerCarriedFaces } from './embedded-face-registry'
 import { previewFaceFamily } from './preview-face-family'
 
@@ -112,7 +113,14 @@ export function openPreviewFaceRegistry(readBytes: PreviewFaceBytes, onChange: (
     // Every other outcome — no bytes, a name the derivation declines, a face
     // that will not parse — reaches `decline` through the seam's `onDeclined`,
     // which is the single path now that there is one.
-    const release = registerCarriedFaces([family], async (name) => readBytes(name), () => { ready = true; if (open) onChange() }, previewFaceFamily, decline)
+    // A SPECIMEN KEEPS THE FACE'S OWN METRICS. The canvas registers every face
+    // with an overridden ascent and descent so the engine's baseline and the
+    // browser's coincide (`canvas-face-metrics.ts`); a specimen is not placed by
+    // the engine and exists to show an author what a typeface DOES, so a face
+    // shown here under the page's overrides would be a specimen misreporting the
+    // thing it was opened to report. Passed explicitly, as the namespace above
+    // is: this caller overrides both halves of the canvas's answer or neither.
+    const release = registerCarriedFaces([family], async (name) => readBytes(name), () => { ready = true; if (open) onChange() }, previewFaceFamily, decline, naturalFaceMetrics)
     return { release, ready: () => ready }
   }
 

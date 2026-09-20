@@ -670,7 +670,26 @@ writeFileSync(join(generatedDir, 'pdfjs-assets.ts'), `// Keep PDF.js CMaps and s
 // these thirteen; a name that drifts out of either side would make that guard
 // silent again, in exactly the way `Object.keys(assets)` did. Checked here,
 // where both the list and the template are in scope.
-const shippedRules = `@font-face { font-family: 'IBM Plex Sans'; src: url('./runtime/${assets.plexSans}') format('truetype'); font-display: swap; }\n@font-face { font-family: 'IBM Plex Mono'; src: url('./runtime/${assets.mono}') format('truetype'); font-display: swap; }\n@font-face { font-family: 'IBM Plex Sans Thai'; src: url('./runtime/${assets.plexSansThai}') format('truetype'); font-display: swap; }\n@font-face { font-family: 'Noto Sans'; src: url('./runtime/${assets.sans}') format('truetype'); font-display: swap; }\n@font-face { font-family: 'Noto Sans Thai'; src: url('./runtime/${assets.sansThai}') format('truetype'); font-display: swap; }\n@font-face { font-family: 'Noto Sans SC'; src: url('./runtime/${assets.sansCjk}') format('truetype'); font-display: swap; }\n@font-face { font-family: 'Noto Sans Bold'; src: url('./runtime/${assets.sansBold}') format('truetype'); font-display: swap; }\n@font-face { font-family: 'Noto Sans Italic'; src: url('./runtime/${assets.sansItalic}') format('truetype'); font-display: swap; }\n@font-face { font-family: 'Noto Sans Bold Italic'; src: url('./runtime/${assets.sansBoldItalic}') format('truetype'); font-display: swap; }\n@font-face { font-family: 'Noto Sans Thai Bold'; src: url('./runtime/${assets.sansThaiBold}') format('truetype'); font-display: swap; }\n@font-face { font-family: 'Roboto Bold'; src: url('./runtime/${assets.robotoBold}') format('truetype'); font-display: swap; }\n@font-face { font-family: 'Roboto Italic'; src: url('./runtime/${assets.robotoItalic}') format('truetype'); font-display: swap; }\n@font-face { font-family: 'Roboto Bold Italic'; src: url('./runtime/${assets.robotoBoldItalic}') format('truetype'); font-display: swap; }\n`
+// THE CANVAS'S FACES CARRY AN OVERRIDDEN ASCENT AND DESCENT, AND THE CHROME'S
+// DO NOT. `.canvas-text-line` places a painted line at the engine's baseline
+// and lifts it one em, which is only correct if the browser puts the baseline
+// one em below the line box top; CSS inline layout puts it at (1 + A - D) / 2
+// em instead, so every painted line was drawn (1 - A + D) / 2 em too high — an
+// error that is a property of the FACE and that a document's own font can make
+// large enough to push ink clear of the element box. `src/canvas-face-metrics.ts`
+// is the whole of that rule and the measurements behind it.
+//
+// THE SPELLING IS HERE A SECOND TIME BECAUSE THIS IS A DIFFERENT VOCABULARY:
+// a CSS descriptor list, not the `new FontFace` descriptor OBJECT the carried
+// faces are registered with, and this script cannot import a TypeScript module
+// to reach it. `src/canvas-face-metrics.test.ts` reads the stylesheet this
+// script emits and asserts the two agree, rule by rule — including that the
+// three design-system families below are NOT overridden, because the chrome is
+// laid out by the browser rather than placed by the engine and its text must
+// keep its face's real metrics.
+const canvasFaceMetricOverrideCss = 'ascent-override: 100%; descent-override: 0%; line-gap-override: 0%;'
+
+const shippedRules = `@font-face { font-family: 'IBM Plex Sans'; src: url('./runtime/${assets.plexSans}') format('truetype'); font-display: swap; }\n@font-face { font-family: 'IBM Plex Mono'; src: url('./runtime/${assets.mono}') format('truetype'); font-display: swap; }\n@font-face { font-family: 'IBM Plex Sans Thai'; src: url('./runtime/${assets.plexSansThai}') format('truetype'); font-display: swap; }\n@font-face { font-family: 'Noto Sans'; src: url('./runtime/${assets.sans}') format('truetype'); font-display: swap; ${canvasFaceMetricOverrideCss} }\n@font-face { font-family: 'Noto Sans Thai'; src: url('./runtime/${assets.sansThai}') format('truetype'); font-display: swap; ${canvasFaceMetricOverrideCss} }\n@font-face { font-family: 'Noto Sans SC'; src: url('./runtime/${assets.sansCjk}') format('truetype'); font-display: swap; ${canvasFaceMetricOverrideCss} }\n@font-face { font-family: 'Noto Sans Bold'; src: url('./runtime/${assets.sansBold}') format('truetype'); font-display: swap; ${canvasFaceMetricOverrideCss} }\n@font-face { font-family: 'Noto Sans Italic'; src: url('./runtime/${assets.sansItalic}') format('truetype'); font-display: swap; ${canvasFaceMetricOverrideCss} }\n@font-face { font-family: 'Noto Sans Bold Italic'; src: url('./runtime/${assets.sansBoldItalic}') format('truetype'); font-display: swap; ${canvasFaceMetricOverrideCss} }\n@font-face { font-family: 'Noto Sans Thai Bold'; src: url('./runtime/${assets.sansThaiBold}') format('truetype'); font-display: swap; ${canvasFaceMetricOverrideCss} }\n@font-face { font-family: 'Roboto Bold'; src: url('./runtime/${assets.robotoBold}') format('truetype'); font-display: swap; ${canvasFaceMetricOverrideCss} }\n@font-face { font-family: 'Roboto Italic'; src: url('./runtime/${assets.robotoItalic}') format('truetype'); font-display: swap; ${canvasFaceMetricOverrideCss} }\n@font-face { font-family: 'Roboto Bold Italic'; src: url('./runtime/${assets.robotoBoldItalic}') format('truetype'); font-display: swap; ${canvasFaceMetricOverrideCss} }\n`
 for (const family of shippedFamilies) if (!shippedRules.includes(`font-family: '${family}'`)) throw new Error(`shippedFamilies names ${JSON.stringify(family)} and no hand-written @font-face rule declares it, so the catalogue's collision guard is describing a family that is not there`)
 if (shippedRules.split('@font-face').length - 1 !== shippedFamilies.length) throw new Error(`the hand-written stylesheet emits ${shippedRules.split('@font-face').length - 1} rules and shippedFamilies names ${shippedFamilies.length}, so a rule exists that the catalogue's collision guard does not know about`)
 const runtimeFontRules = shippedRules
@@ -685,7 +704,7 @@ const runtimeFontRules = shippedRules
   // family, with nothing downstream able to see it: `canvasFaceAssets` below
   // counts array entries rather than Map keys, so a four-into-one collapse
   // would pass its own population check.
-  + catalogueFaces.map((face) => `@font-face { font-family: '${face.cssFamily}'; src: url('./runtime/${face.filename}') format('truetype'); font-display: swap; }\n`).join('')
+  + catalogueFaces.map((face) => `@font-face { font-family: '${face.cssFamily}'; src: url('./runtime/${face.filename}') format('truetype'); font-display: swap; ${canvasFaceMetricOverrideCss} }\n`).join('')
 writeFileSync(join(generatedDir, 'runtime-fonts.css'), runtimeFontRules)
 
 // THE CANVAS'S OWN FAMILY → FILE MAP, READ BACK OUT OF THE STYLESHEET THIS
