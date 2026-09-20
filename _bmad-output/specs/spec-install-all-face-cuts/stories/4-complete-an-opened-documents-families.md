@@ -2,8 +2,9 @@
 title: 'Complete an opened document''s families'
 type: 'feature'
 created: '2026-09-19'
-status: 'draft'
+status: 'done'
 route: 'dispatch'
+baseline_commit: '6dd0997aa05a39aa5f22f41605e1281f99a25894'
 review_loop_iteration: 0
 context: []
 ---
@@ -12,261 +13,440 @@ context: []
 
 ## Intent
 
-**Problem:** A document saved before this spec carries one face per family. Its
-author presses **B** and is told the family has no bold, even where the family
-publishes one — because nothing ever fetched it onto this machine. SPEC-install-all-face-cuts
-CAP-4 closes that: opening such a document offers to fetch the missing cuts and, on
-acceptance, fills the designer's local face store in the background.
+**Problem:** A document saved before this spec carries one face per family, and a document
+naming a committed-catalogue family may hold only some of that family's cuts in this
+release's cache. Either way the author presses **B** and is told the cut is not on this
+machine — and nothing ever fetches it. SPEC-install-all-face-cuts CAP-4 closes that.
 
-**Approach:** After `load` has projected the document, derive the families whose cuts
-this machine is short of from `canvas.fontChains`, ask the author once, and on
-acceptance fetch the missing cuts and write them to the machine store — un-awaited, so
-the open never waits, with progress and then an outcome shown while the author keeps
-editing. Nothing reaches the document.
+**Approach:** After `load` has projected the document, ask `familyIsComplete` of every
+family the document's chains name; if any is short, ask the author once, and on acceptance
+fetch the missing cuts — un-awaited, so the open never waits — with progress and then an
+outcome, while the author keeps editing. Nothing reaches the document.
 
-Planned against stories **1** (a family's whole face set is fetchable and storable, the
-store is modelled as a face *set* per family) and **2** (a cut is embedded on first use;
-the absence sentence consults the store) having landed. Planned against the **working
-tree as it stands on disk**, which carries ~25 files of uncommitted
-spec-deferred-offline-cache work, including a modified `document-face-prefetch.ts` and a
-new, uncommitted `absent-face-recovery.ts`.
+Re-planned 2026-09-20 against a **clean tree at `6dd0997`**, after stories 1, 6, 2 and 3
+shipped. The earlier plan was written against uncommitted work and is superseded.
+
+**Settled by the owner, 2026-09-20:**
+- *The ask is a **modal**, in the `UnsavedChangesDialog` shape. Progress and outcome go to the
+  literal `status-bar` footer.* The question and the reporting are deliberately split.
+- *`offline-status` is hidden in **design** mode **only while a completion line stands**.* A real
+  measurement at 1024×768 found the design bar has **136.00 px** of worst-case slack and **clips
+  rather than wraps**; the label is in flow in design mode and swings **+210.00 px**. Hiding it
+  frees 300 px exactly when the bar needs it, and design keeps its visible offline indicator —
+  including `Offline cache unavailable` — the rest of the time. The label is hidden **visually
+  only** and stays in the accessibility tree exactly as it is in preview. *The owner first ruled
+  a permanent hide, then refined it after review priced what that cost.* It is conditioned on the
+  LINE, not on the fetch: an outcome stands for its retire window after the run ends, and a
+  run-flag would put the longest sentence beside a visible label — the one combination that does
+  not fit.
+- *CAP-4's "editable throughout" is amended.* The open never blocks; the author is asked in a
+  modal before editing continues; once answered the document is editable throughout the
+  **fetching**. The non-blocking requirement was always protecting the fetch, not the question.
+  The owner chose the modal knowing it momentarily blocks. SPEC.md CAP-4 carries the amendment.
+- *Both tiers are completed, and a local family all-or-nothing.*
 
 ## Boundaries & Constraints
 
 **Always:**
 - **The document is not touched.** No engine `command`, `undo` or `redo` request, no
   `setCurrentSnapshot`, no `setBaselineRevision`, no `documentGeneration` bump, no save.
-  Completion's only sinks are the machine store (`keepOnThisMachine`) and, if OQ-2 puts
-  the catalogue tier in scope, the release's service-worker cache
-  (`refreshHeldLocalFamilies`). If the work reaches for a document command, stop and ask.
-- **The open does not wait.** The completion call sits *after* `setCurrentSnapshot` in
-  `installOpenedDocument` and is not awaited. The canvas paints and the document is
-  editable before any completion request resolves.
-- **The author is asked; completion never runs silently.** Per SPEC.md Assumptions, a
-  decline is not remembered — the next open of the same document asks again.
-- **Fetches are eager once accepted** — all missing cuts for the document's families, at
-  open, not lazily on the first **B**.
-- **Per-face failure is not family failure.** A refused or unreachable cut leaves the
-  family's other cuts installed and is reported as a shortfall, never as a throw.
-- **Nothing here throws into the open path.** Every failure ends as a sentence.
-- **A result that arrives after the document was replaced is not shown.** Capture
-  `documentGeneration.current` before the first await and gate every UI write on it
-  (the `applyImageAsset` pattern, `App.tsx:2947-2960`). Store writes are
-  document-independent and are kept regardless.
+  Completion's only sinks are the machine store (`keepOnThisMachine`, `App.tsx:3265`) and
+  the release cache (`refreshHeldLocalFamilies`, `App.tsx:711`). Reaching for a document
+  command is the signal to stop and ask.
+- **The open does not wait.** The call sits after `setCurrentSnapshot` (`App.tsx:3500`) and
+  is not awaited. The canvas paints and an edit is accepted before any fetch resolves.
+- **Selection is `familyIsComplete`, never `familyIsInstalled`.** `font-index.ts:498`
+  answers "is anything left to fetch"; `font-index.ts:449` answers "can these bytes be
+  used". Story 3 separated them structurally (`font-index.ts:418-448`, `:475-497`). Do not
+  re-fuse them and do not write a third predicate.
+- **Reuse the four-state absence vocabulary.** `CutAbsence = 'unpublished' | 'unfetched' |
+  'unusable' | 'unchecked'` (`App.tsx:5857`) and `cutAbsenceSentence` (`App.tsx:6068`).
+  Completion adds no fifth state and no parallel sentence set.
+- **The census is the authority on what a family publishes.** `FamilyCensus`
+  (`font-store.ts:201`) plus `censusIsComplete` (`font-store.ts:230`). No network probe
+  before the author has consented.
+- **A local family is completed all-or-nothing, and the premise is defended on purpose.**
+  `cutEmbedPlan` gates the local arm on `completeLocalFamilies` (`App.tsx:5769`), and the
+  comment above it (`App.tsx:5749-5756`) argues the partial state is *unreachable* because
+  `installFamily` fetches a family's cuts as a set. **Completion is a second producer of
+  that state.** Keep the premise true by refreshing local holdings only when every cut of
+  that family landed — and **update that comment to name completion as the second producer
+  and to say the property survives because completion is deliberately all-or-nothing.** A
+  premise that stays true only because nobody noticed the second producer is the shape of
+  the D-16.5 misattribution. If all-or-nothing proves impossible rather than awkward — a
+  permanently unavailable cut making the whole family uncompletable — **stop and ask**; do
+  not widen story 3's gate.
+- **The author is asked; completion never runs silently.** A decline is not remembered.
+- **Fetches are eager once accepted.**
+- **Per-face failure is not family failure**, and nothing here throws into the open path.
+- **A result arriving after the document was replaced is not shown.** Capture
+  `documentGeneration.current` before the first await (`applyImageAsset`'s pattern,
+  `App.tsx:3331`). Store writes are document-independent and are kept regardless.
 
 **Never:**
-- Never parse the `.folio` in TypeScript. The families come from the engine's projection
-  (`canvas.fontChains`), which is the only source the designer has (AD-17).
-- Never embed, declare a chain entry, or widen `embedFontFamily`. That is story 2's wire
-  and this story does not touch it.
-- Never change `prefetchDeferredFaces`' own awaited call at `App.tsx:3118`, its
-  painted-face selection (`deferredFaceAssets` / `paintedCanvasFaces`), or
-  `absent-face-recovery.ts`. Reuse the transport only.
-- Never prompt where nothing can be kept: a browser with no usable store
-  (`storeKeepsFaces === false`) is offered nothing.
-- Never prompt for the starter or a blank document. Neither routes through
-  `installOpenedDocument`, and their families are shipped faces that already carry cuts.
-- No synthetic cuts, no variable faces, no weight beyond the four the format declares.
+- Never parse the `.folio` in TypeScript. Families come from `canvas.fontChains` (AD-17).
+- Never embed, declare a chain entry, or touch `embedFontFamily` / `cutEmbedPlan`. Story 2
+  and story 3 own first-use embedding.
+- Never change `prefetchDeferredFaces`' awaited call (`App.tsx:3498`) or its painted-face
+  selection. Never modify `absent-face-recovery.ts`.
+- Never write to `fileStatus` (`App.tsx:437`): the open writes there and it auto-retires
+  after 6 s, so completion would stomp the open's own outcome.
+- Never drop, abbreviate past meaning, or allow the clipping of the numeric readout. The
+  design-mode budget after the `.sr-only` change is ~424 px; price any new string against
+  it at 6.00 px per character before adding it.
+- Never remove `offline-status` from the tree or change its text — `.sr-only` is a visual
+  hide, and `App.css:7` is `position: absolute`, not `display: none`.
+- Never prompt where nothing can be kept (`storeKeepsFaces === false`), and never for the
+  starter or a blank document — neither routes through `installOpenedDocument`.
+- No synthetic cuts, no variable faces, no weight beyond the format's four.
 
 ## I/O & Edge-Case Matrix
 
 | Scenario | Input / State | Expected Output / Behavior | Error Handling |
 |----------|--------------|---------------------------|----------------|
-| Nothing to complete | every document family's cuts already held | no prompt, no request | N/A |
+| Nothing to complete | every document family `familyIsComplete` | no prompt, no request | N/A |
 | Shipped-only document | chains name only shipped faces | no prompt | N/A |
 | No store | `storeKeepsFaces === false` | no prompt | N/A |
-| Incomplete family | store holds Regular only; family publishes more | prompt naming the families; document editable while it stands | N/A |
+| Stored family short a cut | census `published` ⊅ held styles, refusal not permanent | prompt; document editable throughout | N/A |
+| Pre-story-1 family | face records, no census row (`unchecked`) | counted as incomplete; completion establishes the census | N/A |
+| Catalogue family short a cut | family absent from `LocalFaceHoldings.complete` | prompt; cuts fetched from the deferred release assets | N/A |
 | Decline | author declines | prompt clears; nothing fetched; revision, `canUndo` and bytes unchanged; next open asks again | N/A |
-| Accept | author accepts | progress with a numeric readout, then a settled outcome sentence; store gains the cuts | per-cut failures counted |
-| Offline | `navigator.onLine === false` at accept | one outcome sentence saying the cuts could not be fetched; no request made | no throw |
-| One cut refused | italic is a variable font, or a non-`ttf`/`otf` media type | the family's other cuts still land; outcome names the shortfall | per-face refusal, family kept |
+| Accept | author accepts | numeric progress, then a settled outcome; store and/or release cache gain the cuts | per-cut failures counted |
+| Offline | `navigator.onLine === false` at accept | one outcome saying the cuts could not be fetched; no request | no throw |
+| Permanently refused cut | census refusal `permanence: 'permanent'` | not offered, not fetched — `censusIsComplete` already treats it as settled | N/A |
+| Partial local landing | 2 of 3 catalogue cuts fetched | local holdings NOT refreshed for that family | see Boundaries |
 | Document replaced mid-flight | author opens another document | no completion status lands on the new document; store keeps what arrived | generation guard |
 
 </frozen-after-approval>
 
-## Open Questions
-
-1. **Where the author is asked, and where progress is shown.** SPEC.md CAP-4 says *"the
-   status bar reports progress and then the outcome"*. The literal status bar is the
-   24 px `<footer className="status-bar">` (`App.tsx:4050`) — derived spans only, no
-   message API — and in **design** mode it already carries `LOCAL SHELL`, the engine
-   snapshot, the font count, the bound-element count, `offline-status` (whose longest
-   label is 48 characters) and `DESIGN MODE`. `.app-shell` is `overflow: hidden`, so an
-   overfull bar is clipped rather than wrapped. The other message slot, `fileStatus`
-   (`App.tsx:431`, rendered `:3837`), is what the open itself writes (*"Opened local file
-   X"*) and auto-retires after 6 s — a background completion writing there would stomp
-   the open's own outcome.
-   - options: **(A) the `status-bar` footer** — literally what SPEC.md says; needs a new
-     span and a real width measurement at 1024 px before it can be trusted, and design
-     mode is the crowded one / **(B) the `fileStatus` message bar** — an existing setter
-     with an existing transient rule, but it collides with the open's own sentence and
-     with `fileBusy` / **(C) a non-modal region beside the canvas**, in the shape of the
-     canvas face-miss list (`App.tsx:3907`, `role="status" aria-live="polite"` with
-     per-item actions) — carries the question, the numeric progress and the outcome, has
-     no width budget, and leaves the document editable throughout, but is not the
-     "status bar" SPEC.md names / **(D) a modal dialog** in the `UnsavedChangesDialog`
-     shape (`App.tsx:6066`) — the established yes/no vocabulary, but the document is not
-     editable until it is answered, which reads against CAP-4's *"editable throughout"*.
-   - My read: **(C)** for the prompt and progress. DESIGN.md:579-581 and :599 require
-     *"Always paired with a numeric readout"*; EXPERIENCE.md:72-74 requires progress
-     indication rather than a spinner. (C) satisfies both without a geometry risk. If the
-     owner wants the literal status bar, (A) is buildable but adds an e2e width
-     measurement to this story.
-
-2. **Which tiers completion covers.** A document's families can be author-installed web
-   faces (machine store, `font-store.ts`) or committed-catalogue faces (release assets
-   behind the service worker, `held-local-faces.ts`). The two have different sources,
-   different sinks and different code (`installFamily`'s two arms, `App.tsx:2694-2713`
-   and `:2717-2773`). Catalogue families have no cuts at all until **story 3** ships them.
-   - options: **(A) web-installed families only** — depends on stories 1 and 2 as
-     dispatched, ships in isolation, but an offline author with a catalogue family gets
-     nothing, which reads against CAP-3's *"No offline author loses bold"* / **(B) both
-     tiers** — matches CAP-3 and CAP-4 read together, but adds story 3 as a hard
-     dependency and roughly doubles this story's footprint / **(C) both tiers, with the
-     catalogue arm written but inert until story 3's catalogue rows carry a style** —
-     one story, ordering-independent, at the cost of an arm nothing exercises yet.
-   - My read: **(B)**, and re-dispatch this story after story 3. CAP-4's success text is
-     about *"the existing Sarabun document"*, a web family — so (A) delivers the named
-     scenario — but shipping completion that silently skips half the families the dialog
-     offers is the kind of gap that gets found by an author, not by a test.
-
-3. **How the designer learns what a family publishes.** To say "Sarabun is missing its
-   bold", the designer needs Sarabun's upstream cut set. For a web family that lives in
-   `METADATA.pb` and costs a network round trip per family; `fetchWebFamily`
-   (`font-source.ts:403`) fetches it, but as part of fetching a face.
-   - options: **(A) probe upstream before asking** — the prompt is truthful and never
-     appears for a family that has nothing to add, but it puts network requests before
-     the author has consented, and it cannot run offline, so an offline open would show
-     no prompt at all / **(B) ask on store shortfall alone** — no network before consent,
-     but the prompt can appear for a Regular-only family and "complete" then completes
-     nothing, which is the same untruthful sentence CAP-2 exists to remove / **(C) take
-     the cut set from story 5's `styles` carry-through** (`font-index.json` already
-     carries `["400","400i"]`; `build-font-index.mjs:124` discards it) — no network, no
-     untruthful prompt, but adds story 5 as a dependency and the snapshot is dated.
-   - My read: **(C)** if story 5 can precede this, otherwise **(B)** with the prompt
-     worded as an offer to *check for* missing cuts rather than a claim that they exist.
-     (A) is the one I would not take: a fetch before consent is the thing CAP-4's prompt
-     exists to prevent.
-
 ## Code Map
 
-- `folio-designer/src/App.tsx:3075` `installOpenedDocument` — the one document-replacement
-  path for template bytes (Open + startup-dialog example). Insert the completion call
-  after `setCurrentSnapshot` (`:3120`), **un-awaited**. `startBlank` (`:3261`) and the
-  launch starter (`startup-sequence.ts:11`) do not route here and stay exempt.
-- `folio-designer/src/App.tsx:3118` `await prefetchDeferredFaces(...)` — **do not move or
-  unawait.** The await is argued at `:3096-3101`: the browser's `@font-face` bytes must
-  land before the canvas paints. Completion is a different job with a different bound.
-- `folio-designer/src/engine-protocol.ts:518` `CanvasProjection.fontChains` — entries are
+Anchors re-derived at `6dd0997`; the earlier map was dated by four shipped stories.
+
+- `App.tsx:3449` `installOpenedDocument` — `load` `:3452`, `serialize` `:3453`,
+  `prefetchDeferredFaces` `:3498` (**still awaited — leave it**), `installDocumentIdentity`
+  `:3499`, `setCurrentSnapshot` `:3500`. Callers `:3439` (Open), `:3600` (example).
+  Insert completion after `:3500`, un-awaited.
+- `engine-protocol.ts:518` `CanvasProjection.fontChains` — entries carry
   `{face, assetKey, family, style, bold, italic, boldItalic}`; exactly one of
-  `face`/`assetKey` is non-empty. `assetKey` non-empty ⇒ the document carries the face ⇒
-  `entry.family` is a family completion may consider. `face` non-empty ⇒ a shipped face,
-  out of scope. Discriminant precedent: `App.tsx:888` (`carriedFaceKeys`).
-- `folio-designer/src/App.tsx:2926` `keepOnThisMachine(face)` — the store write plus
-  `refreshStoredFaces`. Reuse verbatim; it touches no document.
-- `folio-designer/src/App.tsx:2672` `installFamily` — the two tier arms completion mirrors:
-  catalogue = `fetch(source.face.url)` + `refreshHeldLocalFamilies` (`:2694-2713`, no store
-  write, by design); web = `fetchWebFamily` + `keepOnThisMachine` (`:2718-2775`).
-- `folio-designer/src/font-source.ts:403` `fetchWebFamily(family, fetcher, today)` —
-  injected fetcher, 30 s timeout (`:313`), no progress callback. Story 1 changes it to
-  return a face **set**; build on that, do not re-narrow. Per-face rules that stay
-  per-face: variable refusal `:513-515`, media type `:206-211`.
-- `folio-designer/src/font-store.ts:156` `FontStore.list()` → `StoredFace[]` carrying
-  `family` and a non-empty `style` (required at `:234-235`). After story 1 this is the
-  authority on which cuts this machine holds. App state: `storedFaces` (`App.tsx:672`),
-  `storeKeepsFaces` (`:676`), `heldLocalFamilies` (`:685`).
-- `folio-designer/src/document-face-prefetch.ts:22-30` — the comment claiming the open
-  fetches **only** faces the document's text painted. This story widens that bound (a cut
-  the author has not used is by definition unpainted). Rewrite the comment; do not leave it
-  standing over code it no longer describes.
-- `folio-designer/src/document-face-prefetch.ts:162` `fetchDeferredFaces(urls, timeoutMs,
-  request)` — **uncommitted, new.** Never throws, returns bodies by URL, short-circuits on
-  `navigator.onLine === false` (`:165`). This is the reusable transport if OQ-2 puts the
-  catalogue tier in scope. Reuse it; do not copy it.
-- `folio-designer/src/absent-face-recovery.ts` — **uncommitted, new.** Different problem:
-  reactive, engine-FontSet-side, driven by a `TEXT_FACE_ABSENT` refusal, installing release
-  face bytes into wasm via `install-face`. It never writes the machine store and its
-  candidate set (`generated/canvas-face-assets.ts`) has no row for an author-installed web
-  family. **Do not modify it and do not route completion through it.**
-- `folio-designer/src/App.tsx:3907` — the canvas face-miss `<ul role="status">` with
-  per-item actions: the non-modal precedent for OQ-1 option (C). `App.tsx:6066`
-  `UnsavedChangesDialog` is the modal precedent for (D). `FontBrowser.tsx:76`/`:358` is the
-  existing `"added N of M"` progress shape.
-- `folio-designer/src/App.tsx:127` `SETTLED_FILE_STATUS_MS`, `:2986-2990` — the
-  settled-status auto-retire rule; a *busy* status is deliberately exempt (`:110-126`).
-- **Do not change:** `engine-protocol.ts` operations, `font-chain-command.ts`,
-  `shipped-face-cuts.ts`, `component_commands.go`, anything in `folio-go`.
+  `face`/`assetKey` is non-empty. Filter on the discriminant, never the string's shape
+  (`App.tsx:910` says why).
+- `font-store.ts:201` `FamilyCensus {family, published, refused, recordedAt}`; `:170`
+  `FaceCutPermanence = 'permanent' | 'transient'`; `:173` `FamilyCutRefusal`; `:230`
+  `censusIsComplete(census, heldCuts)`; store methods `listCensus` `:284` / `putCensus`
+  `:286`. App state `familyCensuses` `App.tsx:685`, refreshed with faces in one
+  `Promise.all` at `App.tsx:1066-1068`.
+- `font-index.ts:498` `familyIsComplete(source, holdings)` — **the selection predicate.**
+  `:449` `familyIsInstalled` is the other question; do not substitute it.
+- `held-local-faces.ts:92` `LocalFaceHoldings {usable, complete}`; `:163`
+  `readLocalFaceHoldings`; `:205` `localFaceIsHeld(url, releaseId)` — the per-cut probe
+  story 3 added, and the one this story needs for the local arm.
+- `generated/font-catalogue.ts:112` — rows now carry a per-face `style`; **107 faces**
+  across the same 31 families (31 Regular, 30 Bold, 23 Italic, 23 BoldItalic). `family`
+  stays the base family. This is the local tier's own census; no network needed to know
+  what a committed family publishes.
+- `App.tsx:2744` `installFamily` — the two arms completion mirrors. Web: `fetchWebFamily`
+  with `skip` = held styles (`App.tsx:2812`, `:2822`) → `keepOnThisMachine` (`:3265`) →
+  `recordFamilyCensus` (`:3301`). Local: `localFaceIsHeld` → `fetch(face.url)` →
+  `refreshHeldLocalFamilies` (`:711`).
+- `App.tsx:5857` `CutAbsence`; `:5859` `cutAbsenceState`; `:6068` `cutAbsenceSentence` —
+  the four sentences. Reuse; add nothing.
+- `App.tsx:5763` `cutEmbedPlan`, gate at `:5769`, premise comment `:5749-5756` — **read
+  before touching the local arm.** It declares the partial-cache state unreachable.
+- `App.tsx:4430` + `:4441` — the `<footer className="status-bar">`, seven design-mode flex
+  items, **no message API**. `offlineLabel` `App.tsx:3981` (five literals, longest 48
+  chars). `.status-bar` `App.css:1081` (gap 12, padding 0 12, mono 10px, nowrap);
+  `.app-shell` `App.css:19` (`min-width: 1024px`, `overflow: hidden`).
+- `App.tsx:3331` — the `requestGeneration` capture pattern for a long await.
+- **Do not change:** `document-face-prefetch.ts` behaviour, `absent-face-recovery.ts`,
+  `font-chain-command.ts`, anything in `folio-go`.
+- **Browser runs:** `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` must point at chromium **1217**
+  (1208 is a 428 KB stub). `e2e/` files are scanned for prohibited identifiers
+  (`canvas-authority-contract.test.ts:18`) — no `getComputedStyle`, `getBoundingClientRect`,
+  `offset*`, `client*`, `scroll*`. Measure with `boundingBox()` only.
 
 ## Tasks & Acceptance
 
 **Execution:**
-- [ ] `folio-designer/src/document-face-completion.ts` -- NEW. Pure model, no React and no
-      `fetch`: `incompleteFamilies(fontChains, storedFaces, heldLocalFamilies, publishes)`
-      → the families and their missing cuts, plus this surface's sentences (the question,
-      the `n of m` progress line, the settled outcome, the offline outcome). Sentences live
-      here, not inline in the component, per the repo's per-surface model-module convention
-      (`font-browser-model.ts`, `preview/freshness.ts`).
-- [ ] `folio-designer/src/App.tsx` -- call the model after `setCurrentSnapshot` in
-      `installOpenedDocument`, un-awaited; hold the prompt and the progress in state; on
-      accept, fetch per family and write through `keepOnThisMachine` (and
-      `refreshHeldLocalFamilies` if OQ-2 includes the catalogue tier); render on the
-      surface OQ-1 selects; guard every UI write on `documentGeneration.current`.
-- [ ] `folio-designer/src/document-face-prefetch.ts` -- rewrite the `:22-30` bound comment
-      so it states the open's two fetches and their different bounds. No behaviour change.
-- [ ] `folio-designer/src/App.css` -- styling for the new region, only if OQ-1 needs one.
-- [ ] `folio-designer/src/document-face-completion.test.ts` -- NEW. One test per I/O matrix
-      row that the pure model can carry.
-- [ ] `folio-designer/src/App.test.tsx` -- the rows that need the App: the non-mutation
-      proof, the open-not-blocked proof, the generation guard, the offline outcome, and
-      the no-store case. Use `withMachineStore()` (`App.test.tsx:37-44`) and the existing
-      `globalThis.fetch` save/restore pattern.
+- [x] `folio-designer/src/document-face-completion.ts` -- NEW. Pure model, no React and no
+      `fetch`. `documentFamilies(fontChains)` → the families named by entries whose
+      `assetKey` is non-empty, deduped, in chain order (BOTH tiers arrive this way — a
+      catalogue family is embedded too). `incompleteDocumentFamilies(fontChains, sources,
+      holdings)` → those of them that `offeredFamilies` knows and `familyIsComplete` says
+      are short. Plus this surface's sentences: the modal's question and its two button
+      labels, the progress line, the settled outcome, the shortfall outcome, the offline
+      outcome. Sentences live here, per the repo's per-surface model-module convention.
+- [x] `folio-designer/src/App.tsx` -- the status bar gains its FIRST message API: a
+      `completionStatus` state and one new `<span data-testid="font-completion-status">`
+      in the `<footer className="status-bar">`, rendered only when set. It is NOT
+      `fileStatus` and must not auto-retire while work is in flight.
+- [x] `folio-designer/src/App.tsx` -- `offline-status` becomes `className="sr-only"` in
+      BOTH modes (it is currently `mode === 'preview' ? 'sr-only' : undefined`). This is
+      the owner's make-room decision: it frees 288 px plus a 12 px gap in design mode.
+      Write the reason beside it — the preview precedent, the measured 136 px worst-case
+      slack, and that `App.css:7` is `position: absolute`, so the label is hidden visually
+      and stays in the accessibility tree exactly as it is in preview.
+- [x] `folio-designer/src/App.tsx` -- a `CompleteFontsDialog` in the
+      `UnsavedChangesDialog` shape (`:6893`): `.page-dialog-backdrop` + `.page-dialog`,
+      two buttons, the SAFE one focused first and bound to Escape, Tab toggling between
+      them, `event.stopPropagation()` so keys never reach the canvas. In-app, never
+      `window.confirm`.
+- [x] `folio-designer/src/App.tsx` -- in `installOpenedDocument`, AFTER `setCurrentSnapshot`
+      (`:3500`): if the store can keep faces and the model reports incomplete families,
+      open the dialog. On confirm, call the completion un-awaited. Capture
+      `documentGeneration.current` before the first await and gate every UI write on it.
+- [x] `folio-designer/src/App.tsx` -- the two tier arms, mirroring `installFamily`
+      (`:2744`). Web: `fetchWebFamily(family, …)` with `skip` = the styles already held →
+      `keepOnThisMachine` → `recordFamilyCensus`. Local: for each missing cut,
+      `catalogueCutOf` → `localFaceIsHeld` → `fetch(face.url)` (body dropped) → after the
+      family's whole set, `refreshHeldLocalFamilies()`. A family counts completed only if
+      EVERY missing cut landed.
+- [x] `folio-designer/src/App.tsx:5749-5756` -- update the premise comment. It currently
+      argues the partial local state is unreachable because `installFamily` fetches a
+      family's cuts as a set. Name completion as the SECOND producer, and state why the
+      property still holds: `readLocalFaceHoldings` counts a family `complete` only when
+      every declared cut is held (`held-local-faces.ts:185`), so a partial landing leaves
+      the family exactly where it was — still `unfetched`, still offered — and no
+      half-complete family is ever treated as complete.
+- [x] `folio-designer/src/document-face-completion.test.ts` -- NEW. One test per I/O matrix
+      row the pure model can carry.
+- [x] `folio-designer/src/App.test.tsx` -- the rows needing the App: the non-mutation
+      proof, the open-not-blocked proof, the generation guard, the offline outcome, the
+      no-store case, the decline, and the partial-local-landing row. Use
+      `withMachineStore()` (`:37-44`) and the existing `globalThis.fetch` save/restore.
 
 **Acceptance Criteria:**
 - Given a completion that runs to success, when it settles, then no `command`, `undo` or
   `redo` engine request was issued during it, and `snapshot.revision`, `canUndo` and
   `canRedo` are identical to their values immediately after the open.
-- Given a document needing completion, when it opens, then the canvas has rendered and an
-  edit is accepted **before** any completion request resolves.
-- Given a document that has been completed and re-opened without the cuts being embedded,
-  when it opens, then the author is asked again (a decline is not remembered).
-- Given a browser where the font store cannot be opened, when such a document opens, then
-  no question is asked and no completion request is made.
+- Given a document needing completion, when it opens, then the open resolves and the
+  canvas has rendered before the dialog is answered; and once answered, an edit is
+  accepted before any completion request resolves.
+- Given a completed document re-opened with the cuts still unembedded, when it opens, then
+  the author is asked again.
+- Given a browser whose font store cannot be opened, when such a document opens, then no
+  question is asked and no completion request is made.
+- Given design mode with no completion line, then `offline-status` is painted; given a completion
+  line standing, then it carries `sr-only`; and in both states, and in preview, it is present in
+  the accessibility tree by role and accessible name with its text unchanged.
 
 ## Implementation Notes
 
+### THE WEB TIER IS COMPLETED TOO, AND THE ARM WAS ALREADY WRITTEN THAT WAY
+
+The Code Map's web arm is `installFamily`'s web arm, and `installFamily` shares ONE arm between the
+`web` and `stored` tiers — the only difference is `held`, which is the stored face records' styles
+for a `stored` row and `[]` for a `web` one. `completeOneFamily` mirrors that exactly rather than
+restricting itself to `stored`, and it has to: `familyIsComplete` answers `false` for every `web`
+row, so `incompleteDocumentFamilies` selects them, and a document carrying a family this machine
+holds NOTHING of — one saved before this spec, or opened on another machine — is the plainest
+reading of the problem CAP-4 names. Refusing them would have selected a family and then silently
+done nothing for it.
+
+### THE CENSUS IS WRITTEN EVEN WHEN A CUT DID NOT LAND — the opposite of `installFamily`
+
+`installFamily` refuses BEFORE `recordFamilyCensus` when a face write fails, because there the write
+IS the act. Completion writes it anyway, and the reasoning is the census's own shape: it records what
+upstream PUBLISHES and carries no `held` list (`font-store.ts:201`), so a census written after a
+short landing claims nothing false — `familyIsComplete` reads heldness off the face records, finds
+the family still short, and goes on offering it. Suppressing the census instead would leave the
+family in `unchecked`, whose sentence says this designer has asked upstream nothing, about a family
+it has just asked upstream about.
+
+### COMPLETENESS IS THE SAME PREDICATE THAT SELECTED THE FAMILY
+
+A family counts completed when `censusIsComplete(census, kept)` (web/stored) or when every declared
+catalogue cut landed (local) — never a third rule of this story's own. `kept` excludes any style
+whose store write was refused, so a quota failure reads as a shortfall rather than as a success.
+
+### THE `.sr-only` CHANGE RETIRED AN EXISTING ASSERTION
+
+`App.test.tsx`'s *"hides the offline live region from the painted Preview bar…"* asserted that
+Design's span carried **no class at all** — by name, as the half nothing else would notice. The
+owner's decision removes that fence, so the test was rewritten rather than deleted: it is now
+*"…from the painted bar in both modes…"* and asserts the every-affordance-survives half in BOTH
+modes, which is the part that must never quietly become a removal. That rename is the single GONE
+entry in the name-set diff.
+
+### RESIDUALS
+
+- **No browser run.** The 136.00 px / +210.00 px / ~424 px figures are the owner's measurement,
+  carried into the code comment and into `document-face-completion.test.ts`'s 70-character budget
+  assertion; nothing here re-measured them at 1024×768. Playwright was not run (chromium 1217 was
+  not exercised). The e2e suites that read `offline-status` use Playwright `toHaveText`, which reads
+  `textContent` and does not require visibility, so they are unaffected by the class — checked by
+  reading, not by running.
+- **`kept.add` is only exercised through a forced quota refusal.** The test installs a `put` that
+  refuses on the two FACE stores and lets the census through; that is a `fake-indexeddb` prototype
+  patch, not a real quota.
+
+
 ## Spec Change Log
+
+- 2026-09-20 — Re-planned after stories 1, 6, 2 and 3 landed. OQ-2 and OQ-3 settled from
+  shipped code (see Design Notes); OQ-1 ruled by the owner for the status bar and then
+  escalated on the measurement it required. Code Map anchors re-derived at `6dd0997`.
 
 ## Review Triage Log
 
+**2026-09-20, review round 1 — 16 findings, all applied.** The three that changed behaviour rather
+than wording:
+
+- **The selection was reading its render closure.** `installOpenedDocument` decides whether to ask
+  after three awaits, and all three inputs are late-resolving: `initialLocalFaceHoldings` stands in
+  with EMPTY sets wherever there is a release cache, `storeKeepsFaces` is `useState(true)`, and
+  `storedFaces` is empty until its listing lands. Both directions were wrong — over-asking for a
+  committed family the cache already held whole, and skipping the question in silence for a stored
+  family no source had yet been built for. Fixed with refs, and then fixed AGAIN: an
+  effect-synced ref is a render behind by construction and still read `true` at selection time in a
+  browser whose store had already refused. The refs are now written **where the value is produced**,
+  beside their `set*` calls, which is `setCurrentSnapshot`'s own pattern; the offered join is
+  re-computed at call time from `storedFacesRef`/`familyCensusesRef`.
+- **`storeKeepsFaces` suppressed the question for all three tiers.** A committed family's sink is the
+  RELEASE CACHE and never `fontStore` — `installFamily`'s local arm writes nothing to the store by
+  design — so a private window with a worker in charge could complete every catalogue family and was
+  never asked. The selection now filters by tier instead: `web`/`stored` rows drop when the store
+  cannot keep faces, `local` rows stay. The committed-tier describe deliberately installs no machine
+  store and is the proof of it.
+- **The local arm trusted the response instead of the cache.** An `ok` response the worker declined
+  to keep — a failed hash verification, a quota — reported the family completed while
+  `holdings.complete` went on excluding it. It now re-probes each fetched URL with `localFaceIsHeld`,
+  so its answer and the holdings' cannot disagree.
+
+Also applied: one holdings sweep per RUN rather than per family; the loop breaks on a document
+replacement rather than going on spending the author's network; offline is checked before the first
+report and again between families, so a mid-run drop ends in the offline sentence rather than a
+generic shortfall; the status line gained `role="status" aria-live="polite"` (this same story made
+the bar's only other live region visually hidden) and a `mode === 'design'` fence (Preview's bar
+states *no network · nothing left this machine*, which a line about fetching upstream would
+contradict); terminal outcomes retire on the house `SETTLED_FILE_STATUS_MS` window while a progress
+line stands; `completionShortfall` lost the word `still` and the budget note's wrong "59" became a
+scanned-and-asserted 60.
+
+**Mutation-checked.** Every fix above was re-run against the mutant that motivated it — render-closure
+values, blanket store suppression, no cache re-probe, `!outcome.ok → true`,
+`censusIsComplete → true`, unconditional `kept.add`, uncontrolled-page `→ true`, deleted in-loop
+progress, deleted pending-question clear, deleted generation break, deleted mid-run offline check,
+ungated retire, no retire, unfenced/non-live span, and a no-op `onKeyDownCapture` — and each one reds
+at least one test.
+
+
+Pass 1, 2026-09-20. Three layers: blind-hunter (13 findings), edge-case-hunter (13), verification-gap (6 + 5 other).
+
+| # | Finding | Verdict | Evidence |
+|---|---|---|---|
+| 1 | Selection reads `storeKeepsFaces`/`browsableFamilies`/`localFaceHoldings` from a stale render closure, after three awaits | **high** | `initialLocalFaceHoldings` returns EMPTY sets when a release cache exists (`held-local-faces.ts:135`), and `storeKeepsFaces` is `useState(true)`. Both directions bite: unsettled holdings ask for cuts already cached; unsettled `storedFaces` finds no source and skips the prompt silently. verification-gap DEMONSTRATED it — inserting the sibling test's two-microtask flush reds both committed-tier tests. |
+| 2 | `storeKeepsFaces` gates BOTH arms, but the local arm's sink is the release cache, not the store | **high** | `App.tsx:3669`. A private window with a controlled worker can complete every catalogue family and is never asked. The spec's frozen boundary names `storeKeepsFaces === false` as the test for "nothing can be kept" — true for web/stored, false for local. Exactly one reading of the principle, so patched to it rather than looped back. |
+| 3 | `font-completion-status` carries no `role="status"`/`aria-live` | **high** | Same change hid the bar's only live region. Progress, outcome and the offline sentence are announced to nobody. |
+| 4 | Local arm returns "completed" from `response.ok`, never re-probing the cache | **medium** | `App.tsx:3381`. Its own docstring claims the return is "every declared cut held". A worker that declines to cache reports `1 family completed.` while `holdings.complete` still excludes it. |
+| 5 | No cancellation: only `report` is generation-gated, the fetch loop runs on | **medium** | `App.tsx:3442`. Keeping what landed is a different claim from continuing to spend an author's network on a closed document. |
+| 6 | `refreshHeldLocalFamilies()` inside the per-family loop sweeps all 107 catalogue faces each time | **medium** | Exactly the cost `keepOnThisMachine`'s `refresh = false` comment guards against on the store side; the web arm in the same function avoids it. |
+| 7 | Offline sampled once, and reported after a progress line it immediately replaces | **medium** | `App.tsx:3445-3448`. A network that drops mid-run reports a generic shortfall — the merge `COMPLETION_OFFLINE`'s own docstring argues against. |
+| 8 | A settled completion line never retires | **medium** | Cleared only by the next completion or a new document, so `…1 family completed.` sits in the chrome for the session. The house rule (`App.tsx:110-126`) retires settled statuses and exempts busy ones. |
+| 9 | Completion line is not fenced on `mode`, so it renders in Preview | **medium** | Contradicts `no network · nothing left this machine` on the same bar, and the 424px budget was measured for the design bar; preview additionally carries the 228px assurance. |
+| 10 | Documented budget says "longest is 59"; `completionShortfall(0, 31)` is 60 and `(0, 256)` is 62 | **medium** | Measured. The test asserts only `<= 70`, so the stated figure is never checked. At the pathological bar (256 fonts, 4-digit revision) 62 chars clips by 14px. |
+| 11 | Dialog keyboard contract (Escape, Tab, shortcut-stopping) untested | **medium** | verification-gap: replacing the whole handler with a no-op left 672 tests green. The sibling `UnsavedChangesDialog` is verified all three ways. |
+| 12 | Web/stored arm's failure accounting untested | **medium** | verification-gap: making `!outcome.ok` return `true` and `kept.add` unconditional left 672 tests green. A quota-refused write would read as "1 family completed". |
+| 13 | Uncontrolled-page branch of the local arm untested | **medium** | verification-gap: flipping its `return false` to `true` left 672 tests green. |
+| 14 | Multi-family run untested; the moving numerator is dead code | **medium** | verification-gap: deleting the in-loop progress report left 585 tests green. Every App fixture names exactly one family. |
+| 15 | Pending (unanswered) question surviving a document replacement untested | **medium** | verification-gap: removing `setCompletionRequest(undefined)` from `installDocumentIdentity` left 672 tests green. |
+| 16 | Committed-tier describe never calls `withMachineStore()` | **medium** | Its coverage is contingent on the store's answer not having arrived — see #1. |
+| 17 | Design mode permanently loses its only visible offline indicator | **medium** | Real: `Offline cache unavailable` now has no visible surface. **Rejected as a patch** — the owner ruled unconditional `.sr-only` on 2026-09-20 knowing it changes a shipped surface. Escalated to the coordinator rather than silently re-decided. |
+| 18 | `source.faces` empty for a local family → reported complete having fetched nothing | **false** | `offeredFamilies` builds a `local` source by grouping `catalogueFaces` by family, so a family with no faces has no source and is never selected. |
+| 19 | `void completeDocumentFamilies(request)` has no `.catch` | **low** | Rejected: no demonstrated throw path — `localFaceIsHeld` catches internally (`held-local-faces.ts:209`), the local fetch is wrapped, and the web arm's helpers return strings rather than throwing. Adding a catch would guard a state never shown reachable. |
+| 20 | Concurrent runs / duplicate fetch if the author re-picks the family mid-run | **low** | Rejected: the store is content-addressed and the census write is last-wins, so the worst outcome is a duplicated fetch, not a corrupt state. Fix would add an interlock for an undemonstrated state. |
+| 21 | No Stop control for a many-family run | **low** | Rejected: bounded by the document's own family count, and #5's cancellation covers the case that actually strands work. New public surface otherwise. |
+| 22 | Test-fixture hygiene: `documentNaming` is a function in one describe and an object in the other; `waitFor` reopens the store each poll | **low** | Real but cosmetic; no named harm. Rejected. |
+
+**Routing:** no `intent_gap` and no `bad_spec` — #2's root cause is a frozen-block parenthetical with exactly one possible reading of its principle, so it is patched to that principle and reported, not looped back. `review_loop_iteration` stays 0. Rows 1-16 route to **patch**; 17 escalated; 18-22 rejected.
+
+
+
+**Patch round, 2026-09-20.** All 16 patch-routed findings applied by the step-03 agent and
+verified here against the tree, not the report. Three needed more than the stated fix:
+
+- **#1** — effect-synced refs are a render behind by construction, so the refs are written **where
+  the value is produced** (beside `setStoreKeepsFaces`, `setStoredFaces`, `setFamilyCensuses`,
+  `setLocalFaceHoldings`), and the offered join is recomputed at call time by `offeredForCompletion()`
+  rather than read off the `browsableFamilies` memo. Verified at `App.tsx:1001`, `:1018-1019`,
+  `:1125-1126`, `:727`, `:1144`, `:3754`.
+- **#2/#16** — the tier filter is `.filter((source) => source.tier === 'local' || storeKeepsFacesRef.current)`
+  (`App.tsx:3755`). The committed-tier describe deliberately installs **no** store and waits for both
+  probes, so it is now the positive proof that a private window with a controlled worker is still
+  asked — the opposite precondition from the one the finding proposed, and the honest one.
+- **#4/#6** — the local arm re-probes `localFaceIsHeld` after each fetch (`App.tsx:3430`) and the
+  holdings sweep moved to once per run. The `cutEmbedPlan` premise comment was reworded so
+  all-or-nothing rests on "the cache answers for every declared cut" rather than on the refresh being
+  per-family — otherwise another family triggering the single sweep could launder a partial landing.
+
+**Close-out re-measure, 2026-09-20** (chromium 1217, 1024×768, final tree, worst-case content —
+4-digit revision, `256 fonts in template`, `256 of 256 elements bound`, longest offline label):
+
+| state | bar | verdict | spacer |
+|---|---|---|---|
+| no completion, label **painted** | 1024.00 | **fits**, 12 px headroom | 70.00 px |
+| completing, label hidden, longest **reachable** line (58 ch) | 1024.00 | **fits**, 12 px headroom | 10.00 px |
+| completing, label hidden, the line the code then **documented** (60 ch) | 1026.00 | clipped by 2 px | 0.00 px |
+
+That third row was **unreachable**, and the owner ruled the bound corrected rather than the
+sentence trimmed. `document-face-completion.test.ts` had bound the family count by
+`addableFamilyCount` (~1811 families an author could *install from*) when the sentence counts the
+families *this document names* — a subset of `documentFamilies`, which the projection caps at
+`MAX_ENGINE_FONT_FAMILIES`. The scan now **reads that cap** rather than typing a number, so the
+budget tracks the engine's own constant instead of silently becoming a lie if it moves. Proven
+load-bearing: widening the scanned population reds the test at 61 characters.
+
+**Confirming re-measure after the derived bound** (same worst-case content):
+
+| state | bar | spacer |
+|---|---|---|
+| idle, label painted | 1024.00 **fits** | 70.00 px |
+| completing, **derived** worst case (58 ch) | 1024.00 **fits** | 10.00 px |
+| completing, at the ceiling (59 ch) | 1024.00 **fits** | 4.00 px |
+
+The stated worst case and the reachable worst case are now **the same number, 58**, so the code's
+fit claim is true rather than documented-as-false. 59 is the measured ceiling and is the asserted
+budget (was 70, which could never fire before the real limit). The ~12 px of headroom is recorded
+**beside the bar in `App.tsx`**, where the next item added to it will be priced.
+
+**Matrix audit:** all 13 rows covered by a test that ran and passed. One note for the coordinator —
+the frozen row *"No store | `storeKeepsFaces === false` | no prompt"* is now over-broad for the same
+reason as the frozen boundary in triage row #2: after the tier filter a no-store browser IS asked
+about committed families. The row's intent (never ask what a yes cannot act on) is satisfied and both
+halves are tested (`Kanit` for the web tier, the committed describe for the local tier). The frozen
+text is not mine to edit; reported rather than amended.
+
 ## Design Notes
 
-**Why the dispatch note's "build on the existing path" is only half-applicable.** There is
-one existing open-time face fetch — `prefetchDeferredFaces` at `App.tsx:3118` — and it
-differs from completion on all three axes that matter:
+**OQ-3 is settled by the census; both of its options were moot.** Story 1 shipped
+`FamilyCensus` (`font-store.ts:201`) recording, per family, what upstream publishes and —
+per missing cut — a refusal with `permanence: 'permanent' | 'transient'`.
+`censusIsComplete` (`font-store.ts:230`) is exactly "is anything left to fetch": every
+published cut held, or refused permanently. Story 3 made the shipped catalogue the local
+tier's own census, since `font-catalogue.ts` rows now carry a per-face `style`. So there is
+**no probe before consent and no shortfall-guessing**: `familyIsComplete` is the predicate.
+One carry-over — a family installed before story 1 has faces but no census row, reads
+`unchecked`, and is counted incomplete until a completion establishes its census. That is
+the correct reading, not a defect.
 
-| | existing prefetch | completion |
-|---|---|---|
-| selects | faces the text **painted** (`textPaint…fragments[].face`) | cuts the text has **not** painted, by definition |
-| candidate set | `generated/canvas-face-assets.ts` — this release's own shipped + catalogue faces | Google Fonts upstream, per family |
-| sink | service-worker cache (browser `@font-face`) | IndexedDB machine store (`font-store.ts`) |
-| timing | **awaited**, deliberately (`App.tsx:3096-3101`) | must not be awaited (CAP-4) |
-
-So the reuse is the **transport** (`fetchDeferredFaces`, and only if OQ-2 puts the
-catalogue tier in scope) and the tier arms of `installFamily` — not the call site and not
-the selection. That is one mechanism widened, not a second mechanism beside it.
+**OQ-2 is settled the other way from the hope: the local tier still needs completion.**
+`cutEmbedPlan` returns no plan when the family is absent from `completeLocalFamilies`
+(`App.tsx:5769`); `cutAbsenceState` then reports `'unfetched'` (`App.tsx:5893`) and the
+author reads *"This family has a bold face, but it is not on this machine … Add the family
+again to fetch it."* Nothing fetches it: the open-time prefetch covers only faces the
+engine actually painted (`document-face-prefetch.ts:83-91`), and an unpressed bold is never
+painted. So a catalogue family's cuts are **not** available on demand. The arm is small,
+though — `localFaceIsHeld` + a same-origin fetch + `refreshHeldLocalFamilies`, all shipped.
 
 ## Verification
 
 **Commands:**
-- `cd folio-designer && npm run typecheck` -- expected: clean. `tsc -b` builds
-  `tsconfig.app.json`, which includes `src`, so the new tests are type-checked too.
-- `cd folio-designer && npm run lint` -- expected: clean apart from the 4 pre-existing
-  `only-export-components` warnings.
-- `cd folio-designer && npm test` -- expected: all pass; report the pass count and diff the
-  test-name set against the pre-change run, not just the total.
-- `cd folio-designer && npx vitest run src/document-face-completion.test.ts src/document-face-prefetch.test.ts src/App.font-store.test.tsx` -- expected: all pass.
+- `cd folio-designer && npm run typecheck` -- expected: clean.
+- `cd folio-designer && npm run lint` -- expected: baseline exactly 8
+  `only-export-components` warnings, nothing else.
+- `cd folio-designer && npm test` -- baseline **89 files / 2108 tests**. Report the
+  name-set diff (GONE/NEW), not the total.
 
 **Manual checks (if no CLI):**
-- Red-proof the non-mutation AC by deleting the guard it rests on (issue a `command`
-  during completion) and confirming that AC turns red. A green suite over correct code
-  proves nothing about whether the assertion can see the defect.
+- Red-proof the non-mutation AC by issuing a `command` during completion and confirming
+  that AC turns red before relying on its green.

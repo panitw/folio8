@@ -73,11 +73,16 @@ one face, and the four-times-the-bytes cost falls only on documents that earn it
 - **CAP-4 — Existing documents complete themselves**
   - **intent:** Opening a document or template whose families are missing cuts offers to fetch
     them, and on acceptance fills the local store in the background while the author keeps working.
-  - **success:** Open the existing Sarabun document: it opens immediately and is editable
-    throughout; the author is asked whether to complete the missing cuts; on acceptance the status
-    bar reports progress and then the outcome, and afterwards **B** paints. The document itself is
-    untouched throughout — not modified, not marked changed, nothing added to undo. Offline or on
-    decline, the document is identical and the existing warning stands.
+  - **success:** Open the existing Sarabun document: the open itself never blocks. The author is
+    asked in a modal whether to complete the missing cuts — which momentarily holds editing, chosen
+    deliberately by the owner — and once answered the document is editable throughout the
+    *fetching*, which runs in the background. On acceptance the status bar reports progress and
+    then the outcome, and afterwards **B** paints. The document itself is untouched throughout —
+    not modified, not marked changed, nothing added to undo. Offline or on decline, the document is
+    identical and the existing warning stands.
+  - **amended 2026-09-20 (owner):** this success text previously read *"it opens immediately and is
+    editable throughout"*, which contradicted the modal the owner then chose for the question. The
+    non-blocking requirement was always protecting the FETCH, not the question.
 
 - **CAP-5 — An installed family stays one entry in the dialog**
   - **intent:** A family the author has installed appears once in the Add font dialog however many
@@ -150,6 +155,14 @@ one face, and the four-times-the-bytes cost falls only on documents that earn it
   catalogue faces are classified `deferred`
   ([offline-release-contract.mjs:126](../../../folio-designer/scripts/offline-release-contract.mjs#L126)),
   so these cuts cost nothing at app startup and must keep costing nothing.
+- **The status bar buys its room back.** The completion line is paid for by hiding
+  `offline-status` visually — and only while that line stands, never permanently
+  ([App.css:7](../../../folio-designer/src/App.css#L7) is `position: absolute`, so the region
+  stays in the accessibility tree with its text unchanged). Measured in Chromium at 1024x768:
+  the design bar is `nowrap` and clips rather than wraps, and that label swings +210px between
+  its shortest and longest states. **Owner ruling 2026-09-20, refined by the same owner after
+  review priced what a permanent hide cost** — hiding it outright left `Offline cache
+  unavailable` with no visible surface anywhere in the product.
 - **Opening stays non-blocking.** Cuts are fetched eagerly as a document opens, so a document
   naming three catalogue families fetches more than it does today. The open must not wait on any of
   it, and the status bar must make the work visible rather than leaving the author guessing.

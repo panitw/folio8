@@ -23,7 +23,10 @@ import { documentationAssetUrls } from './generated/documentation-assets'
 import { PDF_FIXTURE_DIGEST, RENDER_ELAPSED_MS, RENDER_ENGINE_VERSION } from './test/pdf-fixture'
 import { startBlankFromNew } from './test/new-document'
 import { tieredCanvasFacePayload } from './test/tiered-payload'
-import { IDBFactory as FakeIndexedDBFactory } from 'fake-indexeddb'
+import { IDBFactory as FakeIndexedDBFactory, IDBObjectStore as FakeIndexedDBObjectStore } from 'fake-indexeddb'
+import { sfntWithNames } from './test/sfnt-fixture'
+import { openFontStore } from './font-store'
+import { webFamilies } from './font-index'
 
 // THE CATALOGUE OFFERS ONE ROW PER FAMILY, NOT ONE PER FACE
 // (spec-install-all-face-cuts, story 3). `catalogueFaces` is up to four cuts of
@@ -10118,15 +10121,22 @@ describe('Story 13.5: the chrome tells the truth about the preview', () => {
     expect(within(bar).getByText('DESIGN MODE')).toBeInTheDocument()
   })
 
-  // RULING Q6 — THE OFFLINE LIVE REGION IS VISUALLY HIDDEN IN PREVIEW, NOT
-  // DROPPED, AND NOT ALTERED IN ANY OTHER WAY. Hiding it is what makes the
-  // Preview bar's spare room constant instead of varying by the 24 characters
-  // between the shortest and the longest of `offlineLabel`'s five states;
-  // keeping every ARIA affordance is what stops that being an accessibility
-  // regression. BOTH HALVES ARE ASSERTED IN BOTH MODES: a class applied
-  // unconditionally would take the region out of DESIGN's painted bar too, and
-  // that is the half nothing else in this file would notice.
-  it('hides the offline live region from the painted Preview bar while a screen reader loses nothing', async () => {
+  // RULING Q6 — THE OFFLINE LIVE REGION IS VISUALLY HIDDEN, NOT DROPPED, AND
+  // NOT ALTERED IN ANY OTHER WAY. Hiding it is what makes the bar's spare room
+  // constant instead of varying by the 24 characters between the shortest and
+  // the longest of `offlineLabel`'s five states; keeping every ARIA affordance
+  // is what stops that being an accessibility regression.
+  //
+  // ⚠ IT IS NOW HIDDEN IN **BOTH** MODES (spec-install-all-face-cuts story 4,
+  // owner decision 2026-09-20). Until that story the class was fenced on
+  // Preview and this test asserted Design's span carried no class at all. The
+  // fence came down deliberately, to buy the ~300 px the completion line needs
+  // in a Design bar measured at 136.00 px of worst-case slack — and Preview's
+  // fifteen-month-old precedent is the argument that hiding it costs an author
+  // nothing. So the mode-by-mode half of this test is gone and the
+  // EVERY-AFFORDANCE-SURVIVES half is asserted in both modes instead, which is
+  // the part that must never quietly become a removal.
+  it('hides the offline live region from the painted Preview bar, and leaves it painted in Design, while a screen reader loses nothing either way', async () => {
     await showRenderedPreview(previewRequest())
     const bar = screen.getByLabelText('Status bar')
     const inPreview = within(bar).getByTestId('offline-status')
@@ -10139,16 +10149,19 @@ describe('Story 13.5: the chrome tells the truth about the preview', () => {
     // still reachable by role and accessible name, and it is the same node.
     expect(within(bar).getByRole('status', { name: 'Offline availability' })).toBe(inPreview)
 
+    // ⚠ DESIGN KEEPS IT PAINTED WHEN NOTHING IS COMPLETING (owner refinement,
+    // 2026-09-20). The first ruling hid it in Design outright; that left
+    // `Offline cache unavailable` with no visible surface anywhere in the
+    // product, so the hide is now conditioned on the completion line that pays
+    // for it. `completing an opened document's families` owns the other state.
     fireEvent.click(screen.getByRole('button', { name: 'DESIGN' }))
     const inDesign = within(bar).getByTestId('offline-status')
     expect(inDesign).not.toHaveClass('sr-only')
-    // Not merely 'a different class' — Design's span carries no class at all,
-    // which is exactly what it carried before this story touched the bar.
-    expect(inDesign.getAttribute('class')).toBeNull()
     expect(inDesign).toHaveAttribute('role', 'status')
     expect(inDesign).toHaveAttribute('aria-live', 'polite')
     expect(inDesign).toHaveAttribute('aria-label', 'Offline availability')
     expect(inDesign).toHaveTextContent('Offline cache unavailable')
+    expect(within(bar).getByRole('status', { name: 'Offline availability' })).toBe(inDesign)
   })
 
   // THE ASSURANCE IS A STATEMENT, NOT A CONTROL. The bar's interactive set is
@@ -12574,5 +12587,698 @@ describe('the update prompt', () => {
   it('shows no prompt at all when there is no pending release', () => {
     workspace({ state: 'ready', cacheReady: true, verifiedAssetUrls: [] })
     expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  })
+})
+
+// COMPLETING AN OPENED DOCUMENT'S FAMILIES (spec-install-all-face-cuts, CAP-4,
+// story 4). The rows of the story's I/O matrix that need a real designer: the
+// non-mutation proof, the open-not-blocked proof, the generation guard, the
+// offline outcome, the no-store case, the decline, and the partial local
+// landing. The selection rule itself is measured in
+// `document-face-completion.test.ts`, without an App.
+describe("completing an opened document's families", () => {
+  // A DOCUMENT THAT CARRIES A FAMILY'S FACE IN ITS OWN BYTES. Only an EMBEDDED
+  // entry names a family this designer could complete, so the fixture is a
+  // carried entry — the same shape story 2 writes on first use.
+  const CARRIED_KEY = 'a'.repeat(64)
+  const embeddedEntry = (family: string) => ({ face: '', assetKey: CARRIED_KEY, family, style: 'Regular', bold: '', italic: '', boldItalic: '' })
+  const documentNaming = (family: string) => ({ ...canvas, fontFamilies: ['body'], fontChains: [{ name: 'body', entries: [embeddedEntry(family)] }] })
+  const shippedOnlyDocument = { ...canvas, fontFamilies: ['body'], fontChains: [{ name: 'body', entries: [face('Noto Sans')] }] }
+
+  // THE UPSTREAM A KANIT COMPLETION READS — the same three round-trips
+  // `App.font-store.test.tsx` pins for a pick, because completion's web arm is
+  // `installFamily`'s web arm and a second fixture would be a second contract.
+  const kanitFace = sfntWithNames([{ platform: 3, nameID: 0, value: 'Copyright 2020 The Kanit Project Authors' }])
+  const kanitMetadata = 'name: "Kanit"\nlicense: "OFL"\nfonts {\n  style: "normal"\n  weight: 400\n  filename: "Kanit-Regular.ttf"\n}\n'
+  const kanitLicence = 'This Font Software is licensed under the SIL Open Font License, Version 1.1.'
+  const upstream = () => vi.fn(async (url: string) => {
+    if (url.endsWith('/ofl/kanit/METADATA.pb')) return { ok: true, status: 200, text: async () => kanitMetadata }
+    if (url.endsWith('/ofl/kanit/OFL.txt')) return { ok: true, status: 200, text: async () => kanitLicence }
+    if (url.endsWith('/ofl/kanit/Kanit-Regular.ttf')) return { ok: true, status: 200, arrayBuffer: async () => kanitFace }
+    return { ok: false, status: 404, text: async () => '' }
+  })
+
+  let restoreStore: (() => void) | undefined
+  let restoreFetch: typeof globalThis.fetch
+  let fetchMock: ReturnType<typeof vi.fn>
+  beforeEach(() => {
+    restoreFetch = globalThis.fetch
+    fetchMock = upstream()
+    globalThis.fetch = fetchMock as never
+  })
+  afterEach(() => { globalThis.fetch = restoreFetch; restoreStore?.(); restoreStore = undefined })
+
+  const completionDialog = () => screen.getByRole('dialog', { name: "Complete this document's typefaces?" })
+  const queryCompletionDialog = () => screen.queryByRole('dialog', { name: "Complete this document's typefaces?" })
+  const completionStatus = () => screen.queryByTestId('font-completion-status')
+
+  type Loaded = { documentState: 'loaded'; revision: number; byteLength: number; canvas: typeof canvas; canUndo?: boolean; canRedo?: boolean }
+  // Opens a local file whose chains name `family`. The engine is a real request
+  // log, so what completion did and did not ask it for is observable.
+  const designerOpening = (projections: ReadonlyArray<typeof canvas>, props: Partial<Parameters<typeof App>[0]> = {}) => {
+    let current: Loaded = { documentState: 'loaded', revision: 1, byteLength: 3, canvas, canUndo: false, canRedo: false }
+    let opened = 0
+    const request = vi.fn(async (operation: string) => {
+      if (operation === 'load') { current = { documentState: 'loaded', revision: current.revision + 1, byteLength: 3, canvas: projections[Math.min(opened++, projections.length - 1)]!, canUndo: false, canRedo: false }; return { snapshot: current } }
+      if (operation === 'serialize') return { snapshot: current, bytes }
+      if (operation === 'command') { current = { ...current, revision: current.revision + 1, canUndo: true }; return { snapshot: current } }
+      return { snapshot: current }
+    })
+    const open = vi.fn(async () => ({ bytes, name: 'report.folio' }))
+    render(<App engine={engine(request as never)} fileAccess={{ open, acquireSaveTarget: vi.fn(), writeSave: vi.fn() }} initialSnapshot={current} {...props} />)
+    return request
+  }
+  const openLocalFile = () => fireEvent.click(screen.getByRole('button', { name: 'Open local template' }))
+  const operations = (request: ReturnType<typeof vi.fn>) => request.mock.calls.map((call) => call[0])
+  const addPage = () => fireEvent.click(within(screen.getByLabelText('Canvas controls')).getByRole('button', { name: 'Add page' }))
+
+  // MATRIX: stored/web family short a cut — the prompt, AND the open that did
+  // not wait for it. The canvas has painted and the open's own outcome is in
+  // the bar while the question is still on screen.
+  it('asks after the open has already resolved and the canvas has painted', async () => {
+    restoreStore = withMachineStore()
+    designerOpening([documentNaming('Kanit')])
+    openLocalFile()
+    await waitFor(() => expect(completionDialog()).toBeInTheDocument())
+    expect(screen.getByText(/Opened local file report\.folio/)).toBeInTheDocument()
+    expect(screen.getByTestId('engine-snapshot')).toHaveTextContent('REVISION 2')
+    // The safe answer takes focus in the dialog's own mount effect, which can
+    // land a poll after the node itself: waited for rather than sampled.
+    await waitFor(() => expect(within(completionDialog()).getByRole('button', { name: 'Not now' })).toHaveFocus())
+    expect(within(completionDialog()).getAllByRole('button').map((button) => button.textContent)).toEqual(['Not now', 'Fetch the missing cuts'])
+    expect(completionDialog()).toHaveAccessibleDescription(/nothing is added to the document/)
+    // NOTHING WAS ASKED OF UPSTREAM BEFORE THE AUTHOR CONSENTED.
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  // MATRIX: nothing to complete / shipped-only document.
+  it('asks nothing of a document whose chains name only shipped faces', async () => {
+    restoreStore = withMachineStore()
+    designerOpening([shippedOnlyDocument])
+    openLocalFile()
+    await waitFor(() => expect(screen.getByText(/Opened local file report\.folio/)).toBeInTheDocument())
+    expect(queryCompletionDialog()).not.toBeInTheDocument()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  // MATRIX: no store. There is nowhere to keep a face, so a yes could not be
+  // acted on and the question is never put.
+  //
+  // ⚠ THE OPEN IS CLICKED IN THE SAME TICK AS THE RENDER, ON PURPOSE.
+  // `storeKeepsFaces` is optimistic — `useState(true)` — so at the moment this
+  // click's handler was created it still read TRUE, and a selection reading its
+  // render closure would put the question anyway. The store's answer lands
+  // during the open's three awaits, and the selection reads it from the ref at
+  // call time. This test is therefore the proof of that read as much as of the
+  // degradation.
+  it('asks nothing when this browser will not keep typefaces', async () => {
+    designerOpening([documentNaming('Kanit')])
+    openLocalFile()
+    await waitFor(() => expect(screen.getByText(/Opened local file report\.folio/)).toBeInTheDocument())
+    expect(queryCompletionDialog()).not.toBeInTheDocument()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  // MATRIX: decline. Nothing is fetched, the document is untouched, and the
+  // refusal is NOT remembered — the next open asks again (AC3).
+  it('fetches nothing on a decline, leaves the document alone, and asks again on the next open', async () => {
+    restoreStore = withMachineStore()
+    const request = designerOpening([documentNaming('Kanit'), documentNaming('Kanit')])
+    openLocalFile()
+    await waitFor(() => expect(completionDialog()).toBeInTheDocument())
+    fireEvent.click(within(completionDialog()).getByRole('button', { name: 'Not now' }))
+    expect(queryCompletionDialog()).not.toBeInTheDocument()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(completionStatus()).toBeNull()
+    expect(screen.getByTestId('engine-snapshot')).toHaveTextContent('REVISION 2')
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeDisabled()
+    expect(operations(request)).not.toContain('command')
+
+    openLocalFile()
+    await waitFor(() => expect(completionDialog()).toBeInTheDocument())
+  })
+
+  // AC1 — THE NON-MUTATION PROOF. No `command`, `undo` or `redo` was issued
+  // during the completion, and the revision and both history flags are exactly
+  // what they were the moment the open finished.
+  //
+  // ⚠ IT IS FALSIFIABLE, AND THE CONTROL IS THE TEST BELOW: an edit made during
+  // a completion DOES move all three, so a green here is a statement about
+  // completion rather than about a designer that cannot change.
+  it('changes no document state at all while it completes', async () => {
+    restoreStore = withMachineStore()
+    const request = designerOpening([documentNaming('Kanit')])
+    openLocalFile()
+    await waitFor(() => expect(completionDialog()).toBeInTheDocument())
+    const before = operations(request)
+    fireEvent.click(within(completionDialog()).getByRole('button', { name: 'Fetch the missing cuts' }))
+    await waitFor(() => expect(completionStatus()).toHaveTextContent('Font completion: 1 family completed.'))
+    expect(fetchMock).toHaveBeenCalled()
+    for (const forbidden of ['command', 'undo', 'redo']) expect(operations(request).slice(before.length)).not.toContain(forbidden)
+    expect(screen.getByTestId('engine-snapshot')).toHaveTextContent('REVISION 2')
+    expect(screen.getByRole('button', { name: 'Undo' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Redo' })).toBeDisabled()
+    // THE OUTCOME IS ANNOUNCED. This change made the bar's only other live
+    // region visually hidden; an author who agreed to a fetch is owed its
+    // outcome whether or not they are watching the bar.
+    expect(completionStatus()).toHaveAttribute('role', 'status')
+    expect(completionStatus()).toHaveAttribute('aria-live', 'polite')
+    expect(screen.getByLabelText('Status bar')).toContainElement(completionStatus())
+    // AND IT IS A DESIGN-MODE LINE. In Preview the bar states `no network ·
+    // nothing left this machine`, which a line about fetching from upstream
+    // would contradict in the same twelve inches.
+    fireEvent.click(screen.getByRole('button', { name: 'PREVIEW' }))
+    await waitFor(() => expect(screen.getByTestId('local-only-assurance')).toBeInTheDocument())
+    expect(completionStatus()).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'DESIGN' }))
+    expect(completionStatus()).toHaveTextContent('Font completion: 1 family completed.')
+  })
+
+  // AC2's second half — once the question is answered the document is editable
+  // throughout the FETCHING. The upstream is held open, so the edit lands while
+  // completion is demonstrably still in flight.
+  it('accepts an edit before any completion request has resolved', async () => {
+    restoreStore = withMachineStore()
+    let release: (() => void) | undefined
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const settled = upstream()
+    fetchMock = vi.fn(async (url: string) => { await held; return settled(url) })
+    globalThis.fetch = fetchMock as never
+    designerOpening([documentNaming('Kanit')])
+    openLocalFile()
+    await waitFor(() => expect(completionDialog()).toBeInTheDocument())
+    fireEvent.click(within(completionDialog()).getByRole('button', { name: 'Fetch the missing cuts' }))
+    await waitFor(() => expect(completionStatus()).toHaveTextContent('Font completion: 0 of 1 family…'))
+
+    addPage()
+    await waitFor(() => expect(screen.getByTestId('engine-snapshot')).toHaveTextContent('REVISION 3'))
+    expect(settled).not.toHaveBeenCalled()
+
+    release?.()
+    await waitFor(() => expect(completionStatus()).toHaveTextContent('completed.'))
+  })
+
+  // MATRIX: document replaced mid-flight. A result that lands after the author
+  // opened another document says nothing about the new one — and the store
+  // keeps whatever arrived, because a face on this machine is a fact about the
+  // machine rather than about any document.
+  it('reports nothing onto a document that replaced the one it was completing', async () => {
+    restoreStore = withMachineStore()
+    let release: (() => void) | undefined
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const settled = upstream()
+    fetchMock = vi.fn(async (url: string) => { await held; return settled(url) })
+    globalThis.fetch = fetchMock as never
+    designerOpening([documentNaming('Kanit'), shippedOnlyDocument])
+    openLocalFile()
+    await waitFor(() => expect(completionDialog()).toBeInTheDocument())
+    fireEvent.click(within(completionDialog()).getByRole('button', { name: 'Fetch the missing cuts' }))
+    await waitFor(() => expect(completionStatus()).toHaveTextContent('Font completion: 0 of 1 family…'))
+
+    openLocalFile()
+    await waitFor(() => expect(screen.getByTestId('engine-snapshot')).toHaveTextContent('REVISION 3'))
+    expect(completionStatus()).toBeNull()
+
+    release?.()
+    // The store write is document-independent and is kept: waiting on it is how
+    // this test knows the run really finished rather than merely being early.
+    await waitFor(async () => {
+      const opened = await openFontStore(globalThis.indexedDB)
+      expect(opened.ok).toBe(true)
+      const listed = opened.ok ? await opened.value.list() : undefined
+      expect(listed?.ok && listed.value.map((record) => record.family)).toContain('Kanit')
+    })
+    expect(completionStatus()).toBeNull()
+  })
+
+  // THE DIALOG OWNS THE KEYBOARD WHILE IT IS OPEN — the three claims
+  // `UnsavedChangesDialog` is held to, made about this one. Replacing
+  // `onKeyDownCapture` with a no-op reds all three.
+  it('closes on Escape with nothing fetched', async () => {
+    restoreStore = withMachineStore()
+    const request = designerOpening([documentNaming('Kanit')])
+    openLocalFile()
+    await waitFor(() => expect(completionDialog()).toBeInTheDocument())
+    const before = operations(request).length
+    fireEvent.keyDown(within(completionDialog()).getByRole('button', { name: 'Fetch the missing cuts' }), { key: 'Escape' })
+    expect(queryCompletionDialog()).not.toBeInTheDocument()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(operations(request).length).toBe(before)
+    expect(completionStatus()).toBeNull()
+  })
+
+  it('keeps Tab inside the question, cycling the two answers', async () => {
+    restoreStore = withMachineStore()
+    designerOpening([documentNaming('Kanit')])
+    openLocalFile()
+    await waitFor(() => expect(completionDialog()).toBeInTheDocument())
+    const decline = within(completionDialog()).getByRole('button', { name: 'Not now' })
+    const confirm = within(completionDialog()).getByRole('button', { name: 'Fetch the missing cuts' })
+    await waitFor(() => expect(decline).toHaveFocus())
+    fireEvent.keyDown(decline, { key: 'Tab' })
+    expect(confirm).toHaveFocus()
+    fireEvent.keyDown(confirm, { key: 'Tab' })
+    expect(decline).toHaveFocus()
+    fireEvent.keyDown(decline, { key: 'Tab', shiftKey: true })
+    expect(confirm).toHaveFocus()
+    expect(completionDialog()).toBeInTheDocument()
+  })
+
+  // A key pressed inside the dialog never reaches the App behind it: the
+  // capture handler stops it before it can bubble to the window listener that
+  // owns Undo, Save and the mode shortcuts.
+  it('lets no App shortcut fire from inside the question', async () => {
+    restoreStore = withMachineStore()
+    const request = designerOpening([documentNaming('Kanit')])
+    openLocalFile()
+    await waitFor(() => expect(completionDialog()).toBeInTheDocument())
+    const before = operations(request).length
+    const mac = isMacPlatform()
+    const target = within(completionDialog()).getByRole('button', { name: 'Not now' })
+    fireEvent.keyDown(target, { key: 'z', ctrlKey: !mac, metaKey: mac })
+    fireEvent.keyDown(target, { key: 'p', altKey: true })
+    await act(async () => { await Promise.resolve() })
+    expect(operations(request).length).toBe(before)
+    expect(screen.getByRole('button', { name: 'PREVIEW' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByTestId('engine-snapshot')).toHaveTextContent('REVISION 2')
+  })
+
+  // AN UNANSWERED QUESTION GOES WITH THE DOCUMENT IT WAS ABOUT. Removing the
+  // clear from `installDocumentIdentity` leaves it hanging over the new file,
+  // offering to fetch for a family that is no longer named.
+  it('drops an unanswered question when another document replaces the one it was about', async () => {
+    restoreStore = withMachineStore()
+    designerOpening([documentNaming('Kanit'), shippedOnlyDocument])
+    openLocalFile()
+    await waitFor(() => expect(completionDialog()).toBeInTheDocument())
+    openLocalFile()
+    await waitFor(() => expect(screen.getByTestId('engine-snapshot')).toHaveTextContent('REVISION 3'))
+    expect(queryCompletionDialog()).not.toBeInTheDocument()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  // MATRIX: per-cut failures counted. Upstream refuses the one face the family
+  // cannot be completed without, so the family stays short and the outcome says
+  // so — a refusal must never come out the far side reading "completed".
+  it('reports a shortfall when upstream refuses the family', async () => {
+    restoreStore = withMachineStore()
+    fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/ofl/kanit/METADATA.pb')) return { ok: true, status: 200, text: async () => kanitMetadata }
+      if (url.endsWith('/ofl/kanit/OFL.txt')) return { ok: true, status: 200, text: async () => kanitLicence }
+      return { ok: false, status: 404, text: async () => '' }
+    })
+    globalThis.fetch = fetchMock as never
+    designerOpening([documentNaming('Kanit')])
+    openLocalFile()
+    await waitFor(() => expect(completionDialog()).toBeInTheDocument())
+    fireEvent.click(within(completionDialog()).getByRole('button', { name: 'Fetch the missing cuts' }))
+    await waitFor(() => expect(completionStatus()).toHaveTextContent('Font completion: 0 of 1 family completed, 1 short.'))
+  })
+
+  // A CUT THAT LANDED IS NOT A FAMILY THAT IS COMPLETE. Upstream publishes a
+  // Bold, the Regular arrives and is kept, the Bold is refused for a reason
+  // that settles nothing — so the census says the family is still short and the
+  // outcome must agree with it. Returning "completed" here would take the
+  // family out of the re-offer loop with a cut it never got.
+  it('counts a family short when a published cut was refused, even though another landed', async () => {
+    restoreStore = withMachineStore()
+    const withBold = 'name: "Kanit"\nlicense: "OFL"\nfonts {\n  style: "normal"\n  weight: 400\n  filename: "Kanit-Regular.ttf"\n}\nfonts {\n  style: "normal"\n  weight: 700\n  filename: "Kanit-Bold.ttf"\n}\n'
+    fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/ofl/kanit/METADATA.pb')) return { ok: true, status: 200, text: async () => withBold }
+      if (url.endsWith('/ofl/kanit/OFL.txt')) return { ok: true, status: 200, text: async () => kanitLicence }
+      if (url.endsWith('/ofl/kanit/Kanit-Regular.ttf')) return { ok: true, status: 200, arrayBuffer: async () => kanitFace }
+      if (url.endsWith('/ofl/kanit/Kanit-Bold.ttf')) throw new TypeError('Failed to fetch')
+      return { ok: false, status: 404, text: async () => '' }
+    })
+    globalThis.fetch = fetchMock as never
+    designerOpening([documentNaming('Kanit')])
+    openLocalFile()
+    await waitFor(() => expect(completionDialog()).toBeInTheDocument())
+    fireEvent.click(within(completionDialog()).getByRole('button', { name: 'Fetch the missing cuts' }))
+    await waitFor(() => expect(completionStatus()).toHaveTextContent('Font completion: 0 of 1 family completed, 1 short.'))
+    // The Regular really did land — the shortfall is about the Bold, not about
+    // a family nothing was fetched for.
+    const opened = await openFontStore(globalThis.indexedDB)
+    const listed = opened.ok ? await opened.value.list() : undefined
+    expect(listed?.ok && listed.value.map((record) => record.style)).toEqual(['Regular'])
+  })
+
+  // A CUT THE MACHINE COULD NOT KEEP IS NOT A CUT THIS MACHINE HAS. The face
+  // arrived and the store refused it, so the family is exactly as short as it
+  // was — and the census, which records what upstream PUBLISHES and claims
+  // nothing about what is held, is still written so the family reads
+  // `unfetched` rather than `unchecked`.
+  it('counts a family short when the store refused to keep the cut it fetched', async () => {
+    restoreStore = withMachineStore()
+    const original = FakeIndexedDBObjectStore.prototype.put
+    // Only the FACE store refuses; the census write is left alone, so this test
+    // is about the cut that did not land and not about a failed census.
+    FakeIndexedDBObjectStore.prototype.put = function refuse(this: { name?: string }, ...args: unknown[]) {
+      if (this.name === 'faces' || this.name === 'face-bytes') throw new DOMException('the origin has no room left for this face', 'QuotaExceededError')
+      return (original as (...rest: unknown[]) => unknown).apply(this, args)
+    } as typeof original
+    try {
+      designerOpening([documentNaming('Kanit')])
+      openLocalFile()
+      await waitFor(() => expect(completionDialog()).toBeInTheDocument())
+      fireEvent.click(within(completionDialog()).getByRole('button', { name: 'Fetch the missing cuts' }))
+      await waitFor(() => expect(completionStatus()).toHaveTextContent('Font completion: 0 of 1 family completed, 1 short.'))
+    } finally { FakeIndexedDBObjectStore.prototype.put = original }
+    const opened = await openFontStore(globalThis.indexedDB)
+    const listed = opened.ok ? await opened.value.list() : undefined
+    expect(listed?.ok && listed.value).toEqual([])
+  })
+
+  // THE NUMERATOR REALLY MOVES, and a mixed run really reports a mix. Every
+  // other fixture here names ONE family, which is a run whose intermediate
+  // progress line is never drawn.
+  it('counts through several families and reports the mix', async () => {
+    restoreStore = withMachineStore()
+    // A second real web-tier family, taken from the index rather than typed, so
+    // this test cannot name a family the designer would never offer.
+    const second = webFamilies.find((row) => row.family !== 'Kanit')!.family
+    let releaseSecond: (() => void) | undefined
+    const secondReached = new Promise<void>((resolve) => { releaseSecond = resolve })
+    let holding = false
+    const base = upstream()
+    fetchMock = vi.fn(async (url: string) => {
+      if (!url.includes('/kanit/') && !holding) { holding = true; await secondReached }
+      return base(url)
+    })
+    globalThis.fetch = fetchMock as never
+    const document = { ...canvas, fontFamilies: ['body', 'heading'], fontChains: [{ name: 'body', entries: [embeddedEntry('Kanit')] }, { name: 'heading', entries: [{ ...embeddedEntry(second), assetKey: 'c'.repeat(64) }] }] }
+    designerOpening([document])
+    openLocalFile()
+    await waitFor(() => expect(completionDialog()).toBeInTheDocument())
+    expect(completionDialog()).toHaveAccessibleDescription(/2 families in this document are missing cuts/)
+    fireEvent.click(within(completionDialog()).getByRole('button', { name: 'Fetch the missing cuts' }))
+    // Kanit settles first; the second family is held at its first probe, so the
+    // intermediate line is observable rather than raced past.
+    await waitFor(() => expect(completionStatus()).toHaveTextContent('Font completion: 1 of 2 families…'))
+    releaseSecond?.()
+    await waitFor(() => expect(completionStatus()).toHaveTextContent('Font completion: 1 of 2 families completed, 1 short.'))
+  })
+
+  // A NETWORK THAT DROPS MID-RUN ENDS IN THE OFFLINE SENTENCE, not in a generic
+  // shortfall. "Could not be fetched" and "could not be asked for" are
+  // different facts and only the second names the remedy — the distinction
+  // `font-source.ts` already draws for a pick.
+  it('ends in the offline sentence when the network drops between families', async () => {
+    restoreStore = withMachineStore()
+    const second = webFamilies.find((row) => row.family !== 'Kanit')!.family
+    let releaseKanit: (() => void) | undefined
+    const kanitHeld = new Promise<void>((resolve) => { releaseKanit = resolve })
+    const base = upstream()
+    fetchMock = vi.fn(async (url: string) => { if (url.includes('/kanit/')) await kanitHeld; return base(url) })
+    globalThis.fetch = fetchMock as never
+    const document = { ...canvas, fontFamilies: ['body', 'heading'], fontChains: [{ name: 'body', entries: [embeddedEntry('Kanit')] }, { name: 'heading', entries: [{ ...embeddedEntry(second), assetKey: 'c'.repeat(64) }] }] }
+    designerOpening([document])
+    openLocalFile()
+    await waitFor(() => expect(completionDialog()).toBeInTheDocument())
+    fireEvent.click(within(completionDialog()).getByRole('button', { name: 'Fetch the missing cuts' }))
+    await waitFor(() => expect(completionStatus()).toHaveTextContent('Font completion: 0 of 2 families…'))
+
+    const online = Object.getOwnPropertyDescriptor(globalThis.navigator, 'onLine')
+    Object.defineProperty(globalThis.navigator, 'onLine', { value: false, configurable: true })
+    try {
+      releaseKanit?.()
+      await waitFor(() => expect(completionStatus()).toHaveTextContent('Font completion: no network, so nothing was fetched.'))
+      // The second family was never asked for: the loop stopped rather than
+      // spending a connection that is not there.
+      expect(fetchMock.mock.calls.every((call) => String(call[0]).includes('/kanit/'))).toBe(true)
+    } finally {
+      if (online) Object.defineProperty(globalThis.navigator, 'onLine', online)
+      else Reflect.deleteProperty(globalThis.navigator, 'onLine')
+    }
+  })
+
+  // THE DOCUMENT GOING AWAY STOPS THE WORK, NOT JUST THE REPORTING. Keeping
+  // what already landed is a claim about this machine; going on spending an
+  // author's network for a file they have closed is a different one.
+  it('stops fetching for a document the author has already replaced', async () => {
+    restoreStore = withMachineStore()
+    const second = webFamilies.find((row) => row.family !== 'Kanit')!.family
+    let releaseKanit: (() => void) | undefined
+    const kanitHeld = new Promise<void>((resolve) => { releaseKanit = resolve })
+    const base = upstream()
+    fetchMock = vi.fn(async (url: string) => { if (url.includes('/kanit/')) await kanitHeld; return base(url) })
+    globalThis.fetch = fetchMock as never
+    const document = { ...canvas, fontFamilies: ['body', 'heading'], fontChains: [{ name: 'body', entries: [embeddedEntry('Kanit')] }, { name: 'heading', entries: [{ ...embeddedEntry(second), assetKey: 'c'.repeat(64) }] }] }
+    designerOpening([document, shippedOnlyDocument])
+    openLocalFile()
+    await waitFor(() => expect(completionDialog()).toBeInTheDocument())
+    fireEvent.click(within(completionDialog()).getByRole('button', { name: 'Fetch the missing cuts' }))
+    await waitFor(() => expect(completionStatus()).toHaveTextContent('Font completion: 0 of 2 families…'))
+
+    openLocalFile()
+    await waitFor(() => expect(screen.getByTestId('engine-snapshot')).toHaveTextContent('REVISION 3'))
+    releaseKanit?.()
+    // Kanit's bytes are kept — they are a fact about this machine — and the
+    // second family is never started.
+    await waitFor(async () => {
+      const opened = await openFontStore(globalThis.indexedDB)
+      const listed = opened.ok ? await opened.value.list() : undefined
+      expect(listed?.ok && listed.value.map((record) => record.family)).toContain('Kanit')
+    })
+    expect(fetchMock.mock.calls.every((call) => String(call[0]).includes('/kanit/'))).toBe(true)
+    expect(completionStatus()).toBeNull()
+  })
+
+  // THE HOUSE RULE AT `SETTLED_FILE_STATUS_MS`, APPLIED TO THIS LINE: a line
+  // describing work still in flight does not retire, exactly as
+  // "Opening local file…" does not. This is the assertion that catches a later
+  // simplification dropping the in-flight gate from the effect.
+  it('leaves the progress line standing past the settle window while work is in flight', async () => {
+    restoreStore = withMachineStore()
+    vi.useFakeTimers()
+    try {
+      const held = new Promise<void>(() => undefined)
+      fetchMock = vi.fn(async () => { await held; return { ok: false, status: 404, text: async () => '' } })
+      globalThis.fetch = fetchMock as never
+      const flush = async () => { await act(async () => { await vi.advanceTimersByTimeAsync(0) }) }
+      designerOpening([documentNaming('Kanit')])
+      openLocalFile()
+      await flush()
+      fireEvent.click(within(completionDialog()).getByRole('button', { name: 'Fetch the missing cuts' }))
+      await flush()
+      expect(completionStatus()).toHaveTextContent('Font completion: 0 of 1 family…')
+      await act(async () => { await vi.advanceTimersByTimeAsync(6_000) })
+      expect(completionStatus()).toHaveTextContent('Font completion: 0 of 1 family…')
+    } finally { vi.useRealTimers() }
+  })
+
+  // AND A TERMINAL OUTCOME DOES RETIRE, on the same window every other settled
+  // status in this bar uses. Without it the sentence sits in the chrome for the
+  // rest of the session. The offline outcome is the one that settles with no
+  // network, no store write and no timer of its own, which is what makes the
+  // window itself observable.
+  // THE ROOM THE COMPLETION LINE OCCUPIES IS PAID FOR BY HIDING `offline-status`,
+  // AND ONLY FOR AS LONG AS IT OCCUPIES IT (owner refinement, 2026-09-20). The
+  // design-mode bar is `nowrap` and CLIPS rather than wraps, and at 1024px it
+  // cannot carry both the longest offline label and a completion sentence. So
+  // this asserts the trade in both directions: hidden while the line stands,
+  // PAINTED AGAIN once it retires. Conditioning on a run-in-progress flag
+  // instead would leave the longest sentence of all — the shortfall — beside a
+  // visible label, which is the one combination that does not fit.
+  it('hides the offline label only while the completion line stands, and paints it again when that retires', async () => {
+    restoreStore = withMachineStore()
+    const online = Object.getOwnPropertyDescriptor(globalThis.navigator, 'onLine')
+    Object.defineProperty(globalThis.navigator, 'onLine', { value: false, configurable: true })
+    vi.useFakeTimers()
+    try {
+      const flush = async () => { await act(async () => { await vi.advanceTimersByTimeAsync(0) }) }
+      const offlineLabel = () => within(screen.getByLabelText('Status bar')).getByTestId('offline-status')
+      designerOpening([documentNaming('Kanit')])
+      openLocalFile()
+      await flush()
+      // Before the answer there is no line, so the label is painted.
+      expect(offlineLabel()).not.toHaveClass('sr-only')
+      fireEvent.click(within(completionDialog()).getByRole('button', { name: 'Fetch the missing cuts' }))
+      await flush()
+      expect(completionStatus()).toBeInTheDocument()
+      expect(offlineLabel()).toHaveClass('sr-only')
+      // Hidden VISUALLY only: the region a screen reader reaches is untouched.
+      expect(offlineLabel()).toHaveAttribute('role', 'status')
+      expect(offlineLabel()).toHaveTextContent('Offline cache unavailable')
+      await act(async () => { await vi.advanceTimersByTimeAsync(6_000) })
+      expect(completionStatus()).toBeNull()
+      expect(offlineLabel()).not.toHaveClass('sr-only')
+    } finally {
+      vi.useRealTimers()
+      if (online) Object.defineProperty(globalThis.navigator, 'onLine', online)
+      else Reflect.deleteProperty(globalThis.navigator, 'onLine')
+    }
+  })
+
+  it('retires a settled outcome on the house window', async () => {
+    restoreStore = withMachineStore()
+    const online = Object.getOwnPropertyDescriptor(globalThis.navigator, 'onLine')
+    Object.defineProperty(globalThis.navigator, 'onLine', { value: false, configurable: true })
+    vi.useFakeTimers()
+    try {
+      const flush = async () => { await act(async () => { await vi.advanceTimersByTimeAsync(0) }) }
+      designerOpening([documentNaming('Kanit')])
+      openLocalFile()
+      await flush()
+      fireEvent.click(within(completionDialog()).getByRole('button', { name: 'Fetch the missing cuts' }))
+      await flush()
+      expect(completionStatus()).toHaveTextContent('Font completion: no network, so nothing was fetched.')
+      // It survives to the edge of the window and not past it.
+      await act(async () => { await vi.advanceTimersByTimeAsync(5_999) })
+      expect(completionStatus()).toHaveTextContent('Font completion: no network, so nothing was fetched.')
+      await act(async () => { await vi.advanceTimersByTimeAsync(1) })
+      expect(completionStatus()).toBeNull()
+    } finally {
+      vi.useRealTimers()
+      if (online) Object.defineProperty(globalThis.navigator, 'onLine', online)
+      else Reflect.deleteProperty(globalThis.navigator, 'onLine')
+    }
+  })
+
+  // MATRIX: offline. One outcome, and no request at all — a browser that knows
+  // it cannot reach the network has nothing to learn from trying.
+  it('says so and asks for nothing when there is no network', async () => {
+    restoreStore = withMachineStore()
+    const online = Object.getOwnPropertyDescriptor(globalThis.navigator, 'onLine')
+    Object.defineProperty(globalThis.navigator, 'onLine', { value: false, configurable: true })
+    try {
+      designerOpening([documentNaming('Kanit')])
+      openLocalFile()
+      await waitFor(() => expect(completionDialog()).toBeInTheDocument())
+      fireEvent.click(within(completionDialog()).getByRole('button', { name: 'Fetch the missing cuts' }))
+      await waitFor(() => expect(completionStatus()).toHaveTextContent('Font completion: no network, so nothing was fetched.'))
+      expect(fetchMock).not.toHaveBeenCalled()
+    } finally {
+      if (online) Object.defineProperty(globalThis.navigator, 'onLine', online)
+      else Reflect.deleteProperty(globalThis.navigator, 'onLine')
+    }
+  })
+})
+
+// THE COMMITTED TIER'S ARM (spec-install-all-face-cuts, CAP-4, story 4). It
+// needs a release cache to probe and a worker in charge of the requests, so it
+// gets its own fixtures rather than sharing the web tier's.
+describe("completing an opened document's committed families", () => {
+  const CARRIED_KEY = 'b'.repeat(64)
+  const cutsOf = (family: string) => catalogueFaces.filter((entry) => entry.family === family)
+  // A REAL CATALOGUE FAMILY WITH MORE THAN ONE CUT, found rather than named: the
+  // question the local arm answers is what the SHIPPED catalogue declares, and a
+  // hardcoded family would go stale the next time the catalogue moves.
+  const family = (() => {
+    const found = [...new Set(catalogueFaces.map((entry) => entry.family))].find((name) => cutsOf(name).length > 1)
+    if (found === undefined) throw new Error('the shipped catalogue declares no multi-cut family, so there is no local completion to measure')
+    return found
+  })()
+  const withheld = cutsOf(family).find((entry) => entry.style !== 'Regular')!
+  // A URL of a DIFFERENT family, so a full re-probe of the holdings is
+  // distinguishable from the handful of press-time probes the arm itself makes.
+  const otherFamilyUrl = catalogueFaces.find((entry) => entry.family !== family)!.url
+
+  let restore: Array<() => void> = []
+  let heldUrls: Set<string>
+  let matched: string[]
+  let fetched: string[]
+  let fetchOk: boolean
+  // A worker that answers the request and declines to KEEP it — an `ok`
+  // response with no cache entry behind it, which is what a failed hash
+  // verification or a storage quota looks like from the page.
+  let cacheTheFetch: boolean
+  beforeEach(() => {
+    heldUrls = new Set(catalogueFaces.map((entry) => entry.url))
+    heldUrls.delete(withheld.url)
+    matched = []
+    fetched = []
+    fetchOk = true
+    cacheTheFetch = true
+    const previousCaches = Object.getOwnPropertyDescriptor(globalThis, 'caches')
+    Object.defineProperty(globalThis, 'caches', { configurable: true, writable: true, value: { match: async (url: string) => { matched.push(url); return heldUrls.has(url) ? {} : undefined } } })
+    const previousWorker = Object.getOwnPropertyDescriptor(globalThis.navigator, 'serviceWorker')
+    Object.defineProperty(globalThis.navigator, 'serviceWorker', { configurable: true, value: { controller: {} } })
+    const previousFetch = globalThis.fetch
+    globalThis.fetch = (async (url: string) => { fetched.push(url); if (!fetchOk) return { ok: false, status: 503, arrayBuffer: async () => new ArrayBuffer(0) }; if (cacheTheFetch) heldUrls.add(url); return { ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(4) } }) as never
+    restore = [
+      () => { globalThis.fetch = previousFetch },
+      () => { if (previousWorker) Object.defineProperty(globalThis.navigator, 'serviceWorker', previousWorker); else Reflect.deleteProperty(globalThis.navigator, 'serviceWorker') },
+      () => { if (previousCaches) Object.defineProperty(globalThis, 'caches', previousCaches); else Reflect.deleteProperty(globalThis, 'caches') },
+    ]
+  })
+  afterEach(() => { for (const undo of restore) undo() })
+
+  const documentNaming = { ...canvas, fontFamilies: ['body'], fontChains: [{ name: 'body', entries: [{ face: '', assetKey: CARRIED_KEY, family, style: 'Regular', bold: '', italic: '', boldItalic: '' }] }] }
+  const completionDialog = () => screen.getByRole('dialog', { name: "Complete this document's typefaces?" })
+  const completionStatus = () => screen.queryByTestId('font-completion-status')
+  const probeRuns = () => matched.filter((url) => url === otherFamilyUrl).length
+
+  const openIt = async () => {
+    let current = { documentState: 'loaded' as const, revision: 1, byteLength: 3, canvas, canUndo: false, canRedo: false }
+    const request = vi.fn(async (operation: string) => {
+      if (operation === 'load') { current = { documentState: 'loaded', revision: 2, byteLength: 3, canvas: documentNaming, canUndo: false, canRedo: false }; return { snapshot: current } }
+      if (operation === 'serialize') return { snapshot: current, bytes }
+      return { snapshot: current }
+    })
+    render(<App engine={engine(request as never)} fileAccess={{ open: vi.fn(async () => ({ bytes, name: 'report.folio' })), acquireSaveTarget: vi.fn(), writeSave: vi.fn() }} initialSnapshot={current} payload={tieredCanvasFacePayload([])} />)
+    // ⚠ THE PRECONDITION IS ESTABLISHED BEFORE THE OPEN, NOT ASSUMED AFTER IT.
+    // Both of this arm's inputs are late-resolving: the holdings probe stands in
+    // with EMPTY sets until it has swept the cache, and the store answers
+    // `storeKeepsFaces` a microtask or two after mount. Waiting for both here is
+    // what makes these tests statements about the SETTLED designer — without it
+    // they would pass on the stand-ins and say nothing about the real answer.
+    await waitFor(() => expect(probeRuns()).toBe(1))
+    await act(async () => { await Promise.resolve(); await Promise.resolve() })
+    // AND THERE IS DELIBERATELY NO MACHINE STORE HERE. `withMachineStore()` is
+    // NOT installed, so `storeKeepsFaces` has settled to false — and the
+    // question is still asked, because a committed family's sink is the release
+    // cache and never `fontStore`. A private window with a worker in charge can
+    // complete every catalogue family, and this describe is the proof of it.
+    fireEvent.click(screen.getByRole('button', { name: 'Open local template' }))
+    await waitFor(() => expect(completionDialog()).toBeInTheDocument())
+  }
+
+  // MATRIX: catalogue family short a cut — the cuts come from the deferred
+  // release assets, and only the ones this release's cache is missing.
+  it('fetches only the cuts the release cache is missing, and refreshes the holdings once they all landed', async () => {
+    await openIt()
+    fireEvent.click(within(completionDialog()).getByRole('button', { name: 'Fetch the missing cuts' }))
+    await waitFor(() => expect(completionStatus()).toHaveTextContent('Font completion: 1 family completed.'))
+    expect(fetched).toEqual([withheld.url])
+    expect(probeRuns()).toBe(2)
+  })
+
+  // AN UNCONTROLLED PAGE CACHES NOTHING, so there is nothing to install. The
+  // fetch would go straight past the worker, the bytes would arrive and no cache
+  // entry would be made — reporting success while the family stayed absent from
+  // AVAILABLE LOCALLY, the worst of the three outcomes. Refused instead, and
+  // nothing is spent on it.
+  it('asks for nothing when this page\'s offline layer is not in charge of its own requests', async () => {
+    Object.defineProperty(globalThis.navigator, 'serviceWorker', { configurable: true, value: { controller: null } })
+    await openIt()
+    fireEvent.click(within(completionDialog()).getByRole('button', { name: 'Fetch the missing cuts' }))
+    await waitFor(() => expect(completionStatus()).toHaveTextContent('Font completion: 0 of 1 family completed, 1 short.'))
+    expect(fetched).toEqual([])
+    expect(probeRuns()).toBe(1)
+  })
+
+  // THE CACHE IS THE AUTHORITY, NOT THE RESPONSE. A worker that answers `ok`
+  // and then declines to keep the bytes leaves the family exactly as short as a
+  // 503 would, and the outcome must say so.
+  it('reports a shortfall when the fetch succeeded but the cache did not keep it', async () => {
+    cacheTheFetch = false
+    await openIt()
+    fireEvent.click(within(completionDialog()).getByRole('button', { name: 'Fetch the missing cuts' }))
+    await waitFor(() => expect(completionStatus()).toHaveTextContent('Font completion: 0 of 1 family completed, 1 short.'))
+    expect(fetched).toEqual([withheld.url])
+    expect(probeRuns()).toBe(1)
+  })
+
+  // MATRIX: partial local landing. A family that did not land whole leaves the
+  // holdings exactly as they were — which is what keeps `cutEmbedPlan`'s
+  // premise true now that completion is its second producer.
+  it('does not refresh the local holdings when a cut did not land', async () => {
+    fetchOk = false
+    await openIt()
+    fireEvent.click(within(completionDialog()).getByRole('button', { name: 'Fetch the missing cuts' }))
+    await waitFor(() => expect(completionStatus()).toHaveTextContent('Font completion: 0 of 1 family completed, 1 short.'))
+    expect(fetched).toEqual([withheld.url])
+    expect(probeRuns()).toBe(1)
   })
 })

@@ -29,10 +29,11 @@ import { familyIsComplete, familyIsInstalled, indexRowFor, offeredFamilies, regu
 import { initialLocalFaceHoldings, localFaceIsHeld, readLocalFaceHoldings, type LocalFaceHoldings } from './held-local-faces'
 import { watchCanvasFaceMisses } from './canvas-face-misses'
 import { deferredFaceAssets, prefetchDeferredFaces } from './document-face-prefetch'
+import { COMPLETION_CONFIRM_LABEL, COMPLETION_DECLINE_LABEL, COMPLETION_OFFLINE, COMPLETION_QUESTION_TITLE, completionProgress, completionQuestion, completionSettled, completionShortfall, incompleteDocumentFamilies } from './document-face-completion'
 import { isShippedFamily, shippedFamilyEntry } from './shipped-face-cuts'
 import { browserRows } from './font-browser-model'
 import { cutsBesideTheRegular, fetchWebFamily } from './font-source'
-import { openFontStore, storeWriteRefusal, storedFaceKey, type FamilyCensus, type FontStore, type StoredFace } from './font-store'
+import { censusIsComplete, openFontStore, storeWriteRefusal, storedFaceKey, type FamilyCensus, type FontStore, type StoredFace } from './font-store'
 import { previewFaceFamily } from './preview-face-family'
 import { openPreviewFaceRegistry, type PreviewFaceBytes, type PreviewFaceRegistry, type PreviewFaceStatus } from './preview-face-registry'
 import { proposedBounds, resizeAnchors, type DragAnchor, type DragLimit } from './resize-anchor'
@@ -662,7 +663,13 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
   // FOCUS AREA: the band of the most recent canvas press, keyboard focus or
   // selection change. Select All selects every component in it.
   const focusBandRef = useRef<CanvasProjection['bands'][number]['name']>('content')
-  const installDocumentIdentity = () => { documentIdentity.current++; clipboardRef.current = undefined; focusBandRef.current = 'content' }
+  // A NEW DOCUMENT TAKES THE PREVIOUS ONE'S COMPLETION QUESTION AND ITS
+  // COMPLETION LINE WITH IT (story 4). An unanswered question about a document
+  // that is gone would fetch for a family the author is no longer looking at,
+  // and a settled outcome left standing would describe the wrong file. Work
+  // already in flight keeps whatever it fetches — the store and the release
+  // cache are document-independent — but it may no longer write here.
+  const installDocumentIdentity = () => { documentIdentity.current++; clipboardRef.current = undefined; focusBandRef.current = 'content'; setCompletionRequest(undefined); setCompletionStatus(undefined) }
   const [documentGenerationValue, setDocumentGenerationValue] = useState(0)
   // The asset keys whose faces have ACTUALLY reached the page's font set.
   // Not the keys the document declares: a fragment may only ask for a derived
@@ -708,12 +715,63 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
   // RE-READ, NEVER INCREMENTED. The release cache is the authority and it can
   // LOSE entries — eviction, cleared site data — so a set this page only ever
   // added to would go on claiming a face that is gone. Every caller re-probes.
-  const refreshHeldLocalFamilies = useCallback(() => { void readLocalFaceHoldings(payload?.releaseId).then((holdings) => setLocalFaceHoldings(holdings)) }, [payload?.releaseId])
+  // ⚠ THE REF IS WRITTEN WHERE THE VALUE IS PRODUCED, NOT IN AN EFFECT OVER IT
+  // — `setCurrentSnapshot`'s pattern (`snapshotRef.current = next` beside
+  // `setSnapshot(next)`), and the only one that works here. An effect-synced
+  // ref is a render behind by construction, and the reader this exists for
+  // (`installOpenedDocument`'s completion selection) runs inside a chain of
+  // awaits that React has no reason to have flushed a commit into. Measured: an
+  // effect-synced `storeKeepsFacesRef` still read `true` at selection time in a
+  // browser whose store had already refused to open.
+  const localFaceHoldingsRef = useRef(localFaceHoldings)
+  const refreshHeldLocalFamilies = useCallback(() => { void readLocalFaceHoldings(payload?.releaseId).then((holdings) => { localFaceHoldingsRef.current = holdings; setLocalFaceHoldings(holdings) }) }, [payload?.releaseId])
   // THE THREE MOMENTS THE ANSWER CAN HAVE CHANGED, and none of them is a timer:
   // mount, opening the typography dialog's family list, and finishing an
   // install. `cacheReady` is deliberately NOT one of them — readiness is the
   // core tier and says nothing about any catalogue face.
   useEffect(() => { refreshHeldLocalFamilies() }, [refreshHeldLocalFamilies])
+  // COMPLETING AN OPENED DOCUMENT'S FAMILIES (spec-install-all-face-cuts,
+  // CAP-4, story 4). TWO PIECES OF STATE, AND THEY ARE DELIBERATELY NOT ONE:
+  // the QUESTION is a modal the author has to answer, and the REPORTING is a
+  // line in the status bar they read while they keep editing. The owner split
+  // them on purpose (2026-09-20).
+  //
+  // The request carries the document generation it was raised for, so an answer
+  // given after the document was replaced cannot install a status on the new
+  // one. Both are cleared by `installDocumentIdentity` for the same reason.
+  const [completionRequest, setCompletionRequest] = useState<Readonly<{ generation: number; families: ReadonlyArray<FamilySource> }>>()
+  // ⚠ THIS IS NOT `fileStatus` AND MUST NOT BECOME IT. The open writes there
+  // and it auto-retires after 6 s, so a completion writing to it would stomp
+  // the open's own outcome — and a completion still fetching would be retired
+  // out from under itself. This one stays until it is replaced or the document
+  // is.
+  const [completionStatus, setCompletionStatus] = useState<string>()
+  // WHETHER A COMPLETION IS STILL WORKING, and it is the `fileBusy` half of the
+  // house rule above `SETTLED_FILE_STATUS_MS`: a SETTLED outcome retires itself
+  // after that window, a progress line never does. It is a COUNT rather than a
+  // flag because a run started for one document can still be in flight when the
+  // next document's starts, and the earlier one finishing must not retire the
+  // later one's progress line.
+  const [completionBusy, setCompletionBusy] = useState(false)
+  const completionRuns = useRef(0)
+  useEffect(() => {
+    if (completionStatus === undefined || completionBusy) return
+    const handle = setTimeout(() => setCompletionStatus(undefined), SETTLED_FILE_STATUS_MS)
+    return () => clearTimeout(handle)
+  }, [completionStatus, completionBusy])
+  // ⚠ THE SELECTION READS THESE AT CALL TIME, NEVER FROM ITS RENDER CLOSURE.
+  // `installOpenedDocument` decides whether to ask AFTER three awaits — `load`,
+  // `serialize` and the deferred-face prefetch — and all three of these inputs
+  // are late-resolving: `initialLocalFaceHoldings` stands in with EMPTY sets
+  // wherever there is a release cache to probe, `storeKeepsFaces` is optimistic
+  // until the store answers, and `storedFaces` is empty until its listing lands.
+  // Read from the closure, the empty stand-ins both over-ask (a committed
+  // family the cache already holds whole) and under-ask (no source found, so
+  // the question is skipped silently). `modeRef` is this file's precedent for
+  // exactly that hazard.
+  const storeKeepsFacesRef = useRef(storeKeepsFaces)
+  const storedFacesRef = useRef(storedFaces)
+  const familyCensusesRef = useRef(familyCensuses)
   // A CANVAS MISS SUBSTITUTES AND SAYS SO ONCE (spec-deferred-offline-cache,
   // story 2, owner decision 2026-09-19).
   //
@@ -940,7 +998,7 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
   useEffect(() => {
     let live = true
     const opening = openFontStore().then((opened) => {
-      if (live) setStoreKeepsFaces(opened.ok)
+      if (live) { storeKeepsFacesRef.current = opened.ok; setStoreKeepsFaces(opened.ok) }
       if (opened.ok) return opened.value
       return undefined
     })
@@ -957,8 +1015,8 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
       // never asked a half-answered question.
       const [listed, census] = await Promise.all([store.list(), store.listCensus()])
       if (!live) return
-      if (listed.ok) setStoredFaces(listed.value)
-      if (census.ok) setFamilyCensuses(census.value)
+      if (listed.ok) { storedFacesRef.current = listed.value; setStoredFaces(listed.value) }
+      if (census.ok) { familyCensusesRef.current = census.value; setFamilyCensuses(census.value) }
     })()
     return () => { live = false }
   }, [])
@@ -1064,8 +1122,8 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
     // refreshing one without the other would leave the predicate reading a face
     // set from after an install against a census from before it.
     const [listed, census] = await Promise.all([store.list(), store.listCensus()])
-    if (listed.ok) setStoredFaces(listed.value)
-    if (census.ok) setFamilyCensuses(census.value)
+    if (listed.ok) { storedFacesRef.current = listed.value; setStoredFaces(listed.value) }
+    if (census.ok) { familyCensusesRef.current = census.value; setFamilyCensuses(census.value) }
   }
 
   // STORY 16.3 — WHAT THE FONT BROWSER OFFERS, AND WHAT ITS SPECIMENS ARE SET IN.
@@ -1077,6 +1135,13 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
   // The browser filters and sorts what it is given; it never decides what it is
   // given.
   const browsableFamilies = useMemo(() => offeredFamilies('', storedFaces, familyCensuses), [storedFaces, familyCensuses])
+  // AND THE COMPLETION SELECTION RE-JOINS AT CALL TIME rather than reading the
+  // memo, for the same reason: until the store's two listings land this join
+  // knows no stored family at all, and a document naming one would find no
+  // source and be skipped in silence. It is the SAME function the control and
+  // the browser ask, over the same two inputs read from their refs — never a
+  // second answer to "which families may this author have".
+  const offeredForCompletion = () => offeredFamilies('', storedFacesRef.current, familyCensusesRef.current)
 
   // AND THE BYTES A SPECIMEN IS SET IN COME FROM THE SAME THREE TIERS A PICK
   // RESOLVES FROM, THROUGH THE SAME THREE READS.
@@ -3312,6 +3377,160 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
     return undefined
   }
 
+  /**
+   * COMPLETING ONE FAMILY — THE TWO ARMS, MIRRORING `installFamily`
+   * (spec-install-all-face-cuts, CAP-4, story 4).
+   *
+   * ⚠ NOTHING HERE TOUCHES THE DOCUMENT. No `command`, no `undo`, no `redo`, no
+   * `setCurrentSnapshot`, no `setBaselineRevision`, no generation bump and no
+   * save. Completion's only sinks are the MACHINE STORE and the RELEASE CACHE,
+   * which is what makes the author's revision, `canUndo` and bytes identical
+   * across a run of it. Reaching for a document command here is the signal to
+   * stop and ask: carrying cuts INTO the document is story 2's and story 3's,
+   * and it happens at first use, not at open.
+   *
+   * IT RETURNS WHETHER THE FAMILY CAME OUT COMPLETE, and "complete" is the same
+   * predicate that selected it — `censusIsComplete` for a fetched family, every
+   * declared cut held for a committed one. A second definition of completeness
+   * here would be free to disagree with the one the author's panel reads.
+   *
+   * ⚠ PER-FACE FAILURE IS NOT FAMILY FAILURE, AND NOTHING THROWS. A refused cut
+   * counts against the family and is otherwise ordinary: the family stays
+   * short, stays offered for install, and the run carries on to the next one.
+   */
+  const completeOneFamily = async (source: FamilySource): Promise<boolean> => {
+    // THE COMMITTED TIER, ALL-OR-NOTHING ON PURPOSE. `source.faces` is already
+    // every cut the catalogue declares for this family — `offeredFamilies`
+    // groups `catalogueFaces` by family — so `catalogueCutOf` would be a second
+    // route to the same rows. A held cut is not refetched: `localFaceIsHeld`
+    // asks this release's own cache for the one URL, which is the same
+    // press-time probe the embed path makes.
+    if (source.tier === 'local') {
+      // AN UNCONTROLLED PAGE CACHES NOTHING, exactly as `installFamily` says:
+      // the fetch goes straight past the worker, the bytes arrive and no cache
+      // entry is made. Reported as a shortfall rather than as a success.
+      if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) return false
+      let whole = true
+      for (const cut of source.faces) {
+        if (await localFaceIsHeld(cut.url, payload?.releaseId)) continue
+        try {
+          const response = await fetch(cut.url)
+          if (!response.ok) throw new Error(`the bundled face responded ${response.status}`)
+          // The body is dropped: what was installed is the CACHE ENTRY, and the
+          // bytes travel into a document only at first use.
+          await response.arrayBuffer()
+        } catch { whole = false; continue }
+        // ⚠ THE CACHE IS THE AUTHORITY, NOT THE RESPONSE, and the difference is
+        // reachable: an `ok` response the worker declined to keep — a failed
+        // hash verification, a storage quota — would otherwise report the
+        // family completed while `holdings.complete` went on excluding it. The
+        // probe is the same one `readLocalFaceHoldings` will make, asked of the
+        // one URL that just moved, so this function's answer and the holdings'
+        // cannot disagree.
+        if (!(await localFaceIsHeld(cut.url, payload?.releaseId))) whole = false
+      }
+      // ⚠ THE HOLDINGS ARE NOT REFRESHED HERE. One refresh sweeps every
+      // catalogue face, so a per-family refresh would sweep them once per
+      // family — the cost `keepOnThisMachine`'s `refresh = false` argument
+      // guards against on the store side. `completeDocumentFamilies` refreshes
+      // ONCE, after the run, and only if some family landed WHOLE; the
+      // all-or-nothing property is unaffected, because `readLocalFaceHoldings`
+      // counts a family `complete` only when every declared cut is held, so a
+      // partial landing is left exactly where it was by any refresh at all.
+      return whole
+    }
+    // THE OTHER TWO TIERS SHARE ONE ARM, exactly as they do in `installFamily`,
+    // and the only difference between them is what this machine already holds.
+    // A `web` row is a family the document CARRIES and this machine has nothing
+    // of — a document saved before this spec, or one opened on another machine
+    // — which is the plainest reading of the problem CAP-4 names, so it is
+    // completed rather than skipped.
+    //
+    // WHAT IS ALREADY HELD IS NOT REFETCHED, and the held set is read off the
+    // face records for the reason `installFamily` gives: they are the authority
+    // on what is on this machine, and a record dropped as unsound reads as
+    // absent and is fetched again.
+    const held = source.tier === 'stored' ? [...new Set(source.faces.map((cut) => cut.style))] : []
+    const outcome = await fetchWebFamily(source.family, undefined, undefined, held)
+    if (!outcome.ok) return false
+    const scripts = scriptsOfSource(source)
+    const installed: ReadonlyArray<ResolvedFace> = outcome.faces.map((cut) => ({ ...cut, scripts }))
+    const kept = new Set(held)
+    for (const cut of installed) {
+      // `refresh` FALSE PER CUT: the census write below refreshes once, for the
+      // cost reason `keepOnThisMachine` states. A cut that could not be written
+      // is simply not counted as held — the store is content-addressed, so what
+      // landed stays and a later attempt reuses it.
+      if (await keepOnThisMachine(cut, false) === undefined) kept.add(cut.style)
+    }
+    const census: FamilyCensus = { family: source.family, published: [...outcome.published], refused: outcome.refused.map((entry) => ({ style: entry.style, reason: entry.reason, permanence: entry.permanence })), recordedAt: new Date().toISOString().slice(0, 10) }
+    // THE CENSUS IS WRITTEN EVEN WHEN A CUT DID NOT LAND, and that is the
+    // opposite of `installFamily`'s order for a reason rather than an
+    // oversight. There the write IS the act, so a partial one is refused; here
+    // the census claims nothing about what is HELD — it records what upstream
+    // PUBLISHES — so writing it after a short landing leaves the family reading
+    // incomplete, which is the truth and the self-healing direction.
+    const recorded = await recordFamilyCensus(census)
+    if (recorded !== undefined) return false
+    return censusIsComplete(census, kept)
+  }
+
+  /**
+   * THE RUN, AND IT IS NEVER AWAITED BY THE OPEN (CAP-4).
+   *
+   * The canvas has painted and an edit is accepted before the first request
+   * resolves; the author was asked in a modal, and once they answered the
+   * document is editable throughout the fetching. The open did not wait for
+   * either — `installOpenedDocument` has already returned by the time the
+   * dialog is even on screen.
+   *
+   * ⚠ THE GENERATION IS CAPTURED BEFORE THE FIRST AWAIT and every UI write is
+   * gated on it — `applyImageAsset`'s pattern, for the same hazard: this
+   * closure spans a run of network requests, and a result that lands after the
+   * author opened another document must not report on the new one. STORE AND
+   * CACHE WRITES ARE KEPT REGARDLESS, because they are facts about this
+   * machine rather than about any document.
+   */
+  const completeDocumentFamilies = async (request: Readonly<{ generation: number; families: ReadonlyArray<FamilySource> }>) => {
+    const requestGeneration = request.generation
+    const total = request.families.length
+    const report = (message: string) => { if (documentGeneration.current === requestGeneration) setCompletionStatus(message) }
+    completionRuns.current++; setCompletionBusy(true)
+    try {
+      // OFFLINE IS ANSWERED BEFORE ANYTHING IS ASKED FOR AND BEFORE ANYTHING IS
+      // SAID. One outcome, no request — a browser that knows it cannot reach
+      // the network has nothing to learn from trying, and `font-source.ts`
+      // draws exactly this line already. Reporting progress first would flash a
+      // line that was never true.
+      if (!navigator.onLine) { report(COMPLETION_OFFLINE); return }
+      report(completionProgress(0, total))
+      let attempted = 0
+      let completed = 0
+      let landedLocal = false
+      for (const source of request.families) {
+        // ⚠ THE DOCUMENT GOING AWAY STOPS THE WORK, not just the reporting.
+        // Keeping what already landed is a claim about this machine; going on
+        // spending an author's network for a file they have closed is not.
+        if (documentGeneration.current !== requestGeneration) return
+        // AND A NETWORK THAT DROPS MID-RUN ENDS IN THE OFFLINE SENTENCE. Merging
+        // it into the shortfall is the exact conflation that sentence exists to
+        // avoid: "could not be fetched" and "could not be asked for" are
+        // different facts, and only the second names the remedy.
+        if (!navigator.onLine) { report(COMPLETION_OFFLINE); return }
+        if (await completeOneFamily(source)) { completed++; if (source.tier === 'local') landedLocal = true }
+        attempted++
+        if (attempted < total) report(completionProgress(attempted, total))
+      }
+      // ONE SWEEP OF THE RELEASE CACHE FOR THE WHOLE RUN — see the note at the
+      // end of the local arm.
+      if (landedLocal) refreshHeldLocalFamilies()
+      report(completed === total ? completionSettled(total) : navigator.onLine ? completionShortfall(completed, total) : COMPLETION_OFFLINE)
+    } finally {
+      completionRuns.current--
+      if (completionRuns.current === 0) setCompletionBusy(false)
+    }
+  }
+
   // Story 5.13: choosing a local image is a two-step boundary crossing — the
   // browser reads bytes (imageFileAccess), then sends ONE opaque committed
   // command carrying those bytes and the browser's own declared media type
@@ -3502,6 +3721,39 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
     clearSampleData()
     setTitle(name)
     setTarget(fileTarget)
+    // THIS DOCUMENT'S FAMILIES, ASKED ABOUT AND NEVER COMPLETED SILENTLY
+    // (spec-install-all-face-cuts, CAP-4, story 4).
+    //
+    // ⚠ IT SITS AFTER `setCurrentSnapshot` AND NOTHING IS AWAITED. The canvas
+    // has painted by the time this line runs and this function returns
+    // immediately after it, so the OPEN never waits: the modal below is raised
+    // by a state change, and the fetching it may start is un-awaited by
+    // construction. That is the half of CAP-4's "editable throughout" the
+    // owner's 2026-09-20 amendment kept — the question momentarily blocks, the
+    // FETCH never does.
+    //
+    // ⚠ NOTHING IS PROBED BEFORE THE AUTHOR HAS CONSENTED. The selection is a
+    // pure function of the projection, the machine store's own listings and the
+    // release cache's holdings, all of which are already read: `familyIsComplete`
+    // answers "is anything left to fetch" without asking upstream anything.
+    //
+    // ⚠ NOWHERE TO KEEP A FACE SILENCES THE TWO TIERS THAT NEED ONE, AND ONLY
+    // THOSE TWO. A `web` or `stored` completion's only sink is the machine
+    // store, so with `storeKeepsFaces` false the author's yes could not be
+    // acted on. A `local` one's sink is the RELEASE CACHE — `installFamily`'s
+    // committed arm writes nothing to the store by design — so a private window
+    // with a worker in charge can complete every catalogue family, and
+    // suppressing the whole question there would refuse a capability that works.
+    //
+    // ⚠ AND THE THREE INPUTS ARE READ FROM THEIR REFS, not from this closure:
+    // see the note beside `storeKeepsFacesRef` for why the render-time values
+    // are wrong in both directions after these awaits.
+    //
+    // The starter and a blank document do not route through here, so neither is
+    // ever asked about.
+    const short = incompleteDocumentFamilies(loaded.snapshot.canvas?.fontChains ?? [], offeredForCompletion(), localFaceHoldingsRef.current)
+      .filter((source) => source.tier === 'local' || storeKeepsFacesRef.current)
+    if (short.length > 0) setCompletionRequest({ generation: documentGeneration.current, families: short })
     return { inputWasCanonical, canonicalRevision: canonical.snapshot.revision }
   }
 
@@ -4379,6 +4631,12 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
     {fontBrowserOpen && canvas && <FontBrowser sources={browsableFamilies} inTemplate={canvas.fontFamilies} localFaceHoldings={localFaceHoldings} previewBytes={browserSpecimenBytes} onAddFamily={(source) => addFamilyToDocument(source, documentGeneration.current, selected.join(','), 'caller')} storeKeepsFaces={storeKeepsFaces} onClose={() => setFontBrowserOpen(false)} />}
     {startupOpen && engine && <StartupDialog cards={startupCards} selected={startupSelected} busy={startupBusy} error={startupError} onSelect={(id) => { setStartupSelected(id); setStartupError(undefined) }} onConfirm={chooseStartup} onCancel={cancelStartup} onOpenFile={fileAccess ? requestStartupFile : undefined} />}
     {unsavedWarningOpen && <UnsavedChangesDialog document={title} onKeep={keepEditing} onDiscard={discardForNew} />}
+    {/* THE COMPLETION QUESTION (story 4). A decline clears it and is NOT
+        remembered — the next open asks again, because nothing about the
+        document has changed and a remembered "no" would outlive its reason.
+        An accept clears it too and starts the fetching un-awaited, so the
+        author is editing again in the same tick they answered. */}
+    {completionRequest !== undefined && <CompleteFontsDialog count={completionRequest.families.length} onDecline={() => setCompletionRequest(undefined)} onConfirm={() => { const request = completionRequest; setCompletionRequest(undefined); void completeDocumentFamilies(request) }} />}
     {offlineState === 'update-available' && (loadState?.mandatory === true || !updateDismissed) && <UpdateDialog version={loadState?.pendingVersion} mandatory={loadState?.mandatory === true} dirty={dirty} document={title} onLater={() => setUpdateDismissed(true)} onUpgrade={() => { void activatePendingRelease() }} onSave={(saveAs) => { void save(saveAs) }} />}
     {/* THE FONT COUNT, AND NOTHING ELSE NEW (Story 16.4). It is read off
         `canvas.fontFamilies`, which is `IN THIS TEMPLATE`'s own predicate, so
@@ -4418,8 +4676,49 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
         Preview. Because `.sr-only` is `position: absolute` the span stops being
         a flex item, so it contributes neither width nor a `gap`, and the bar's
         spare room stops varying by the 24 characters that separate the longest
-        offline label from the shortest. In Design the span carries no class at
-        all and renders exactly as it always has.
+        offline label from the shortest.
+
+        ⚠ AND SINCE spec-install-all-face-cuts STORY 4 IT IS ALSO `.sr-only` IN
+        DESIGN MODE **WHILE A COMPLETION LINE IS SHOWING** — and only then
+        (owner decision 2026-09-20, REFINED by the same owner after review
+        priced what a permanent hide cost). The first ruling hid it in Design
+        outright; that bought the room but left `Offline cache unavailable`
+        with no visible surface anywhere in the product, so the hide is now
+        exactly as long as the line it pays for.
+
+        WHY IT IS THE LINE AND NOT THE FETCH THAT CONDITIONS IT. The room is
+        needed whenever the completion span OCCUPIES THE BAR, which outlasts the
+        fetching: a settled or offline outcome stands for its retire window
+        after the run has finished. Conditioning on a run-in-progress flag would
+        put the longest sentence of all — the shortfall — beside a visible
+        offline label, which is the one combination that does not fit.
+
+        Measured at 1024×768: the design-mode bar has 136.00 px of worst-case
+        slack, it is `nowrap` and CLIPS rather than wraps, and this label is in
+        flow in Design and swings +210.00 px between its shortest and longest
+        states. Hiding it frees 288 px plus a 12 px gap.
+
+        ⚠ AND THAT BUYS LESS THAN IT SOUNDS — READ THIS BEFORE ADDING ANYTHING
+        TO THIS BAR. Re-measured in Chromium 1217 at 1024×768 on the design
+        bar's own worst case (a 4-digit revision, `256 fonts in template`,
+        `256 of 256 elements bound`, the longest offline label):
+
+          idle, this label painted ........ bar 1024.00, spacer 70.00 px
+          completing, this label hidden ... bar 1024.00, spacer 10.00 px
+
+        So even WITH the label hidden the bar has ~12 px of headroom, the mono
+        face is 6.00 px per character, and **59 characters is the practical
+        ceiling for a line here**. The completion sentences are held to it by an
+        exact assertion in `document-face-completion.test.ts`, bounded by
+        `MAX_ENGINE_FONT_FAMILIES` so the budget tracks the engine's own cap.
+        A future item added to this bar must be priced against that 12 px — not
+        against the 288 px this hide appears to free, which is already spent.
+
+        IT IS A VISUAL HIDE AND NOTHING ELSE. `.sr-only` (`App.css:7`) is
+        `position: absolute`, not `display: none`, so the span stays in the
+        tree with `role="status"`, `aria-live="polite"`, its label, its testid
+        and its full text every one of them untouched — exactly as it already
+        is in Preview. It is never removed and its words never change.
 
         THE ASSURANCE IS NON-INTERACTIVE AND LAST. Non-interactive because the
         bar's `button, input, select` set is pinned exhaustively by name; last
@@ -4438,7 +4737,24 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
         placeholder, so "Total: {{amount}}", "{{amount}} THB",
         "{{upper(customer.name)}}" and "{{page}}" all count as UNBOUND.
         At zero elements the span is not rendered at all — "0 of 0 elements
-        bound" is noise on an empty template, not information. */}{mode === 'design' && canvas && canvas.components.length > 0 && <span data-testid="bound-element-count">{`${canvas.components.filter((component) => component.binding !== undefined || component.tableBind !== undefined).length} of ${canvas.components.length} element${canvas.components.length === 1 ? '' : 's'} bound`}</span>}<span role="status" aria-live="polite" aria-label="Offline availability" data-testid="offline-status" className={mode === 'preview' ? 'sr-only' : undefined}>{offlineLabel}</span><code>{mode.toUpperCase()} MODE</code>{mode === 'preview' && <span data-testid="local-only-assurance">no network · nothing left this machine</span>}</footer>
+        bound" is noise on an empty template, not information. */}{mode === 'design' && canvas && canvas.components.length > 0 && <span data-testid="bound-element-count">{`${canvas.components.filter((component) => component.binding !== undefined || component.tableBind !== undefined).length} of ${canvas.components.length} element${canvas.components.length === 1 ? '' : 's'} bound`}</span>}{/* SPEC-install-all-face-cuts STORY 4 — THE BAR'S FIRST MESSAGE API, and it
+        is deliberately not `fileStatus`. The open writes there and it retires
+        itself after 6 s, so a completion line living in it would stomp the
+        open's own outcome and would then be retired out from under work still
+        in flight. This one is rendered only when set, and it is set only by a
+        completion the author agreed to.
+
+        ⚠ IT IS A LIVE REGION, because this same story made the bar's only other
+        one visually hidden and an author who agreed to a fetch is owed its
+        progress and its outcome whether or not they are looking at the bar.
+        `polite`, never `assertive`: nothing here interrupts an edit.
+
+        ⚠ AND IT IS FENCED ON DESIGN. In Preview the bar states the product's
+        standing promise — `no network · nothing left this machine` — and a
+        completion line fetching from upstream beside it would contradict it in
+        the same twelve inches. The ~424 px budget these sentences are priced
+        against is the DESIGN bar's; Preview additionally carries the 228 px
+        assurance and has no room for them. */}{mode === 'design' && completionStatus !== undefined && <span role="status" aria-live="polite" data-testid="font-completion-status">{completionStatus}</span>}<span role="status" aria-live="polite" aria-label="Offline availability" data-testid="offline-status" className={mode === 'preview' || completionStatus !== undefined ? 'sr-only' : undefined}>{offlineLabel}</span><code>{mode.toUpperCase()} MODE</code>{mode === 'preview' && <span data-testid="local-only-assurance">no network · nothing left this machine</span>}</footer>
   </div>
 }
 
@@ -5749,11 +6065,31 @@ function embeddedChainBase(family: string | undefined, chains: CanvasProjection[
  * ⚠ AND IT ASKS `complete`, NOT `usable`. A local plan is built only when the
  * family holds EVERY cut it declares, which is conservative by one state: a
  * family holding its Regular and its Bold but not its Italic reads as having
- * no bold to embed. That state is unreachable — `installFamily` fetches a
- * family's cuts as a set, and the only partial state anything else produces is
- * Regular-only, where the bold genuinely is not here — and the conservative
- * direction is the honest one, because the sentence the author then reads says
- * the cut is not on this machine and names the way to get it.
+ * no bold to embed. The conservative direction is the honest one, because the
+ * sentence the author then reads says the cut is not on this machine and names
+ * the way to get it.
+ *
+ * ⚠ THERE ARE NOW **TWO** PRODUCERS OF THAT PARTIAL STATE, AND THE SECOND ONE
+ * IS NAMED HERE RATHER THAN LEFT FOR THE NEXT READER TO FIND
+ * (spec-install-all-face-cuts story 4). This used to argue the state was
+ * UNREACHABLE, on the ground that `installFamily` fetches a family's cuts as a
+ * set and the only partial state anything else produces is Regular-only. That
+ * ground is still true of `installFamily` and is no longer the whole
+ * population: CAP-4's completion (`completeOneFamily`) fetches a committed
+ * family's missing cuts one at a time, and a cut that refuses leaves two of
+ * three in the cache.
+ *
+ * THE PROPERTY SURVIVES, AND IT SURVIVES BECAUSE COMPLETION IS DELIBERATELY
+ * ALL-OR-NOTHING RATHER THAN BY ACCIDENT. `readLocalFaceHoldings` counts a
+ * family `complete` only when EVERY declared cut is held
+ * (`held-local-faces.ts`), and completion decides a family landed only when
+ * the release cache itself answers for every one of them — so a partial
+ * landing leaves the family exactly where it was: still short, still
+ * `unfetched`, still offered for install, whether or not some OTHER family in
+ * the same run triggered the one holdings refresh. No half-complete family is
+ * ever treated as complete by this gate. A premise that stayed true only
+ * because nobody had noticed the second producer would be worth nothing, which
+ * is why the producer is written down.
  */
 type CutEmbedPlan = Readonly<{ chain: string; index: number; cut: StyleCut }> & (
   | Readonly<{ tier: 'stored'; face: StoredFace }>
@@ -6911,6 +7247,45 @@ function UnsavedChangesDialog({ document: name, onKeep, onDiscard }: { document:
       <h2 id="unsaved-warning-title">Discard unsaved changes?</h2>
       <p id="unsaved-warning-description" className="honest-note unsaved-warning-description"><span className="unsaved-warning-dot" aria-hidden="true" /><span className="unsaved-warning-document">{name}</span>{' '}<span>has unsaved changes.</span></p>
       <div className="page-dialog-actions"><button ref={keep} type="button" onClick={onKeep}>Keep editing</button><button ref={discard} type="button" className="page-dialog-confirm" onClick={onDiscard}>Discard</button></div>
+    </div>
+  </section>
+}
+
+// THE COMPLETION QUESTION (spec-install-all-face-cuts, CAP-4, story 4).
+//
+// `UnsavedChangesDialog`'s shape, chosen by the owner on 2026-09-20 over a
+// status-bar prompt: the SAFE answer — Not now — is focused first, Escape means
+// it, Tab toggles between the two buttons and every key is stopped here so none
+// of them reaches the canvas behind it. In-app, never `window.confirm`.
+//
+// ⚠ IT MOMENTARILY BLOCKS, AND THE OWNER CHOSE IT KNOWING THAT. CAP-4's
+// "editable throughout" was amended rather than broken: the OPEN never waits —
+// `installOpenedDocument` has returned before this renders — and once the
+// question is answered the document is editable throughout the fetching. The
+// non-blocking requirement was always protecting the fetch, not the question.
+//
+// NOTHING IS SAID ABOUT WHICH FAMILIES. The count is the fact the author needs
+// to answer, and naming up to a dozen families in a modal would be a list they
+// cannot act on one by one — the answer is all-or-nothing either way.
+function CompleteFontsDialog({ count, onConfirm, onDecline }: { count: number; onConfirm: () => void; onDecline: () => void }) {
+  const decline = useRef<HTMLButtonElement>(null)
+  const confirm = useRef<HTMLButtonElement>(null)
+  useEffect(() => { decline.current?.focus() }, [])
+  // A press on the backdrop would move focus to <body>, where Escape and Tab no
+  // longer reach this dialog; keep it on the safe answer instead.
+  const holdFocus = (event: { target: EventTarget; preventDefault: () => void }) => {
+    if (event.target instanceof Element && event.target.closest('.page-dialog') === null) { event.preventDefault(); decline.current?.focus() }
+  }
+  return <section tabIndex={-1} className="page-dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="complete-fonts-title" aria-describedby="complete-fonts-description" onPointerDown={holdFocus} onMouseDown={holdFocus} onKeyDownCapture={(event) => {
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onDecline(); return }
+    if (event.key !== 'Tab') { event.stopPropagation(); return }
+    event.preventDefault(); event.stopPropagation()
+    ;(document.activeElement === confirm.current ? decline.current : confirm.current)?.focus()
+  }}>
+    <div className="page-dialog">
+      <h2 id="complete-fonts-title">{COMPLETION_QUESTION_TITLE}</h2>
+      <p id="complete-fonts-description" className="honest-note">{completionQuestion(count)}</p>
+      <div className="page-dialog-actions"><button ref={decline} type="button" onClick={onDecline}>{COMPLETION_DECLINE_LABEL}</button><button ref={confirm} type="button" className="page-dialog-confirm" onClick={onConfirm}>{COMPLETION_CONFIRM_LABEL}</button></div>
     </div>
   </section>
 }
