@@ -436,6 +436,66 @@ describe('the family census, and the additive upgrade that adds it', () => {
     database.close()
   }
 
+  /**
+   * A database ALREADY AT THE CURRENT VERSION BUT MISSING A STORE — the state an
+   * author reached by running an intermediate build that bumped the version
+   * before the census `createObjectStore` line existed.
+   *
+   * Version equality is not proof of schema shape, and this is the seam where
+   * that was assumed: `onupgradeneeded` never fires for it, so nothing ever
+   * repaired the gap and every install failed naming an IndexedDB internal.
+   */
+  const seedCurrentVersionMissingCensus = async (factory: IDBFactory, written: StoredFaceRecord): Promise<void> => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const opening = factory.open(databaseName, 2)
+      opening.onupgradeneeded = () => {
+        const upgrading = opening.result
+        upgrading.createObjectStore('faces', { keyPath: 'key' })
+        upgrading.createObjectStore('face-bytes')
+        // The census store is DELIBERATELY not created. That is the defect.
+      }
+      opening.onsuccess = () => resolve(opening.result)
+      opening.onerror = () => reject(opening.error)
+    })
+    const { bytes, ...metadata } = written
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(['faces', 'face-bytes'], 'readwrite')
+      transaction.objectStore('faces').put({ ...metadata, scripts: [...metadata.scripts] })
+      transaction.objectStore('face-bytes').put(bytes, written.key)
+      transaction.oncomplete = () => resolve()
+      transaction.onerror = () => reject(transaction.error)
+    })
+    database.close()
+  }
+
+  it('repairs a database at the current version that is missing a store, keeping the faces it holds', async () => {
+    const factory = new FakeIndexedDBFactory()
+    const written = await record()
+    await seedCurrentVersionMissingCensus(factory, written)
+
+    const opened = await openFontStore(factory)
+    expect(opened.ok, 'a same-version schema shortfall must be repaired, not refused').toBe(true)
+    if (!opened.ok) throw new Error(opened.reason)
+
+    // THE REPAIR IS ADDITIVE. The face this machine already held is still here
+    // — a repair that wiped the store to fix its shape would be the exact
+    // failure D-7 traded away.
+    const listed = await opened.value.list()
+    expect(listed.ok).toBe(true)
+    if (!listed.ok) return
+    expect(listed.value.map((held) => held.family)).toEqual(['Kanit'])
+    expect(listed.value[0]!.licenceText).toBe(written.licenceText)
+
+    // AND THE MISSING STORE IS NOW THERE AND USABLE — this is the write that
+    // threw `NotFoundError` at the author and named an IndexedDB internal.
+    const census = { family: 'Kanit', published: ['Regular'], refused: [], recordedAt: '2026-09-21' }
+    expect((await opened.value.putCensus(census)).ok, 'the repaired store must accept a census write').toBe(true)
+    const readBack = await opened.value.listCensus()
+    expect(readBack.ok).toBe(true)
+    if (!readBack.ok) return
+    expect(readBack.value).toEqual([census])
+  })
+
   it('upgrades a v1 store to v2 with every face record it already held still readable', async () => {
     const factory = new FakeIndexedDBFactory()
     const written = await record()

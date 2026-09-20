@@ -89,14 +89,24 @@
 /**
  * The database and its three object stores.
  *
- * VERSION 2 SINCE spec-install-all-face-cuts STORY 1, AND THE UPGRADE IS
- * ADDITIVE. Version 1 held the two face stores below; version 2 adds the family
- * census beside them and touches neither. `onupgradeneeded` creates each store
- * behind a `contains` guard, so a v1 database is opened, given the one store it
- * lacks, and handed back WITH EVERY FACE RECORD IT ALREADY HELD — an author's
- * downloaded typefaces may not be wiped by a schema bump, and
- * `src/font-store.test.ts` drives a real v1 database through this path rather
- * than assuming it.
+ * VERSION 2 SINCE spec-install-all-face-cuts STORY 1, AND EVERY SCHEMA CHANGE
+ * IS ADDITIVE. Version 1 held the two face stores below; version 2 adds the
+ * family census beside them and touches neither. A v1 database is opened, given
+ * the one store it lacks, and handed back WITH EVERY FACE RECORD IT ALREADY
+ * HELD — an author's downloaded typefaces may not be wiped by a schema change,
+ * and `src/font-store.test.ts` drives a real v1 database through this path
+ * rather than assuming it.
+ *
+ * ⚠ `databaseVersion` IS A FLOOR, NOT THE AUTHORITY ON THE SCHEMA. The
+ * authority is `objectStores` below, and `openFontStore` verifies the stores
+ * that are ACTUALLY PRESENT rather than trusting the version number to imply
+ * them. A database can sit at the current version and still be missing a store
+ * — an intermediate build that bumped the version before a `createObjectStore`
+ * line existed is enough — and for such a database `onupgradeneeded` never
+ * fires. That state was unrepairable and broke every read and write with a
+ * `NotFoundError` the author could do nothing about; it is now repaired on
+ * open, which is also why adding a store to `objectStores` does not strictly
+ * require moving this number.
  */
 const databaseName = 'folio8-machine-font-store'
 const databaseVersion = 2
@@ -139,6 +149,52 @@ const byteStoreName = 'face-bytes'
  * the end of time. The refusal is what terminates that loop.
  */
 const censusStoreName = 'family-census'
+
+/**
+ * ⚠ EVERY OBJECT STORE THIS MODULE NAMES, IN ONE PLACE — THE SINGLE AUTHORITY.
+ *
+ * This list is read by BOTH halves that have to agree: the upgrade that
+ * CREATES the stores, and `transact`, which NAMES them in every transaction.
+ * They used to be two hand-maintained lists, and a database that reached the
+ * current version without one of the stores made every read and write throw
+ * `NotFoundError` — an IndexedDB internal shown to the author — with no path
+ * back but clearing site data by hand. Two lists that can disagree is the
+ * shape that allowed it; one list is the fix.
+ *
+ * A store added here is created on the next open of any existing database,
+ * whether or not `databaseVersion` moves, because the shape check below repairs
+ * by shape rather than trusting the version number.
+ */
+const objectStores = [faceStoreName, byteStoreName, censusStoreName] as const
+
+/** The key path each store is created with. `undefined` means an out-of-line key, as the byte store uses. */
+const storeKeyPaths: Readonly<Record<string, string | undefined>> = {
+  [faceStoreName]: 'key',
+  [byteStoreName]: undefined,
+  [censusStoreName]: 'family',
+}
+
+/** Which of this module's stores the open database does NOT have. Empty is a sound schema. */
+const missingStores = (database: IDBDatabase): ReadonlyArray<string> =>
+  objectStores.filter((name) => !database.objectStoreNames.contains(name))
+
+/**
+ * THE ADDITIVE CREATE, AND IT IS THE ONLY SCHEMA WRITE IN THIS MODULE.
+ *
+ * Every branch is a `contains` guard and a `createObjectStore`, and there is
+ * deliberately NO `deleteObjectStore` here or anywhere else: a schema change
+ * that wiped an author's downloaded typefaces is the failure mode that ruled
+ * the per-face-field option out of D-7, and it may not reappear through the
+ * path it was traded for. Repairing a broken shape is never a reason to drop
+ * data — the missing store is added beside what is already held.
+ */
+const createMissingStores = (upgrading: IDBDatabase): void => {
+  for (const name of objectStores) {
+    if (upgrading.objectStoreNames.contains(name)) continue
+    const keyPath = storeKeyPaths[name]
+    upgrading.createObjectStore(name, keyPath === undefined ? undefined : { keyPath })
+  }
+}
 
 /**
  * WHETHER A REFUSED CUT IS SETTLED OR MERELY NOT HERE YET (D-2/D-5, amended
@@ -457,44 +513,54 @@ export async function openFontStore(factory: IDBFactory | undefined = globalThis
   if (!factory || typeof factory.open !== 'function') {
     return failed('This browser is not letting the designer keep typefaces on this machine, so the fonts you have already downloaded cannot be offered back to you. Everything else works, and picking a family still fetches it.')
   }
+  /**
+   * Opened at an explicit version, or at whatever version already exists when
+   * `version` is omitted. The upgrade handler is the same either way, because
+   * there is only one way this module creates a store.
+   */
+  const openAt = (version?: number): Promise<IDBDatabase> => new Promise<IDBDatabase>((resolve, reject) => {
+    const opening = version === undefined ? factory.open(databaseName) : factory.open(databaseName, version)
+    opening.onupgradeneeded = () => createMissingStores(opening.result)
+    opening.onsuccess = () => resolve(opening.result)
+    opening.onerror = () => reject(opening.error ?? new Error('the database could not be opened'))
+    opening.onblocked = () => reject(new Error('another tab of this designer is holding an older version of the store open'))
+  })
+
   let database: IDBDatabase
   try {
-    database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const opening = factory.open(databaseName, databaseVersion)
-      opening.onupgradeneeded = () => {
-        const upgrading = opening.result
-        if (!upgrading.objectStoreNames.contains(faceStoreName)) upgrading.createObjectStore(faceStoreName, { keyPath: 'key' })
-        if (!upgrading.objectStoreNames.contains(byteStoreName)) upgrading.createObjectStore(byteStoreName)
-        // THE ADDITIVE HALF OF THE v1 → v2 UPGRADE. Every branch here is a
-        // `contains` guard and a `createObjectStore`, and there is deliberately
-        // no `deleteObjectStore` anywhere in this function: a schema bump that
-        // wiped an author's downloaded typefaces is the failure mode that ruled
-        // the per-face-field option out of D-7, and it may not reappear through
-        // the upgrade path it was traded for.
-        if (!upgrading.objectStoreNames.contains(censusStoreName)) upgrading.createObjectStore(censusStoreName, { keyPath: 'family' })
-      }
-      opening.onsuccess = () => resolve(opening.result)
-      opening.onerror = () => reject(opening.error ?? new Error('the database could not be opened'))
-      opening.onblocked = () => reject(new Error('another tab of this designer is holding an older version of the store open'))
-    })
+    // ⚠ THE SHAPE IS VERIFIED, NOT INFERRED FROM THE VERSION NUMBER.
+    //
+    // Opening at a fixed `databaseVersion` treats version equality as proof
+    // that the schema matches, and it is not: a database can reach the current
+    // version WITHOUT one of its stores — an intermediate build that bumped the
+    // version before a `createObjectStore` line existed is enough, and a long
+    // dev session with hot reload is exactly how one is reached. For such a
+    // database `onupgradeneeded` never fires, so nothing ever repaired it and
+    // every read and write threw `NotFoundError` for ever.
+    //
+    // So: open at whatever exists, ASK WHICH STORES ARE ACTUALLY THERE, and if
+    // any are missing reopen one version higher so the additive create runs.
+    // A fresh database arrives here at version 1 holding nothing and takes the
+    // same repair path, which is why there is no separate create branch.
+    database = await openAt()
+    if (missingStores(database).length > 0) {
+      const repairedVersion = Math.max(databaseVersion, database.version + 1)
+      database.close()
+      database = await openAt(repairedVersion)
+    }
   } catch (error) {
     return failed(`This browser is not letting the designer keep typefaces on this machine (${detail(error)}), so the fonts you have already downloaded cannot be offered back to you. Everything else works, and picking a family still fetches it.`)
   }
-  // ⚠ AN OLDER TAB MUST GET OUT OF THE WAY, OR IT BLOCKS THE UPGRADE FOR A
-  // WHOLE SESSION.
-  //
-  // `onversionchange` fires on THIS connection when another tab opens the same
-  // database at a HIGHER version. Unanswered, this connection stays open, the
-  // other tab's `open` sits in `onblocked` — which `openFontStore` above turns
-  // into a stated degradation — and the newer tab runs with no store at all
-  // until this one is closed by hand. That is a real, ordinary condition the
-  // moment a release bumps `databaseVersion`, which this story does.
-  //
-  // CLOSING IS SAFE AND IS THE ONLY CORRECT ANSWER. Every operation in this
-  // module is its own transaction, so a closed connection fails the NEXT call
-  // with a stated outcome rather than corrupting one in flight — and the tab
-  // that closed is running an older build whose reads were about to be wrong
-  // anyway.
+  // AND IF THE REPAIR DID NOT TAKE, SAY SO IN WORDS THE AUTHOR CAN ACT ON.
+  // `NotFoundError: One of the specified object stores was not found` is an
+  // internal; it tells the author nothing and suggests nothing. What matters to
+  // them is that this store holds only re-fetchable COPIES, so resetting it
+  // costs them nothing they cannot get back.
+  const unrepaired = missingStores(database)
+  if (unrepaired.length > 0) {
+    database.close()
+    return failed(`The designer's store of downloaded typefaces is in a shape this build could not repair (it is missing ${unrepaired.join(' and ')}). Clear this site's data in your browser to reset it. Your documents and the faces already embedded in them are untouched — this store holds only copies of faces the designer can fetch again.`)
+  }
   database.onversionchange = () => database.close()
   return succeeded(fontStoreOver(database))
 }
@@ -523,7 +589,7 @@ function fontStoreOver(database: IDBDatabase): FontStore {
         // transaction that does not name a store cannot touch it, and a census
         // write placed in a transaction opened over the two face stores would
         // throw `NotFoundError` rather than fail quietly.
-        const transaction = database.transaction([faceStoreName, byteStoreName, censusStoreName], mode)
+        const transaction = database.transaction([...objectStores], mode)
         const done = settled(transaction)
         // ⚠ `done` IS OBSERVED THE MOMENT IT EXISTS, NOT ONLY ON THE PATH THAT
         // AWAITS IT.
