@@ -71,8 +71,11 @@ print(sum(wire(a['url']) for a in m['assets']), len(m['assets']))
 PY
 ```
 
-Re-measure after any build that changes the engine or the catalogue: `catalogue.familyCount`
-in the manifest has already moved 21 → 31 since the figure `spec-folio` records.
+Re-measure after any build that changes the engine or the catalogue: `catalogue.faceCount`
+in the manifest has already moved 21 → 31 → 107 since the figure `spec-folio` records. The
+field was called `catalogue.familyCount` until spec-install-all-face-cuts story 3, which
+renamed it because it had always counted ASSETS and the two stopped being the same number the
+moment a family could declare four cuts.
 
 **Corrected 2026-09-19.** The first version of this table read 28 core / 52 deferred, because
 the grouping script above swept `/assets/pdf_thumbnail_view-<hash>.js` — a 2.2 KiB pdf.js
@@ -112,3 +115,35 @@ refuses to emit a release over it and `verify-offline-release.mjs` refuses to pa
 reading that one declaration as text through `declaredCoreCacheByteCeiling()`. Before this story
 nothing in the repository compared the core tier's size to anything at all, which is how 4.72 MiB
 of duplicated CJK glyphs could sit in the blocking download unnoticed.
+
+**Re-measured 2026-09-20 (spec-install-all-face-cuts story 3).** The committed catalogue went
+from one upright Regular per family to every cut those 31 families publish: 31 rows to 107, 76
+new committed faces, +20.75 MiB of raw upstream bytes. ONE ROW IS ONE DIST ASSET IS ONE CACHE
+SLOT, so the release went from 80 assets to **156**, and the tiers from 30 / 6.10 MiB core and
+50 / 7.81 MiB deferred to:
+
+| | assets | wire bytes |
+|---|---|---|
+| Whole release | 156 | 21.92 MiB |
+| **Core tier** (blocking) | 30 | 6.13 MiB |
+| **Deferred tier** (on demand) | 126 | 15.79 MiB |
+
+Every one of the 76 new faces is `deferred`, so **the blocking tier did not grow by one asset**
+and the 30/30 pin in `src/release-payload.ts` is untouched. Within the deferred tier the
+catalogue group goes from 30 / 2.85 MiB to **106 / 10.83 MiB** (plus the one core
+`catalogue-roboto`), which is now the largest group in the release — larger than the CJK face
+that was 60% of the deferred tier before this story.
+
+THE CORE TIER MOVED BY KILOBYTES, AND IT WAS MEASURED RATHER THAN ASSUMED.
+`src/generated/font-catalogue.ts` inlines a ~4 KB licence text, a copyright line and a source
+string PER FACE and is bundled into the core-tier application chunk, so 76 more faces add
+~300 KB of raw bundle text to the blocking download. Brotli crushes it — the texts are
+near-duplicates over three SPDX identifiers — and the core tier went 6,392,910 → **6,407,803**
+Brotli bytes against the `maximumCoreCacheBytes` ceiling of 6,553,600: **145,797 bytes of
+headroom**, down from 160,690. The ceiling was NOT moved. If a later batch ever breaches it the
+remedy is deduplicating those licence texts by DISTINCT TEXT, never raising the ceiling, which
+guards the first-load screen.
+
+`maximumCacheAssets` rose 90 → **166** and `warnCacheAssets` 82 → **158** in the same change,
+derived from the emitted manifest's 156 plus the same 10-slot reserve the previous raise used,
+with the warning eight below the ceiling as it has been since Story 11.1.

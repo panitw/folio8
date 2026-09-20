@@ -1,4 +1,9 @@
 import { catalogueFaces, type CatalogueFace, type CatalogueScript } from './generated/font-catalogue'
+// TYPE ONLY, AND THERE IS NO CYCLE: `held-local-faces.ts` imports the generated
+// catalogue and nothing else from this module's neighbourhood. The record is
+// imported rather than restated because the whole point of it is that ONE value
+// carries both answers and names which is which — see `familyIsInstalled`.
+import type { LocalFaceHoldings } from './held-local-faces'
 import { familyIndex, familyIndexExcludedCjkFamilies, familyIndexPublishedFamilies, type IndexFamily } from './generated/font-index'
 import { censusIsComplete, type FamilyCensus, type StoredFace } from './font-store'
 
@@ -243,8 +248,24 @@ export const webFamilies: ReadonlyArray<IndexFamily> = familyIndex.filter((row) 
  * to say which it is. It is not 1,946: that is how many families the source
  * published on the snapshot date, and it is carried separately
  * (`indexPublishedFamilies`) so the two can never be confused for each other.
+ *
+ * ⚠ IT COUNTS FAMILIES, AND THE LOCAL HALF USED TO COUNT ROWS. It was
+ * `webFamilies.length + catalogueFaces.length`, which was the same number only
+ * while the catalogue held one upright Regular per family. Since
+ * spec-install-all-face-cuts story 3 a family declares up to four rows, so that
+ * expression would report four Inters in a toolbar line — `N of 1,853 families`
+ * — that offers each family exactly ONCE (CAP-5). `localFamilies` is the same
+ * grouping `offeredFamilies` draws its local rows from, so the count and the
+ * list cannot disagree.
+ *
+ * ROBOTO'S CUTS ARE NOT IN THE CATALOGUE AND THIS COUNT IS UNAFFECTED BY THAT.
+ * `Roboto Bold`, `Roboto Italic` and `Roboto Bold Italic` ship as hardcoded
+ * core faces rather than catalogue rows (see `scripts/build-wasm.mjs`), so the
+ * family contributes one row here exactly as the four-cut families contribute
+ * one group — a family is counted once whichever half of the build its cuts
+ * came from.
  */
-export const addableFamilyCount = webFamilies.length + catalogueFaces.length
+export const addableFamilyCount = webFamilies.length + localFamilies.length
 
 /**
  * ONE ORDERED LIST OF EVERY FAMILY THE AUTHOR MAY PICK, local tier first, then
@@ -379,19 +400,31 @@ export function offeredFamilies(query: string, storedListing: ReadonlyArray<Stor
  * THE LINE IS, AND ALWAYS WAS, "CAN THESE BYTES BE HAD WITH NO NETWORK". What
  * changed in spec-deferred-offline-cache story 2 is that the LOCAL TIER STOPPED
  * ANSWERING THAT QUESTION BY ITS TIER ALONE. It used to: the release precached
- * all 80 assets, so a catalogue face shipping inside the release was, by the
- * time anything could ask, on this machine. The worker now precaches the core
+ * all 80 assets (156 since spec-install-all-face-cuts story 3), so a catalogue
+ * face shipping inside the release was, by the time anything could ask, on this
+ * machine. The worker now precaches the core
  * tier only and the 31 catalogue faces are deferred, so a family can ship in
  * this release and still not be here — and `source.tier !== 'web'` would have
  * gone on claiming it was, which is exactly the untruth CAP-4 names.
  *
- * SO THE HELD SET IS A REQUIRED ARGUMENT, NOT AN OPTIONAL ONE. A default of
+ * SO THE HOLDINGS ARE A REQUIRED ARGUMENT, NOT AN OPTIONAL ONE. A default of
  * "assume held" would let a caller that has not done the read quietly get the
  * old, wrong answer; making every call site pass it is what forced both
  * surfaces — the family control's AVAILABLE LOCALLY group and the font
- * browser's row state — to be looked at together. `readHeldLocalFamilies` in
+ * browser's row state — to be looked at together. `readLocalFaceHoldings` in
  * `held-local-faces.ts` is the read; this module stays a pure function of its
  * inputs and opens no storage of its own.
+ *
+ * ⚠ IT READS `usable`, AND `familyIsComplete` READS `complete` — ONE VALUE, TWO
+ * FIELDS, AND THE FIELD IS THE WHOLE POINT (story 3, finding F1). Both arms
+ * were `heldLocalFamilies.has(source.family)` over the SAME all-cuts set, so
+ * the two predicates were the identical expression and the doc comment below
+ * described a distinction the code did not make. A family holding its Regular
+ * alone therefore read NOT INSTALLED and dropped out of AVAILABLE LOCALLY —
+ * and merely BROWSING reaches that state, because `browserSpecimenBytes`
+ * caches each local row's Regular to draw its specimen and nothing else. A
+ * record with two named fields is what stops the two sets being interchangeable
+ * to the compiler a second time.
  *
  * THE STORED TIER IS UNCONDITIONAL AND THE WEB TIER IS STILL NEVER INSTALLED.
  * A stored face is in the machine store by definition — the listing it came
@@ -413,9 +446,13 @@ export function offeredFamilies(query: string, storedListing: ReadonlyArray<Stor
  * COME FROM; whether this browser has yet fetched them is a different axis, and
  * it belongs in the argument rather than in the union.
  */
-export const familyIsInstalled = (source: FamilySource, heldLocalFamilies: ReadonlySet<string>): boolean => {
+export const familyIsInstalled = (source: FamilySource, holdings: LocalFaceHoldings): boolean => {
   switch (source.tier) {
-    case 'local': return heldLocalFamilies.has(source.family)
+    // USABLE, NOT COMPLETE: the family's Regular is in this release's cache, so
+    // it can be applied to a component and painted with the network down,
+    // whatever cuts it is still short of. Those are `familyIsComplete`'s
+    // business and the font browser's, not this control's.
+    case 'local': return holdings.usable.has(source.family)
     // WRITTEN AS THE FACE SET RATHER THAN AS A BARE `true`, because that is the
     // claim being made: this family has faces on this machine. `offeredFamilies`
     // never builds this arm empty, so it reads `true` for every row the union
@@ -455,11 +492,15 @@ export const familyIsInstalled = (source: FamilySource, heldLocalFamilies: Reado
  *
  * A `local` FAMILY NEEDS NO CENSUS AT ALL. The catalogue is the authority on
  * what the local tier publishes and it publishes exactly what it ships, so a
- * held catalogue family is complete by construction.
+ * catalogue family that holds every cut it declares is complete by
+ * construction — and `complete` is exactly that read.
  */
-export const familyIsComplete = (source: FamilySource, heldLocalFamilies: ReadonlySet<string>): boolean => {
+export const familyIsComplete = (source: FamilySource, holdings: LocalFaceHoldings): boolean => {
   switch (source.tier) {
-    case 'local': return heldLocalFamilies.has(source.family)
+    // COMPLETE, NOT USABLE: every cut the catalogue declares for this family is
+    // cached. A family holding its Regular alone is usable and NOT complete,
+    // and must keep being offered here so its remaining cuts are reachable.
+    case 'local': return holdings.complete.has(source.family)
     case 'stored': {
       if (source.census === undefined) return false
       return censusIsComplete(source.census, new Set(source.faces.map((face) => face.style)))
@@ -551,10 +592,16 @@ export function indexRowFor(family: string): IndexFamily | undefined {
  * release in which a category appears only among variable-only families would
  * reintroduce the dead chip. Deriving from the offered rows costs nothing and
  * cannot have that failure.
+ *
+ * ONE ROW PER LOCAL FAMILY, NOT PER LOCAL FACE. `catalogueFaces` is up to four
+ * rows for one family since spec-install-all-face-cuts story 3; both readers
+ * below collapse to a `Set`, so the duplicates would not change either
+ * vocabulary — but a list called "the offered rows" that carries a family four
+ * times is a list the next reader will count.
  */
 const offeredIndexRows: ReadonlyArray<IndexFamily> = [
   ...webFamilies,
-  ...catalogueFaces.map((face) => indexByFamily.get(face.family)).filter((row): row is IndexFamily => row !== undefined),
+  ...localFamilies.map((entry) => indexByFamily.get(entry.family)).filter((row): row is IndexFamily => row !== undefined),
 ]
 
 /**

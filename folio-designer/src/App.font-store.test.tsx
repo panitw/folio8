@@ -12,6 +12,14 @@ import { catalogueFaces } from './generated/font-catalogue'
 import { shippedFaceFamily } from './shipped-face-family'
 import { startBlankFromNew } from './test/new-document'
 
+// THE CATALOGUE OFFERS ONE ROW PER FAMILY, NOT ONE PER FACE
+// (spec-install-all-face-cuts, story 3). `catalogueFaces` is up to four cuts of
+// one family since that story; every count below is about what the family
+// control DRAWS, which is one option per family (CAP-5), so the denominator is
+// the distinct family count rather than the row count.
+const catalogueFamilyCount = new Set(catalogueFaces.map((face) => face.family)).size
+
+
 // STORY 16.7'S OWN SHORT SAMPLE TEXT, deliberately NOT `font-browser-model.
 // ts`'s `latinSample`/`thaiSample` — see `App.tsx`'s own comment on
 // `familyControlLatinSample` for why the dropdown draws different text than
@@ -946,7 +954,7 @@ describe('a fetched face stays on this machine', () => {
     expect(local.map(optionText)).toContain('Philosopher')
     // AND THE GROUP IS DRAWN IN FULL — 31 committed faces plus this one, with
     // no cap anywhere in this control to have swallowed it.
-    expect(local, 'every installed row renders').toHaveLength(catalogueFaces.length + 1)
+    expect(local, 'every installed row renders').toHaveLength(catalogueFamilyCount + 1)
     expect(screen.queryByRole('group', { name: 'AVAILABLE TO INSTALL' })).not.toBeInTheDocument()
     // AND IT IS OFFERED ONCE: from the store, never also from the snapshot.
     expect(screen.getAllByRole('option', { name: /^Philosopher/ })).toHaveLength(1)
@@ -984,9 +992,9 @@ describe('a fetched face stays on this machine', () => {
     // THE GROUP ITSELF IS THE SETTLE CONDITION — the deleted panel no longer
     // offers a DOM count to wait on, and this is a more direct proof of the
     // property under test anyway.
-    await waitFor(() => expect(within(screen.getByRole('group', { name: 'AVAILABLE LOCALLY' })).getAllByRole('option')).toHaveLength(catalogueFaces.length + deep.length))
+    await waitFor(() => expect(within(screen.getByRole('group', { name: 'AVAILABLE LOCALLY' })).getAllByRole('option')).toHaveLength(catalogueFamilyCount + deep.length))
     const local = within(screen.getByRole('group', { name: 'AVAILABLE LOCALLY' })).getAllByRole('option')
-    expect(local, 'every row under a heading promising the bytes are here must be drawn').toHaveLength(catalogueFaces.length + deep.length)
+    expect(local, 'every row under a heading promising the bytes are here must be drawn').toHaveLength(catalogueFamilyCount + deep.length)
     expect(local.length, 'the fixture must really exceed any cap this control ever had, or this measures nothing').toBeGreaterThan(50)
     expect(screen.queryByRole('group', { name: 'AVAILABLE TO INSTALL' }), 'there is no third group left to bound anything against').not.toBeInTheDocument()
   })
@@ -1737,7 +1745,7 @@ describe('a fetched face stays on this machine', () => {
     // THE FACES REALLY LANDED IN `storedFaces` — the settle condition, proven
     // through the dropdown rather than the deleted panel.
     fireEvent.focus(screen.getByRole('combobox', { name: 'Font family' }))
-    await waitFor(() => expect(within(screen.getByRole('group', { name: 'AVAILABLE LOCALLY' })).getAllByRole('option')).toHaveLength(catalogueFaces.length + fixtures.length))
+    await waitFor(() => expect(within(screen.getByRole('group', { name: 'AVAILABLE LOCALLY' })).getAllByRole('option')).toHaveLength(catalogueFamilyCount + fixtures.length))
 
     // NO STORE SECTION ANYWHERE, in a typography panel that has three faces to
     // draw if it were still drawing them.
@@ -2616,5 +2624,217 @@ describe('a cut the machine holds reaches the document on first use', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Bold' }))
     await waitFor(() => expect(embedPayloads(request), 'the second press did nothing: the control was left pending by the first').toHaveLength(1))
     expect(embedPayloads(request)[0]!.kind).toBe('applyCommands')
+  })
+})
+
+
+// ---------------------------------------------------------------------------
+// A COMMITTED FAMILY'S CUT REACHES THE DOCUMENT TOO
+// (spec-install-all-face-cuts story 3, review finding F2).
+//
+// THE HOLE THIS CLOSES WAS TOTAL, not partial. `cutEmbedPlan` resolved a cut
+// from `storedFaces` and from nothing else, and `installFamily` deliberately
+// writes NOTHING to the machine store for a local row — a second copy of a
+// committed face there would be two answers to one question. So the store is
+// empty of all 31 committed families by construction: pressing B on one built
+// no plan, embedded nothing, and the panel said *"No bold face in this
+// family"* about a bold sitting in this very release. CAP-3 — "no offline
+// author loses bold that an online author would get" — was false for 30 of the
+// 31 committed families, and the data half of this story could not have made
+// it true on its own.
+//
+// THE FIXTURE IS A REAL CATALOGUE ROW, NEVER A HAND-BUILT ONE. The family, its
+// cut set, its licence text, its copyright and its provenance string are read
+// out of the generated module the product itself reads, so a story that changed
+// what a catalogue row carries reds here rather than passing over a fixture
+// that agrees only with itself.
+//
+// NO STORE IS SEEDED IN THIS BLOCK, AND THAT IS THE POINT.
+// ---------------------------------------------------------------------------
+describe('a committed family\'s cut reaches the document on first use', () => {
+  const BASE_KEY = '2222222222222222222222222222222222222222222222222222222222222222'
+  const base64Of = (bytes: ArrayBuffer): string => {
+    let binary = ''
+    for (const byte of new Uint8Array(bytes)) binary += String.fromCharCode(byte)
+    return btoa(binary)
+  }
+
+  // A COMMITTED FAMILY THAT PUBLISHES A BOLD, CHOSEN BY MEASUREMENT. Reaching
+  // for a name would pin this suite to one family's upstream and red the day
+  // that family's cut set changed for reasons this test is not about.
+  const boldRow = catalogueFaces.find((face) => face.style === 'Bold')!
+  const committedFamily = boldRow.family
+  // AND ONE THAT PUBLISHES NO ITALIC, which is what makes the absence half of
+  // CAP-2 measurable: six committed families genuinely have none, and for them
+  // the original sentence is TRUE and must keep its words.
+  const italicLessRow = catalogueFaces.find((face) => face.style === 'Regular'
+    && !catalogueFaces.some((other) => other.family === face.family && other.style === 'Italic'))!
+
+  const chainFor = (family: string) => ({
+    name: family,
+    entries: [{ face: '', assetKey: BASE_KEY, family, style: 'Regular', bold: '', italic: '', boldItalic: '' }],
+  })
+
+  const mountCommitted = (request: unknown, family = committedFamily) => {
+    const chains = [chainFor(family)]
+    const component = { ...textComponent, fontFamily: family }
+    const componentCanvas = { ...canvas, fontFamilies: [family], fontChains: chains, components: [component] }
+    render(<App engine={engine(request)} blankBytes={new Uint8Array([1, 2, 3]).buffer} initialSnapshot={{ documentState: 'loaded', revision: 1, byteLength: 3, canvas: componentCanvas }} />)
+    fireEvent.click(screen.getByLabelText(/^text component e1/))
+  }
+
+  const committedRequest = (family = committedFamily) => {
+    const chains = [chainFor(family)]
+    const component = { ...textComponent, fontFamily: family }
+    const shot = (revision: number) => ({ documentState: 'loaded' as const, revision, byteLength: 3, canvas: { ...canvas, fontFamilies: [family], fontChains: chains, components: [component] } })
+    return vi.fn(async (operation: string) => operation === 'asset'
+      ? { snapshot: shot(1), bytes: new Uint8Array([1, 2, 3]).buffer }
+      : { snapshot: shot(operation === 'command' ? 2 : 1) })
+  }
+
+  // THE RELEASE CACHE, STOOD IN FOR BY `fetch`. jsdom has no Cache API, so
+  // `localFaceIsHeld` answers "held" for the reason it always does — no cache
+  // means no service worker, no content-addressed release and therefore no
+  // deferral — and the read under test is the `fetch(cut.url)` that follows.
+  const serveCatalogue = (bytesFor: (url: string) => ArrayBuffer | undefined) => {
+    const stub = vi.fn(async (url: string) => {
+      const bytes = bytesFor(String(url))
+      return bytes === undefined ? { ok: false, status: 404, arrayBuffer: async () => new ArrayBuffer(0) } : { ok: true, arrayBuffer: async () => bytes }
+    })
+    const restore = globalThis.fetch
+    globalThis.fetch = stub as never
+    return { stub, restore: () => { globalThis.fetch = restore } }
+  }
+
+  it('embeds the bold from the release cache, with the catalogue row\'s own licence and provenance', async () => {
+    const boldBytes = new Uint8Array([0x00, 0x01, 0x00, 0x00, 0x42]).buffer
+    const served = serveCatalogue((url) => url === boldRow.url ? boldBytes : new ArrayBuffer(4))
+    try {
+      const request = committedRequest()
+      mountCommitted(request)
+      // ⚠ THE PANEL MUST SAY NOTHING FIRST. A press that embedded while the
+      // panel still claimed the family had no bold would satisfy the assertion
+      // below and leave CAP-2 broken on screen.
+      await waitFor(() => expect(screen.queryByText(/No bold face in this family/)).toBeNull())
+
+      fireEvent.click(screen.getByRole('button', { name: 'Bold' }))
+      await waitFor(() => expect(embedPayloads(request)).toHaveLength(1))
+
+      const unit = embedPayloads(request)[0]!
+      expect(unit.kind, 'the press must assemble a unit: one embed and one property commit, one undo entry').toBe('applyCommands')
+      const members = unit.commands as ReadonlyArray<Record<string, unknown>>
+      expect(members).toHaveLength(2)
+      // THE BYTES ARE THE CATALOGUE ASSET'S, read through the URL the generated
+      // module carries — not a store record, which does not exist for this
+      // family and must not be made to.
+      expect(members[0]).toMatchObject({
+        kind: 'embedFontCut', name: committedFamily, index: 0, cut: 'bold',
+        family: committedFamily, data: base64Of(boldBytes),
+        licence: boldRow.licence, licenceText: boldRow.licenceText,
+        copyright: boldRow.copyright, source: boldRow.source,
+      })
+      // ⚠ `style` IS THE STORE'S SPELLING, NOT THE CATALOGUE'S. The row says
+      // `Bold` for this cut and `BoldItalic` for the combined one; a document
+      // must record one vocabulary whichever tier served the bytes.
+      expect(members[0]!.style).toBe('Bold')
+      expect(members[1]).toMatchObject({ kind: 'updateComponentProperties' })
+      // AND THE URL ASKED FOR IS THE CUT'S, never the family's Regular — the
+      // one substitution this path could make silently.
+      expect(served.stub.mock.calls.map((call) => String(call[0]))).toContain(boldRow.url)
+    } finally {
+      served.restore()
+    }
+  })
+
+  // THE COMBINED CUT, WHOSE TWO VOCABULARIES ARE THE ONES THAT CAN DIVERGE
+  // SILENTLY. The catalogue spells it `BoldItalic` and the store `Bold Italic`;
+  // a lookup using the wrong one resolves to no row at all, so the combined cut
+  // simply stops embedding while every bold and italic case stays green.
+  it('embeds the BOLD ITALIC cut of a committed family, across the two style spellings', async () => {
+    const row = catalogueFaces.find((face) => face.style === 'BoldItalic')!
+    const bytes = new Uint8Array([0x00, 0x01, 0x00, 0x00, 0x43]).buffer
+    const served = serveCatalogue((url) => url === row.url ? bytes : new ArrayBuffer(4))
+    try {
+      const chains = [chainFor(row.family)]
+      const request = committedRequest(row.family)
+      const componentCanvas = { ...canvas, fontFamilies: [row.family], fontChains: chains, components: [{ ...textComponent, fontFamily: row.family, italic: true }] }
+      render(<App engine={engine(request)} blankBytes={new Uint8Array([1, 2, 3]).buffer} initialSnapshot={{ documentState: 'loaded', revision: 1, byteLength: 3, canvas: componentCanvas }} />)
+      fireEvent.click(screen.getByLabelText(/^text component e1/))
+      await waitFor(() => expect(screen.queryByText(/No bold italic face in this family/)).toBeNull())
+
+      fireEvent.click(screen.getByRole('button', { name: 'Bold' }))
+      await waitFor(() => expect(embedPayloads(request)).toHaveLength(1))
+      const members = embedPayloads(request)[0]!.commands as ReadonlyArray<Record<string, unknown>>
+      expect(members[0]).toMatchObject({ kind: 'embedFontCut', cut: 'boldItalic', style: 'Bold Italic', data: base64Of(bytes) })
+    } finally {
+      served.restore()
+    }
+  })
+
+  // CAP-2's OTHER HALF: the sentence is RESERVED for upstream-publishes-none,
+  // and six committed families are exactly that. The catalogue is this tier's
+  // census, so its silence about a cut is a genuine absence rather than an
+  // unasked question.
+  it('keeps the original sentence for a committed family that publishes no italic', async () => {
+    const served = serveCatalogue(() => new ArrayBuffer(4))
+    try {
+      const request = committedRequest(italicLessRow.family)
+      mountCommitted(request, italicLessRow.family)
+      const italic = await screen.findByRole('button', { name: 'Italic' })
+      await waitFor(() => expect(italic.className).toContain('property-toggle-unavailable'))
+      const described = italic.getAttribute('aria-describedby')
+      expect(described).not.toBeNull()
+      expect(document.getElementById(described!)).toHaveTextContent('No italic face in this family — the engine paints the regular face and warns.')
+      // AND THE SAME FAMILY'S BOLD SAYS NOTHING, which is what stops this
+      // passing by warning about everything.
+      expect(screen.getByRole('button', { name: 'Bold' }).className).not.toContain('property-toggle-unavailable')
+    } finally {
+      served.restore()
+    }
+  })
+
+  // A READ THAT FAILS IS REFUSED BY NAME AND CHANGES NOTHING. The remedy is
+  // stated, no command is sent, and the toggle is left usable — the same
+  // surface the store-miss path answers with.
+  it('refuses by name when the bundled cut cannot be read, and sends no command', async () => {
+    const served = serveCatalogue((url) => url === boldRow.url ? undefined : new ArrayBuffer(4))
+    try {
+      const request = committedRequest()
+      mountCommitted(request)
+      await waitFor(() => expect(screen.queryByText(/No bold face in this family/)).toBeNull())
+      fireEvent.click(screen.getByRole('button', { name: 'Bold' }))
+      expect(await screen.findByText(new RegExp(`${committedFamily} bold could not be read from the offline bundle`))).toBeInTheDocument()
+      expect(embedPayloads(request), 'a refused read must not reach the document').toHaveLength(0)
+      expect(screen.getByRole('button', { name: 'Bold' })).not.toBeDisabled()
+    } finally {
+      served.restore()
+    }
+  })
+
+  // ⚠ AND NOTHING IS WRITTEN TO THE MACHINE STORE. The owner's ruling is that
+  // the release cache stays the authority for committed faces and the store
+  // stays the authority for fetched web faces; a second copy of a committed
+  // face in the store would be two answers to one question. Asserted over the
+  // real store rather than over a spy, because the claim is about what is
+  // THERE afterwards.
+  it('writes no copy of the committed face into the machine store', async () => {
+    const boldBytes = new Uint8Array([0x00, 0x01, 0x00, 0x00, 0x44]).buffer
+    const served = serveCatalogue((url) => url === boldRow.url ? boldBytes : new ArrayBuffer(4))
+    try {
+      const request = committedRequest()
+      mountCommitted(request)
+      await waitFor(() => expect(screen.queryByText(/No bold face in this family/)).toBeNull())
+      fireEvent.click(screen.getByRole('button', { name: 'Bold' }))
+      await waitFor(() => expect(embedPayloads(request)).toHaveLength(1))
+
+      const opened = await openFontStore(globalThis.indexedDB)
+      expect(opened.ok).toBe(true)
+      const listed = opened.ok ? await opened.value.list() : undefined
+      expect(listed?.ok).toBe(true)
+      const faces = listed?.ok ? listed.value : []
+      expect(faces.filter((face) => face.family === committedFamily), 'a committed face must never be copied into the machine store').toEqual([])
+    } finally {
+      served.restore()
+    }
   })
 })

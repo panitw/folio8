@@ -47,10 +47,24 @@ import { openWorkspace } from './app.js'
 // appears in the file, it appears in the listbox, and it gets picked. The
 // generated `src/generated/font-catalogue.ts` cannot be imported here because
 // it imports `.ttf?url` modules that only Vite resolves.
-type CatalogueRow = Readonly<{ id: string; family: string }>
+type CatalogueRow = Readonly<{ id: string; family: string; style: string }>
 const cataloguePath = fileURLToPath(new URL('../font-catalogue.json', import.meta.url))
 const catalogue = JSON.parse(readFileSync(cataloguePath, 'utf8')) as ReadonlyArray<CatalogueRow>
-const families = catalogue.map((row) => row.family)
+// A ROW IS A FACE; A DROPDOWN OPTION IS A FAMILY, AND SINCE
+// spec-install-all-face-cuts STORY 3 THOSE ARE DIFFERENT COUNTS. The committed
+// tier declares up to four cuts per family — 107 rows over 31 families — so the
+// two questions this file asks are separated here, once:
+//
+//   `families` — what the font-family control OFFERS, one option per family
+//   (CAP-5), which is what every group assertion below partitions.
+//
+//   `catalogue.length` — what the RELEASE CARRIES, one dist asset per declared
+//   cut, which is what `holdEveryCatalogueFace` primes and counts.
+//
+// Reading `catalogue.map(row => row.family)` for the first of those was correct
+// while a family had exactly one row and would now expect `Inter` four times in
+// a listbox that offers it once.
+const families = [...new Set(catalogue.map((row) => row.family))]
 
 // AND THE STARTER TEMPLATE IS READ THE SAME WAY, FOR THE SAME REASON.
 //
@@ -206,9 +220,11 @@ async function placeAndSelectText(page: import('@playwright/test').Page) {
  * PUT EVERY CATALOGUE FACE ON THIS MACHINE, THE WAY AN AUTHOR WOULD
  * (spec-deferred-offline-cache, story 2).
  *
- * The 31 catalogue faces used to be precached with the rest of the release, so
- * a fresh browser held all of them before the designer would start and
- * AVAILABLE LOCALLY listed the whole tier on the first ever load. They are
+ * The catalogue's faces — 31 when this was written, 107 since
+ * spec-install-all-face-cuts story 3 gave the committed families their cuts —
+ * used to be precached with the rest of the release, so a fresh browser held
+ * all of them before the designer would start and AVAILABLE LOCALLY listed the
+ * whole tier on the first ever load. They are
  * DEFERRED now: the release carries them, nothing fetches them until something
  * asks, and a family whose bytes are not here is deliberately absent from that
  * group — `Add fonts…` is its door.
@@ -242,6 +258,10 @@ async function placeAndSelectText(page: import('@playwright/test').Page) {
  * deferred — and a move in either direction reds here with both lists.
  */
 const CORE_CATALOGUE_FACE_STEMS = ['catalogue-roboto']
+// ⚠ `expected` IS A FACE COUNT, NOT A FAMILY COUNT. Every caller passes
+// `catalogue.length` — one release asset per declared cut — and passing
+// `families.length` would prime 31 of the 107 assets and then fail here
+// claiming the release was short.
 async function holdEveryCatalogueFace(page: import('@playwright/test').Page, expected: number) {
   // THE WORKER HAS TO BE IN CHARGE FIRST, OR THIS PRIMES NOTHING. A page that
   // installed the worker on its own first load is not yet CONTROLLED by it, so
@@ -254,16 +274,23 @@ async function holdEveryCatalogueFace(page: import('@playwright/test').Page, exp
   const held = await page.evaluate(async () => {
     const manifest = await (await fetch('/offline-release-manifest.json')).json() as { assets: ReadonlyArray<{ url: string; tier: string }> }
     const catalogue = manifest.assets.filter((asset) => /\/assets\/catalogue-/.test(asset.url))
-    for (const asset of catalogue) {
+    // ⚠ CONCURRENT, NOT SEQUENTIAL, SINCE THE TIER GREW TO 107 FACES
+    // (spec-install-all-face-cuts story 3). This was an awaited `for` loop, one
+    // round trip at a time: fine over 31 assets and a real cost over 107, on a
+    // helper two tests call before they do anything else. The browser and the
+    // service worker both pipeline these happily; the body is still drained for
+    // every one, because a response whose body is never read is a response the
+    // worker may not have finished caching.
+    await Promise.all(catalogue.map(async (asset) => {
       const response = await fetch(asset.url)
       if (!response.ok) throw new Error(`${asset.url} responded ${response.status}`)
       await response.arrayBuffer()
-    }
+    }))
     return { count: catalogue.length, byTier: catalogue.map((asset) => [asset.url, asset.tier] as const) }
   })
   // A HELPER THAT FETCHED NOTHING WOULD LEAVE BOTH MEASUREMENTS BELOW LOOKING
   // LIKE PRODUCT FAILURES. It is held to the population it exists to cover.
-  expect(held.count, 'the release must carry one catalogue asset per catalogue family, or this harness is priming the wrong set').toBe(expected)
+  expect(held.count, 'the release must carry one catalogue asset per declared catalogue CUT, or this harness is priming the wrong set').toBe(expected)
   // THE SPLIT, NAMED IN BOTH DIRECTIONS. A face leaving the core tier would put
   // the first screen back on a deferred fetch; a face joining it would grow the
   // blocking load with nothing here to say so.
@@ -314,7 +341,7 @@ test('the dropdown splits the catalogue into the template\'s own chains and the 
   // whole-tier claim below is about a machine that has fetched it. See
   // `holdEveryCatalogueFace`. It runs BEFORE the workspace is set up, because
   // it navigates.
-  await holdEveryCatalogueFace(page, families.length)
+  await holdEveryCatalogueFace(page, catalogue.length)
   await placeAndSelectText(page)
   await page.getByRole('combobox', { name: 'Font family' }).click()
   const local = (await page.getByRole('group', { name: 'AVAILABLE LOCALLY' }).getByRole('option').locator('.property-option-name').allTextContents()).map((text) => text.trim())
@@ -422,7 +449,7 @@ test('every family is offered in the group its declaredness puts it in, the pick
   // ONCE, BEFORE THE LOOP. The release cache outlives every navigation this
   // loop makes, so the catalogue is on this machine for all of them — which is
   // the state the per-family partition below is a claim about (story 2).
-  await holdEveryCatalogueFace(page, families.length)
+  await holdEveryCatalogueFace(page, catalogue.length)
   for (const family of families) {
     await placeAndSelectText(page)
     const before = await currentRevision(page)

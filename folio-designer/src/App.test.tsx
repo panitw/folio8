@@ -25,6 +25,14 @@ import { startBlankFromNew } from './test/new-document'
 import { tieredCanvasFacePayload } from './test/tiered-payload'
 import { IDBFactory as FakeIndexedDBFactory } from 'fake-indexeddb'
 
+// THE CATALOGUE OFFERS ONE ROW PER FAMILY, NOT ONE PER FACE
+// (spec-install-all-face-cuts, story 3). `catalogueFaces` is up to four cuts of
+// one family since that story; every count below is about what the family
+// control DRAWS, which is one option per family (CAP-5), so the denominator is
+// the distinct family count rather than the row count.
+const catalogueFamilyCount = new Set(catalogueFaces.map((face) => face.family)).size
+
+
 // STORY 16.5 — SOME OF THESE TESTS NEED A MACHINE THAT CAN KEEP A FACE.
 //
 // Installing IS the store write: there is no command behind it to succeed, so
@@ -4135,7 +4143,7 @@ describe('typography controls over the engine-projected closed sets', () => {
     // THE SECOND GROUP IS POPULATED ON A FRESH MACHINE, which is the half of
     // D-16.R.72 a store-shaped reading of the heading would have got wrong: the
     // committed faces ship inside the release, so they are always on it.
-    expect(local, 'the committed faces are on this machine whether or not anything was ever downloaded').toHaveLength(catalogueFaces.length)
+    expect(local, 'the committed faces are on this machine whether or not anything was ever downloaded').toHaveLength(catalogueFamilyCount)
   })
 
   // STORY 16.9 — THERE IS NO THIRD GROUP LEFT TO CAP. Both remaining groups
@@ -4146,7 +4154,7 @@ describe('typography controls over the engine-projected closed sets', () => {
     select()
     fireEvent.focus(screen.getByRole('combobox', { name: 'Font family' }))
     expect(groupRows('IN THIS TEMPLATE')).toHaveLength(2)
-    expect(groupRows('AVAILABLE LOCALLY')).toHaveLength(catalogueFaces.length)
+    expect(groupRows('AVAILABLE LOCALLY')).toHaveLength(catalogueFamilyCount)
     expect(screen.queryByRole('group', { name: 'AVAILABLE TO INSTALL' })).not.toBeInTheDocument()
     expect(screen.queryByText(/Showing \d+ of \d+/)).not.toBeInTheDocument()
   })
@@ -4988,7 +4996,7 @@ describe('typography controls over the engine-projected closed sets', () => {
     expect(local, 'a family the document declares must not also be offered as one to take from this machine').not.toContain('Arimo')
     // AND THE COUNT, DERIVED, so "absent" cannot be satisfied by an empty group:
     // the local tier is every committed face EXCEPT the one now declared.
-    expect(local).toHaveLength(catalogueFaces.length - 1)
+    expect(local).toHaveLength(catalogueFamilyCount - 1)
     // POSITIVE CONTROL FOR THE POPULATION: a catalogue family this document does
     // NOT declare is still offered there, so the subtraction took exactly one.
     expect(local).toContain('Roboto')

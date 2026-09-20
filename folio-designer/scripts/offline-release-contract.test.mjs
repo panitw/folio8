@@ -244,7 +244,18 @@ describe('the release asset tier rule', () => {
   it('classifies every catalogue family the starter declares as core', () => {
     const starter = JSON.parse(readFileSync(join(import.meta.dirname, '..', 'public', 'templates', 'starter.folio'), 'utf8'))
     const catalogue = JSON.parse(readFileSync(join(import.meta.dirname, '..', 'font-catalogue.json'), 'utf8'))
-    const idOfFamily = new Map(catalogue.map((face) => [face.family, face.id]))
+    // KEYED BY THE DERIVED CSS FACE NAME, WHICH IS WHAT A CHAIN ENTRY CARRIES
+    // (spec-install-all-face-cuts, story 3). It was keyed by `face.family`,
+    // which was the same key while a family had exactly one row; the catalogue
+    // now declares up to four cuts per family, so a family-keyed Map is
+    // LAST-WINS — `Inter` would resolve to whichever cut sorted last — and it
+    // could not see a chain naming a CUT at all. A chain entry's `bold` is
+    // `Inter Bold`, the CSS family `scripts/build-wasm.mjs` emits from
+    // (family, style), so that is the name this lookup has to answer to. The
+    // derivation is spelled the way the generator spells it.
+    const cssFamilyOf = (face) => face.style === 'Regular' ? face.family : `${face.family} ${face.style === 'BoldItalic' ? 'Bold Italic' : face.style}`
+    const idOfFamily = new Map(catalogue.map((face) => [cssFamilyOf(face), face.id]))
+    expect(idOfFamily.size, 'two catalogue rows derive the same CSS face name, so this lookup would answer for only one of them').toBe(catalogue.length)
     // Every face name the starter's chains reach, in the format's own two
     // spellings: a bare string entry, and an object with `face` plus cuts.
     const declared = new Set()

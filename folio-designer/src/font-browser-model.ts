@@ -351,9 +351,15 @@ export function pendingLine(staged: number): string {
  *
  *   THE WEIGHT COUNT IS UNAVAILABLE BY RULING. `styles` exists in the raw
  *   snapshot but is deliberately not projected into the generated module
- *   (D-16.R.33 R3, +1,326 brotli bytes to reverse), because this product embeds
- *   exactly ONE face per family — the upright Regular at weight 400 — so a style
- *   count sorts and totals on a difference the product erases.
+ *   (D-16.R.33 R3, +1,326 brotli bytes to reverse). The reason recorded here —
+ *   "this product embeds exactly ONE face per family, the upright Regular at
+ *   weight 400, so a style count sorts and totals on a difference the product
+ *   erases" — IS NO LONGER TRUE and is corrected rather than left standing: a
+ *   pick installs every cut the family publishes, up to the four the `.folio`
+ *   format can declare. What survives is the RULING: a per-family weight count
+ *   is still not in the generated module, so this slot still cannot state one,
+ *   and showing WHICH cuts a family has before the pick is story 5's work and
+ *   not this line's.
  *
  *   AND THIS PRODUCT DOES SUBSET, WHICH IS THE OPPOSITE OF WHAT AN EARLIER
  *   VERSION OF THIS COMMENT SAID. `folio-go/internal/fontset` subsets at PDF
@@ -365,12 +371,26 @@ export function pendingLine(staged: number): string {
  *   font-PICKING dialog is true, tangential, and invites a wrong inference about
  *   file size. ONE FACT PER SLOT.
  *
- * WHAT IS LEFT IS A FACT ABOUT WHAT A FACE IS, NOT ABOUT WHERE IT GOES, and that
- * is deliberate: Story 16.5 HAS NOW inverted the destination — confirm installs
- * rather than embeds — and this line needed no edit for it, because destination
- * language was kept out of it. The inversion landed in `confirmLabel` and
- * `pendingLine`, which is where it was written down that it would.
- * "One upright Regular, no bold or italic" is true under both models.
+ * WHAT IS LEFT IS A FACT ABOUT WHAT CONFIRMING FETCHES, NOT ABOUT WHERE IT
+ * GOES, and that is deliberate: Story 16.5 inverted the destination — confirm
+ * installs rather than embeds — and this line needed no edit for it, because
+ * destination language was kept out of it. The inversion landed in
+ * `confirmLabel` and `pendingLine`, which is where it was written down that it
+ * would.
+ *
+ * ⚠ THE FACT ITSELF WAS CORRECTED BY spec-install-all-face-cuts STORY 3. This
+ * line read *"N faces · one upright Regular each, no bold or italic"*, which
+ * was true of both the embed and the install model and is true of neither now:
+ * confirming a staged family installs EVERY CUT THAT FAMILY PUBLISHES, up to
+ * the four the `.folio` format's closed variant set can declare. A footer whose
+ * job is to say what the button will do had become the one region on the screen
+ * that said the opposite.
+ *
+ * AND THE COUNT IS FAMILIES, WHICH IS WHAT `staged` HAS ALWAYS BEEN. It was
+ * printed as a face count because the two were the same number under the
+ * one-face rule; they are not any more, and the honest noun is the one the
+ * number actually counts. How many faces that comes to is per family and is not
+ * in this dialog's data — see the weight-count ruling above.
  *
  * THE SLOT IS CONDITIONAL AND THAT IS WHY IT EARNS ITS PLACE: it is empty until
  * families are staged, so it appears exactly when the author is deciding whether
@@ -379,7 +399,7 @@ export function pendingLine(staged: number): string {
  */
 export function weightLine(staged: number): string {
   if (staged === 0) return ''
-  return `${staged} ${staged === 1 ? 'face' : 'faces'} · one upright Regular each, no bold or italic`
+  return `${staged} ${staged === 1 ? 'family' : 'families'} · every cut each one publishes, up to four`
 }
 
 /**

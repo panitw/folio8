@@ -9,7 +9,7 @@ import { assertPinnedRuntime, generateOfflineRelease } from './generate-offline-
 import { assertNoVCSStamp, buildEngineWasm } from './wasm-vcs-stamp.mjs'
 import { FORBIDDEN_FONT_HOSTS } from './forbidden-font-hosts.mjs'
 import { exampleIds } from './build-examples.mjs'
-import { ASSET_TIERS, DOCUMENTATION_STEMS, RELEASE_RUNTIME, classifyAssetTier, coreTierBrotliAssetCount, coreTierBrotliBytes, declaredCacheAssetBounds, declaredCacheAssetWarning, declaredCoreCacheAssetBounds, declaredCoreCacheByteCeiling, isCatalogueAssetUrl, pageIdentity, parseAppVersion, releaseIdentity, sha256 } from './offline-release-contract.mjs'
+import { ASSET_TIERS, DOCUMENTATION_STEMS, RELEASE_RUNTIME, classifyAssetTier, coreTierBrotliAssetCount, coreTierBrotliBytes, declaredCacheAssetBounds, declaredCacheAssetWarning, declaredCoreCacheAssetBounds, declaredCoreCacheByteCeiling, declaredCoreCacheByteWarning, isCatalogueAssetUrl, pageIdentity, parseAppVersion, releaseIdentity, sha256 } from './offline-release-contract.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const dist = join(root, 'dist')
@@ -71,6 +71,34 @@ export function reportCacheAssetApproach(assetCount, { warn = console.warn } = {
   const { warnCacheAssets, maximumCacheAssets } = declaredCacheAssetWarning()
   if (assetCount < warnCacheAssets) return null
   const message = `offline release approach warning: the release carries ${assetCount} cache assets against a declared maximum of ${maximumCacheAssets} — the margin is ${maximumCacheAssets - assetCount}. The warning threshold is \`warnCacheAssets\` = ${warnCacheAssets} in src/release-payload.ts; nothing fails until the maximum is exceeded.`
+  warn(message)
+  return message
+}
+
+/**
+ * THE CORE TIER'S BYTE APPROACH WARNING — the count warning's twin, and it
+ * exists for the same reason (spec-install-all-face-cuts story 3,
+ * owner-authorised at review).
+ *
+ * ⚠ THE COUNT BOUND HAS WARNED SINCE STORY 11.1 AND THE BYTE CEILING NEVER
+ * DID, so its only signal was a hard build failure on a release already
+ * assembled. That is the wrong shape for a number that moves with every bundle
+ * change: the asset count moves when somebody decides it should, and the core
+ * tier's WEIGHT moves whenever the application's own JavaScript does.
+ *
+ * SEPARATE FROM `reportCacheAssetApproach` RATHER THAN A SECOND ARM OF IT, for
+ * the reason the declarations are separate: that function's return value is
+ * asserted directly, and one function warning about two unrelated budgets would
+ * make either warning's absence ambiguous.
+ *
+ * Returns the emitted message, or `null` when the weight is below the
+ * threshold, so a caller and a test can both tell silence from a warning
+ * without parsing console output. `warn` is injected for the same reason.
+ */
+export function reportCoreCacheByteApproach(coreBytes, { warn = console.warn, releasePayloadText } = {}) {
+  const { warnCoreCacheBytes, maximumCoreCacheBytes } = declaredCoreCacheByteWarning(releasePayloadText)
+  if (coreBytes < warnCoreCacheBytes) return null
+  const message = `offline release core-weight approach warning: the core tier weighs ${coreBytes} Brotli bytes against a declared ceiling of ${maximumCoreCacheBytes} — the margin is ${maximumCoreCacheBytes - coreBytes}. This is the blocking download every first-time visitor waits for. The warning threshold is \`warnCoreCacheBytes\` = ${warnCoreCacheBytes} in src/release-payload.ts; nothing fails until the ceiling is exceeded.`
   warn(message)
   return message
 }
@@ -406,7 +434,11 @@ export function verifyOfflineRelease(outputDir = dist, { wasmWitness = false, re
   // and a subtotal of zero, which is exactly the vacuous green Story 8.5's own
   // design notes name as the trap.
   if (catalogue.length === 0) fail('brotli-record-drift: the release carries no Story 8.5 catalogue face at all, so its recorded catalogue weight describes nothing')
-  if (brotli.catalogue.familyCount !== catalogue.length) fail(`brotli-record-drift: the Brotli record counts ${brotli.catalogue.familyCount} catalogue faces and the release carries ${catalogue.length}`)
+  // `faceCount`, RENAMED FROM `familyCount` WITH ITS WRITER (story 3): the
+  // catalogue is up to four cuts per family now, so the old name reported
+  // 107 "families" over 31. A record still carrying the old key reads as
+  // `undefined` here and reds, which is the intended outcome.
+  if (brotli.catalogue.faceCount !== catalogue.length) fail(`brotli-record-drift: the Brotli record counts ${brotli.catalogue.faceCount} catalogue faces and the release carries ${catalogue.length}`)
   if (brotli.catalogue.totalBytes !== catalogue.reduce((total, asset) => total + asset.brotliBytes, 0)) fail('brotli-record-drift: the recorded catalogue Brotli total is not the catalogue rows\' arithmetic')
   // THE CORE TIER'S WEIGHT: recorded truthfully, then held to its ceiling
   // (spec-deferred-offline-cache, story 5). Two separate guards for two
@@ -430,6 +462,12 @@ export function verifyOfflineRelease(outputDir = dist, { wasmWitness = false, re
   const { maximumCoreCacheBytes } = declaredCoreCacheByteCeiling(releasePayloadText)
   const coreBytes = coreTierBrotliBytes(release.assets)
   if (coreBytes > maximumCoreCacheBytes) fail(`core-tier-bytes-over-ceiling: the core tier weighs ${coreBytes} Brotli bytes, over the declared ceiling of ${maximumCoreCacheBytes} — this is the blocking download every first-time visitor waits for before the designer is usable, and \`maximumCoreCacheBytes\` in src/release-payload.ts is the deliberate act that admits a heavier one`)
+  // AND THE APPROACH WARNING, ASKED FOR ONLY BY THE REAL RELEASE. It rides the
+  // same `reportApproach` option the count warning does, and for the identical
+  // reason: `runRedProofs` verifies a deliberately mutated dist two dozen times,
+  // and an unguarded warning would print two dozen lines about weights no
+  // release will ever have.
+  if (reportApproach) reportCoreCacheByteApproach(coreBytes, { releasePayloadText })
   // THE CANVAS FACE MAP IS TIED TO THE RELEASE HERE, AND IT HAS TO BE HERE
   // (spec-deferred-offline-cache, story 3).
   //

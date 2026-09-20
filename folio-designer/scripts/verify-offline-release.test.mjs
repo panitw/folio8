@@ -1,12 +1,12 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { coreTierBrotliBytes, declaredCacheAssetWarning, declaredCoreCacheAssetBounds, declaredCoreCacheByteCeiling } from './offline-release-contract.mjs'
-import { documentationFontHostFinding, reportCacheAssetApproach, templateAssetFinding } from './verify-offline-release.mjs'
+import { coreTierBrotliBytes, declaredCacheAssetWarning, declaredCoreCacheAssetBounds, declaredCoreCacheByteCeiling, declaredCoreCacheByteWarning } from './offline-release-contract.mjs'
+import { documentationFontHostFinding, reportCacheAssetApproach, reportCoreCacheByteApproach, templateAssetFinding } from './verify-offline-release.mjs'
 import { FORBIDDEN_FONT_HOSTS } from './forbidden-font-hosts.mjs'
 // THE TYPESCRIPT DECLARATION ITSELF, IMPORTED AS A VALUE. See the tie below for
 // why this import is the point rather than a convenience.
-import { cacheAssetApproachWarning, coreCacheAssetCeiling, coreCacheAssetFloor, coreCacheByteCeiling } from '../src/release-payload'
+import { cacheAssetApproachWarning, cacheAssetCeiling, coreCacheAssetCeiling, coreCacheAssetFloor, coreCacheByteApproachWarning, coreCacheByteCeiling } from '../src/release-payload'
 
 // ---------------------------------------------------------------------------
 // THE CACHE-ASSET APPROACH WARNING, EXECUTED (Story 11.1, D-11.1.10).
@@ -29,6 +29,87 @@ import { cacheAssetApproachWarning, coreCacheAssetCeiling, coreCacheAssetFloor, 
 // ---------------------------------------------------------------------------
 
 const { warnCacheAssets, maximumCacheAssets } = declaredCacheAssetWarning()
+const { warnCoreCacheBytes, maximumCoreCacheBytes } = declaredCoreCacheByteWarning()
+
+// ---------------------------------------------------------------------------
+// THE CORE TIER'S BYTE APPROACH WARNING, EXECUTED
+// (spec-install-all-face-cuts story 3, owner-authorised at review).
+//
+// THE GAP THIS CLOSES is the one the block above closes for the COUNT, and it
+// stood open in the more expensive half: the core tier's weight is the blocking
+// download every first-time visitor waits for, it moves with every bundle
+// change rather than with a decision, and its only signal was a hard build
+// failure on an already-assembled release. At the time this landed the core
+// tier stood at 97.8% of its ceiling.
+// ---------------------------------------------------------------------------
+describe('the core-tier byte approach warning', () => {
+  it('reads the same threshold the TypeScript module declares, text reader against evaluated value', () => {
+    expect(warnCoreCacheBytes, 'scripts/offline-release-contract.mjs reads `warnCoreCacheBytes` out of src/release-payload.ts as TEXT; this is the value that file actually evaluates to').toBe(coreCacheByteApproachWarning)
+    expect(maximumCoreCacheBytes, 'and the ceiling it is measured against').toBe(coreCacheByteCeiling)
+    // AND THE THRESHOLD MUST SIT INSIDE THE ENVELOPE IT WARNS ABOUT, or it is a
+    // warning that can never fire.
+    expect(warnCoreCacheBytes).toBeLessThan(maximumCoreCacheBytes)
+    expect(warnCoreCacheBytes).toBeGreaterThan(0)
+  })
+
+  it('emits the warning AT the declared threshold, and names the remaining margin', () => {
+    const warn = vi.fn()
+    const message = reportCoreCacheByteApproach(warnCoreCacheBytes, { warn })
+    expect(warn, 'a release standing exactly on the threshold is the first release the warning exists for').toHaveBeenCalledTimes(1)
+    expect(message, 'the returned message must BE the emitted one; a reporter that returns a string and prints nothing warns nobody').toBe(warn.mock.calls[0][0])
+    expect(message).toContain(`weighs ${warnCoreCacheBytes} Brotli bytes`)
+    expect(message).toContain(`a declared ceiling of ${maximumCoreCacheBytes}`)
+    // THE MARGIN IS THE POINT, for the reason it is the point in the count
+    // warning: a number nobody prints is a number nobody watches.
+    expect(message, 'the warning must state the REMAINING MARGIN, not just the weight').toContain(`the margin is ${maximumCoreCacheBytes - warnCoreCacheBytes}`)
+    expect(message).toContain('`warnCoreCacheBytes`')
+    // AND IT SAYS WHOSE DOWNLOAD THIS IS, which is what distinguishes it from
+    // the release-total warning in a build log carrying both.
+    expect(message).toContain('first-time visitor')
+  })
+
+  it('emits it for every weight ABOVE the threshold, with the margin each one actually has', () => {
+    for (const bytes of [warnCoreCacheBytes + 1, Math.floor((warnCoreCacheBytes + maximumCoreCacheBytes) / 2), maximumCoreCacheBytes]) {
+      const warn = vi.fn()
+      const message = reportCoreCacheByteApproach(bytes, { warn })
+      expect(warn, `a core tier of ${bytes} bytes is over the threshold ${warnCoreCacheBytes} and must warn`).toHaveBeenCalledTimes(1)
+      expect(message, `the margin at ${bytes} of ${maximumCoreCacheBytes}`).toContain(`the margin is ${maximumCoreCacheBytes - bytes}`)
+    }
+  })
+
+  it('is SILENT below the threshold, and says so by returning null rather than by printing nothing', () => {
+    for (const bytes of [warnCoreCacheBytes - 1, Math.floor(warnCoreCacheBytes / 2), 1, 0]) {
+      const warn = vi.fn()
+      expect(reportCoreCacheByteApproach(bytes, { warn }), `a core tier of ${bytes} bytes is under the threshold and must not warn`).toBeNull()
+      expect(warn).not.toHaveBeenCalled()
+    }
+  })
+
+  // AND THE DECLARATION ITSELF IS HELD COHERENT, on the fixture idiom the
+  // asset-count reader's failure cases use: a threshold above the ceiling is a
+  // warning that could never fire, and the fault is named as the declaration's
+  // rather than any release's.
+  it('refuses a threshold above the ceiling, naming the declaration and not a release', () => {
+    const fixture = 'const minimumCoreCacheAssets = 30\nconst maximumCoreCacheAssets = 30\nconst maximumCoreCacheBytes = 6553600\nconst warnCoreCacheBytes = 6553601\n'
+    expect(() => declaredCoreCacheByteWarning(fixture, 'the injected release-payload source')).toThrow(/could never fire/)
+  })
+
+  // WHETHER THE REAL RELEASE IS ALREADY OVER THE THRESHOLD IS NOT ASKED HERE,
+  // AND DELIBERATELY SO. It was, for one commit, by reading
+  // `dist/offline-release-manifest.json` — and that made it the ONLY test in
+  // this suite depending on an artifact the suite does not build: `npm test` is
+  // `build:wasm && vitest run`, so the manifest is present only when someone
+  // happened to run `npm run build` first. A guard that reds on a clean
+  // checkout and greens on a dirty one measures the developer, not the release.
+  //
+  // The claim itself is not lost, and is made somewhere that always has the
+  // manifest: `verifyOfflineRelease` calls `reportCoreCacheByteApproach` on the
+  // real release (verify-offline-release.mjs:470), inside `npm run build`, so a
+  // core tier over the threshold warns on EVERY build with its remaining
+  // margin. What is tested here is the mechanism that warning is built from —
+  // it fires AT the threshold, fires above it, and is silent below — which is
+  // the part a unit suite can hold without an artifact.
+})
 
 // The host is read off the exported list, never spelled here: the source scan
 // would flag a literal host in this file.
@@ -91,6 +172,11 @@ describe('the offline release approach warning', () => {
   // `noUnusedLocals`.
   it('reads the same threshold the TypeScript module declares, text reader against evaluated value', () => {
     expect(declaredCacheAssetWarning().warnCacheAssets, 'scripts/offline-release-contract.mjs reads `warnCacheAssets` out of src/release-payload.ts as TEXT; this is the value that file actually evaluates to').toBe(cacheAssetApproachWarning)
+    // AND THE BOUND ON THE SAME TERMS (spec-install-all-face-cuts, story 3).
+    // `cacheAssetCeiling` is what `src/release-payload.test.ts` derives its
+    // over-the-bound red proof from, so the number that proof is built on is
+    // tied to the number the text reader pulls out of the same file.
+    expect(declaredCacheAssetWarning().maximumCacheAssets, 'scripts/offline-release-contract.mjs reads `maximumCacheAssets` out of src/release-payload.ts as TEXT; this is the value that file actually evaluates to').toBe(cacheAssetCeiling)
   })
 
   it('emits the warning for a release AT the declared threshold, and names the remaining margin', () => {

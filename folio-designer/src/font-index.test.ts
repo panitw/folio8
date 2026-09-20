@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { catalogueFaces } from './generated/font-catalogue'
 import { familyIndex, familyIndexPublishedFamilies, familyIndexSnapshotDate } from './generated/font-index'
 import { blankComments } from '../scripts/forbidden-font-hosts.mjs'
+import type { LocalFaceHoldings } from './held-local-faces'
 import { addableFamilyCount, familyIsComplete, familyIsInstalled, familySourceNote, indexCategories, indexRowFor, indexScripts, indexExcludedCjkFamilies, localTierHolds, offeredFamilies, regularCutOf, sourceScripts, webFamilies } from './font-index'
 import type { FamilyCensus, FamilyCutRefusal, StoredFace } from './font-store'
 
@@ -14,12 +15,26 @@ import type { FamilyCensus, FamilyCutRefusal, StoredFace } from './font-store'
 // `familyIsInstalled` takes the held set explicitly since spec-deferred-offline-
 // cache story 2, because a catalogue face is deferred and shipping in the
 // release no longer proves it is on this machine.
-const allHeld: ReadonlySet<string> = new Set(catalogueFaces.map((face) => face.family))
+const everyLocalFamily: ReadonlySet<string> = new Set(catalogueFaces.map((face) => face.family))
+// THE HOLDINGS ARE A RECORD WITH TWO FIELDS SINCE spec-install-all-face-cuts
+// STORY 3 (finding F1): `usable` is "this family's Regular is cached, so it can
+// be applied and painted" and `complete` is "every cut it declares is cached,
+// so there is nothing left to fetch". They were ONE set, which made
+// `familyIsInstalled` and `familyIsComplete` the identical expression.
+const holdings = (usable: ReadonlySet<string>, complete: ReadonlySet<string> = usable): LocalFaceHoldings => ({ usable, complete })
+const allHeld: LocalFaceHoldings = holdings(everyLocalFamily)
+const noneHeld: LocalFaceHoldings = holdings(new Set())
 // AND A GENUINELY PARTIAL ONE: every other catalogue family fetched. This is
 // the ordinary state of a browser that has used the designer for a while, and
 // it is the input under which an ordering claim keyed on installedness stops
 // being two runs — see the run-structure test below.
-const halfHeld: ReadonlySet<string> = new Set(catalogueFaces.filter((_, index) => index % 2 === 0).map((face) => face.family))
+// HALF THE CATALOGUE FAMILIES, SPLIT BY FAMILY AND NOT BY ROW. It was
+// `catalogueFaces.filter((_, index) => index % 2 === 0)`, which was half the
+// tier while every family had exactly one row; since spec-install-all-face-cuts
+// story 3 a four-cut family always has an even-indexed row, so that expression
+// would have quietly held NEARLY EVERY family and turned the partial-held
+// measurement below into a tautology.
+const halfHeld: LocalFaceHoldings = holdings(new Set([...everyLocalFamily].filter((_, index) => index % 2 === 0)))
 
 // STORY 16.1 — THE TWO TIERS AND THE JOIN BETWEEN THEM (D-16.R.3, D-16.R.2).
 
@@ -145,13 +160,15 @@ describe('the local face tier', () => {
     // catalogue face") and
     // `src/font-provenance.test.ts` ("is asserted over the whole committed tier").
     // Raised 20 -> 31 by Story 16.1a, which added ten families to the local
-    // face tier. D-16.R.12: "a floor left at 21 while the tier grows to 30 is
+    // face tier, and 31 -> 107 by spec-install-all-face-cuts story 3, which
+    // gave those families the cuts they publish. IT IS A FACE COUNT, NOT A
+    // FAMILY COUNT: the tier still holds 31 families. D-16.R.12: "a floor left at 21 while the tier grows to 30 is
     // a floor that stops measuring the thing it was built to measure" — and
     // D-16.R.18's correction to it: a floor that exists in N files is N
     // floors, so a batch that raises one and leaves the rest behind is
     // silently unmeasured at the ones it left.
 
-    expect(catalogueFaces.length, 'the local face tier population floor; Story 16.1a raised it 20 -> 31').toBeGreaterThanOrEqual(31)
+    expect(catalogueFaces.length, 'the local face tier population floor; Story 16.1a raised it 20 -> 31, and spec-install-all-face-cuts story 3 raised it 31 -> 107 when the tier gained its cuts').toBeGreaterThanOrEqual(107)
     expect(catalogueFaces.length).toBe(manifest.length)
     for (const face of catalogueFaces) expect(localTierHolds(face.family)).toBe(true)
   })
@@ -220,8 +237,13 @@ describe('the local face tier', () => {
   // typed in from a previous run — a hardcoded "before" is a second authority
   // that ages, and this one cannot.
   it('raised the addable count by exactly the batch size', () => {
-    const beforeLocal = new Set(catalogueFaces.map((face) => face.family).filter((family) => !batchFamilies.includes(family)))
-    expect(beforeLocal.size, 'the pre-batch tier is the catalogue minus the ten').toBe(catalogueFaces.length - batchFamilies.length)
+    const localFamilies = new Set(catalogueFaces.map((face) => face.family))
+    const beforeLocal = new Set([...localFamilies].filter((family) => !batchFamilies.includes(family)))
+    // THE CATALOGUE IS COUNTED IN FAMILIES, NOT ROWS. It was
+    // `catalogueFaces.length - batchFamilies.length`, which was the same number
+    // while each family had exactly one row; spec-install-all-face-cuts story 3
+    // gave a family up to four, so the row count is 107 over 31 families.
+    expect(beforeLocal.size, 'the pre-batch tier is the catalogue minus the ten').toBe(localFamilies.size - batchFamilies.length)
     const beforeWeb = familyIndex.filter((row) => !row.variable && !beforeLocal.has(row.family))
     const beforeAddable = beforeWeb.length + beforeLocal.size
     expect(
@@ -264,7 +286,10 @@ describe('what the browser shows and what it says about it', () => {
   // rows are dropped, and keeping the inequality asserted is what stops the two
   // being confused for one another.
   it('reports the ADDABLE count, which is strictly smaller than the published one', () => {
-    expect(addableFamilyCount).toBe(webFamilies.length + catalogueFaces.length)
+    // FAMILIES, NOT ROWS. `addableFamilyCount` is what the browser's results
+    // toolbar prints beside a list that offers each family exactly ONCE
+    // (CAP-5), so a catalogue of 107 rows over 31 families must contribute 31.
+    expect(addableFamilyCount).toBe(webFamilies.length + new Set(catalogueFaces.map((face) => face.family)).size)
     expect(addableFamilyCount).toBeLessThan(familyIndexPublishedFamilies)
   })
 
@@ -457,7 +482,7 @@ describe('the faces this machine already holds', () => {
     expect(at).toBeLessThan(onThisMachineTier.indexOf(false))
     // THE POPULATION IS STATED BESIDE THE STRUCTURE. Two runs over a list with
     // only one kind of row in it would be a vacuous pass.
-    expect(onThisMachineTier.filter((flag) => flag).length).toBeGreaterThan(catalogueFaces.length)
+    expect(onThisMachineTier.filter((flag) => flag).length).toBeGreaterThan(new Set(catalogueFaces.map((face) => face.family)).size)
     expect(onThisMachineTier.filter((flag) => !flag).length).toBeGreaterThan(0)
   })
 
@@ -508,9 +533,9 @@ describe('the faces this machine already holds', () => {
     // AND THE CLAUSE STORY 2 ADDED: a catalogue family this browser has not
     // fetched is NOT installed, whatever the release ships. The web tier is
     // still never installed.
-    expect(familyIsInstalled(local, new Set())).toBe(false)
-    expect(familyIsInstalled(fromStore, new Set())).toBe(true)
-    expect(familyIsInstalled(web, new Set([web.family]))).toBe(false)
+    expect(familyIsInstalled(local, noneHeld)).toBe(false)
+    expect(familyIsInstalled(fromStore, noneHeld)).toBe(true)
+    expect(familyIsInstalled(web, holdings(new Set([web.family])))).toBe(false)
     // AND THE CLAUSE spec-install-all-face-cuts STORY 1 ADDED (D-4/D-5), WHICH
     // IS `familyIsComplete`'s AND NOT THIS PREDICATE'S (D-8). Holding the
     // Regular of a family that publishes a Bold is INCOMPLETE, and is offered
@@ -540,6 +565,45 @@ describe('the faces this machine already holds', () => {
     const stalledItsBold = offeredFamilies(family, [stored(family, 'e'.repeat(64))], [census(family, ['Regular', 'Bold'], [{ style: 'Bold', reason: 'its body stopped responding', permanence: 'transient' }])]).find((source) => source.family === family)!
     expect(familyIsComplete(stalledItsBold, allHeld), 'a transient refusal settles nothing').toBe(false)
     expect(familyIsInstalled(stalledItsBold, allHeld), 'and the family is usable while it waits to be retried').toBe(true)
+  })
+
+  // THE LOCAL TIER GETS THE SAME SPLIT THE STORED TIER ALREADY HAD
+  // (spec-install-all-face-cuts story 3, finding F1).
+  //
+  // Both arms were `heldLocalFamilies.has(source.family)` over the SAME all-cuts
+  // set, so the two predicates were the identical expression and the doc comment
+  // describing their difference described nothing. A committed family holding its
+  // Regular alone therefore read NOT INSTALLED and dropped out of AVAILABLE
+  // LOCALLY — a font whose bytes are in this browser's cache, unusable, with
+  // nothing on screen to say why.
+  //
+  // THE PATH IS REACHABLE WITH NO INSTALL AT ALL, which is what makes this worth
+  // its own test rather than a line in the one above: `browserSpecimenBytes`
+  // fetches each local row's Regular to draw its specimen, so merely OPENING the
+  // font browser caches one cut of every family on the page.
+  it('keeps a committed family whose Regular alone is cached usable, and still offers its missing cuts', () => {
+    const family = catalogueFaces[0]!.family
+    const local = offeredFamilies(family).find((source) => source.tier === 'local' && source.family === family)!
+    // NON-VACUITY: the family must declare more than one cut, or "usable but
+    // incomplete" is a state it cannot be in.
+    expect(local.tier === 'local' && local.faces.length, `${family} must declare more than one cut for this split to be measurable`).toBeGreaterThan(1)
+
+    const regularOnly = holdings(new Set([family]), new Set())
+    expect(familyIsInstalled(local, regularOnly), 'the Regular is cached, so the family can be applied and painted offline').toBe(true)
+    expect(familyIsComplete(local, regularOnly), 'cuts are still missing, so the font browser must keep offering it').toBe(false)
+
+    // AND THE TWO ENDS OF THE SAME AXIS, so this cannot pass by answering `true`
+    // and `false` to everything.
+    expect(familyIsInstalled(local, allHeld)).toBe(true)
+    expect(familyIsComplete(local, allHeld)).toBe(true)
+    expect(familyIsInstalled(local, noneHeld), 'nothing cached is not usable').toBe(false)
+    expect(familyIsComplete(local, noneHeld)).toBe(false)
+
+    // ⚠ AND THE FIELDS ARE NOT INTERCHANGEABLE. A record whose `usable` and
+    // `complete` disagree is exactly the input the fused implementation could
+    // not represent; asserting over it is what stops the two predicates being
+    // collapsed back into one expression.
+    expect(regularOnly.usable).not.toEqual(regularOnly.complete)
   })
 })
 

@@ -118,10 +118,26 @@ const chromeFamilies = ['IBM Plex Sans', 'IBM Plex Mono', 'IBM Plex Sans Thai'] 
 // out of the hand-written-rule machinery built for the other three faces.
 const catalogueEngineRobotoFile = 'public/fonts/roboto/Roboto-Regular.ttf'
 
-/** Family names `font-catalogue.json` declares, read as data rather than re-derived from build-wasm.mjs's loop. */
+/**
+ * CSS family names `font-catalogue.json` declares, read as data rather than
+ * re-derived from build-wasm.mjs's loop.
+ *
+ * ⚠ IT RETURNS THE DERIVED CUT NAMES, NOT THE ROWS' `family` FIELD
+ * (spec-install-all-face-cuts, story 3). The two were the same list while the
+ * catalogue held one upright Regular per family; a row now carries a `style`
+ * and the emitted `@font-face` names it `<family> <cut>`, so the question this
+ * helper answers — "which families does the CATALOGUE's templated rule already
+ * declare, so the hand-written-rule parse below must not require one" — is
+ * about the derived name. Returning the base family would answer `Inter` for a
+ * row emitted as `Inter Bold` and would leave a genuine cut name unmatched.
+ *
+ * It is a SET-LIKE list: `Inter` appears once here even though four rows carry
+ * it, because a family's four rows derive four distinct CSS names and only the
+ * Regular's is the bare family.
+ */
 function catalogueDeclaredFamilies(): ReadonlyArray<string> {
-  const catalogue = JSON.parse(fs.readFileSync(path.join(designerRoot, 'font-catalogue.json'), 'utf8')) as ReadonlyArray<{ family: string }>
-  return catalogue.map((entry) => entry.family)
+  const catalogue = JSON.parse(fs.readFileSync(path.join(designerRoot, 'font-catalogue.json'), 'utf8')) as ReadonlyArray<{ family: string; style: string }>
+  return catalogue.map((entry) => entry.style === 'Regular' ? entry.family : `${entry.family} ${entry.style === 'BoldItalic' ? 'Bold Italic' : entry.style}`)
 }
 
 // withoutComments strips line and block comments while leaving string and
@@ -1137,11 +1153,23 @@ describe('the family names the browser is given are the files the engine measure
     //
     // ELEVEN AND TEN SINCE STORY 11.1, three and four before it. Note which
     // side each of the seven cuts landed on: `Roboto Bold`, `Roboto Italic`
-    // and `Roboto Bold Italic` are HAND-WRITTEN, not catalogue-routed, because
-    // a bold cut cannot be a catalogue face at all — `font-catalogue.test.ts`
-    // holds every catalogue entry to upright Regular 400. Only `Roboto` itself
-    // is the dual-vocabulary face; its three cuts are ordinary members of the
-    // set below and are digest-tied here like every other one.
+    // and `Roboto Bold Italic` are HAND-WRITTEN, not catalogue-routed. Only
+    // `Roboto` itself is the dual-vocabulary face; its three cuts are ordinary
+    // members of the set below and are digest-tied here like every other one.
+    //
+    // ⚠ THE REASON RECORDED HERE WAS RETIRED BY spec-install-all-face-cuts
+    // STORY 3. It read "a bold cut cannot be a catalogue face at all —
+    // `font-catalogue.test.ts` holds every catalogue entry to upright Regular
+    // 400", and that rule is gone: the catalogue declares a `style` per row and
+    // carries every cut its 31 families publish, each held to its OWN instance.
+    // A bold cut is a perfectly ordinary catalogue face now.
+    //
+    // ROBOTO'S THREE CUTS STAY HAND-WRITTEN FOR A DIFFERENT AND STANDING
+    // REASON: they already ship as CORE release assets and as `fonts.Shipped()`
+    // keys, so redeclaring them in `font-catalogue.json` would emit a second
+    // byte-identical dist asset per cut, and retiring the hand-written copies
+    // would move the designer's 30/30 core-asset pin. Both were refused, which
+    // is why this split survives the rule that used to explain it.
     const shippedViaCatalogue = new Set(['Roboto'])
     const shippedHandWritten = Object.fromEntries(Object.entries(shipped).filter(([face]) => !shippedViaCatalogue.has(face)))
     expect([...engineNamed].sort()).toEqual(Object.keys(shippedHandWritten).sort())

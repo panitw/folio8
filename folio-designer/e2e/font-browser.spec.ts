@@ -150,7 +150,7 @@ test('staging several families states what is about to be installed, and Escape 
   // corrected in `font-browser-model.ts`, this line still matched the old one —
   // and `test:e2e:compile` is `tsc --noEmit`, which cannot see inside a regex.
   // Only executing it in a browser failed.
-  await expect(browser.getByText(/2 faces · one upright Regular each, no bold or italic/)).toBeVisible()
+  await expect(browser.getByText(/2 families · every cut each one publishes, up to four/)).toBeVisible()
   await expect(browser.getByRole('button', { name: 'Install 2 on this machine' })).toBeEnabled()
 
   // ESCAPE DISCARDS THE STAGED SET AND LEAVES THE DOCUMENT UNTOUCHED. Nothing

@@ -451,8 +451,11 @@ describe('the canvas paints with the faces the engine measured', () => {
     // Stories 8.4c/8.5 and seven weighted and sloped cuts — plus the ONE
     // catalogue rule the emitter templates over `font-catalogue.json`. It is a
     // count of RULE SPELLINGS IN THE GENERATOR, not of emitted rules — the
-    // catalogue's thirty-one are counted where they are declared, in
-    // `src/font-catalogue.test.ts`, against the manifest and the binaries.
+    // catalogue's one hundred and seven are counted where they are declared,
+    // in `src/font-catalogue.test.ts`, against the manifest and the binaries —
+    // 31 until spec-install-all-face-cuts story 3 gave the committed tier the
+    // cuts its families publish, and ONE rule spelling either way, because the
+    // emitter templates over the manifest rather than writing a rule out.
     expect(wellFormed.length, `read no well-formed @font-face rules out of ${generatorPath}`).toBe(14)
     expect(
       declared,
@@ -833,9 +836,15 @@ describe('the canvas paints with the faces the engine measured', () => {
     //
     // TEN SINCE STORY 11.1, three before it: the three Story 2.2 Noto faces
     // plus the seven weighted and sloped cuts. Roboto's three CUTS are on this
-    // side of the split, not the catalogue side — a bold cut cannot be a
-    // catalogue face, because `font-catalogue.test.ts` holds every catalogue
-    // entry to upright Regular 400.
+    // side of the split, not the catalogue side.
+    //
+    // ⚠ NOT BECAUSE "a bold cut cannot be a catalogue face" — that rule was
+    // retired by spec-install-all-face-cuts story 3, which gave every catalogue
+    // row its own `style` and the committed tier every cut its families
+    // publish. Roboto's three cuts stay here because they already ship as CORE
+    // release assets and as `fonts.Shipped()` keys: a catalogue row for them
+    // would emit a second byte-identical dist asset apiece, and retiring these
+    // would move the designer's 30/30 core-asset pin.
     const catalogueFamilySet = new Set(catalogueDeclaredFamilies())
     const handWrittenEngineFaces = engineFaces.filter((face) => !catalogueFamilySet.has(face))
     expect(handWrittenEngineFaces, 'expected the three Story 2.2 Noto faces plus Story 11.1\'s seven cuts, once the catalogue-declared half (Roboto) is set aside').toHaveLength(10)

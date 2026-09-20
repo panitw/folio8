@@ -106,10 +106,32 @@ const assets = {
   plexSansThai: fingerprint(join(designerRoot, 'public', 'fonts', 'ibmplexsansthai', 'IBMPlexSansThai-Regular.ttf'), 'ibm-plex-sans-thai.ttf'),
   // STORY 11.1'S SEVEN WEIGHTED AND SLOPED CUTS. Each is a face of its own
   // under its own family name (D-11.1.5), so each needs its own slot, its own
-  // hand-written rule below and its own `shippedFamilies` entry — and NO
-  // catalogue entry, because `src/font-catalogue.test.ts` asserts every
-  // catalogue face is an upright Regular 400 and a bold cut fails all four of
-  // those checks. The catalogue legitimately stays Regular-only.
+  // hand-written rule below and its own `shippedFamilies` entry.
+  //
+  // ⚠ THE REASON THEY ARE HERE IS NO LONGER "THE CATALOGUE STAYS REGULAR-ONLY"
+  // (spec-install-all-face-cuts, story 3). It was, and that rule is now retired:
+  // `font-catalogue.json` declares a `style` per row and carries every cut the
+  // 31 committed families publish, so `src/font-catalogue.test.ts` holds each
+  // row to its OWN declared instance rather than to a blanket upright Regular.
+  // These seven stay hardcoded for the reason the other six do — they are
+  // ENGINE and DESIGN-SYSTEM faces, named one by one in `src/main.tsx`,
+  // `src/engine.worker.ts`, the S1 payload and `fonts.Shipped()` — not because
+  // a cut could not be a catalogue row.
+  //
+  // ⚠ ROBOTO IS THE ONE FAMILY WHOSE CUTS COME FROM A DIFFERENT PLACE THAN
+  // EVERY OTHER FAMILY'S, AND THAT JOIN IS DELIBERATE. `Roboto Bold`,
+  // `Roboto Italic` and `Roboto Bold Italic` are the three slots immediately
+  // below: shipped faces, CORE-tier release assets, and `fonts.Shipped()` keys.
+  // The catalogue declares plain `Roboto` (the `catalogue-roboto` asset, core
+  // since spec-deferred-offline-cache story 3) and declares NO Roboto cut, so
+  // the family's four faces are assembled across the two halves of this file —
+  // the base from the catalogue loop, the three cuts from these hardcoded
+  // slots. Redeclaring them in `font-catalogue.json` would emit a second,
+  // byte-identical dist asset per cut and cost three cache slots for nothing;
+  // retiring the hardcoded copies would move the 30/30 core pin in
+  // `src/release-payload.ts`. Both are refused, and the seam is stated here,
+  // in `src/shipped-face-cuts.ts` and in `src/font-index.ts` rather than left
+  // to be rediscovered.
   //
   // ONE `fingerprint()` CALL IS ONE DIST ASSET IS ONE CACHE SLOT, and being
   // inside the engine wasm exempts nothing: the three Story 2.2 Notos are
@@ -149,12 +171,19 @@ const assets = {
 // this script every time the catalogue grows — is the shape this deliberately
 // does not take.
 //
-// THE EMITTED CSS SHAPE IS IDENTICAL to the six rules below it — one static
-// Regular per family, `format('truetype')`, `font-display: swap`, and NO
-// `font-weight` and NO `font-style` descriptor — so AC6's "no bold, no italic,
-// no variable axis" stays observable from the generated file itself rather than
-// from prose. `src/font-catalogue.test.ts` reads each committed binary's own
-// `name` and `OS/2` tables and holds the catalogue to that.
+// THE EMITTED CSS SHAPE IS IDENTICAL to the thirteen rules below it — ONE
+// STATIC FACE PER RULE UNDER ITS OWN CSS FAMILY NAME, `format('truetype')`,
+// `font-display: swap`, and NO `font-weight` and NO `font-style` descriptor.
+// The catalogue used to be one upright Regular per family and the rule's family
+// name was therefore the row's family; since spec-install-all-face-cuts story 3
+// a row carries a `style` and the rule's family name is DERIVED from the pair
+// by `cssFamilyOf` below — `Inter` for the Regular, `Inter Bold` for the Bold —
+// exactly as the seven hardcoded cuts are named. Descriptors are still refused:
+// they would put a weight axis into CSS that the document format excludes, and
+// four rules under one bare family name with no descriptors would silently let
+// the last one win. `src/font-catalogue.test.ts` reads each committed binary's
+// own `name`, `OS/2`, `head` and `post` tables and holds every row to the
+// instance it declares.
 //
 // These faces reach Vite's asset graph through the `url()` in the emitted
 // stylesheet alone — they are deliberately NOT added to `runtimeAssetUrls`,
@@ -290,10 +319,62 @@ for (const [script, family] of Object.entries(scriptFallbacks)) {
   if (!mirrorFamilies.includes(family)) throw new Error(`scriptFallbacks maps the script '${script}' to the face ${JSON.stringify(family)}, which src/shipped-face-cuts.ts declares no row for (it declares ${mirrorFamilies.join(', ')}). A pick computes a tail entry as shippedFamilyEntry(face) ?? face, so a face with no row falls back to a BARE NAME — a legal entry that renders correctly and can never bold. Every document whose ${script} fallback came from a pick would silently lose that family's cuts, with nothing anywhere to say so.`)
 }
 
+// THE FOUR CUTS A ROW MAY DECLARE, AS A CLOSED SET
+// (spec-install-all-face-cuts, story 3). The document format closes an entry's
+// variant set to `bold`/`italic`/`boldItalic` beside the base face, so a fifth
+// weight has nowhere to be written and must not reach the catalogue by typo.
+// ⚠ THESE ARE THE FORMAT'S KEY SPELLINGS AND THEY DO **NOT** ALL MATCH THE
+// STORE'S. `Regular`, `Bold` and `Italic` are the same string in both
+// vocabularies — `src/font-source.ts` stamps a fetched face with them and
+// `regularCutOf` resolves a family's base by `Regular` — but the combined cut
+// is `BoldItalic` HERE and `Bold Italic` THERE, because this set is the
+// `.folio` entry's closed variant set (`bold`/`italic`/`boldItalic`) while the
+// store's is the RIBBI subfamily name the binary calls itself. Both are
+// correct; anything joining a catalogue row to a stored face has to say which
+// it is using, and `src/App.tsx`'s `CATALOGUE_CUT_STYLES` is where that join is
+// spelled. A row spelt `bolditalic` in either vocabulary is a face no cut
+// resolver could ever find, which is what this closed set refuses.
+const CATALOGUE_STYLES = ['Regular', 'Bold', 'Italic', 'BoldItalic']
+
+/**
+ * THE CSS FAMILY NAME OF A ROW, DERIVED FROM (family, style) AND NEVER STORED.
+ *
+ * A row is `{ family: "Inter", style: "Bold" }` — the BASE family plus the cut —
+ * and that is forced from both ends. The binary's own `name` table calls itself
+ * family `Inter`, subfamily `Bold` (see the note above the hand-written rules),
+ * and `src/font-catalogue.test.ts` asserts the row's `family` against those
+ * bytes; while the browser needs a DISTINCT family name per cut, because these
+ * rules carry no `font-weight` and no `font-style` descriptor. Storing the CSS
+ * name in the row would put a second authority on a string that is a pure
+ * function of two fields already there.
+ *
+ * ⚠ `src/shipped-face-cuts.ts` DOES NOT DERIVE THESE NAMES — it WRITES THEM
+ * OUT, one literal per cut (`{ family: 'Noto Sans', bold: 'Noto Sans Bold', … }`),
+ * and its own comment says nothing may derive a family from a cut's key
+ * because that would reinstate the naming-convention weight carrier D-B
+ * foreclosed. So this derivation produces the SAME STRINGS that module spells
+ * by hand, and is deliberately not shared with it: the hand-written mirror is
+ * tied to `fonts.Shipped()`'s key set by its own test, and a shared derivation
+ * would make that tie a property of this function instead of of the engine.
+ * Keep the two spelling the same names; do not make either read the other.
+ */
+const cssFamilyOf = (family, style) => style === 'Regular' ? family : `${family} ${style === 'BoldItalic' ? 'Bold Italic' : style}`
+
 const catalogueIds = new Set()
+// KEYED BY THE DERIVED CSS FAMILY NAME, WHICH IS (family, style) SPELT ONCE.
+// It used to be keyed by `family` alone, which was the uniqueness key while the
+// catalogue was one upright Regular per family; it now has to admit `Inter`
+// four times and still refuse two rows claiming the same cut. The derived name
+// is injective on the pair, so one Set does both jobs — and it is the string
+// the browser actually resolves a face through, so it is also the collision
+// that would matter. Seeded from `shippedFamilies` for the reason it always
+// was: a catalogue row must not redeclare one of the thirteen hand-written
+// rules' families, and that now includes a CUT of one — a row
+// `{ family: "Roboto", style: "Bold" }` would derive `Roboto Bold` and be
+// refused here, which is exactly the duplicate this story rules out.
 const catalogueFamilies = new Set(shippedFamilies)
 const catalogueFaces = catalogue.map((entry) => {
-  for (const field of ['id', 'directory', 'file', 'family', 'licence']) {
+  for (const field of ['id', 'directory', 'file', 'family', 'licence', 'style']) {
     if (typeof entry?.[field] !== 'string' || entry[field] === '') throw new Error(`font-catalogue.json entry is missing a ${field}: ${JSON.stringify(entry)}`)
   }
   if (!Array.isArray(entry.scripts) || entry.scripts.length === 0) throw new Error(`font-catalogue.json face ${entry.id} declares no scripts; the designer proposes a fallback tail from this list, and a face that claims nothing would be given a fallback for every script including its own`)
@@ -309,12 +390,14 @@ const catalogueFaces = catalogue.map((entry) => {
   for (const [field, value] of [['directory', entry.directory], ['file', entry.file]]) {
     if (!segmentShape.test(value) || value.includes('..')) throw new Error(`font-catalogue.json face ${entry.id} declares a ${field} ${JSON.stringify(value)} that is not a single plain path segment; it is joined into a filesystem path, so a separator or a '..' would read bytes from outside public/fonts/`)
   }
+  if (!CATALOGUE_STYLES.includes(entry.style)) throw new Error(`font-catalogue.json face ${entry.id} declares the style ${JSON.stringify(entry.style)}, which is not one of ${CATALOGUE_STYLES.join(', ')}; the style names the cut a chain entry may declare, the document format closes that set to the base face plus bold/italic/boldItalic, and a misspelt cut is a face no resolver can find`)
   if (!familyShape.test(entry.family)) throw new Error(`font-catalogue.json face ${entry.id} declares a family ${JSON.stringify(entry.family)} carrying a character that is CSS syntax; it is interpolated unescaped into font-family: '<name>' in the emitted stylesheet`)
-  if (catalogueFamilies.has(entry.family)) throw new Error(`font-catalogue.json declares the family ${JSON.stringify(entry.family)} twice, or over a family the thirteen shipped rules already declare`)
+  const cssFamily = cssFamilyOf(entry.family, entry.style)
+  if (catalogueFamilies.has(cssFamily)) throw new Error(`font-catalogue.json declares the cut ${JSON.stringify(entry.family)} / ${JSON.stringify(entry.style)} twice, or over a family the thirteen shipped rules already declare: both resolve to the CSS family ${JSON.stringify(cssFamily)}, and two @font-face rules under one name let the last one win silently`)
   catalogueIds.add(entry.id)
-  catalogueFamilies.add(entry.family)
+  catalogueFamilies.add(cssFamily)
   if (!entry.file.endsWith('.ttf')) throw new Error(`font-catalogue.json face ${entry.id} is ${entry.file}; the emitted @font-face rule declares format('truetype') and the engine decodes only font/ttf and font/otf`)
-  return { ...entry, filename: fingerprint(join(designerRoot, 'public', 'fonts', entry.directory, entry.file), `${CATALOGUE_ASSET_PREFIX}${entry.id}.ttf`) }
+  return { ...entry, cssFamily, filename: fingerprint(join(designerRoot, 'public', 'fonts', entry.directory, entry.file), `${CATALOGUE_ASSET_PREFIX}${entry.id}.ttf`) }
 })
 
 // THE COPYRIGHT LINE AND THE LICENCE TEXT, READ OFF COMMITTED BYTES (Story 8.6).
@@ -332,14 +415,16 @@ const catalogueFaces = catalogue.map((entry) => {
 //
 //   copyright — nameID 0 of the face's OWN `name` table, which is the one
 //   statement of a face's provenance that cannot be edited from outside the
-//   binary. Measured, not assumed: all 31 committed faces carry it, and a face
+//   binary. Measured, not assumed: all 107 committed faces carry it, and a face
 //   carrying none throws out of `faceCopyright` below rather than emitting an
 //   empty string, so this stays measured as the catalogue grows.
 //
 // This is ~4 KB of licence text PER FACE, NOT per distinct licence:
 // `licenceTextOf` below reads the `LICENSE*` file committed beside THAT face's
-// own binary, and every catalogue row inlines its own copy — so today's 31
-// faces emit 31 texts even though only three SPDX identifiers classify them.
+// own binary, and every catalogue row inlines its own copy — so today's 107
+// faces emit 107 texts even though only three SPDX identifiers classify them,
+// and a family's four cuts each carry the same text their shared upstream
+// `LICENSE*` states.
 // That is deliberate, and the block below is why: keying these by identifier is
 // exactly what published another project's terms. (The DOCUMENT likewise
 // carries one copy per embedded face — deliberately, because an asset passed on
@@ -371,13 +456,24 @@ const faceCopyright = (file) => {
 // so two OFL-1.1 faces ship two DIFFERENT texts, and the identifier is a
 // classification of the terms, never a substitute for them.
 //
-// It costs bundle bytes: one ~4 KB text per face — 31 of them today — where
-// keying by identifier would emit one per DISTINCT licence, which is 3 across
-// that same catalogue. That is the correct trade and it is stated rather than
-// left to be rediscovered — a smaller bundle is not a reason to publish the
-// wrong terms. The `?url` imports below are unaffected, so no build ASSET is
-// added and the release cache does not grow by one slot on account of this
-// module (it is 61 since Story 11.1's seven cuts; it was 54 after Story 16.1a's batch).
+// It costs bundle bytes: one ~4 KB text per face — 107 of them since
+// spec-install-all-face-cuts story 3 took the catalogue from one Regular per
+// family to every cut those 31 families publish — where keying by identifier
+// would emit one per DISTINCT licence, which is 3 across that same catalogue.
+// That is the correct trade and it is stated rather than left to be
+// rediscovered — a smaller bundle is not a reason to publish the wrong terms.
+//
+// ⚠ AND THIS MODULE IS BUNDLED INTO THE **CORE** TIER, so the trade is now
+// priced against `maximumCoreCacheBytes` in src/release-payload.ts rather than
+// against nothing. Story 3 measured it: the texts are near-duplicates over
+// three SPDX identifiers and Brotli crushes them, so the core tier stayed under
+// its ceiling. If a later batch ever breaches it, the remedy is deduplicating
+// these texts by identifier — WITHOUT reintroducing the defect above, i.e. by
+// emitting one text per DISTINCT TEXT rather than per id — and never raising
+// the ceiling, which guards the first-load screen.
+//
+// The `?url` imports below are unaffected, so no build ASSET is added and the
+// release cache does not grow by one slot on account of this module.
 const licenceTextOf = (face) => {
   const directory = join(designerRoot, 'public', 'fonts', face.directory)
   const licences = readdirSync(directory).filter((name) => name.startsWith('LICENSE'))
@@ -445,9 +541,9 @@ const committedFaceSource = (face) => {
 //
 // NO NEW BUILD ASSET. Every `?url` import below names a file the catalogue loop
 // above already fingerprinted into `src/generated/runtime/`; this module names
-// them, it does not create them. The release cache's slot count is unchanged
-// by this module — 61 of the 64 since Story 11.1's seven cuts, 54 after Story
-// 16.1a's batch, 44 before that.
+// them, it does not create them. The release cache's slot count is unchanged by
+// this module — the catalogue LOOP is what spends slots, and it spends one per
+// declared cut rather than one per family since story 3.
 writeFileSync(join(generatedDir, 'font-catalogue.ts'),
   `// GENERATED by scripts/build-wasm.mjs from font-catalogue.json. Do not edit.\n`
   + catalogueFaces.map((face, index) => `import catalogueUrl${index} from './runtime/${face.filename}?url'`).join('\n')
@@ -457,7 +553,7 @@ writeFileSync(join(generatedDir, 'font-catalogue.ts'),
   + `// names them. A face's tail is the entries for the scripts it does NOT cover.\n`
   + `export const scriptFallbackFaces: ReadonlyArray<readonly [CatalogueScript, string]> = [${Object.entries(scriptFallbacks).map(([script, face]) => `[${JSON.stringify(script)}, ${JSON.stringify(face)}]`).join(', ')}]\n\n`
   + `export const catalogueFaces: ReadonlyArray<CatalogueFace> = [\n`
-  + catalogueFaces.map((face, index) => `  { id: ${JSON.stringify(face.id)}, family: ${JSON.stringify(face.family)}, style: "Regular", licence: ${JSON.stringify(face.licence)}, licenceText: ${JSON.stringify(licenceTextOf(face))}, copyright: ${JSON.stringify(faceCopyright(join(designerRoot, 'public', 'fonts', face.directory, face.file)))}, source: ${JSON.stringify(committedFaceSource(face))}, scripts: [${face.scripts.map((script) => JSON.stringify(script)).join(', ')}], url: catalogueUrl${index} },`).join('\n')
+  + catalogueFaces.map((face, index) => `  { id: ${JSON.stringify(face.id)}, family: ${JSON.stringify(face.family)}, style: ${JSON.stringify(face.style)}, licence: ${JSON.stringify(face.licence)}, licenceText: ${JSON.stringify(licenceTextOf(face))}, copyright: ${JSON.stringify(faceCopyright(join(designerRoot, 'public', 'fonts', face.directory, face.file)))}, source: ${JSON.stringify(committedFaceSource(face))}, scripts: [${face.scripts.map((script) => JSON.stringify(script)).join(', ')}], url: catalogueUrl${index} },`).join('\n')
   + `\n]\n`)
 
 // THE BUNDLED DOCUMENTATION: six hand-written HTML pages from the repository's
@@ -580,8 +676,16 @@ if (shippedRules.split('@font-face').length - 1 !== shippedFamilies.length) thro
 const runtimeFontRules = shippedRules
   // AND THE CATALOGUE, one rule per declared face, emitted from the manifest
   // rather than written out. Same shape as the thirteen above, deliberately: no
-  // `font-weight`, no `font-style`, one static Regular per family (AC6).
-  + catalogueFaces.map((face) => `@font-face { font-family: '${face.family}'; src: url('./runtime/${face.filename}') format('truetype'); font-display: swap; }\n`).join('')
+  // `font-weight`, no `font-style`, ONE STATIC FACE PER RULE.
+  //
+  // THE FAMILY IS `face.cssFamily` — the (family, style) derivation — NOT
+  // `face.family`. Since spec-install-all-face-cuts story 3 a family declares
+  // up to four rows, and emitting all four under the bare family name with no
+  // descriptors would let the last rule win silently for every cut of every
+  // family, with nothing downstream able to see it: `canvasFaceAssets` below
+  // counts array entries rather than Map keys, so a four-into-one collapse
+  // would pass its own population check.
+  + catalogueFaces.map((face) => `@font-face { font-family: '${face.cssFamily}'; src: url('./runtime/${face.filename}') format('truetype'); font-display: swap; }\n`).join('')
 writeFileSync(join(generatedDir, 'runtime-fonts.css'), runtimeFontRules)
 
 // THE CANVAS'S OWN FAMILY → FILE MAP, READ BACK OUT OF THE STYLESHEET THIS
@@ -592,7 +696,8 @@ writeFileSync(join(generatedDir, 'runtime-fonts.css'), runtimeFontRules)
 // rather than substituting and correcting itself once a paint has already
 // failed. To do that the page has to turn a face NAME — what a chain entry
 // carries — into the asset URL the browser would have gone to. Nothing in
-// `src/` could: `font-catalogue.ts` knows the 31 catalogue families and
+// `src/` could: `font-catalogue.ts` knows the 107 catalogue faces — 31 families
+// and the cuts they publish, each under its own derived CSS family name — and
 // `offline-assets.ts` knows the shipped files under camel-case slot names that
 // are not face names at all, and neither half knows it is half of anything.
 //

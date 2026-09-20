@@ -69,7 +69,28 @@ const minimumCacheAssets = 10
 // sample JSON, thumbnail), so the four planned examples take twelve, and the
 // remaining margin is room for the next unrelated batch rather than a ceiling
 // fitted to this one.
-const maximumCacheAssets = 90
+//
+// RAISED 90 → 166 BY THE COMMITTED TIER'S CUTS (spec-install-all-face-cuts,
+// story 3). The catalogue went from one upright Regular per family to every cut
+// those 31 families publish — 31 rows to 107, ONE ROW BEING ONE DIST ASSET
+// BEING ONE CACHE SLOT — and the release went from 80 emitted assets to 156,
+// measured from `dist/offline-release-manifest.json` after `npm run build` and
+// not projected. 166 is that measurement plus the SAME 10-slot reserve today's
+// 90 carried over 80: the margin is deliberately the one this file already
+// used, so the ceiling is a decision about headroom rather than a number
+// fitted to one batch.
+//
+// ⚠ IT IS DERIVED FROM 156, NOT FROM THE 158 THE STORY'S FROZEN INTENT
+// PROPOSED. That figure predates the owner's DM Sans ruling: `DMSans-Italic.ttf`
+// cannot prove its own style upstream — the ITALIC bit is clear and macStyle is
+// 0x0 while `italicAngle` is -10 — so the italic and its bold-italic sibling are
+// deliberately withheld rather than admitted by exception, and the tier ships
+// that family's Regular and Bold alone. Two fewer faces, two fewer slots.
+//
+// ⚠ THE BLOCKING CORE TIER DID NOT MOVE. All 76 new faces are `deferred`
+// (`scripts/offline-release-contract.mjs`), so the core pins below are still
+// 30/30 and none of this is in the first load.
+const maximumCacheAssets = 166
 // THE APPROACH WARNING'S THRESHOLD (Story 11.1, D-11.1.10). NOT A BOUND:
 // nothing in this module reads it, nothing rejects a payload for crossing it,
 // and `maximumCacheAssets` above is still the only number that refuses a
@@ -88,7 +109,13 @@ const maximumCacheAssets = 90
 // RAISED 56 → 82 WITH THE MAXIMUM (startup templates, story 1): still eight
 // below the ceiling, the same one-comparable-batch margin, after the twelve
 // slots four examples take.
-const warnCacheAssets = 82
+//
+// RAISED 82 → 158 WITH THE MAXIMUM AGAIN (spec-install-all-face-cuts, story 3):
+// still exactly eight below the ceiling, the same margin this threshold has
+// carried since Story 11.1, over the measured 156. So the release emitted by
+// this story is two slots under the warning and ten under the bound, and the
+// next comparable batch is the one that has to say so out loud.
+const warnCacheAssets = 158
 // THE DECLARATION ABOVE IS SHAPED FOR A TEXT READER IN ANOTHER LANGUAGE
 // (`scripts/offline-release-contract.mjs` matches `^const <name> = <digits>$`),
 // not for a TypeScript importer, so nothing in `src/` reads it. It is exported
@@ -107,6 +134,17 @@ const warnCacheAssets = 82
 // A REFERENCE, never a second copy of the value: the `const` line stays the
 // single authority, and changing it changes this too.
 export const cacheAssetApproachWarning = warnCacheAssets
+
+// AND THE BOUND ITSELF, EXPORTED ON THE SAME TERMS AND FOR THE SAME REASON
+// (spec-install-all-face-cuts, story 3). `src/release-payload.test.ts` builds
+// the over-the-bound red proof by manufacturing a payload with one asset too
+// many, and that fixture spelled the number out — `assetCount = 91` beside a
+// `const maximumCacheAssets = 90` — which is a SECOND AUTHORITY on the bound
+// and went stale the moment this story raised it. The fixture now derives its
+// length from here, so a raise moves the proof with the number it proves.
+//
+// A REFERENCE, never a second copy of the value.
+export const cacheAssetCeiling = maximumCacheAssets
 
 // THE CORE TIER'S BOUND, AND IT IS A PIN RATHER THAN AN ENVELOPE
 // (spec-deferred-offline-cache story 1, owner decision 2026-09-19).
@@ -177,6 +215,46 @@ const maximumCoreCacheAssets = 30
 // raising `maximumCacheAssets` is the act that admits a longer one. Re-measure
 // before moving it, and move `asset-tiers.md` in the same change.
 const maximumCoreCacheBytes = 6553600
+// AND ITS APPROACH WARNING, ON THE EXACT TERMS `warnCacheAssets` ALREADY HAS
+// (spec-install-all-face-cuts story 3, owner-authorised at review).
+//
+// THE COUNT BOUND HAS HAD A WARNING SINCE STORY 11.1 AND THE BYTE CEILING HAD
+// NONE, so its first and only signal was a hard `npm run build` failure with
+// the release already assembled. That asymmetry stopped being academic when
+// this story landed 76 committed faces: `src/generated/font-catalogue.ts`
+// inlines a ~4 KB licence text, a copyright and a source string PER FACE and is
+// bundled into the core tier, which took the blocking download to 6,407,803
+// Brotli bytes — 97.8% of this ceiling, with 145,797 bytes left. The next
+// batch of any size finds out by breaking the build.
+//
+// 6,422,528 IS THE CEILING LESS 131,072 BYTES (128 KiB), AND THE TWO NUMBERS
+// IT IS DERIVED FROM ARE BOTH MEASURED. This story cost the core tier ~14,100
+// Brotli bytes (6,392,910 -> 6,407,803) for 76 faces' worth of inlined licence,
+// copyright and provenance text. Today's margin under the CEILING is 145,797
+// bytes, so:
+//
+//   · the build is SILENT on the release that declares this threshold — a
+//     warning firing on its own commit is one nobody reads;
+//   · the NEXT batch the size of this one crosses the threshold and the build
+//     says so, which is the signal that was missing;
+//   · the ceiling itself is about nine such batches away, so the warning
+//     arrives with room to act rather than as a post-mortem.
+//
+// `warnCacheAssets` is "one comparable batch below the ceiling" because a batch
+// there is a decision somebody makes. The core WEIGHT moves on its own with
+// every bundle change, so this one is deliberately several batches wide: a
+// threshold 14 KB under the ceiling would be crossed and breached by the same
+// commit, which is the failure it exists to precede.
+//
+// IT IS NOT A BOUND AND NOTHING FAILS ON IT. `maximumCoreCacheBytes` above is
+// still the only number that refuses a release; this one decides when the build
+// says out loud how much margin is left, and it warns with the MARGIN rather
+// than the weight for the reason the asset warning does — the number nobody
+// prints is the number nobody watches.
+//
+// It obeys the same `const <name> = <digits>` shape on a line of its own,
+// because `scripts/offline-release-contract.mjs` reads it as text.
+const warnCoreCacheBytes = 6422528
 // EXPORTED FOR THE REASON `cacheAssetApproachWarning` IS, AND WITH THE SAME
 // OBLIGATION: nothing in `src/` reads the `const` lines above (they are shaped
 // for a text reader in another language), so without a consumer `noUnusedLocals`
@@ -189,6 +267,14 @@ const maximumCoreCacheBytes = 6553600
 export const coreCacheAssetFloor = minimumCoreCacheAssets
 export const coreCacheAssetCeiling = maximumCoreCacheAssets
 export const coreCacheByteCeiling = maximumCoreCacheBytes
+// EXPORTED UNDER THE SAME OBLIGATION AS `cacheAssetApproachWarning`: nothing in
+// `src/` reads the `const` line above (it is shaped for a text reader in another
+// language), so without a consumer `noUnusedLocals` would be the only thing
+// holding it. `scripts/verify-offline-release.test.mjs` asserts it equals
+// `declaredCoreCacheByteWarning().warnCoreCacheBytes` — the value the regex
+// reader pulls out of this file's source text — which is what makes the
+// cross-language derivation a measurement rather than a convention.
+export const coreCacheByteApproachWarning = warnCoreCacheBytes
 const reject = (reason: S1PayloadRejection): S1PayloadResult => ({ ok: false, reason })
 
 export function parseS1Payload(value: unknown): S1PayloadResult {

@@ -31,6 +31,42 @@ describe('reading the face out of a refusal', () => {
   it('reads the map this build actually emits, not a fixture of it', () => {
     expect(canvasFaceAssets.get('Noto Sans SC'), 'the release must declare an asset for the CJK face, or the recovery has nothing to fetch').toBeDefined()
   })
+
+  // THE SAME LONGEST-FIRST DEFENCE, RE-PROVEN AT THE SCALE STORY 3 CREATED.
+  //
+  // `absent-face-recovery.ts` is NOT MODIFIED by spec-install-all-face-cuts
+  // story 3, and the base/cut ambiguity it defends against is PRE-EXISTING:
+  // `canvasFaceAssets` has carried `Noto Sans` beside `Noto Sans Bold`, and
+  // `Roboto` beside `Roboto Bold`, since Story 11.1. What story 3 changed is
+  // the SIZE of the candidate set — from 44 names to 120 — and the number of
+  // base/cut pairs in it, from 4 to 30-odd. A scan that reported the base for a
+  // message naming the cut would now be wrong for most of the committed tier
+  // rather than for two shipped families, so the property is measured here
+  // rather than assumed to have survived the population change.
+  it('resolves a cut against its own base at the whole catalogue\'s scale', () => {
+    const names = [...canvasFaceAssets.keys()]
+    // NON-VACUITY, IN BOTH DIRECTIONS. The set must be the big one, and it must
+    // genuinely contain names that are prefixes of other names — a candidate
+    // set with no such pair would make every assertion below a tautology.
+    expect(names.length, 'the canvas face map must carry the whole tier; story 3 took it from 44 names to 120').toBeGreaterThanOrEqual(120)
+    const prefixPairs = names.filter((name) => names.some((other) => other !== name && other.startsWith(`${name} `)))
+    expect(prefixPairs.length, 'no face name is a prefix of another, so the longest-first scan has nothing to be right about').toBeGreaterThan(20)
+
+    // EVERY BASE/CUT PAIR, NOT A SAMPLE: a bracket naming ONLY the cut must
+    // resolve to the cut alone, never to the base whose name sits inside it.
+    for (const base of prefixPairs) {
+      for (const cut of names.filter((name) => name.startsWith(`${base} `))) {
+        expect(absentFaceNames(`folio8: none of the fallback chain's faces [${cut}] is present in the supplied FontSet, so no line height can be derived from it`), `a chain naming ${cut} alone must not report ${base}`).toEqual([cut])
+      }
+    }
+
+    // AND A BRACKET NAMING BOTH REPORTS BOTH, in the map's own order — the
+    // blanking step must consume the cut's occurrence without swallowing the
+    // base's separate one.
+    expect([...absentFaceNames('folio8: none of the fallback chain\'s faces [Inter Bold, Inter] is present in the supplied FontSet, so no line height can be derived from it')].sort(), 'a chain naming a base AND its cut must report both').toEqual(['Inter', 'Inter Bold'])
+    // The quoted shape takes the same pair through the other arm of the reader.
+    expect(absentFaceNames('face "Inter Bold" is not present in the supplied FontSet, and no present face in chain [Inter, Inter Bold] covers U+0041 (A) in element e1')).toEqual(['Inter Bold'])
+  })
 })
 
 type Installed = { face: string; bytes: ArrayBuffer }

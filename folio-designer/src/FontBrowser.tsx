@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import { familyIsComplete, indexCategories, indexScripts, type FamilySource } from './font-index'
+import type { LocalFaceHoldings } from './held-local-faces'
 import { browserRows, browserSorts, browserViews, buttonLabel, buttonName, confirmLabel, confirmName, degradedFooterNote, defaultSpecimenSize, emptyStateHeading, emptyStateHint, filterRows, filtersActive, maxSpecimenSize, minSpecimenSize, noFilters, pageCount, pageLine, pageOf, pendingLine, resultLine, rowState, rowTierNote, scriptBadge, sizeReadout, sortRows, specimenFor, specimenSize, weightLine, type BrowserFilters, type BrowserRow, type BrowserSort, type BrowserView } from './font-browser-model'
 import { previewFaceFamily } from './preview-face-family'
 import { openPreviewFaceRegistry, type PreviewFaceBytes, type PreviewFaceRegistry, type PreviewFaceStatus } from './preview-face-registry'
@@ -46,7 +47,7 @@ type Props = Readonly<{
    * passed in for the same reason `sources` is: this modal joins and draws, it
    * does not open storage.
    */
-  heldLocalFamilies: ReadonlySet<string>
+  localFaceHoldings: LocalFaceHoldings
   /** The bytes a specimen is set in. Owned by the caller, because the tiers are. */
   previewBytes: PreviewFaceBytes
   /** THE SEAM. One call per staged family; resolves to a refusal sentence, or `undefined` when the family went in. */
@@ -63,7 +64,7 @@ type Props = Readonly<{
 
 type Refusal = Readonly<{ family: string; message: string }>
 
-export function FontBrowser({ sources, inTemplate, heldLocalFamilies, previewBytes, onAddFamily, storeKeepsFaces, onClose }: Props) {
+export function FontBrowser({ sources, inTemplate, localFaceHoldings, previewBytes, onAddFamily, storeKeepsFaces, onClose }: Props) {
   const [filters, setFilters] = useState<BrowserFilters>(noFilters)
   const [sort, setSort] = useState<BrowserSort>('Trending')
   const [view, setView] = useState<BrowserView>('Row')
@@ -108,7 +109,7 @@ export function FontBrowser({ sources, inTemplate, heldLocalFamilies, previewByt
   // "can I use this now" — and answers yes for that same row, which is how a
   // font already on the machine stays usable while still being offered for the
   // cuts it lacks.
-  const installedFamilies = useMemo(() => rows.filter((row) => familyIsComplete(row.source, heldLocalFamilies)).map((row) => row.family), [rows, heldLocalFamilies])
+  const installedFamilies = useMemo(() => rows.filter((row) => familyIsComplete(row.source, localFaceHoldings)).map((row) => row.family), [rows, localFaceHoldings])
 
   // THE REGISTRY'S LIFETIME IS THIS COMPONENT'S. It opens once, on mount, and
   // its release runs on unmount — so closing the modal removes every preview

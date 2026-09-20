@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { isDevBypassReason, loadS1Payload, parseS1Payload, payloadForLifecycle, type S1PayloadRejection, type S1PayloadResult } from './release-payload'
+import { cacheAssetCeiling, isDevBypassReason, loadS1Payload, parseS1Payload, payloadForLifecycle, type S1PayloadRejection, type S1PayloadResult } from './release-payload'
 
 const hash = 'a'.repeat(64)
 const cacheAssets = ['/index.html', '/engine', '/latin', '/thai', '/cjk', ...Array.from({ length: 15 }, (_, index) => `/asset-${index}`)]
@@ -30,7 +30,13 @@ const payload = () => ({ version: 1, releaseId: hash, pageId: 'b'.repeat(64), un
 // instead of quietly satisfying a `not.toBe` somewhere.
 const reasonOf = (value: unknown): S1PayloadRejection | 'accepted' => { const result = parseS1Payload(value); return result.ok ? 'accepted' : result.reason }
 
-const overBound = () => { const over = payload(); over.assetCount = 91; over.cacheAssets = Array.from({ length: 91 }, (_, index) => ({ assetUrl: `/asset-${index}`, bytes: 10, tier: 'core' as const })); over.cachedBytes = 910; return over }
+// ONE ASSET OVER THE DECLARED BOUND, DERIVED FROM IT. It used to spell 91
+// beside a bound of 90 — a second authority that silently stopped proving
+// anything the moment spec-install-all-face-cuts story 3 raised the bound to
+// 166: the fixture was simply accepted, and the red proof passed by asserting
+// nothing.
+const overBoundCount = cacheAssetCeiling + 1
+const overBound = () => { const over = payload(); over.assetCount = overBoundCount; over.cacheAssets = Array.from({ length: overBoundCount }, (_, index) => ({ assetUrl: `/asset-${index}`, bytes: 10, tier: 'core' as const })); over.cachedBytes = overBoundCount * 10; return over }
 const underBound = () => { const under = payload(); under.assetCount = 9; under.cacheAssets = under.cacheAssets.slice(0, 9); under.cachedBytes = 90; return under }
 const staleArithmetic = () => { const total = payload(); total.cachedBytes = 41; return total }
 // KEYED BY ID, LIKE THE ASSERTION IT FALSIFIES. `rows[4]` was the dictionary

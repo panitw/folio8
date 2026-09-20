@@ -27,13 +27,15 @@ describe('the shared sfnt name-table reader', () => {
     // `src/font-index.test.ts` ("is the whole bundled catalogue, unchanged") and
     // `src/font-provenance.test.ts` ("is asserted over the whole committed tier").
     // Raised 20 -> 31 by Story 16.1a, which added ten families to the local
-    // face tier. D-16.R.12: "a floor left at 21 while the tier grows to 30 is
+    // face tier, and 31 -> 107 by spec-install-all-face-cuts story 3, which
+    // gave those families the cuts they publish. IT IS A FACE COUNT, NOT A
+    // FAMILY COUNT: the tier still holds 31 families. D-16.R.12: "a floor left at 21 while the tier grows to 30 is
     // a floor that stops measuring the thing it was built to measure" — and
     // D-16.R.18's correction to it: a floor that exists in N files is N
     // floors, so a batch that raises one and leaves the rest behind is
     // silently unmeasured at the ones it left.
 
-    expect(manifest.length, 'the local face tier population floor; Story 16.1a raised it 20 -> 31').toBeGreaterThanOrEqual(31)
+    expect(manifest.length, 'the local face tier population floor; Story 16.1a raised it 20 -> 31, and spec-install-all-face-cuts story 3 raised it 31 -> 107 when the tier gained its cuts').toBeGreaterThanOrEqual(107)
     for (const face of manifest) {
       const bytes = fs.readFileSync(path.join(fontsRoot, face.directory, face.file))
       const copyright = faceCopyright(bytes)

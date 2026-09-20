@@ -13,7 +13,12 @@ import (
 //
 // Story 16.1b (D-16.R.5, as replaced in part by D-16.R.7). Until this file
 // existed, that tie was a BUILD-TIME test over 21 reviewed faces —
-// folio-designer/src/font-catalogue.test.ts:355-366, which holds each
+// folio-designer/src/font-catalogue.test.ts's `licenceSignatures` table and
+// the test that reads it, "gives every catalogue face a LICENSE, a NOTICE,
+// and a NOTICE that describes the binary it sits next to". CITED BY NAME
+// RATHER THAN BY LINE: this read ":355-366" and had gone stale twice, most
+// recently when spec-install-all-face-cuts story 3 took the committed tier
+// from 31 faces to 107. The TEST holds each
 // catalogue face's `name` table record 13 to the SPDX id
 // font-catalogue.json declares for it, on the ground that record 13 is "the
 // one statement of a face's licence that cannot be edited from outside the
@@ -26,8 +31,10 @@ import (
 // project's licence, green, until a review caught it.
 //
 // THE BUILD-TIME TIE IS KEPT, NOT MOVED (D-16.R.7's "both, or halt"). This
-// is an addition. font-catalogue.test.ts still checks the 21 committed
-// faces at build time, and TestGoLicenceTableSubsumesTheDesignerTable
+// is an addition. font-catalogue.test.ts still checks EVERY committed
+// face at build time — 21 when this was written, 107 since
+// spec-install-all-face-cuts story 3, and deliberately not restated as a
+// numeral that ages — and TestGoLicenceTableSubsumesTheDesignerTable
 // enforces that the table below never admits less than the TypeScript one.
 //
 // THREE OUTCOMES, NEVER TWO (D-16.R.7):

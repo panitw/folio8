@@ -88,7 +88,9 @@ const PDFJS_COLLECTION_ASSET = /^\/assets\/pdfjs-(?:cmaps|standard-fonts)-[a-f0-
 // 10.82 MiB, which is the price of the first screen being right.
 //
 // ⚠ THIS IS NOT `isCatalogueAssetUrl` AND MUST NOT BECOME IT. That predicate
-// answers "is this one of the 31 faces `font-catalogue.json` declares", which
+// answers "is this one of the faces `font-catalogue.json` declares" — 31 when
+// this was written, 107 since spec-install-all-face-cuts story 3 gave the
+// committed families their cuts — which
 // `generate-offline-release.mjs` asks for `brotli.catalogue.totalBytes` and for
 // the emitted-versus-declared face count; Roboto is still such a face and still
 // answers yes. This one answers "which of them blocks the first load", and the
@@ -287,6 +289,31 @@ export function declaredCoreCacheByteCeiling(source, label = source === undefine
   const { maximumCoreCacheAssets } = declaredCoreCacheAssetBounds(text, label)
   if (maximumCoreCacheBytes < maximumCoreCacheAssets) throw new Error(`${label} declares \`maximumCoreCacheBytes\` ${maximumCoreCacheBytes}, fewer bytes than the ${maximumCoreCacheAssets} assets the core tier is pinned to carry: no release could ever satisfy it and the fault is in the declaration rather than in any release`)
   return { maximumCoreCacheBytes }
+}
+
+// THE CORE BYTE CEILING'S APPROACH THRESHOLD, READ THROUGH THE SAME
+// LINE-ANCHORED READER (spec-install-all-face-cuts story 3, owner-authorised).
+//
+// A FOURTH SEPARATE EXPORT, for the reason the three above are separate:
+// `declaredCoreCacheByteCeiling`'s return shape is asserted by exact equality
+// in `offline-release-contract.test.mjs` and its failure cases are driven with
+// fixture strings, so widening it would make every one of those fixtures throw
+// for a reason that has nothing to do with the case under test.
+//
+// IT IS NOT A BOUND. `maximumCoreCacheBytes` is still the only number that
+// refuses a release; this one only decides when the build says out loud how
+// much of the first load's budget is left. The coherence check is the same one
+// `declaredCacheAssetWarning` makes, in the same voice: a threshold above the
+// ceiling is a warning that can never fire, and one at or below zero is one
+// that fires on every release ever emitted. Either way the fault is in the
+// declaration rather than in a release.
+export function declaredCoreCacheByteWarning(source, label = source === undefined ? 'src/release-payload.ts' : 'the injected release-payload source') {
+  const text = source === undefined ? readFileSync(releasePayloadSource, 'utf8') : source
+  const warnCoreCacheBytes = readDeclaredConstant(text, 'warnCoreCacheBytes', label)
+  const { maximumCoreCacheBytes } = declaredCoreCacheByteCeiling(text, label)
+  if (warnCoreCacheBytes > maximumCoreCacheBytes) throw new Error(`${label} declares \`warnCoreCacheBytes\` ${warnCoreCacheBytes} above \`maximumCoreCacheBytes\` ${maximumCoreCacheBytes}: a release over the warning threshold is already refused by the ceiling, so this warning could never fire and the fault is in the declaration rather than in any release`)
+  if (warnCoreCacheBytes <= 0) throw new Error(`${label} declares \`warnCoreCacheBytes\` ${warnCoreCacheBytes}: every emittable release would warn, which is the same as no warning at all`)
+  return { warnCoreCacheBytes, maximumCoreCacheBytes }
 }
 
 // CORE-TIER BROTLI WEIGHT, DERIVED IN ONE PLACE so the build that RECORDS it

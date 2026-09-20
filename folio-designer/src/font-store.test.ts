@@ -549,7 +549,11 @@ describe('the offline release contract is untouched', () => {
     // `const <name> = <digits>`, so this asserts the value AND the shape that
     // reader depends on.
     expect(releasePayload).toContain('const minimumCacheAssets = 10\n')
-    expect(releasePayload).toContain('const maximumCacheAssets = 90\n')
+    // 90 -> 166 at spec-install-all-face-cuts story 3, which took the release
+    // from 80 emitted assets to 156 when the committed tier gained its cuts.
+    // This suite asserts the SHAPE and the VALUE; the derivation lives beside
+    // the constant, where the reader is anchored.
+    expect(releasePayload).toContain('const maximumCacheAssets = 166\n')
   })
 
   it('adds no release asset of its own, because the store is a database and not a bundle', () => {

@@ -87,14 +87,36 @@ var robotoCuts = []robotoCut{
 //
 // WHAT "CATALOGUE" MEANS FOR THE THREE NEW CUTS, SINCE THE TEST NAME NOW
 // OVERSTATES IT. Only the Regular has a `font-catalogue.json` entry, and
-// the three new cuts deliberately have none: `font-catalogue.test.ts`
-// asserts every catalogue face is upright Regular 400, so a bold cut
-// cannot honestly be one and the catalogue stays Regular-only. What each
-// new cut DOES have is a committed designer-side copy under the same
-// directory name, delivered to the browser by an `@font-face` rule rather
-// than by the catalogue. That copy is what this test compares against, and
-// it is the half that would otherwise drift: the engine and the browser
-// each hold their own bytes for every shipped face.
+// the three Roboto cuts deliberately have none. What each new cut DOES
+// have is a committed designer-side copy under the same directory name,
+// delivered to the browser by a HAND-WRITTEN `@font-face` rule rather
+// than by the catalogue's templated one. That copy is what this test
+// compares against, and it is the half that would otherwise drift: the
+// engine and the browser each hold their own bytes for every shipped
+// face.
+//
+// ⚠ THE REASON HAS CHANGED, AND THE OLD ONE IS NO LONGER TRUE. This said
+// "`font-catalogue.test.ts` asserts every catalogue face is upright
+// Regular 400, so a bold cut cannot honestly be one and the catalogue
+// stays Regular-only". That rule was retired by
+// spec-install-all-face-cuts story 3: `font-catalogue.json` carries a
+// `style` per row and declares every cut the 31 committed families
+// publish — 107 rows — with each row held to its OWN instance rather than
+// to a blanket Regular. A bold cut is now perfectly honest as a catalogue
+// face.
+//
+// SO ROBOTO IS THE ONE FAMILY WHOSE CUTS COME FROM SOMEWHERE ELSE, AND
+// THAT IS A RULING RATHER THAN A LEFTOVER. `Roboto Bold`, `Roboto Italic`
+// and `Roboto Bold Italic` already ship as designer CORE release assets
+// AND as `fonts.Shipped()` keys here. Declaring them in the catalogue too
+// would emit a second, byte-identical dist asset per cut and cost three
+// offline cache slots for nothing; retiring the hardcoded copies would
+// move the designer's 30/30 core-asset pin, which guards the first screen
+// every visitor waits for. Both were refused, so Roboto's four faces are
+// assembled across the two halves of `scripts/build-wasm.mjs` — the base
+// from the catalogue loop, the three cuts from the hardcoded slots — and
+// THIS TEST is the tie that keeps the engine's copy and the designer's
+// byte-identical across that seam.
 //
 // WHY THE COMPARISON IS AGAINST THE DESIGNER'S FILE, READ FRESH, RATHER
 // THAN A LITERAL DIGEST RESTATED HERE. A hardcoded sha256 on this side

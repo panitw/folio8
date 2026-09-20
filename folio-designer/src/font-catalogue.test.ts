@@ -34,12 +34,21 @@ import { nameTableString, requireStaticTrueTypeTables, type SfntTable } from './
 //   italic keeps every name-table check green, which is exactly why the digest
 //   is the tie.
 //
-//   AC6 — every face is a SINGLE UPRIGHT STATIC REGULAR, read out of its own
-//   `name` and `OS/2` tables: no bold, no italic, no oblique, no variable axis.
-//   Epic 11 (FR57) owns realize-vs-retire and the owner ruling has not been
-//   made (D-000.7), so a weight matrix must not arrive here by accident. And
-//   the generated `@font-face` rules declare no `font-weight` and no
-//   `font-style`, so every other weight stays browser-synthesised from one face.
+//   AC6 — RETIRED AND REPLACED, NOT DELETED (spec-install-all-face-cuts,
+//   story 3). It read: "every face is a SINGLE UPRIGHT STATIC REGULAR — no
+//   bold, no italic, no oblique, no variable axis", and that was a true
+//   statement about a catalogue that held one Regular per family. The committed
+//   tier now carries every cut its 31 families publish, so the invariant is
+//   re-stated per row rather than dropped: a row declares a `style`, and the
+//   binary's own `name`, `OS/2`, `head` and `post` tables must agree with it —
+//   subfamily, `usWeightClass`, the fsSelection BOLD/ITALIC/REGULAR bits,
+//   `macStyle` and `italicAngle`. A row mislabelled `Bold` over a Regular
+//   binary reds naming the row, its declared style and the subfamily read from
+//   the bytes. What SURVIVES unchanged is the other half of the old claim, and
+//   it is the half that is still absolute: NO VARIABLE AXIS, and glyf/`.ttf`
+//   outlines only. The generated `@font-face` rules still declare no
+//   `font-weight` and no `font-style` — a cut is its own CSS family name, as
+//   the thirteen hand-written rules already do it.
 //
 //   AC3 — at least twenty NEW families beyond the six already shipped, each
 //   with bytes of its own.
@@ -78,7 +87,40 @@ const fontsRoot = path.join(designerRoot, 'public', 'fonts')
  */
 const shippedFamilies = (): ReadonlyArray<string> => Object.values(shippedSlotFaces).map((face) => face.cssFamily)
 
-interface CatalogueFace { id: string; directory: string; file: string; family: string; licence: string; scripts: ReadonlyArray<string> }
+interface CatalogueFace { id: string; directory: string; file: string; family: string; style: string; licence: string; scripts: ReadonlyArray<string> }
+
+/**
+ * WHAT EACH DECLARED `style` MUST BE TRUE OF IN THE BYTES
+ * (spec-install-all-face-cuts, story 3).
+ *
+ * The closed set is the document format's: a chain entry declares a base face
+ * plus `bold`, `italic` and `boldItalic`, so a fifth weight has nowhere to be
+ * written and must not reach the catalogue. `scripts/build-wasm.mjs` refuses a
+ * row outside this set at build time; this table is what the BYTES are then
+ * held to, which is the check a build-time string comparison cannot make.
+ *
+ * `subfamily` IS THE BINARY'S OWN WORD FOR THE CUT and is not the `style`
+ * token: the row says `BoldItalic` (one word, the format's key spelling) and
+ * upstream's name table says `Bold Italic`. Both spellings are stated here,
+ * once, rather than derived at the point of comparison.
+ */
+const catalogueCuts: Readonly<Record<string, { subfamily: string; usWeightClass: number; bold: boolean; italic: boolean; macStyle: number }>> = {
+  Regular: { subfamily: 'Regular', usWeightClass: 400, bold: false, italic: false, macStyle: 0x0000 },
+  Bold: { subfamily: 'Bold', usWeightClass: 700, bold: true, italic: false, macStyle: 0x0001 },
+  Italic: { subfamily: 'Italic', usWeightClass: 400, bold: false, italic: true, macStyle: 0x0002 },
+  BoldItalic: { subfamily: 'Bold Italic', usWeightClass: 700, bold: true, italic: true, macStyle: 0x0003 },
+}
+
+/**
+ * THE CSS FAMILY NAME A ROW IS EMITTED UNDER, derived from (family, style) the
+ * way `scripts/build-wasm.mjs`'s `cssFamilyOf` derives it.
+ *
+ * DUPLICATED FROM THE GENERATOR DELIBERATELY, on this file's standing
+ * convention: this suite must be able to redden on its own, and a generator
+ * that changed its derivation while this copy stood still is exactly the
+ * disagreement the uniqueness assertion below exists to catch.
+ */
+const cssFamilyOf = (face: CatalogueFace) => face.style === 'Regular' ? face.family : `${face.family} ${face.style === 'BoldItalic' ? 'Bold Italic' : face.style}`
 
 const catalogue: ReadonlyArray<CatalogueFace> = JSON.parse(fs.readFileSync(cataloguePath, 'utf8'))
 const faceDirectory = (face: CatalogueFace) => path.join(fontsRoot, face.directory)
@@ -157,6 +199,30 @@ function recordedShippedDigest(noticeFile: string): string {
   const rows = [...notice.matchAll(/^\|[^|\n]*sha256 of the SHIPPED[^|\n]*\|\s*`([0-9a-f]{64})`\s*\|/gm)]
   if (rows.length !== 1) throw new Error(`${noticeFile} must record exactly one 'sha256 of the SHIPPED …' table row carrying a 64-hex digest, and records ${rows.length}`)
   return rows[0][1]
+}
+
+/**
+ * THE UPSTREAM ARCHIVE A NOTICE PINS — its URL, its digest, its byte length and
+ * the path the face was taken out of, read through the same
+ * exactly-one-row rule every other NOTICE reader here applies.
+ *
+ * Added by spec-install-all-face-cuts story 3 for the claim its 76 new NOTICEs
+ * make and nothing checked: *"The archive is the same one this family's Regular
+ * was taken from, pinned by the same digest."*
+ */
+function recordedArchive(noticeFile: string): Readonly<{ url: string; digest: string; bytes: number; path: string }> {
+  const notice = fs.readFileSync(noticeFile, 'utf8')
+  const one = (label: string, pattern: RegExp): string => {
+    const rows = [...notice.matchAll(pattern)]
+    if (rows.length !== 1) throw new Error(`${noticeFile} must record exactly one ${label} row, and records ${rows.length}`)
+    return rows[0][1]
+  }
+  return {
+    url: one('download URL', /^\| Download URL \| (\S+) \|$/gm),
+    digest: one('release archive sha256', /^\| sha256 of the release archive \| `([0-9a-f]{64})`/gm),
+    bytes: Number(one('release archive byte length', /^\| sha256 of the release archive \| `[0-9a-f]{64}` \(([\d,]+) bytes\)/gm).replaceAll(',', '')),
+    path: one('path inside the archive', /^\| Path inside the archive \| `(\S+)` \|$/gm),
+  }
 }
 
 /** The byte count a NOTICE records for the file it ships, as a number. */
@@ -326,22 +392,52 @@ describe('the Story 8.5 catalogue ships the faces its manifest declares', () => 
     // catalogue face") and
     // `src/font-provenance.test.ts` ("is asserted over the whole committed tier").
     // Raised 20 -> 31 by Story 16.1a, which added ten families to the local
-    // face tier. D-16.R.12: "a floor left at 21 while the tier grows to 30 is
+    // face tier, and 31 -> 107 by spec-install-all-face-cuts story 3, which
+    // gave those families the cuts they publish. IT IS A FACE COUNT, NOT A
+    // FAMILY COUNT: the tier still holds 31 families. D-16.R.12: "a floor left at 21 while the tier grows to 30 is
     // a floor that stops measuring the thing it was built to measure" — and
     // D-16.R.18's correction to it: a floor that exists in N files is N
     // floors, so a batch that raises one and leaves the rest behind is
     // silently unmeasured at the ones it left.
+    //
+    // RAISED 31 -> 107 BY spec-install-all-face-cuts STORY 3, AND IT IS NOW A
+    // FACE FLOOR OVER A FAMILY FLOOR. The tier still holds 31 families; it now
+    // holds every cut those families publish, so the number that must not go
+    // stale is the row count — a story that dropped 76 cuts and left 31
+    // Regulars would satisfy a floor of 31 exactly. The family floor is
+    // asserted separately below so neither can drift behind the other.
 
-    expect(catalogue.length, 'AC3 requires at least 20 new families beyond the 6 already shipped; Story 16.1a raised the floor to 31').toBeGreaterThanOrEqual(31)
+    expect(catalogue.length, 'the committed tier population floor; story 3 raised it 31 -> 107 when the tier gained its cuts').toBeGreaterThanOrEqual(107)
     const families = catalogue.map((face) => face.family)
-    expect(new Set(families).size, 'two catalogue entries declare the same family').toBe(families.length)
+    expect(new Set(families).size, 'the committed tier holds 31 families; a batch that dropped one would still clear the face floor above').toBeGreaterThanOrEqual(31)
+    // THE UNIQUENESS KEY IS (family, style), NOT family. It was `family` while
+    // every row was that family's only face; a four-cut family makes `Inter`
+    // legitimately appear four times, and what must still be unique is the CUT.
+    const cuts = catalogue.map((face) => `${face.family}\u0000${face.style}`)
+    expect(new Set(cuts).size, 'two catalogue entries declare the same cut of the same family').toBe(cuts.length)
+    // A row outside the closed set is a face no cut resolver can find and a
+    // face the format has no key to declare.
+    expect(catalogue.filter((face) => !Object.hasOwn(catalogueCuts, face.style)).map((face) => `${face.id}: ${face.style}`), `a catalogue style must be one of ${Object.keys(catalogueCuts).join(', ')}`).toEqual([])
+    // ALL FOUR CUTS MUST BE EXERCISED, or the per-row metadata loop below is a
+    // Regular-only assertion wearing a table. Six families publish no italic,
+    // and DM Sans's italic is withheld by ruling, so the population is
+    // deliberately ragged — but it is never one-valued.
+    expect([...new Set(catalogue.map((face) => face.style))].sort(), 'the tier must exercise every declared cut, or the per-row style assertion proves nothing a Regular-only one did not').toEqual(['Bold', 'BoldItalic', 'Italic', 'Regular'])
     // THIRTEEN SINCE STORY 11.1, and read off `shippedSlotFaces` rather than
     // from a list of its own — six was this assertion's population until the
     // seven cuts landed, and a stale copy here quietly stopped refusing the
     // seven names it had never heard of.
     const shipped = shippedFamilies()
     expect(shipped.length, 'the hand-written shipped population is thirteen since Story 11.1; a shorter list stops refusing the names it has not heard of').toBe(13)
-    expect(families.filter((family) => shipped.includes(family)), 'a catalogue face must not redeclare one of the thirteen shipped families').toEqual([])
+    // AND THE COLLISION IS CHECKED OVER THE DERIVED CSS NAME, WHICH IS WHAT
+    // THE BROWSER RESOLVES. `{ family: "Roboto", style: "Bold" }` derives
+    // `Roboto Bold` — a hardcoded shipped rule's family and a CORE release
+    // asset — and a second `@font-face` under that name would let the last rule
+    // win silently. Checking `face.family` alone would pass over it, because
+    // plain `Roboto` is a legitimate catalogue row.
+    const cssNames = catalogue.map(cssFamilyOf)
+    expect(cssNames.filter((name) => shipped.includes(name)), 'a catalogue row must not derive a CSS family one of the thirteen shipped rules already declares; Roboto\'s three cuts ship as hardcoded core faces and must not be redeclared here').toEqual([])
+    expect(new Set(cssNames).size, 'two catalogue rows derive the same CSS family name, so one @font-face rule would silently shadow the other').toBe(cssNames.length)
     const directories = catalogue.map((face) => face.directory)
     expect(new Set(directories).size, 'two catalogue entries share a directory, so two families would resolve to one file').toBe(directories.length)
     const ids = catalogue.map((face) => face.id)
@@ -382,11 +478,24 @@ describe('the Story 8.5 catalogue ships the faces its manifest declares', () => 
       expect(text, `${face.id}: NOTICE.md does not state its relation to the source`).toMatch(/copied unmodified, no derivation/)
 
       // AND THE TWO FACTS THAT CAN BE FALSE OF THE FILE ITSELF.
+      //
+      // ⚠ WHAT THIS TIE CATCHES IS A BINARY AND ITS RECORD DISAGREEING INSIDE
+      // ONE DIRECTORY, AND THAT IS ALL IT CATCHES. An earlier wording claimed
+      // it caught "a different weight, a different style, a subset cut", which
+      // overstates it in the one direction that matters now that a family
+      // occupies four directories: a row REPOINTED from `inter-bold/` to
+      // `inter-italic/` reads that directory's own NOTICE, finds it describes
+      // that directory's own binary, and passes here. The assertion that
+      // catches a repointed row is the per-row style claim further down — the
+      // binary's subfamily, weight class and style bits against the row's
+      // declared `style` — and the two are stated separately because they fail
+      // on different faults.
       expect(
         digest(file),
-        `${face.id}: the binary's sha256 is not the digest its own NOTICE.md records. Either the binary was swapped without `
-        + 'amending its provenance record — a different weight, a different style, a subset cut — or the record was amended '
-        + 'without the binary. Both make the NOTICE a false statement about the bytes beside it.',
+        `${face.id}: the binary's sha256 is not the digest its own NOTICE.md records. Either the binary in this directory was `
+        + 'swapped without amending the provenance record beside it, or the record was amended without the binary. Both make '
+        + 'the NOTICE a false statement about the bytes it sits next to. (A row repointed at a DIFFERENT directory is a '
+        + "different fault and is caught by this face's declared-style assertion, not here.)",
       ).toBe(recordedShippedDigest(notice))
       expect(recordedShippedSize(notice), `${face.id}: the recorded byte size is not the committed file's size`).toBe(fs.statSync(file).size)
 
@@ -457,27 +566,179 @@ describe('the Story 8.5 catalogue ships the faces its manifest declares', () => 
     expect(generatedFaces.filter((face) => typeof face.url !== 'string' || face.url === '')).toEqual([])
   })
 
-  // AC6. ONE UPRIGHT STATIC REGULAR PER FAMILY, READ FROM THE BYTES.
-  it('ships every catalogue face as a single upright static Regular, with no bold, italic, oblique or variable axis', () => {
+  // ONE FAMILY, ONE PINNED ARCHIVE — THE CLAIM 76 NOTICES MAKE AND NOTHING
+  // CHECKED (spec-install-all-face-cuts, story 3).
+  //
+  // Every cut's NOTICE says in words that its bytes came out of the SAME
+  // upstream archive its family's Regular came from — "one coherent source, not
+  // two" — and that sentence is the whole provenance argument for the 76 new
+  // faces: it is why a cut inherits the Regular's already-reviewed licence
+  // admission instead of needing its own. A sentence repeated 76 times with no
+  // assertion behind it is exactly the shape of the licence-text defect this
+  // suite was built after, where `font-catalogue.json` was right, every binary
+  // was right, and the artifact between them was checked by nothing.
+  //
+  // FOUR FACTS, BECAUSE THREE OF THEM CAN AGREE WHILE THE FOURTH IS WRONG. A
+  // cut re-fetched from a LATER release of the same project keeps the URL's
+  // shape and changes the digest; one taken from a sibling family's archive in
+  // the same org keeps neither. And the DIRECTORY inside the archive is checked
+  // as well as the archive itself, because `RobotoCondensed-*` sits beside
+  // `Roboto-*` and `CascadiaCodeNF-*` beside `CascadiaCode-*`: same archive,
+  // different family, and the prefix trap this story's own boundary names.
+  it('takes every cut out of the same pinned archive, and the same directory in it, as its family\'s Regular', () => {
+    const regularOf = new Map(catalogue.filter((face) => face.style === 'Regular').map((face) => [face.family, face]))
+    const cuts = catalogue.filter((face) => face.style !== 'Regular')
+    // NON-VACUITY: this must run over the cuts, not over an empty list, and
+    // every one of them must have a Regular to be compared against.
+    expect(cuts.length, 'the committed tier declares no cut at all, so this assertion has nothing to check').toBeGreaterThanOrEqual(76)
+    expect(cuts.filter((face) => !regularOf.has(face.family)).map((face) => face.id), 'every cut must belong to a family whose Regular is also declared; the upright Regular is the base and stays required').toEqual([])
+
+    for (const face of cuts) {
+      const regular = regularOf.get(face.family)!
+      const mine = recordedArchive(path.join(faceDirectory(face), 'NOTICE.md'))
+      const theirs = recordedArchive(path.join(faceDirectory(regular), 'NOTICE.md'))
+      const where = `${face.id} (${face.family} ${face.style})`
+      expect(mine.url, `${where}: its NOTICE pins a different upstream archive from ${regular.id}'s, while claiming both come from the same one`).toBe(theirs.url)
+      expect(mine.digest, `${where}: its NOTICE records a different archive sha256 from ${regular.id}'s. A cut re-fetched from a later release of the same project keeps the URL and changes this.`).toBe(theirs.digest)
+      expect(mine.bytes, `${where}: its NOTICE records a different archive byte length from ${regular.id}'s`).toBe(theirs.bytes)
+      // THE DIRECTORY, NOT THE FILENAME: the filenames differ by construction
+      // (`Arimo-Bold.ttf` beside `Arimo-Regular.ttf`), and what must match is
+      // the folder they were both taken from.
+      const directoryOf = (inside: string) => inside.slice(0, inside.lastIndexOf('/'))
+      expect(directoryOf(mine.path), `${where}: taken from ${directoryOf(mine.path)} while its Regular was taken from ${directoryOf(theirs.path)} in the same archive. Several archives hold a DIFFERENT family whose filenames share a stem, so the directory is part of the contract.`).toBe(directoryOf(theirs.path))
+      expect(mine.path, `${where}: records the same path inside the archive as its Regular, so one of the two NOTICEs describes a file it did not ship`).not.toBe(theirs.path)
+    }
+  })
+
+  // AC6, RE-STATED PER ROW (spec-install-all-face-cuts, story 3).
+  //
+  // THIS ASSERTION USED TO BE "EVERY CATALOGUE FACE IS AN UPRIGHT STATIC
+  // REGULAR 400", and it is retired rather than deleted: the committed tier now
+  // carries the cuts its families publish, so the blanket claim is false of the
+  // population while every reason it existed is still live. What replaces it is
+  // the same question asked per row — DOES THIS BINARY AGREE WITH THE `style`
+  // ITS ROW DECLARES — on the pattern the thirteen hardcoded slots have used
+  // since Story 11.1 ('ships each hardcoded slot as the instance it is intended
+  // to be', below). A declared style nothing reads off the bytes is how a
+  // swapped or hand-edited binary ships: the CSS name, the release asset and
+  // the chain entry would all still say `Inter Bold` while the file painted the
+  // Regular.
+  //
+  // TWO CLAIMS SURVIVE THE RETIREMENT UNCHANGED, and they are the absolute
+  // ones: NO VARIABLE TABLES — this product accepts no axis on any tier
+  // (D-16.5(c)) — and glyf/TrueType outlines in a `.ttf`, which is what the
+  // emitted `format('truetype')` rule and the engine's decoder both require.
+  it('ships every catalogue face as the static cut its row declares, with no variable axis', () => {
     for (const face of catalogue) {
       const file = faceFile(face)
       const instance = instanceOfFile(file)
+      const cut = catalogueCuts[face.style]
       const where = `${face.id} (${path.relative(designerRoot, file)})`
+      expect(cut, `${where}: declares the style '${face.style}', which is outside the closed set ${Object.keys(catalogueCuts).join(', ')}`).toBeDefined()
+      const say = `${where}: font-catalogue.json declares it the '${face.style}' cut of '${face.family}' and the bytes say family '${instance.family}', subfamily '${instance.subfamily}', usWeightClass ${instance.usWeightClass}`
 
-      expect(instance.family, `${where}: font-catalogue.json declares the family '${face.family}' and the file's own name table says '${instance.family}'. A family name is an assertion about bytes.`).toBe(face.family)
-      expect(instance.subfamily, `${where}: is not a Regular instance`).toBe('Regular')
-      expect(instance.usWeightClass, `${where}: OS/2.usWeightClass is not 400`).toBe(400)
-      expect(instance.fsSelection & 0x40, `${where}: OS/2.fsSelection does not set the REGULAR bit`).toBe(0x40)
-      expect(instance.fsSelection & 0x01, `${where}: OS/2.fsSelection sets the ITALIC bit`).toBe(0)
-      expect(instance.fsSelection & 0x20, `${where}: OS/2.fsSelection sets the BOLD bit`).toBe(0)
-      expect(instance.fsSelection & 0x200, `${where}: OS/2.fsSelection sets the OBLIQUE bit`).toBe(0)
-      expect(instance.macStyle, `${where}: head.macStyle declares a bold or italic style`).toBe(0)
-      expect(instance.italicAngle, `${where}: post.italicAngle is not upright`).toBe(0)
+      // (1) THE ROW'S `family` IS THE BASE FAMILY, AND THE BYTES ARE WHERE THAT
+      // IS CHECKED. A bold cut's own name table calls itself family `Inter`,
+      // subfamily `Bold` — so the row stays `{ family: "Inter", style: "Bold" }`
+      // and the CSS name `Inter Bold` is DERIVED. Storing the CSS name in
+      // `family` would red exactly here, which is one of the two ends that
+      // force the split.
+      expect(instance.family, `${say}. A family name is an assertion about bytes, and a cut's own name table calls itself by its BASE family.`).toBe(face.family)
+      expect(instance.subfamily, `${say}, and a '${face.style}' row must carry subfamily '${cut.subfamily}'`).toBe(cut.subfamily)
+      expect(instance.usWeightClass, `${say}, and a '${face.style}' row must carry OS/2.usWeightClass ${cut.usWeightClass}`).toBe(cut.usWeightClass)
+
+      // (2) THE BITS AGREE WITH THE NAME. A face naming itself Bold while its
+      // OS/2 and head tables say Regular is the shape a swapped binary takes,
+      // and the subfamily check alone cannot see it. DM Sans's upstream italic
+      // is exactly this defect — ITALIC clear, macStyle 0x0, italicAngle -10 —
+      // and it is withheld from the tier by ruling rather than admitted by a
+      // named exception here. THIS GUARD IS ABSOLUTE: no allowlist, no
+      // "known upstream bug" clause.
+      expect(Boolean(instance.fsSelection & 0x0020), `${say}: OS/2.fsSelection BOLD bit must be ${cut.bold}`).toBe(cut.bold)
+      expect(Boolean(instance.fsSelection & 0x0001), `${say}: OS/2.fsSelection ITALIC bit must be ${cut.italic}`).toBe(cut.italic)
+      expect(Boolean(instance.fsSelection & 0x0040), `${say}: OS/2.fsSelection REGULAR bit must be set for an upright Regular and clear for every cut`).toBe(!cut.bold && !cut.italic)
+      // AND THE OBLIQUE BIT (0x0200), WHICH IS NOT DERIVABLE FROM THE OTHERS
+      // and is the one style bit this population does not agree on. MEASURED
+      // over all 107 committed faces: `Roboto Condensed Italic` (0x0201) and
+      // `Roboto Condensed Bold Italic` (0x0221) set it — upstream's own
+      // `static/` build, exactly as the three hardcoded Roboto cuts do — and
+      // the other 105 do not. So the rule that IS true of the population is
+      // stated, and it is one-directional: an UPRIGHT face may never claim
+      // oblique. Asserting it clear everywhere would be false of those two;
+      // asserting it set on every italic would be false of the other 44 — the
+      // sloped population is 46 faces, 23 `Italic` and 23 `BoldItalic`.
+      if (!cut.italic) expect(instance.fsSelection & 0x0200, `${say}: an upright cut may not set the OS/2.fsSelection OBLIQUE bit`).toBe(0)
+      expect(instance.macStyle, `${say}, and a '${face.style}' row must carry head.macStyle 0x${cut.macStyle.toString(16).padStart(4, '0')}`).toBe(cut.macStyle)
+
+      // (3) THE SLOPE IS IN THE OUTLINES, not only in a bit. The amount is
+      // upstream's, so the SIGN is asserted rather than a pinned constant.
+      if (cut.italic) expect(instance.italicAngle, `${say}, and an italic cut must carry a negative post.italicAngle`).toBeLessThan(0)
+      else expect(instance.italicAngle, `${say}, and an upright cut must carry post.italicAngle exactly 0`).toBe(0)
+
+      // (4) STATIC, ALWAYS — the half of the old AC6 that is still absolute.
       expect(instance.variableTables, `${where}: carries variable-font tables. Epic 11 (FR57) owns realize-vs-retire and the owner ruling has not been made (D-000.7).`).toEqual([])
       // NFR7's operative choice: the glyf/TrueType static build, not CFF.
       expect(instance.outlineTables, `${where}: is not a glyf/TrueType static build`).toEqual(['glyf'])
       expect(path.extname(face.file), `${where}: the engine decodes only font/ttf and font/otf, and the emitted rule declares format('truetype')`).toBe('.ttf')
     }
+  })
+
+  // AND THE READER DISCRIMINATES AT CATALOGUE SCALE, so the loop above means
+  // "each row is the cut it claims" rather than "instanceOfFile answers the
+  // same thing to everything". The Regular and the Bold of one COMMITTED family
+  // are the pair that matters: they share a name[1] — which is precisely why
+  // `family` can stay the base name on every row — and every field that
+  // separates them is a field this suite would be worthless without.
+  //
+  // It is driven from the CATALOGUE rather than from hardcoded paths: the rows
+  // are looked up by (family, style), so a tier that stopped declaring cuts
+  // reds here rather than skipping silently.
+  it('tells the four declared cuts of one committed family apart, from the bytes alone', () => {
+    const cutOf = (family: string, style: string) => catalogue.find((face) => face.family === family && face.style === style)
+    const inter = ['Regular', 'Bold', 'Italic', 'BoldItalic'].map((style) => cutOf('Inter', style))
+    expect(inter.filter((face) => face === undefined), 'Inter must declare all four cuts, or this discrimination proof has nothing to compare').toEqual([])
+    const [regular, bold, italic, boldItalic] = inter.map((face) => instanceOfFile(faceFile(face as CatalogueFace)))
+    expect([regular.family, bold.family, italic.family, boldItalic.family], 'all four call themselves the same family, which is exactly why the family check alone cannot separate them').toEqual(['Inter', 'Inter', 'Inter', 'Inter'])
+    expect([regular.subfamily, bold.subfamily, italic.subfamily, boldItalic.subfamily]).toEqual(['Regular', 'Bold', 'Italic', 'Bold Italic'])
+    expect([regular.usWeightClass, bold.usWeightClass, italic.usWeightClass, boldItalic.usWeightClass]).toEqual([400, 700, 400, 700])
+    expect([regular.macStyle, bold.macStyle, italic.macStyle, boldItalic.macStyle]).toEqual([0x0000, 0x0001, 0x0002, 0x0003])
+    expect(regular.italicAngle).toBe(0)
+    expect(bold.italicAngle).toBe(0)
+    expect(italic.italicAngle).toBeLessThan(0)
+    expect(boldItalic.italicAngle).toBeLessThan(0)
+  })
+
+  // A FAMILY INSTALLS THE CUTS IT HAS, AND AN ABSENCE IS A FIRST-CLASS ANSWER
+  // (CAP-2). Six families publish no italic at all, and DM Sans's italic is
+  // WITHHELD BY RULING rather than missing upstream — its upstream binary
+  // cannot prove its own style, so shipping it would put a face in the tier
+  // that the per-row assertion above would have to be weakened to admit.
+  //
+  // Asserted so the ragged shape is a recorded decision rather than something a
+  // later reader repairs: a batch that quietly "completed" these families would
+  // red here and have to say which it had found and where.
+  it('declares the cuts each family publishes and no more, with the short families named', () => {
+    const stylesOf = (family: string) => catalogue.filter((face) => face.family === family).map((face) => face.style).sort()
+    const short = [...new Set(catalogue.map((face) => face.family))].filter((family) => stylesOf(family).length < 4).sort()
+    expect(short, 'the families that declare fewer than four cuts, each for a recorded reason').toEqual([
+      // No italic at all upstream — measured from each project's own archive.
+      'Fira Code', 'Noto Sans Thai Looped', 'Noto Serif Thai', 'Oswald', 'Roboto Slab', 'Space Grotesk',
+      // WITHHELD, NOT ABSENT: upstream publishes DMSans-Italic.ttf and its
+      // fsSelection ITALIC bit is clear while its italicAngle is -10, so it
+      // cannot prove its own style. Its bold-italic sibling is withheld with it
+      // rather than shipping a bold italic with no italic beside it.
+      'DM Sans',
+      // ROBOTO IS SHORT FOR A DIFFERENT REASON AND IT IS NOT AN UPSTREAM GAP.
+      // `Roboto Bold`, `Roboto Italic` and `Roboto Bold Italic` ship as
+      // HARDCODED CORE release assets, not as catalogue rows; redeclaring them
+      // here would emit a second byte-identical asset per cut, and retiring the
+      // hardcoded copies would move the 30/30 core pin. The family's four faces
+      // are assembled across the two halves of `scripts/build-wasm.mjs`.
+      'Roboto',
+    ].sort())
+    for (const family of short) expect(stylesOf(family), `${family} must declare its Regular whatever else it is short of`).toContain('Regular')
+    expect(stylesOf('DM Sans')).toEqual(['Bold', 'Regular'])
+    expect(stylesOf('Roboto'), 'the catalogue declares Roboto\'s base alone; its cuts are hardcoded core faces').toEqual(['Regular'])
   })
 
   // STORY 8.6. THE DECLARED COVERAGE AGREES WITH THE BINARY'S OWN cmap.
@@ -530,7 +791,15 @@ describe('the Story 8.5 catalogue ships the faces its manifest declares', () => 
     const emitter = /catalogueFaces\.map\(\(face\) => `(@font-face \{[^`]*\})\\n`\)/.exec(generator)
     expect(emitter, `no catalogue @font-face emitter found in ${generatorPath}; the parse below would assert nothing`).not.toBeNull()
     const rule = (emitter as RegExpExecArray)[1]
-    expect(rule).toContain('${face.family}')
+    // THE FAMILY IS THE DERIVED CUT NAME, NOT THE ROW'S BASE FAMILY
+    // (spec-install-all-face-cuts, story 3). It was `${face.family}` while a
+    // family had one row; emitting four cuts under one bare family name with
+    // no descriptors would let the last rule win for every cut of every
+    // family. `cssFamily` is the generator's own (family, style) derivation,
+    // and the two spellings are tied by the uniqueness assertion above, which
+    // recomputes it here and holds it against the thirteen shipped names.
+    expect(rule, 'the catalogue emitter must name each rule by its derived cut name, or four cuts collapse onto one CSS family').toContain('${face.cssFamily}')
+    expect(rule, 'a bare ${face.family} would emit four rules under one name and silently keep only the last').not.toContain('${face.family}\'')
     expect(rule).toContain('${face.filename}')
     expect(rule).toContain("format('truetype')")
     expect(rule, 'a font-weight descriptor would declare a weight matrix this story does not ship (AC6)').not.toContain('font-weight')

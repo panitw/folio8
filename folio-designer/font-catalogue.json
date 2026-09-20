@@ -4,6 +4,34 @@
     "directory": "arimo",
     "file": "Arimo-Regular.ttf",
     "family": "Arimo",
+    "style": "Regular",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "arimobold",
+    "directory": "arimo-bold",
+    "file": "Arimo-Bold.ttf",
+    "family": "Arimo",
+    "style": "Bold",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "arimobolditalic",
+    "directory": "arimo-bolditalic",
+    "file": "Arimo-BoldItalic.ttf",
+    "family": "Arimo",
+    "style": "BoldItalic",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "arimoitalic",
+    "directory": "arimo-italic",
+    "file": "Arimo-Italic.ttf",
+    "family": "Arimo",
+    "style": "Italic",
     "licence": "OFL-1.1",
     "scripts": ["latin"]
   },
@@ -12,6 +40,34 @@
     "directory": "cascadiacode",
     "file": "CascadiaCode-Regular.ttf",
     "family": "Cascadia Code",
+    "style": "Regular",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "cascadiacodebold",
+    "directory": "cascadiacode-bold",
+    "file": "CascadiaCode-Bold.ttf",
+    "family": "Cascadia Code",
+    "style": "Bold",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "cascadiacodebolditalic",
+    "directory": "cascadiacode-bolditalic",
+    "file": "CascadiaCode-BoldItalic.ttf",
+    "family": "Cascadia Code",
+    "style": "BoldItalic",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "cascadiacodeitalic",
+    "directory": "cascadiacode-italic",
+    "file": "CascadiaCode-Italic.ttf",
+    "family": "Cascadia Code",
+    "style": "Italic",
     "licence": "OFL-1.1",
     "scripts": ["latin"]
   },
@@ -20,6 +76,34 @@
     "directory": "cascadiamono",
     "file": "CascadiaMono-Regular.ttf",
     "family": "Cascadia Mono",
+    "style": "Regular",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "cascadiamonobold",
+    "directory": "cascadiamono-bold",
+    "file": "CascadiaMono-Bold.ttf",
+    "family": "Cascadia Mono",
+    "style": "Bold",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "cascadiamonobolditalic",
+    "directory": "cascadiamono-bolditalic",
+    "file": "CascadiaMono-BoldItalic.ttf",
+    "family": "Cascadia Mono",
+    "style": "BoldItalic",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "cascadiamonoitalic",
+    "directory": "cascadiamono-italic",
+    "file": "CascadiaMono-Italic.ttf",
+    "family": "Cascadia Mono",
+    "style": "Italic",
     "licence": "OFL-1.1",
     "scripts": ["latin"]
   },
@@ -28,6 +112,34 @@
     "directory": "cousine",
     "file": "Cousine-Regular.ttf",
     "family": "Cousine",
+    "style": "Regular",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "cousinebold",
+    "directory": "cousine-bold",
+    "file": "Cousine-Bold.ttf",
+    "family": "Cousine",
+    "style": "Bold",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "cousinebolditalic",
+    "directory": "cousine-bolditalic",
+    "file": "Cousine-BoldItalic.ttf",
+    "family": "Cousine",
+    "style": "BoldItalic",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "cousineitalic",
+    "directory": "cousine-italic",
+    "file": "Cousine-Italic.ttf",
+    "family": "Cousine",
+    "style": "Italic",
     "licence": "OFL-1.1",
     "scripts": ["latin"]
   },
@@ -36,6 +148,16 @@
     "directory": "dmsans",
     "file": "DMSans-Regular.ttf",
     "family": "DM Sans",
+    "style": "Regular",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "dmsansbold",
+    "directory": "dmsans-bold",
+    "file": "DMSans-Bold.ttf",
+    "family": "DM Sans",
+    "style": "Bold",
     "licence": "OFL-1.1",
     "scripts": ["latin"]
   },
@@ -44,6 +166,16 @@
     "directory": "firacode",
     "file": "FiraCode-Regular.ttf",
     "family": "Fira Code",
+    "style": "Regular",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "firacodebold",
+    "directory": "firacode-bold",
+    "file": "FiraCode-Bold.ttf",
+    "family": "Fira Code",
+    "style": "Bold",
     "licence": "OFL-1.1",
     "scripts": ["latin"]
   },
@@ -52,6 +184,34 @@
     "directory": "geist",
     "file": "Geist-Regular.ttf",
     "family": "Geist",
+    "style": "Regular",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "geistbold",
+    "directory": "geist-bold",
+    "file": "Geist-Bold.ttf",
+    "family": "Geist",
+    "style": "Bold",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "geistbolditalic",
+    "directory": "geist-bolditalic",
+    "file": "Geist-BoldItalic.ttf",
+    "family": "Geist",
+    "style": "BoldItalic",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "geistitalic",
+    "directory": "geist-italic",
+    "file": "Geist-Italic.ttf",
+    "family": "Geist",
+    "style": "Italic",
     "licence": "OFL-1.1",
     "scripts": ["latin"]
   },
@@ -60,6 +220,34 @@
     "directory": "geistmono",
     "file": "GeistMono-Regular.ttf",
     "family": "Geist Mono",
+    "style": "Regular",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "geistmonobold",
+    "directory": "geistmono-bold",
+    "file": "GeistMono-Bold.ttf",
+    "family": "Geist Mono",
+    "style": "Bold",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "geistmonobolditalic",
+    "directory": "geistmono-bolditalic",
+    "file": "GeistMono-BoldItalic.ttf",
+    "family": "Geist Mono",
+    "style": "BoldItalic",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "geistmonoitalic",
+    "directory": "geistmono-italic",
+    "file": "GeistMono-Italic.ttf",
+    "family": "Geist Mono",
+    "style": "Italic",
     "licence": "OFL-1.1",
     "scripts": ["latin"]
   },
@@ -68,6 +256,34 @@
     "directory": "intelonemono",
     "file": "IntelOneMono-Regular.ttf",
     "family": "Intel One Mono",
+    "style": "Regular",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "intelonemonobold",
+    "directory": "intelonemono-bold",
+    "file": "IntelOneMono-Bold.ttf",
+    "family": "Intel One Mono",
+    "style": "Bold",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "intelonemonobolditalic",
+    "directory": "intelonemono-bolditalic",
+    "file": "IntelOneMono-BoldItalic.ttf",
+    "family": "Intel One Mono",
+    "style": "BoldItalic",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "intelonemonoitalic",
+    "directory": "intelonemono-italic",
+    "file": "IntelOneMono-Italic.ttf",
+    "family": "Intel One Mono",
+    "style": "Italic",
     "licence": "OFL-1.1",
     "scripts": ["latin"]
   },
@@ -76,6 +292,25 @@
     "directory": "inter",
     "file": "Inter-Regular.ttf",
     "family": "Inter",
+    "style": "Regular",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "interbold",
+    "directory": "inter-bold",
+    "file": "Inter-Bold.ttf",
+    "family": "Inter",
+    "style": "Bold",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "interbolditalic",
+    "directory": "inter-bolditalic",
+    "file": "Inter-BoldItalic.ttf",
+    "family": "Inter",
+    "style": "BoldItalic",
     "licence": "OFL-1.1",
     "scripts": ["latin"]
   },
@@ -84,6 +319,43 @@
     "directory": "interdisplay",
     "file": "InterDisplay-Regular.ttf",
     "family": "Inter Display",
+    "style": "Regular",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "interdisplaybold",
+    "directory": "interdisplay-bold",
+    "file": "InterDisplay-Bold.ttf",
+    "family": "Inter Display",
+    "style": "Bold",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "interdisplaybolditalic",
+    "directory": "interdisplay-bolditalic",
+    "file": "InterDisplay-BoldItalic.ttf",
+    "family": "Inter Display",
+    "style": "BoldItalic",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "interdisplayitalic",
+    "directory": "interdisplay-italic",
+    "file": "InterDisplay-Italic.ttf",
+    "family": "Inter Display",
+    "style": "Italic",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "interitalic",
+    "directory": "inter-italic",
+    "file": "Inter-Italic.ttf",
+    "family": "Inter",
+    "style": "Italic",
     "licence": "OFL-1.1",
     "scripts": ["latin"]
   },
@@ -92,6 +364,34 @@
     "directory": "jetbrainsmono",
     "file": "JetBrainsMono-Regular.ttf",
     "family": "JetBrains Mono",
+    "style": "Regular",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "jetbrainsmonobold",
+    "directory": "jetbrainsmono-bold",
+    "file": "JetBrainsMono-Bold.ttf",
+    "family": "JetBrains Mono",
+    "style": "Bold",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "jetbrainsmonobolditalic",
+    "directory": "jetbrainsmono-bolditalic",
+    "file": "JetBrainsMono-BoldItalic.ttf",
+    "family": "JetBrains Mono",
+    "style": "BoldItalic",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "jetbrainsmonoitalic",
+    "directory": "jetbrainsmono-italic",
+    "file": "JetBrainsMono-Italic.ttf",
+    "family": "JetBrains Mono",
+    "style": "Italic",
     "licence": "OFL-1.1",
     "scripts": ["latin"]
   },
@@ -100,6 +400,34 @@
     "directory": "literata",
     "file": "Literata-Regular.ttf",
     "family": "Literata",
+    "style": "Regular",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "literatabold",
+    "directory": "literata-bold",
+    "file": "Literata-Bold.ttf",
+    "family": "Literata",
+    "style": "Bold",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "literatabolditalic",
+    "directory": "literata-bolditalic",
+    "file": "Literata-BoldItalic.ttf",
+    "family": "Literata",
+    "style": "BoldItalic",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "literataitalic",
+    "directory": "literata-italic",
+    "file": "Literata-Italic.ttf",
+    "family": "Literata",
+    "style": "Italic",
     "licence": "OFL-1.1",
     "scripts": ["latin"]
   },
@@ -108,6 +436,34 @@
     "directory": "lora",
     "file": "Lora-Regular.ttf",
     "family": "Lora",
+    "style": "Regular",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "lorabold",
+    "directory": "lora-bold",
+    "file": "Lora-Bold.ttf",
+    "family": "Lora",
+    "style": "Bold",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "lorabolditalic",
+    "directory": "lora-bolditalic",
+    "file": "Lora-BoldItalic.ttf",
+    "family": "Lora",
+    "style": "BoldItalic",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "loraitalic",
+    "directory": "lora-italic",
+    "file": "Lora-Italic.ttf",
+    "family": "Lora",
+    "style": "Italic",
     "licence": "OFL-1.1",
     "scripts": ["latin"]
   },
@@ -116,6 +472,34 @@
     "directory": "montserrat",
     "file": "Montserrat-Regular.ttf",
     "family": "Montserrat",
+    "style": "Regular",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "montserratbold",
+    "directory": "montserrat-bold",
+    "file": "Montserrat-Bold.ttf",
+    "family": "Montserrat",
+    "style": "Bold",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "montserratbolditalic",
+    "directory": "montserrat-bolditalic",
+    "file": "Montserrat-BoldItalic.ttf",
+    "family": "Montserrat",
+    "style": "BoldItalic",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "montserratitalic",
+    "directory": "montserrat-italic",
+    "file": "Montserrat-Italic.ttf",
+    "family": "Montserrat",
+    "style": "Italic",
     "licence": "OFL-1.1",
     "scripts": ["latin"]
   },
@@ -124,6 +508,16 @@
     "directory": "notosansthailooped",
     "file": "NotoSansThaiLooped-Regular.ttf",
     "family": "Noto Sans Thai Looped",
+    "style": "Regular",
+    "licence": "OFL-1.1",
+    "scripts": ["thai"]
+  },
+  {
+    "id": "notosansthailoopedbold",
+    "directory": "notosansthailooped-bold",
+    "file": "NotoSansThaiLooped-Bold.ttf",
+    "family": "Noto Sans Thai Looped",
+    "style": "Bold",
     "licence": "OFL-1.1",
     "scripts": ["thai"]
   },
@@ -132,6 +526,34 @@
     "directory": "notoserif",
     "file": "NotoSerif-Regular.ttf",
     "family": "Noto Serif",
+    "style": "Regular",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "notoserifbold",
+    "directory": "notoserif-bold",
+    "file": "NotoSerif-Bold.ttf",
+    "family": "Noto Serif",
+    "style": "Bold",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "notoserifbolditalic",
+    "directory": "notoserif-bolditalic",
+    "file": "NotoSerif-BoldItalic.ttf",
+    "family": "Noto Serif",
+    "style": "BoldItalic",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "notoserifitalic",
+    "directory": "notoserif-italic",
+    "file": "NotoSerif-Italic.ttf",
+    "family": "Noto Serif",
+    "style": "Italic",
     "licence": "OFL-1.1",
     "scripts": ["latin"]
   },
@@ -140,6 +562,16 @@
     "directory": "notoserifthai",
     "file": "NotoSerifThai-Regular.ttf",
     "family": "Noto Serif Thai",
+    "style": "Regular",
+    "licence": "OFL-1.1",
+    "scripts": ["thai"]
+  },
+  {
+    "id": "notoserifthaibold",
+    "directory": "notoserifthai-bold",
+    "file": "NotoSerifThai-Bold.ttf",
+    "family": "Noto Serif Thai",
+    "style": "Bold",
     "licence": "OFL-1.1",
     "scripts": ["thai"]
   },
@@ -148,6 +580,34 @@
     "directory": "opensans",
     "file": "OpenSans-Regular.ttf",
     "family": "Open Sans",
+    "style": "Regular",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "opensansbold",
+    "directory": "opensans-bold",
+    "file": "OpenSans-Bold.ttf",
+    "family": "Open Sans",
+    "style": "Bold",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "opensansbolditalic",
+    "directory": "opensans-bolditalic",
+    "file": "OpenSans-BoldItalic.ttf",
+    "family": "Open Sans",
+    "style": "BoldItalic",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "opensansitalic",
+    "directory": "opensans-italic",
+    "file": "OpenSans-Italic.ttf",
+    "family": "Open Sans",
+    "style": "Italic",
     "licence": "OFL-1.1",
     "scripts": ["latin"]
   },
@@ -156,6 +616,16 @@
     "directory": "oswald",
     "file": "Oswald-Regular.ttf",
     "family": "Oswald",
+    "style": "Regular",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "oswaldbold",
+    "directory": "oswald-bold",
+    "file": "Oswald-Bold.ttf",
+    "family": "Oswald",
+    "style": "Bold",
     "licence": "OFL-1.1",
     "scripts": ["latin"]
   },
@@ -164,6 +634,34 @@
     "directory": "plusjakartasans",
     "file": "PlusJakartaSans-Regular.ttf",
     "family": "Plus Jakarta Sans",
+    "style": "Regular",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "plusjakartasansbold",
+    "directory": "plusjakartasans-bold",
+    "file": "PlusJakartaSans-Bold.ttf",
+    "family": "Plus Jakarta Sans",
+    "style": "Bold",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "plusjakartasansbolditalic",
+    "directory": "plusjakartasans-bolditalic",
+    "file": "PlusJakartaSans-BoldItalic.ttf",
+    "family": "Plus Jakarta Sans",
+    "style": "BoldItalic",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "plusjakartasansitalic",
+    "directory": "plusjakartasans-italic",
+    "file": "PlusJakartaSans-Italic.ttf",
+    "family": "Plus Jakarta Sans",
+    "style": "Italic",
     "licence": "OFL-1.1",
     "scripts": ["latin"]
   },
@@ -172,6 +670,7 @@
     "directory": "roboto",
     "file": "Roboto-Regular.ttf",
     "family": "Roboto",
+    "style": "Regular",
     "licence": "OFL-1.1",
     "scripts": ["latin"]
   },
@@ -180,6 +679,34 @@
     "directory": "robotocondensed",
     "file": "RobotoCondensed-Regular.ttf",
     "family": "Roboto Condensed",
+    "style": "Regular",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "robotocondensedbold",
+    "directory": "robotocondensed-bold",
+    "file": "RobotoCondensed-Bold.ttf",
+    "family": "Roboto Condensed",
+    "style": "Bold",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "robotocondensedbolditalic",
+    "directory": "robotocondensed-bolditalic",
+    "file": "RobotoCondensed-BoldItalic.ttf",
+    "family": "Roboto Condensed",
+    "style": "BoldItalic",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "robotocondenseditalic",
+    "directory": "robotocondensed-italic",
+    "file": "RobotoCondensed-Italic.ttf",
+    "family": "Roboto Condensed",
+    "style": "Italic",
     "licence": "OFL-1.1",
     "scripts": ["latin"]
   },
@@ -188,6 +715,34 @@
     "directory": "robotomono",
     "file": "RobotoMono-Regular.ttf",
     "family": "Roboto Mono",
+    "style": "Regular",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "robotomonobold",
+    "directory": "robotomono-bold",
+    "file": "RobotoMono-Bold.ttf",
+    "family": "Roboto Mono",
+    "style": "Bold",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "robotomonobolditalic",
+    "directory": "robotomono-bolditalic",
+    "file": "RobotoMono-BoldItalic.ttf",
+    "family": "Roboto Mono",
+    "style": "BoldItalic",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "robotomonoitalic",
+    "directory": "robotomono-italic",
+    "file": "RobotoMono-Italic.ttf",
+    "family": "Roboto Mono",
+    "style": "Italic",
     "licence": "OFL-1.1",
     "scripts": ["latin"]
   },
@@ -196,6 +751,16 @@
     "directory": "robotoslab",
     "file": "RobotoSlab-Regular.ttf",
     "family": "Roboto Slab",
+    "style": "Regular",
+    "licence": "Apache-2.0",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "robotoslabbold",
+    "directory": "robotoslab-bold",
+    "file": "RobotoSlab-Bold.ttf",
+    "family": "Roboto Slab",
+    "style": "Bold",
     "licence": "Apache-2.0",
     "scripts": ["latin"]
   },
@@ -204,6 +769,34 @@
     "directory": "sourcecodepro",
     "file": "SourceCodePro-Regular.ttf",
     "family": "Source Code Pro",
+    "style": "Regular",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "sourcecodeprobold",
+    "directory": "sourcecodepro-bold",
+    "file": "SourceCodePro-Bold.ttf",
+    "family": "Source Code Pro",
+    "style": "Bold",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "sourcecodeprobolditalic",
+    "directory": "sourcecodepro-bolditalic",
+    "file": "SourceCodePro-BoldIt.ttf",
+    "family": "Source Code Pro",
+    "style": "BoldItalic",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "sourcecodeproitalic",
+    "directory": "sourcecodepro-italic",
+    "file": "SourceCodePro-It.ttf",
+    "family": "Source Code Pro",
+    "style": "Italic",
     "licence": "OFL-1.1",
     "scripts": ["latin"]
   },
@@ -212,6 +805,34 @@
     "directory": "sourcesans3",
     "file": "SourceSans3-Regular.ttf",
     "family": "Source Sans 3",
+    "style": "Regular",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "sourcesans3bold",
+    "directory": "sourcesans3-bold",
+    "file": "SourceSans3-Bold.ttf",
+    "family": "Source Sans 3",
+    "style": "Bold",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "sourcesans3bolditalic",
+    "directory": "sourcesans3-bolditalic",
+    "file": "SourceSans3-BoldIt.ttf",
+    "family": "Source Sans 3",
+    "style": "BoldItalic",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "sourcesans3italic",
+    "directory": "sourcesans3-italic",
+    "file": "SourceSans3-It.ttf",
+    "family": "Source Sans 3",
+    "style": "Italic",
     "licence": "OFL-1.1",
     "scripts": ["latin"]
   },
@@ -220,6 +841,34 @@
     "directory": "sourceserif4",
     "file": "SourceSerif4Display-Regular.ttf",
     "family": "Source Serif 4 Display",
+    "style": "Regular",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "sourceserif4bold",
+    "directory": "sourceserif4-bold",
+    "file": "SourceSerif4Display-Bold.ttf",
+    "family": "Source Serif 4 Display",
+    "style": "Bold",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "sourceserif4bolditalic",
+    "directory": "sourceserif4-bolditalic",
+    "file": "SourceSerif4Display-BoldIt.ttf",
+    "family": "Source Serif 4 Display",
+    "style": "BoldItalic",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "sourceserif4italic",
+    "directory": "sourceserif4-italic",
+    "file": "SourceSerif4Display-It.ttf",
+    "family": "Source Serif 4 Display",
+    "style": "Italic",
     "licence": "OFL-1.1",
     "scripts": ["latin"]
   },
@@ -228,6 +877,16 @@
     "directory": "spacegrotesk",
     "file": "SpaceGrotesk-Regular.ttf",
     "family": "Space Grotesk",
+    "style": "Regular",
+    "licence": "OFL-1.1",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "spacegroteskbold",
+    "directory": "spacegrotesk-bold",
+    "file": "SpaceGrotesk-Bold.ttf",
+    "family": "Space Grotesk",
+    "style": "Bold",
     "licence": "OFL-1.1",
     "scripts": ["latin"]
   },
@@ -236,6 +895,34 @@
     "directory": "ubuntusans",
     "file": "UbuntuSans-Regular.ttf",
     "family": "Ubuntu Sans",
+    "style": "Regular",
+    "licence": "Ubuntu-font-1.0",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "ubuntusansbold",
+    "directory": "ubuntusans-bold",
+    "file": "UbuntuSans-Bold.ttf",
+    "family": "Ubuntu Sans",
+    "style": "Bold",
+    "licence": "Ubuntu-font-1.0",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "ubuntusansbolditalic",
+    "directory": "ubuntusans-bolditalic",
+    "file": "UbuntuSans-BoldItalic.ttf",
+    "family": "Ubuntu Sans",
+    "style": "BoldItalic",
+    "licence": "Ubuntu-font-1.0",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "ubuntusansitalic",
+    "directory": "ubuntusans-italic",
+    "file": "UbuntuSans-Italic.ttf",
+    "family": "Ubuntu Sans",
+    "style": "Italic",
     "licence": "Ubuntu-font-1.0",
     "scripts": ["latin"]
   },
@@ -244,6 +931,34 @@
     "directory": "ubuntusansmono",
     "file": "UbuntuSansMono-Regular.ttf",
     "family": "Ubuntu Sans Mono",
+    "style": "Regular",
+    "licence": "Ubuntu-font-1.0",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "ubuntusansmonobold",
+    "directory": "ubuntusansmono-bold",
+    "file": "UbuntuSansMono-Bold.ttf",
+    "family": "Ubuntu Sans Mono",
+    "style": "Bold",
+    "licence": "Ubuntu-font-1.0",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "ubuntusansmonobolditalic",
+    "directory": "ubuntusansmono-bolditalic",
+    "file": "UbuntuSansMono-BoldItalic.ttf",
+    "family": "Ubuntu Sans Mono",
+    "style": "BoldItalic",
+    "licence": "Ubuntu-font-1.0",
+    "scripts": ["latin"]
+  },
+  {
+    "id": "ubuntusansmonoitalic",
+    "directory": "ubuntusansmono-italic",
+    "file": "UbuntuSansMono-Italic.ttf",
+    "family": "Ubuntu Sans Mono",
+    "style": "Italic",
     "licence": "Ubuntu-font-1.0",
     "scripts": ["latin"]
   }

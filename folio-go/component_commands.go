@@ -4603,7 +4603,11 @@ func embedFontFamily(t *Template, raw map[string]json.RawMessage) error {
 	//
 	// Until Epic 16 the tie between a face's declared SPDX id and its own
 	// `name` table was a BUILD-TIME test over the 21 reviewed catalogue faces
-	// (font-catalogue.test.ts:355-366). Epic 16 lets a face arrive from the
+	// (font-catalogue.test.ts's `licenceSignatures`, read by "gives every
+	// catalogue face a LICENSE, a NOTICE, and a NOTICE that describes the
+	// binary it sits next to" — named rather than cited by line, which had
+	// already drifted twice; the tier is 107 faces since
+	// spec-install-all-face-cuts story 3). Epic 16 lets a face arrive from the
 	// published library at the moment of a pick, so that gate stops covering
 	// the population — and a runtime check that did not carry the tie would
 	// make Epic 16 STRICTLY WEAKER than what it replaces, on the exact axis

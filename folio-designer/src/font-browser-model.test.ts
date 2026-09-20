@@ -237,13 +237,20 @@ describe('the footer states what confirming will actually do', () => {
     }
   })
 
-  it('corrects the mockup\'s weight line to what this product embeds', () => {
-    // The mockup prints `≈ N weights · subset latin+thai`. This product embeds
-    // one upright Regular per family and subsets nothing, so a footer repeating
-    // the mockup would be the one region that lies about the file.
+  it('corrects the mockup\'s weight line to what confirming actually fetches', () => {
+    // The mockup prints `≈ N weights · subset latin+thai`. This product subsets
+    // nothing here, so a footer repeating the mockup would be the one region
+    // that lies about the file.
+    //
+    // ⚠ AND THE CLAUSE THAT REPLACED IT WENT FALSE IN ITS TURN
+    // (spec-install-all-face-cuts story 3). It read `N faces · one upright
+    // Regular each, no bold or italic`; confirming a staged family now installs
+    // every cut that family publishes, so the old string said the opposite of
+    // what the button does. The noun moved with it: `staged` counts FAMILIES,
+    // which was the same number as faces only under the one-face rule.
     expect(weightLine(0)).toBe('')
-    expect(weightLine(1)).toBe('1 face · one upright Regular each, no bold or italic')
-    expect(weightLine(3)).toBe('3 faces · one upright Regular each, no bold or italic')
+    expect(weightLine(1)).toBe('1 family · every cut each one publishes, up to four')
+    expect(weightLine(3)).toBe('3 families · every cut each one publishes, up to four')
   })
 
   // THESE ARE A SEPARATE `it` ON PURPOSE, AND THE REASON IS A DEFECT A RED-PROOF
@@ -271,9 +278,12 @@ describe('the footer states what confirming will actually do', () => {
       // confirm embeds, and there it installs. Destination language lives in
       // `confirmLabel` and `pendingLine`, which 16.5 revises in one place.
       expect(line, `weightLine(${staged}) names a destination`).not.toMatch(/template|file|document|embed|install/i)
-      // And it still states the face fact, so this cannot be satisfied by
-      // returning nothing.
-      expect(line, `weightLine(${staged}) dropped the face fact`).toMatch(/one upright Regular each, no bold or italic/)
+      // AND IT STILL STATES THE FACE FACT, so this cannot be satisfied by
+      // returning nothing — re-pointed by story 3 at what is now true.
+      expect(line, `weightLine(${staged}) dropped the face fact`).toMatch(/every cut each one publishes, up to four/)
+      // AND IT MAY NOT GO BACK TO CLAIMING ONE FACE PER FAMILY, which is the
+      // statement this story retired and the one a merge could reinstate.
+      expect(line, `weightLine(${staged}) claims one upright Regular per family again`).not.toMatch(/one upright Regular/)
     }
     // The empty slot stays empty — the one staged count with no sentence at all.
     expect(weightLine(0)).toBe('')

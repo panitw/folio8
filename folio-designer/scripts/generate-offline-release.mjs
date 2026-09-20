@@ -241,7 +241,15 @@ export function generateOfflineRelease(outputDir = dist, { releasePayloadText } 
       totalBytes: coreBrotliBytes,
     },
     catalogue: {
-      familyCount: catalogueAssets.length,
+      // RENAMED `familyCount` -> `faceCount` (spec-install-all-face-cuts,
+      // story 3). It always counted ASSETS; while the catalogue was one upright
+      // Regular per family the two were the same number, and the name was a
+      // harmless synonym. The catalogue now declares up to four cuts per family,
+      // so `familyCount` would report 107 families over 31 — a field that lies
+      // rather than one that reds, and the one number in this record a reader
+      // would quote without re-deriving. `verify-offline-release.mjs` moved with
+      // it, so a record written under the old name reds there.
+      faceCount: catalogueAssets.length,
       // THE ONE NUMBER. Total Brotli bytes the Story 8.5 catalogue adds to the
       // offline release. It is a MEASUREMENT, not a budget, and nothing in this
       // repository compares it to a threshold.

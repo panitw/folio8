@@ -100,8 +100,18 @@ func sha256Hex(b []byte) string {
 // reads: 0 matches and 2+ matches are BOTH failures, and neither is ever
 // read as "no constraint". A parser that extracts nothing is the failure
 // mode being designed against, not an outcome — the same rule
-// folio-designer/src/font-catalogue.test.ts:139-152 and
-// e2e/font-embed-boundary.spec.ts:130-136 already apply on the TS side.
+// folio-designer/src/font-catalogue.test.ts's `recordedShippedDigest`,
+// `recordedShippedSize` and `recordedArchive` and
+// e2e/font-embed-boundary.spec.ts's `readBoundarySentences` already apply
+// on the TS side.
+//
+// ⚠ CITED BY NAME, NOT BY LINE, AND THAT IS THE FIX RATHER THAN A STYLE
+// CHOICE. This read ":139-152" and ":130-136" and both had drifted to
+// unrelated code long before spec-install-all-face-cuts story 3 moved
+// every line in those files again. A line citation into another
+// language's test file is a fact with no gate behind it and rots on the
+// next edit either side; a symbol is greppable and moves with the thing
+// it names.
 func exactlyOneRow(t *testing.T, re *regexp.Regexp, source, path, what string) string {
 	t.Helper()
 	found := re.FindAllStringSubmatch(source, -1)

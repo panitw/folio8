@@ -59,7 +59,7 @@ describe('`source` names provenance and never a retrieval path', () => {
   // site is the fourth, added by the same story, and is named at the other
   // three so the count cannot quietly go stale again.
   it('is asserted over the whole committed tier, not over a sample of it', () => {
-    expect(catalogueFaces.length, 'the generated catalogue is empty, so every committed-tier assertion below is vacuous; this is one of FOUR population floors and all four move together').toBeGreaterThanOrEqual(31)
+    expect(catalogueFaces.length, 'the generated catalogue is empty, so every committed-tier assertion below is vacuous; this is one of FOUR population floors and all four move together — raised 31 -> 107 by spec-install-all-face-cuts story 3').toBeGreaterThanOrEqual(107)
   })
 
   it('carries no scheme and no host on the committed tier', () => {

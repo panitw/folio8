@@ -20,10 +20,17 @@ type censusVerdict struct {
 }
 
 // pinnedCensus is the WHOLE licence population of this repository with
-// its verdict written down — 82 rows: 73 committed LICENSE*/COPYING
+// its verdict written down — 160 rows: 151 committed LICENSE*/COPYING
 // files (every row whose `where` is a repository-relative path) plus the
 // 9 dependency licences the three Go module graphs resolve to (every row
 // whose `where` begins "dep ").
+//
+// AND THEY WERE WRONG AGAIN, BY 78, UNTIL spec-install-all-face-cuts STORY 3
+// COUNTED THEM. This sentence read "82 rows: 73 committed" while the table
+// held 160 and 151: story 3 added 76 committed font licences and the header
+// that totals them was not moved with them — the third instance of the same
+// defect the two paragraphs below record, which is what the derived
+// `committedPinCount` exists to keep out of the assertions.
 //
 // BOTH NUMBERS WERE ALREADY WRONG BY ONE BEFORE STORY 11.1 TOUCHED THEM:
 // this sentence read "67 rows: 58 committed" while the table held 68 and
@@ -124,23 +131,81 @@ var pinnedCensus = []censusVerdict{
 	// upstream text fetched from the same pinned artifact as the binary
 	// beside it, never a hand-copy, so a row here is a verdict about bytes
 	// this repository actually redistributes (AD-26).
+	//
+	// spec-install-all-face-cuts STORY 3'S BATCH, SEVENTY-SIX MORE, on the
+	// same terms and IN THE SAME SORTED LIST rather than appended as a
+	// block of their own — this table is read by path, and a second
+	// chronological run in it would make "is this path pinned?" a question
+	// about which story added it.
+	//
+	// ⚠ EACH IS A SEPARATE VERDICT ABOUT A SEPARATE PATH, AND THAT IS THE
+	// POINT RATHER THAN AN OVERSIGHT. A cut's LICENSE* is the same text its
+	// family's Regular carries — `arimo-bold/LICENSE-OFL.txt` is a copy of
+	// `arimo/LICENSE-OFL.txt` — because the two come out of one upstream
+	// archive. AD-26 records verdicts about PATHS this repository
+	// redistributes, not about distinct texts (the `folio-js/LICENSE` note
+	// above says the same thing for the same reason), and
+	// `ResolveAssets` fails the build for any font directory without its
+	// own licence text beside the binary. So the duplication is the asset
+	// gate working, not a table that needs deduplicating.
+	{"folio-designer/public/fonts/arimo-bold/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/arimo-bolditalic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/arimo-italic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/arimo/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/cascadiacode-bold/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/cascadiacode-bolditalic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/cascadiacode-italic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/cascadiacode/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/cascadiamono-bold/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/cascadiamono-bolditalic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/cascadiamono-italic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/cascadiamono/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/cousine-bold/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/cousine-bolditalic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/cousine-italic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/cousine/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/dmsans-bold/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/dmsans/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/firacode-bold/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/firacode/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/geist-bold/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/geist-bolditalic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/geist-italic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/geist/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/geistmono-bold/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/geistmono-bolditalic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/geistmono-italic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/geistmono/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/ibmplexmono/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/ibmplexsans/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/ibmplexsansthai/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/intelonemono-bold/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/intelonemono-bolditalic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/intelonemono-italic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/intelonemono/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/inter-bold/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/inter-bolditalic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/inter-italic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/inter/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/interdisplay-bold/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/interdisplay-bolditalic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/interdisplay-italic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/interdisplay/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/jetbrainsmono-bold/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/jetbrainsmono-bolditalic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/jetbrainsmono-italic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/jetbrainsmono/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/literata-bold/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/literata-bolditalic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/literata-italic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/literata/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/lora-bold/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/lora-bolditalic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/lora-italic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/lora/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/montserrat-bold/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/montserrat-bolditalic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/montserrat-italic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/montserrat/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/notosans-bold/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/notosans-bolditalic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
@@ -149,28 +214,72 @@ var pinnedCensus = []censusVerdict{
 	{"folio-designer/public/fonts/notosanssc/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/notosansthai-bold/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/notosansthai/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/notosansthailooped-bold/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/notosansthailooped/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/notoserif-bold/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/notoserif-bolditalic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/notoserif-italic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/notoserif/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/notoserifthai-bold/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/notoserifthai/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/opensans-bold/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/opensans-bolditalic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/opensans-italic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/opensans/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/oswald-bold/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/oswald/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/plusjakartasans-bold/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/plusjakartasans-bolditalic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/plusjakartasans-italic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/plusjakartasans/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/roboto-bold/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/roboto-bolditalic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/roboto-italic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/roboto/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/robotocondensed-bold/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/robotocondensed-bolditalic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/robotocondensed-italic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/robotocondensed/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/robotomono-bold/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/robotomono-bolditalic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/robotomono-italic/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/robotomono/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
-	// THE FIRST Apache-2.0 FONT ASSET IN THE REPOSITORY. `googlefonts/robotoslab`
-	// ships an Apache-2.0 LICENSE.txt and the binary's own nameID 13 reads
-	// "Licensed under the Apache License, Version 2.0" — the two agree, which is
-	// what font-catalogue.test.ts's licenceSignatures checks from the other side.
+	// THE Apache-2.0 FONT ASSETS IN THIS REPOSITORY, AND ROBOTO SLAB IS THE
+	// WHOLE OF THEM. `googlefonts/robotoslab` ships an Apache-2.0 LICENSE.txt
+	// and the binary's own nameID 13 reads "Licensed under the Apache License,
+	// Version 2.0" — the two agree, which is what font-catalogue.test.ts's
+	// licenceSignatures checks from the other side. Story 8.5 committed the
+	// Regular, the FIRST Apache-2.0 font asset this repository ever carried;
+	// spec-install-all-face-cuts story 3 added its Bold, which carries its own
+	// copy because AD-26 binds the DIRECTORY and not the family.
+	//
+	// ⚠ THE COMMENT SITS ABOVE BOTH ROWS, NOT ABOVE THE REGULAR ALONE. It used
+	// to, and story 3's sort put `robotoslab-bold/` above it — leaving a
+	// paragraph that says "the FIRST Apache-2.0 font asset" printed under an
+	// Apache-2.0 font asset it was not written about.
+	{"folio-designer/public/fonts/robotoslab-bold/LICENSE-APACHE.txt", FamilyPermissive, "Apache-2.0"},
 	{"folio-designer/public/fonts/robotoslab/LICENSE-APACHE.txt", FamilyPermissive, "Apache-2.0"},
+	{"folio-designer/public/fonts/sourcecodepro-bold/LICENSE-OFL.md", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/sourcecodepro-bolditalic/LICENSE-OFL.md", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/sourcecodepro-italic/LICENSE-OFL.md", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/sourcecodepro/LICENSE-OFL.md", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/sourcesans3-bold/LICENSE-OFL.md", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/sourcesans3-bolditalic/LICENSE-OFL.md", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/sourcesans3-italic/LICENSE-OFL.md", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/sourcesans3/LICENSE-OFL.md", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/sourceserif4-bold/LICENSE-OFL.md", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/sourceserif4-bolditalic/LICENSE-OFL.md", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/sourceserif4-italic/LICENSE-OFL.md", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/sourceserif4/LICENSE-OFL.md", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/spacegrotesk-bold/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
 	{"folio-designer/public/fonts/spacegrotesk/LICENSE-OFL.txt", FamilyPermissive, "OFL-1.1"},
+	{"folio-designer/public/fonts/ubuntusans-bold/LICENSE-UFL.txt", FamilyPermissive, "Ubuntu-font-1.0"},
+	{"folio-designer/public/fonts/ubuntusans-bolditalic/LICENSE-UFL.txt", FamilyPermissive, "Ubuntu-font-1.0"},
+	{"folio-designer/public/fonts/ubuntusans-italic/LICENSE-UFL.txt", FamilyPermissive, "Ubuntu-font-1.0"},
 	{"folio-designer/public/fonts/ubuntusans/LICENSE-UFL.txt", FamilyPermissive, "Ubuntu-font-1.0"},
+	{"folio-designer/public/fonts/ubuntusansmono-bold/LICENSE-UFL.txt", FamilyPermissive, "Ubuntu-font-1.0"},
+	{"folio-designer/public/fonts/ubuntusansmono-bolditalic/LICENSE-UFL.txt", FamilyPermissive, "Ubuntu-font-1.0"},
+	{"folio-designer/public/fonts/ubuntusansmono-italic/LICENSE-UFL.txt", FamilyPermissive, "Ubuntu-font-1.0"},
 	{"folio-designer/public/fonts/ubuntusansmono/LICENSE-UFL.txt", FamilyPermissive, "Ubuntu-font-1.0"},
 	{"folio-designer/third-party-notices/pdfjs-dist/LICENSE-APACHE-2.0", FamilyPermissive, "Apache-2.0"},
 	{"folio-designer/third-party-notices/pdfjs-dist/LICENSE-CMAPS", FamilyPermissive, "BSD-3-Clause"},
