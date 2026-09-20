@@ -198,3 +198,83 @@ export function faceCopyright(bytes: ArrayBuffer | ArrayBufferView): string {
 export function faceIsVariable(bytes: ArrayBuffer | ArrayBufferView): boolean {
   return 'fvar' in requireStaticTrueTypeTables(fontView(bytes))
 }
+
+/**
+ * nameID 1 AND nameID 2 — THE TWO RECORDS A FACE IS KEYED BY, AND THE KEYING
+ * IS A CONTRACT WITH THE RENDERING HOST RATHER THAN A STYLE PREFERENCE.
+ *
+ * `folio-go/fontdir`'s `Set` keys a face off a host's disk by its own `name`
+ * table record 1, plus record 2 when that is anything other than `Regular` —
+ * so a file called `Sarabun-Bold.ttf` whose name table says family `Sarabun`,
+ * subfamily `Bold` is keyed `Sarabun Bold`, and renaming the file on disk does
+ * not change its key. A face the AUTHOR imports into this designer must be
+ * keyed by exactly that rule, because a document authored here may go on to
+ * NAME its faces rather than carry them: if the two rules disagreed, the name
+ * a document carries would not be the name the host's directory produces, and
+ * a name-only document would fail to resolve on precisely the deployment this
+ * work exists to serve.
+ *
+ * TRIMMED, BECAUSE `fontdir` TRIMS. `strings.TrimSpace` runs on both records
+ * there before the key is joined, so a leading space in a name record must not
+ * produce two different keys on the two sides of the same contract.
+ *
+ * ABSENT AND BLANK ARE ONE ANSWER, `''`, AND THE CALLER DECIDES WHAT IT MEANS.
+ * `fontdir` refuses a face whose family record is empty — it cannot be keyed —
+ * and treats an empty subfamily as the family's default cut. Neither decision
+ * is taken here: this reader reports what the binary says and the import path
+ * states the refusal, in the same shape `nameTableString` already takes toward
+ * absence.
+ *
+ * NO CONTAINER GUARD, UNLIKE `faceCopyright`. Both callers of these readers
+ * have already run `faceIsVariable` over the same bytes, which carries
+ * `requireStaticTrueTypeTables` inside it, so an unparsable container has
+ * already been refused by the time a name is asked for. Running the guard again
+ * would be a second walk of the same directory answering a question already
+ * settled — but the table directory IS still read through the guard rather than
+ * through `sfntTableDirectory`, so a caller that reaches for one of these first
+ * gets the stated refusal rather than a silent `''`.
+ */
+export function faceFamilyName(bytes: ArrayBuffer | ArrayBufferView): string {
+  const view = fontView(bytes)
+  return nameTableString(view, requireStaticTrueTypeTables(view), 1)?.trim() ?? ''
+}
+
+/** nameID 2 — the subfamily, trimmed. See `faceFamilyName` for why the pair is one contract. */
+export function faceSubfamilyName(bytes: ArrayBuffer | ArrayBufferView): string {
+  const view = fontView(bytes)
+  return nameTableString(view, requireStaticTrueTypeTables(view), 2)?.trim() ?? ''
+}
+
+/**
+ * nameID 0, 13 AND 14 — LICENCE IDENTITY, TRANSCRIBED AND NEVER COMPOSED.
+ *
+ * `faceCopyright` above THROWS when nameID 0 is absent, because the face it
+ * reads is one this product distributes and the engine refuses to load a
+ * document embedding a face with an empty `copyright`. THAT REFUSAL DOES NOT
+ * APPLY TO A FACE THE AUTHOR SUPPLIES. Holding the right licence for a font
+ * they load is the author's responsibility, not this product's, so an absent
+ * record is not a fault to refuse — it is the binary saying nothing, which is
+ * legal, and it is recorded as the empty string.
+ *
+ * THE VALUE IS NOT TRIMMED AND NOT CLASSIFIED. `faceCopyright` trims because it
+ * treats `" "` as absent for its own refusal; here there is no refusal to make,
+ * so what the binary holds is what is stored. No SPDX matching, no inference
+ * from a family name, no defaulting to an identifier nobody read: the field
+ * says what the font program says, and an empty value means it said nothing.
+ */
+export function faceDeclaredCopyright(bytes: ArrayBuffer | ArrayBufferView): string {
+  const view = fontView(bytes)
+  return nameTableString(view, requireStaticTrueTypeTables(view), 0) ?? ''
+}
+
+/** nameID 13 — the licence text the binary carries, verbatim. See `faceDeclaredCopyright`. */
+export function faceDeclaredLicenceText(bytes: ArrayBuffer | ArrayBufferView): string {
+  const view = fontView(bytes)
+  return nameTableString(view, requireStaticTrueTypeTables(view), 13) ?? ''
+}
+
+/** nameID 14 — the licence the binary names, verbatim. See `faceDeclaredCopyright`. */
+export function faceDeclaredLicence(bytes: ArrayBuffer | ArrayBufferView): string {
+  const view = fontView(bytes)
+  return nameTableString(view, requireStaticTrueTypeTables(view), 14) ?? ''
+}

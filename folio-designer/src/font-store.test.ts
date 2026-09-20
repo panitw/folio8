@@ -296,6 +296,58 @@ describe('storage that cannot be opened or written', () => {
   })
 })
 
+// THE TWO CLASSES OF STRING `soundFace` HOLDS A RECORD TO, PINNED SEPARATELY
+// (the disk-import story). The identity fields still have to be there and be
+// non-empty; the three TRANSCRIBED fields may be empty, because an author's own
+// font file can legally declare no nameID 0, 13 or 14 at all and the designer
+// copies what the binary says rather than composing a value. Before the split,
+// such a face was written and then read straight back as CORRUPT and dropped —
+// it vanished between one listing and the next with nothing on screen.
+describe('which of a record\'s strings may be empty', () => {
+  it('keeps a record whose licence, licenceText and copyright are all empty, through a write and a list', async () => {
+    const store = await freshStore()
+    const written = await store.put(await record({ licence: '', licenceText: '', copyright: '' }))
+    expect(written.ok, written.ok ? '' : written.reason).toBe(true)
+    const listed = await store.list()
+    expect(listed.ok).toBe(true)
+    if (!listed.ok) return
+    expect(listed.value, 'a face whose binary declares no licence records must survive its own store').toHaveLength(1)
+    expect(listed.value[0].licence).toBe('')
+    expect(listed.value[0].licenceText).toBe('')
+    expect(listed.value[0].copyright).toBe('')
+    // AND THE BYTES COME BACK TOO — the content-address check on the read path
+    // runs over the same record, so this is the whole round trip and not the
+    // metadata half of it.
+    const read = await store.get(listed.value[0].key)
+    expect(read.ok && read.value !== undefined).toBe(true)
+  })
+
+  // EMPTY IS A VALUE; ABSENT IS A RECORD SHAPE THIS BUILD DOES NOT UNDERSTAND.
+  // The two are deliberately not collapsed, so a record written by something
+  // that never had the field at all is still treated as corrupt.
+  it('still rejects a record whose licence, licenceText or copyright is ABSENT rather than empty', async () => {
+    for (const field of ['licence', 'licenceText', 'copyright'] as const) {
+      const store = await freshStore()
+      const sound = await record()
+      const { [field]: _dropped, ...missing } = sound
+      const written = await store.put(missing as unknown as StoredFaceRecord)
+      expect(written.ok).toBe(true)
+      const listed = await store.list()
+      expect(listed.ok && listed.value, `a record with no \`${field}\` at all is a shape this build cannot read and must be dropped`).toEqual([])
+    }
+  })
+
+  it('still rejects an EMPTY identity field, because a record that cannot be addressed or resolved is corrupt', async () => {
+    for (const field of ['key', 'family', 'style', 'source', 'mediaType', 'fetchedAt'] as const) {
+      const store = await freshStore()
+      const written = await store.put(await record({ [field]: '' }))
+      expect(written.ok).toBe(true)
+      const listed = await store.list()
+      expect(listed.ok && listed.value, `an empty \`${field}\` must still be read back as a corrupt entry`).toEqual([])
+    }
+  })
+})
+
 describe('an entry that has gone bad', () => {
   /**
    * Reaches past the store to write whatever a browser, another tab or an older

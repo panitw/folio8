@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { faceCopyright, fontView, nameTableString, requireStaticTrueTypeTables, sfntTableDirectory } from './font-name-table'
+import { faceCopyright, faceDeclaredCopyright, faceDeclaredLicence, faceDeclaredLicenceText, faceFamilyName, faceSubfamilyName, fontView, nameTableString, requireStaticTrueTypeTables, sfntTableDirectory } from './font-name-table'
 import { sfntWithCopyright, sfntWithNames } from './test/sfnt-fixture'
 import { blankComments } from '../scripts/forbidden-font-hosts.mjs'
 
@@ -170,5 +170,56 @@ describe('the shared sfnt name-table reader', () => {
       const source = fs.readFileSync(file, 'utf8')
       expect(source, `${path.basename(file)} must not declare its own name-table walk`).not.toMatch(/function nameTableString|const nameTableString/)
     }
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE READERS THE DISK-IMPORT PATH ADDED (story 3): nameID 1 and 2, which KEY a
+// face, and nameID 0, 13 and 14, which state its licence identity.
+describe('the name records an author-supplied face is keyed and described by', () => {
+  const named = (records: ReadonlyArray<Readonly<{ nameID: number; value: string }>>) =>
+    sfntWithNames(records.map((record) => ({ platform: 3, ...record })))
+
+  it('reads the family and subfamily records, trimmed as `fontdir` trims them', () => {
+    const bytes = named([{ nameID: 1, value: '  Sarabun  ' }, { nameID: 2, value: '  Bold  ' }])
+    expect(faceFamilyName(bytes)).toBe('Sarabun')
+    expect(faceSubfamilyName(bytes)).toBe('Bold')
+  })
+
+  it('answers `` for an absent family or subfamily record rather than inventing one', () => {
+    expect(faceFamilyName(named([{ nameID: 2, value: 'Bold' }]))).toBe('')
+    expect(faceSubfamilyName(named([{ nameID: 1, value: 'Sarabun' }]))).toBe('')
+  })
+
+  it('reads a Macintosh-platform family record through the same one walker', () => {
+    expect(faceFamilyName(sfntWithNames([{ platform: 1, nameID: 1, value: 'Sarabun' }]))).toBe('Sarabun')
+  })
+
+  it('transcribes nameID 0, 13 and 14 without trimming, classifying or inferring', () => {
+    const bytes = named([
+      { nameID: 0, value: ' Copyright 2019 ' },
+      { nameID: 13, value: 'The terms, in full.' },
+      { nameID: 14, value: 'OFL-1.1' },
+    ])
+    expect(faceDeclaredCopyright(bytes)).toBe(' Copyright 2019 ')
+    expect(faceDeclaredLicenceText(bytes)).toBe('The terms, in full.')
+    expect(faceDeclaredLicence(bytes)).toBe('OFL-1.1')
+  })
+
+  // THE DIVERGENCE FROM `faceCopyright` IS THE WHOLE POINT OF THE SECOND
+  // READER, and it is asserted as a divergence rather than described as one:
+  // the same bytes throw through one door and return `` through the other.
+  it('does NOT refuse an absent copyright, where `faceCopyright` does', () => {
+    const bytes = named([{ nameID: 1, value: 'Brand Grotesk' }])
+    expect(() => faceCopyright(bytes)).toThrow()
+    expect(faceDeclaredCopyright(bytes)).toBe('')
+    expect(faceDeclaredLicenceText(bytes)).toBe('')
+    expect(faceDeclaredLicence(bytes)).toBe('')
+  })
+
+  it('still refuses a container that is not a static TrueType sfnt, through the guard both readers share', () => {
+    const notAFont = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0, 0, 0, 0, 0, 0]).buffer
+    expect(() => faceFamilyName(notAFont)).toThrow(/not a static TrueType sfnt/)
+    expect(() => faceDeclaredCopyright(notAFont)).toThrow(/not a static TrueType sfnt/)
   })
 })

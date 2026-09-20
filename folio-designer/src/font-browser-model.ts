@@ -550,3 +550,34 @@ export function pageOf(rows: ReadonlyArray<BrowserRow>, page: number): ReadonlyA
 export function pageLine(page: number, matching: number): string {
   return `Page ${Math.min(page, pageCount(matching) - 1) + 1} of ${pageCount(matching)}`
 }
+
+/**
+ * THE IMPORT CONTROL — THE THIRD SOURCE OF A FACE, AND THE ONLY ONE THE AUTHOR
+ * SUPPLIES THEMSELVES.
+ *
+ * A face reaches a document by three routes now: the faces the release ships,
+ * the families this designer can fetch, and a file the author holds a licence
+ * for and picks off their own machine. The first two are rows in this dialog;
+ * the third cannot be a row, because the dialog has no way to list a file it has
+ * never been shown. So it is a control beside the confirm pair, where the
+ * dialog's other actions are.
+ *
+ * THE WORDS SAY "THIS MACHINE" AND NEVER "INSTALLED FONTS". Nothing here reads
+ * the operating system's font book; the author hands over a file they chose.
+ * The distinction is `spec-fonts`' *"No host fonts"* non-goal, which survives
+ * this story intact.
+ */
+export const importControlLabel = 'Import font files…'
+export const importControlName = 'Import font files from this machine'
+
+/**
+ * WHY THE CONTROL IS NOT THERE, IN THE ONE BROWSER WHERE IT CANNOT BE.
+ *
+ * An import's only sink is the machine store. Where that store cannot be opened
+ * — a private window, cleared site data, a browser with the database disabled —
+ * every write would refuse AFTER the author had picked files and asserted a
+ * right over them, which is a question asked for nothing. The control goes, and
+ * the reason is stated: a disabled control with no explanation, or a missing one
+ * with no trace, is the thing this screen's contract forbids.
+ */
+export const importUnavailableNote = 'Font files cannot be imported here: this browser will not let the designer keep typefaces on this machine.'

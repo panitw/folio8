@@ -4,7 +4,8 @@ import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 import { catalogueFaces } from './generated/font-catalogue'
 import { fontHostDeclarations, fontsRepositoryHost, webFaceSource } from './font-source'
-import { assertProvenanceShape } from './test/provenance-shape'
+import { assertAuthorSuppliedProvenanceShape, assertProvenanceShape } from './test/provenance-shape'
+import { authorSuppliedFaceSource } from './font-import'
 
 // STORY 16.1a — THE TRIPWIRE UNDER `source`, ON BOTH TIERS (D-16.R.13, DW-160).
 //
@@ -187,6 +188,47 @@ describe('`source` names provenance and never a retrieval path', () => {
       'string',
       '${JSON.stringify(committedFaceSource(face))}',
     ])
+
+    // AND THE THIRD TIER, SCRAPED THE SAME WAY — ADMITTED DELIBERATELY RATHER
+    // THAN INHERITED. A face the author supplies is a third KIND of `source`,
+    // and the reason it is scraped here beside the other two is the reason this
+    // whole file exists: the defect being guarded against is not "a bad string"
+    // but "the writers drifting apart", and a tier with no entry in the scrape
+    // is a tier this guard cannot see. Two mentions: the `ImportedFace` field
+    // declaration and the emission.
+    const imported = fs.readFileSync(path.join(here, 'font-import.ts'), 'utf8')
+    expect(sourceMentions(imported), 'font-import.ts must build `source` through authorSuppliedFaceSource and nowhere else; the first entry is the AcknowledgedFace field declaration, listed rather than filtered so no second writer can dress itself as one').toEqual([
+      'string }>',
+      'authorSuppliedFaceSource(today) })',
+    ])
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE THIRD TIER — A FACE THE AUTHOR SUPPLIED (story 3).
+//
+// IT IS HELD TO ITS OWN SHAPE AND NOT TO THE CATALOGUE GRAMMAR, and the
+// separation is the whole design. `assertProvenanceShape` asks for an upstream
+// project, a path within it and a fetch date, because that is what is TRUE of a
+// face this product distributes. None of the three is true of a file off the
+// author's own disk, and loosening the catalogue predicate until a third shape
+// slipped under it would have cost the two tiers the grammar this file exists to
+// hold them to. So the third tier gets its own assertion, with the prohibitions
+// that are shared (a scheme, a digest) and the one that is its own: no path, no
+// filename, no machine identity.
+describe('`source` on the author-supplied tier says where a face came from without saying whose machine', () => {
+  it('carries no path, no filename, no scheme and no digest', () => {
+    assertAuthorSuppliedProvenanceShape(expect, 'authorSuppliedFaceSource', authorSuppliedFaceSource('2026-09-21'))
+  })
+
+  it('is NOT admitted by the catalogue grammar, and the catalogue tiers are NOT admitted by this one', () => {
+    // THE TWO PREDICATES ARE DISJOINT ON REAL VALUES, WHICH IS THE PROOF THAT
+    // ONE WAS NOT QUIETLY WIDENED INTO THE OTHER. If a later edit relaxed
+    // `assertProvenanceShape` far enough to accept an author-supplied string,
+    // or relaxed the author-supplied one far enough to accept a fetched string,
+    // this case reds — and no other case in this file would.
+    expect(() => assertProvenanceShape(expect, 'committed tier', 'the author-supplied source', authorSuppliedFaceSource('2026-09-21'))).toThrow()
+    expect(() => assertAuthorSuppliedProvenanceShape(expect, 'a fetched source', webFaceSource('ofl/kanit/Kanit-Regular.ttf', '2026-09-03'))).toThrow()
   })
 })
 

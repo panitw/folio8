@@ -12,7 +12,7 @@ import { runtimeAssetUrls } from './generated/offline-assets.ts'
 // only when it is handed them, which happens once the engine is ready.
 import { exampleAssets } from './generated/example-assets.ts'
 import { loadStarterAfterEngineReady } from './startup-sequence.ts'
-import { selectFileAccess, selectImageFileAccess, selectSampleFileAccess } from './file/capability.ts'
+import { selectFileAccess, selectFontFileAccess, selectImageFileAccess, selectSampleFileAccess } from './file/capability.ts'
 
 const root = createRoot(document.getElementById('root')!)
 let lifecycle: OfflineLifecycle = { state: 'checking', cacheReady: false, verifiedAssetUrls: [] }
@@ -27,7 +27,8 @@ let observationInFlight = false
 const fileAccess = selectFileAccess()
 const sampleFileAccess = selectSampleFileAccess()
 const imageFileAccess = selectImageFileAccess()
-const render = () => root.render(<StrictMode><App key={engine ? 'engine-ready' : 'engine-loading'} engine={engine} fileAccess={fileAccess} sampleFileAccess={sampleFileAccess} imageFileAccess={imageFileAccess} initialSnapshot={snapshot} blankBytes={blankBytes} examples={engine ? exampleAssets : undefined} offlineState={lifecycle.state} loadState={lifecycle} payload={payload} engineState={engineState} onRetry={startObservation} /></StrictMode>)
+const fontFileAccess = selectFontFileAccess()
+const render = () => root.render(<StrictMode><App key={engine ? 'engine-ready' : 'engine-loading'} engine={engine} fileAccess={fileAccess} sampleFileAccess={sampleFileAccess} imageFileAccess={imageFileAccess} fontFileAccess={fontFileAccess} initialSnapshot={snapshot} blankBytes={blankBytes} examples={engine ? exampleAssets : undefined} offlineState={lifecycle.state} loadState={lifecycle} payload={payload} engineState={engineState} onRetry={startObservation} /></StrictMode>)
 async function startEngine() {
   if (started || !engineMayStart(lifecycle)) return
   started = true; engineState = 'starting'; render()

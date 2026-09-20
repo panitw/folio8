@@ -4,6 +4,7 @@ import { InputDownloadAccess } from './input-download'
 import type { DownloadUrl } from './input-download'
 import { FileSystemSampleAccess, InputSampleAccess, type SampleFileAccess, type SamplePicker } from '../sample-file'
 import { FileSystemImageAccess, InputImageAccess, type ImageFileAccess, type ImagePicker } from '../image-file'
+import { FileSystemFontAccess, InputFontAccess, type FontFileAccess, type FontPicker } from '../font-file'
 
 export type FileAccessBrowser = Partial<FileSystemPicker> & Readonly<{ document: Document; url: DownloadUrl }>
 
@@ -41,4 +42,27 @@ export function selectSampleFileAccess(browser: FileAccessBrowser = currentBrows
 export function selectImageFileAccess(browser: FileAccessBrowser = currentBrowser()): ImageFileAccess {
   if (typeof browser.showOpenFilePicker === 'function') return new FileSystemImageAccess({ showOpenFilePicker: browser.showOpenFilePicker.bind(browser) } as ImagePicker)
   return new InputImageAccess(browser.document)
+}
+
+// Font-file selection is the same single capability decision a third time, and
+// it is here rather than in `font-file.ts` for the reason
+// `file-access-contract.test.ts` enforces: capability selection lives in ONE
+// composition seam, so no module may test for a picker of its own. The picker
+// is bound through `currentBrowser()` exactly as the image tier is — that is
+// what keeps this tier from repeating eef7fbb's receiver-binding defect.
+//
+// ⚠ A PICKER IS NOT THE LOCAL FONT ACCESS API. This selects between two ways
+// of letting the author hand over a FILE THEY CHOSE; nothing here enumerates
+// the machine's installed fonts. See `font-file.ts`.
+// `as unknown as` RATHER THAN A DIRECT CAST, AND THE REASON IS `multiple`.
+// `FileSystemPicker`'s declaration types the picker for the single-file tiers
+// (`multiple: false`); the font tier asks for `multiple: true`, which the real
+// browser method accepts and the narrowed local type does not overlap with. The
+// widening is stated here, at the one composition seam, rather than by loosening
+// `FontPicker` to `multiple: boolean` — which would have let a single-file
+// picker satisfy the font tier's type and silently import one cut of a four-cut
+// family.
+export function selectFontFileAccess(browser: FileAccessBrowser = currentBrowser()): FontFileAccess {
+  if (typeof browser.showOpenFilePicker === 'function') return new FileSystemFontAccess({ showOpenFilePicker: browser.showOpenFilePicker.bind(browser) } as unknown as FontPicker)
+  return new InputFontAccess(browser.document)
 }

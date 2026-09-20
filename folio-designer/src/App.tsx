@@ -25,7 +25,7 @@ import { type FontChainCommitError, type FontChainControl } from './font-chain-c
 import { commandUnitBytes } from './command-json'
 import { addFontChainCommand, embedFontCutFragment, embedFontFamilyCommand, type FontChainEntryAsk } from './font-chain-command'
 import { catalogueFaces, scriptFallbackFaces, type CatalogueFace } from './generated/font-catalogue'
-import { familyIsComplete, familyIsInstalled, indexRowFor, offeredFamilies, regularCutOf, sourceScripts, type FamilySource } from './font-index'
+import { familyIsComplete, familyIsInstalled, indexRowFor, localTierHolds, offeredFamilies, regularCutOf, sourceScripts, type FamilySource } from './font-index'
 import { initialLocalFaceHoldings, localFaceIsHeld, readLocalFaceHoldings, type LocalFaceHoldings } from './held-local-faces'
 import { watchCanvasFaceMisses } from './canvas-face-misses'
 import { deferredFaceAssets, prefetchDeferredFaces } from './document-face-prefetch'
@@ -73,6 +73,8 @@ import { embeddedFaceFamily, isCarriedFaceAssetKey } from './embedded-face-famil
 import { isShippedFaceName, shippedFaceFamily } from './shipped-face-family'
 import { registerCarriedFaces } from './embedded-face-registry'
 import type { ImageFileAccess } from './image-file'
+import type { FontFileAccess, LocalFontFile } from './font-file'
+import { acknowledgedFace, importFontFiles, importedFaceName, refusedFontFileReport, type FontImport } from './font-import'
 
 const CANVAS_GUTTER = 116
 
@@ -343,7 +345,7 @@ function PaletteIcon({ kind }: { kind: PaletteKind }) {
   return <svg aria-hidden="true" className="palette-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.25" strokeLinecap="square">{paletteGlyphs[kind]}</svg>
 }
 
-type AppProps = Readonly<{ engine?: EngineClient; fileAccess?: FileAccess; sampleFileAccess?: SampleFileAccess; imageFileAccess?: ImageFileAccess; initialSnapshot?: EngineSnapshot; initialSampleData?: SampleData; blankBytes?: ArrayBuffer; initializationError?: string; offlineState?: OfflineLifecycleState; loadState?: OfflineLifecycle; payload?: S1Payload; engineState?: 'waiting' | 'starting' | 'failed'; onRetry?: () => void; examples?: ReadonlyArray<ExampleAsset> }>
+type AppProps = Readonly<{ engine?: EngineClient; fileAccess?: FileAccess; sampleFileAccess?: SampleFileAccess; imageFileAccess?: ImageFileAccess; fontFileAccess?: FontFileAccess; initialSnapshot?: EngineSnapshot; initialSampleData?: SampleData; blankBytes?: ArrayBuffer; initializationError?: string; offlineState?: OfflineLifecycleState; loadState?: OfflineLifecycle; payload?: S1Payload; engineState?: 'waiting' | 'starting' | 'failed'; onRetry?: () => void; examples?: ReadonlyArray<ExampleAsset> }>
 // The document carries no readable face until one is registered, and this is
 // the value that says so. A stable reference, so resetting it between
 // documents is not itself a state change React has to re-render for.
@@ -420,7 +422,7 @@ const scriptsOfSource = sourceScripts
 type PreviewRecord = Readonly<{ bytes: ArrayBuffer; revision: number; identity: string; digest: string; diagnostics: ReadonlyArray<EngineDiagnostic>; token: number; generation: number; standIn: boolean; elapsedMs: number; version: string; installedAt: number }>
 type PreviewFailureRecord = Readonly<{ error: EngineError; token: number; generation: number; revision: number }>
 
-export default function App({ engine, fileAccess, sampleFileAccess, imageFileAccess, initialSnapshot, initialSampleData, blankBytes, initializationError, offlineState = 'unavailable', loadState, payload, engineState = 'waiting', onRetry = () => undefined, examples }: AppProps = {}) {
+export default function App({ engine, fileAccess, sampleFileAccess, imageFileAccess, fontFileAccess, initialSnapshot, initialSampleData, blankBytes, initializationError, offlineState = 'unavailable', loadState, payload, engineState = 'waiting', onRetry = () => undefined, examples }: AppProps = {}) {
   const [snapshot, setSnapshot] = useState(initialSnapshot)
   const [commitError, setCommitError] = useState<string>()
   const [propertyError, setPropertyError] = useState<PropertyCommitError>()
@@ -694,6 +696,23 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
   // answers, because the modal cannot be open before it has: flashing the
   // degraded copy and then withdrawing it would be a worse lie than either state.
   const [storeKeepsFaces, setStoreKeepsFaces] = useState(true)
+  // IMPORTING FONT FILES FROM THE AUTHOR'S OWN MACHINE (CAP-1/CAP-6).
+  //
+  // THE REQUEST IS THE PICKED, PARSED, NOT-YET-ADMITTED IMPORT, and it is state
+  // rather than a local because the acknowledgement is an answer the author has
+  // to give: the pick resolves, the faces are read out of the binaries, and
+  // NOTHING is written until the dialog is accepted. Declining clears it and
+  // stores nothing — not a partial family, not a face held pending.
+  //
+  // THE ACKNOWLEDGEMENT IS NOT REMEMBERED, HERE OR ANYWHERE. There is no
+  // "don't ask again", no persisted flag and no per-session memory: a checkbox
+  // nobody sees again is not an acknowledgement. The next import asks again.
+  const [fontImportRequest, setFontImportRequest] = useState<FontImport>()
+  const [fontImportBusy, setFontImportBusy] = useState(false)
+  // ONE LINE, AND IT IS THE WHOLE REPORT. Per-file refusals, store-write
+  // failures and the "nothing came of this pick" case all land here, because
+  // they are all answers to the one act the author performed.
+  const [fontImportMessage, setFontImportMessage] = useState<string>()
   // WHICH CATALOGUE FACES THIS BROWSER ACTUALLY HOLDS
   // (spec-deferred-offline-cache, story 2). The catalogue's 107 faces — 31
   // families and the cuts they publish — are deferred, so shipping in the
@@ -3378,6 +3397,171 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
   }
 
   /**
+   * THE AUTHOR'S OWN FONT FILES, STEP ONE: PICK AND READ, ADMIT NOTHING
+   * (CAP-1, D1/D4).
+   *
+   * THE PICK IS NOT THE ADMISSION. This resolves the files, reads each one on
+   * its own evidence and puts the result in `fontImportRequest` — where it
+   * waits for the acknowledgement that is the admission gate. Nothing has been
+   * written to the machine when this returns, and if the author never answers,
+   * nothing ever is.
+   *
+   * A CANCELLED PICKER IS NOT AN EVENT. The OS dialog dismissed with no file
+   * means the author changed their mind: no acknowledgement, no message, no
+   * error, nothing held. That is `applyImageAsset`'s treatment of the same
+   * gesture, and it is the only honest one — a refusal sentence for an action
+   * somebody deliberately abandoned is noise.
+   *
+   * A PICK THAT YIELDS NO FACE AT ALL ASKS NOTHING AND SAYS WHY. The
+   * acknowledgement admits faces; with none to admit there is nothing to gate,
+   * and putting the dialog up anyway would make the author assert a right over
+   * an empty set. The per-file refusals are reported instead, by filename, so
+   * they can act on them.
+   */
+  const requestFontImport = async () => {
+    // ⚠ A DESIGNER THAT CANNOT KEEP A FACE MUST NOT ASK FOR ONE. The import's
+    // only sink is the machine store, so with nowhere to keep a face every
+    // write would refuse AFTER the author had picked files and asserted a right
+    // over them — a question asked for nothing. The control is not drawn at all
+    // in that browser and says why (`FontBrowser.tsx`); this is the same fence
+    // at the act, for a caller that reached it another way.
+    if (!fontFileAccess || !storeKeepsFaces || fontImportBusy || fontImportRequest !== undefined) return
+    setFontImportMessage(undefined)
+    let picked: ReadonlyArray<LocalFontFile>
+    try {
+      picked = await fontFileAccess.openFonts()
+    } catch (error) {
+      if (isFileAccessCancelled(error)) return
+      setFontImportMessage(componentDiagnostic(error))
+      return
+    }
+    // THE READ IS SYNCHRONOUS, PURE AND OFFLINE. No store, no document, no
+    // command and no network — see `font-import.ts`, which is what makes every
+    // row of this story's edge-case matrix drivable with a `File` alone.
+    // `localTierHolds` IS THE TAKEN-NAME TEST, AND IT IS PASSED IN RATHER THAN
+    // IMPORTED THERE so the import module stays a pure function of what it is
+    // handed. `offeredFamilies` gives one row per family and lets the committed
+    // catalogue's row win, so a face imported under a catalogue family's name
+    // would be stored, reported as kept, and reachable from nowhere.
+    const outcome = importFontFiles(picked, localTierHolds)
+    if (outcome.families.length === 0) {
+      setFontImportMessage(['No face could be imported.', refusedFontFileReport(outcome.refused)].filter((line) => line !== '').join(' '))
+      return
+    }
+    setFontImportRequest(outcome)
+  }
+
+  /**
+   * STEP TWO: THE ACKNOWLEDGEMENT HAS BEEN ACCEPTED, SO THE FACES GO ONTO THE
+   * MACHINE — through the same two writers a fetched family uses.
+   *
+   * ⚠ NOTHING HERE TOUCHES THE DOCUMENT. No `command`, no `undo`, no snapshot,
+   * no generation bump, no save, and nothing is embedded: an imported face is
+   * on this machine exactly as an installed catalogue face is, and it reaches a
+   * document at first use through the same door. Reaching for a document
+   * command here is the signal to stop — that is a later story's.
+   *
+   * `keepOnThisMachine` AND `recordFamilyCensus` ARE THE WRITERS, unchanged and
+   * un-forked. The key is the SHA-256 of the bytes, so a face already in the
+   * store is written back over itself rather than duplicated, and everything
+   * `embedFontFamily` requires — licence, licence text, copyright — travels in
+   * with the bytes because the store is the only place it can come from later.
+   *
+   * `scripts` IS EMPTY, AND THAT IS THE TRANSCRIPTION RULE APPLIED TO COVERAGE.
+   * A fetched face's script list comes from the catalogue's own classification
+   * of the family upstream published; nobody has classified this binary, and
+   * inventing a coverage claim from a family name is exactly the inference this
+   * work forbids. The browser row falls back to the snapshot's scripts when the
+   * tier records none (`browserRows`), and a family the snapshot never heard of
+   * simply carries no script badge — which is true.
+   *
+   * THE CENSUS IS WRITTEN, AND WITHOUT ONE THE FAMILY WOULD BE OFFERED FOR A
+   * FETCH IT CAN NEVER SATISFY. `familyIsComplete` reads a stored family as
+   * INCOMPLETE when it has no census, which puts `+ Install` beside it in the
+   * font browser — and pressing it would send `fetchWebFamily` after a brand
+   * typeface no catalogue has ever published. The authority on what an
+   * author-supplied family publishes is the author, and what they published is
+   * what they handed over: the cuts now held for that family, which is the union
+   * of what was already on this machine and what this import added. Nothing is
+   * recorded as refused, because nothing was asked for and declined.
+   */
+  const completeFontImport = async (request: FontImport) => {
+    setFontImportRequest(undefined)
+    setFontImportBusy(true)
+    const failures: string[] = []
+    // ⚠ COUNTED BY CONTENT ADDRESS, NOT BY FILE. The store is keyed by the
+    // SHA-256 of the bytes, so two byte-identical files are ONE face on this
+    // machine; counting picks would report two and the author would go looking
+    // for a second row that does not exist.
+    const kept = new Set<string>()
+    // THE ACKNOWLEDGEMENT DAY IS TAKEN HERE, at the moment the author answered,
+    // and carried into every face of this import. Taking it at the pick would
+    // record a day nobody acknowledged anything on whenever a pick straddles
+    // UTC midnight.
+    const today = new Date().toISOString().slice(0, 10)
+    try {
+      for (const family of request.families) {
+        const added = new Set<string>()
+        for (const face of family.faces) {
+          const stamped = acknowledgedFace(face, today)
+          let key: string
+          try {
+            key = await storedFaceKey(stamped.bytes)
+          } catch (error) {
+            failures.push(`${importedFaceName(face.family, face.style)} could not be kept on this machine: ${componentDiagnostic(error)}`)
+            continue
+          }
+          const refusal = await keepOnThisMachine({ ...stamped, scripts: [] }, false)
+          if (refusal !== undefined) { failures.push(`${importedFaceName(face.family, face.style)} could not be kept on this machine: ${refusal}`); continue }
+          kept.add(key)
+          added.add(face.style)
+        }
+        if (added.size === 0) continue
+        // ⚠ THE CENSUS IS MERGED, NEVER REPLACED. `putCensus` is a plain put
+        // keyed by family, so writing a fresh record over an existing one would
+        // SHRINK `published` to the cuts this machine happens to hold and drop
+        // every recorded refusal with it — the family would read COMPLETE, its
+        // `+ Install` would disappear, and the cuts it still lacks would become
+        // unreachable. A census is the record of what a family publishes; an
+        // import ADDS to what is known about that, it does not restate it.
+        const existing = familyCensusesRef.current.find((entry) => entry.family === family.family)
+        const held = storedFacesRef.current.filter((face) => face.family === family.family).map((face) => face.style)
+        const census: FamilyCensus = {
+          family: family.family,
+          published: [...new Set([...(existing?.published ?? []), ...held, ...added])],
+          // NOTHING IS ADDED TO `refused` — nothing was asked for and declined —
+          // and nothing is REMOVED from it either: a cut upstream permanently
+          // refused is still permanently refused.
+          refused: existing?.refused ?? [],
+          recordedAt: today,
+        }
+        const refusal = await recordFamilyCensus(census)
+        if (refusal !== undefined) failures.push(`${family.family}'s cut list could not be recorded: ${refusal}`)
+      }
+      // REFRESHED ON EVERY EXIT, INCLUDING THE ONE WHERE EVERY WRITE FAILED.
+      // `keepOnThisMachine` is called with `refresh` false so that four cuts do
+      // not tear down and rebuild the preview registration four times, and
+      // `recordFamilyCensus` refreshes only when it is reached; a pick whose
+      // every face was refused reaches neither, and leaving the listing stale
+      // would hide whatever DID land.
+      await refreshStoredFaces()
+    } catch (error) {
+      // ⚠ EVERY EXIT PRODUCES A SENTENCE. The two writers return their reasons
+      // rather than throwing, so nothing here is expected to — which is exactly
+      // why an unexpected throw must not escape as an unhandled rejection with
+      // the dialog already gone and the author told nothing.
+      failures.push(`The import stopped part way: ${componentDiagnostic(error)}`)
+    } finally {
+      setFontImportBusy(false)
+      setFontImportMessage([
+        kept.size === 0 ? 'No face was kept on this machine.' : `${kept.size === 1 ? 'One face is' : `${kept.size} faces are`} now on this machine.`,
+        refusedFontFileReport(request.refused),
+        ...failures,
+      ].filter((line) => line !== '').join(' '))
+    }
+  }
+
+  /**
    * COMPLETING ONE FAMILY — THE TWO ARMS, MIRRORING `installFamily`
    * (spec-install-all-face-cuts, CAP-4, story 4).
    *
@@ -4628,7 +4812,14 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
         of the three means UNKNOWN, and the dialog says so rather than drawing a
         zero. */}
     {tableEditor && <TableEditor projection={tableEditor} busy={tableEditorBusy} fileBusy={fileBusy} discarding={tableEditorDiscarding} error={tableEditorError} candidates={sampleCandidateScan.candidates} sampleAvailable={Boolean(sampleData)} band={canvas?.components.find((component) => component.id === tableEditor.table.tableId)?.band} availableWidth={tableEditorAvailableWidth} sampleItemCount={tableSampleItemCount(sampleData?.tree, tableEditor.table.collection)} onClose={closeTableEditor} onAdd={(index) => void commitTableColumn(addTableColumnCommand(tableEditor.table.tableId, index))} onRemove={(columnId) => void commitTableColumn(removeTableColumnCommand(tableEditor.table.tableId, columnId))} onMove={(columnId, index) => void commitTableColumn(moveTableColumnCommand(tableEditor.table.tableId, columnId, index))} onUpdate={(columnId, field, value) => commitTableColumn(updateTableColumnCommand(tableEditor.table.tableId, columnId, field, value))} onTotalWidth={(value) => commitTableColumn(tableWidthCommand(tableEditor.table.tableId, value))} onBinding={(columnId, binding) => commitTableColumn(updateTableColumnExpressionCommand(tableEditor.table.tableId, columnId, binding))} onConfigure={(collection, alias) => void commitTableColumn(configureTableBindingCommand(tableEditor.table.tableId, collection, alias))} onFooter={(columnId, footer, footerOf, footerFormat) => void commitTableColumn(updateTableColumnFooterCommand(tableEditor.table.tableId, columnId, footer, footerOf, footerFormat))} onHeaderHeight={(height) => void commitTableColumn(tableHeaderHeightCommand(tableEditor.table.tableId, height))} onAltRowBackground={(operation, value) => void commitTableColumn(tableAltRowBackgroundCommand(tableEditor.table.tableId, operation, value))} onHeaderStyle={(field, operation, value) => void commitTableColumn(tableHeaderStyleCommand(tableEditor.table.tableId, field, operation, value))} onMinHeight={(operation, value) => void commitTableColumn(tableMinHeightCommand(tableEditor.table.tableId, operation, value))} onRules={(field, operation, value) => void commitTableColumn(tableRulesCommand(tableEditor.table.tableId, field, operation, value))} onCellPadding={(field, operation, value) => void commitTableColumn(updateComponentPropertiesCommand([tableEditor.table.tableId], operation === 'clear' ? { field, operation } : { field, operation, value }))} editCount={tableEditorEditCount} onCancel={() => void cancelTableEditor()} />}
-    {fontBrowserOpen && canvas && <FontBrowser sources={browsableFamilies} inTemplate={canvas.fontFamilies} localFaceHoldings={localFaceHoldings} previewBytes={browserSpecimenBytes} onAddFamily={(source) => addFamilyToDocument(source, documentGeneration.current, selected.join(','), 'caller')} storeKeepsFaces={storeKeepsFaces} onClose={() => setFontBrowserOpen(false)} />}
+    {fontBrowserOpen && canvas && <FontBrowser sources={browsableFamilies} inTemplate={canvas.fontFamilies} localFaceHoldings={localFaceHoldings} previewBytes={browserSpecimenBytes} onAddFamily={(source) => addFamilyToDocument(source, documentGeneration.current, selected.join(','), 'caller')} storeKeepsFaces={storeKeepsFaces} onImportFonts={fontFileAccess && storeKeepsFaces ? () => void requestFontImport() : undefined} importUnavailable={fontFileAccess && !storeKeepsFaces} importBusy={fontImportBusy} importMessage={fontImportMessage} onClose={() => { setFontImportMessage(undefined); setFontBrowserOpen(false) }} />}
+    {/* THE ACKNOWLEDGEMENT, MOUNTED OVER THE BROWSER THAT ASKED FOR IT. It is
+        the admission gate: nothing has been written when it appears, and
+        declining writes nothing. It is deliberately NOT gated on
+        `fontBrowserOpen`, and it SURVIVES a document replacement on purpose:
+        an import's only sink is the machine store, so what the author is
+        answering about is unaffected by which document is open behind it. */}
+    {fontImportRequest !== undefined && <ImportFontsDialog request={fontImportRequest} onConfirm={() => void completeFontImport(fontImportRequest)} onDecline={() => setFontImportRequest(undefined)} />}
     {startupOpen && engine && <StartupDialog cards={startupCards} selected={startupSelected} busy={startupBusy} error={startupError} onSelect={(id) => { setStartupSelected(id); setStartupError(undefined) }} onConfirm={chooseStartup} onCancel={cancelStartup} onOpenFile={fileAccess ? requestStartupFile : undefined} />}
     {unsavedWarningOpen && <UnsavedChangesDialog document={title} onKeep={keepEditing} onDiscard={discardForNew} />}
     {/* THE COMPLETION QUESTION (story 4). A decline clears it and is NOT
@@ -7197,6 +7388,54 @@ function DeletePageDialog({ page, onConfirm, onCancel }: { page: number; onConfi
       <h2 id="delete-page-title">{`Delete page ${page + 1}?`}</h2>
       <p id="delete-page-description" className="honest-note">This removes the page and everything on it.</p>
       <div className="page-dialog-actions"><button ref={confirm} type="button" className="page-dialog-confirm" onClick={onConfirm}>Delete page</button><button ref={cancel} type="button" onClick={onCancel}>Cancel</button></div>
+    </div>
+  </section>
+}
+
+// THE ACKNOWLEDGEMENT THAT ADMITS A FACE FROM THE AUTHOR'S OWN MACHINE (CAP-6,
+// D4). `DeletePageDialog`'s shape and its `.page-dialog` styling: `role="dialog"`,
+// `aria-modal`, focus held inside, Tab trapped between the two buttons, Escape
+// means decline. Keys never reach the canvas behind it.
+//
+// ONE GESTURE PER IMPORT, NOT PER FILE. An author importing four cuts answers
+// once — the dialog names every face it is about to admit, so answering once is
+// answering about all of them rather than about an unseen set.
+//
+// IT IS THE ADMISSION GATE AND NOT A NOTICE. Declining imports nothing: not a
+// partial family, not a face held pending, nothing written and nothing
+// remembered. And accepting is not remembered either — there is no "do not ask
+// again", because a checkbox nobody sees again is not an acknowledgement.
+//
+// IT ASKS FOR AN ASSERTION AND MAKES NO CHECK OF ITS OWN. Folio takes no
+// position on the terms of a font the author supplies: no classification, no
+// allowlist, no blocklist, no warning banner and no prompt to type the terms in.
+// Holding the right licence is the author's responsibility, and this dialog is
+// where that is said out loud rather than assumed.
+function ImportFontsDialog({ request, onConfirm, onDecline }: { request: FontImport; onConfirm: () => void; onDecline: () => void }) {
+  const confirm = useRef<HTMLButtonElement>(null)
+  const cancel = useRef<HTMLButtonElement>(null)
+  useEffect(() => { cancel.current?.focus() }, [])
+  const holdFocus = (event: { target: EventTarget; preventDefault: () => void }) => {
+    if (event.target instanceof Element && event.target.closest('.page-dialog') === null) { event.preventDefault(); cancel.current?.focus() }
+  }
+  // THE FACES ARE NAMED THE WAY A RENDERING HOST WOULD NAME THEM
+  // (`importedFaceName`) — the family for the Regular cut, `<family> <cut>` for
+  // every other one. That is the same key `fontdir` builds from a directory on
+  // disk, so what the author sees here is what a document will one day carry.
+  const faces = request.families.flatMap((family) => family.faces.map((face) => importedFaceName(face.family, face.style)))
+  const families = request.families.map((family) => family.family)
+  return <section className="page-dialog-backdrop" role="dialog" aria-modal="true" aria-labelledby="import-fonts-title" aria-describedby="import-fonts-description" onPointerDown={holdFocus} onMouseDown={holdFocus} onKeyDownCapture={(event) => {
+    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onDecline(); return }
+    if (event.key !== 'Tab') { event.stopPropagation(); return }
+    event.preventDefault(); event.stopPropagation()
+    ;(document.activeElement === confirm.current ? cancel.current : confirm.current)?.focus()
+  }}>
+    <div className="page-dialog">
+      <h2 id="import-fonts-title">{faces.length === 1 ? `Import ${faces[0]}?` : `Import ${faces.length} faces of ${families.length === 1 ? families[0] : `${families.length} families`}?`}</h2>
+      <p id="import-fonts-description" className="honest-note">Folio does not check what licence these files carry, and takes no position on it. By importing them you confirm that you hold the right to use these typefaces, and to redistribute them inside the documents you produce with them.</p>
+      <p className="honest-note">{`This import adds ${faces.join(', ')}.`}</p>
+      {request.refused.length > 0 && <p className="honest-note">{refusedFontFileReport(request.refused)}</p>}
+      <div className="page-dialog-actions"><button ref={confirm} type="button" className="page-dialog-confirm" onClick={onConfirm}>I hold the right to use these fonts</button><button ref={cancel} type="button" onClick={onDecline}>Cancel</button></div>
     </div>
   </section>
 }

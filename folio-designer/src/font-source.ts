@@ -348,7 +348,14 @@ export function publishedCuts(metadata: FamilyMetadata): ReadonlyArray<Published
  * filename has no media type in this table.
  */
 const mediaTypes: Readonly<Record<string, string>> = { '.ttf': 'font/ttf', '.otf': 'font/otf' }
-const mediaTypeOf = (filename: string): string | undefined => {
+// EXPORTED SINCE THE DISK-IMPORT STORY, AND STILL THE ONE TABLE. A face the
+// author picks off their own machine is held to the same two containers a
+// fetched one is, and a second copy of this map in the import path is the
+// divergence this module has already paid for elsewhere. The filename is the
+// only thing either caller has to read an extension off; neither treats it as
+// identity, and the import path derives a face's family and cut from the
+// BINARY (`font-import.ts`).
+export const mediaTypeOf = (filename: string): string | undefined => {
   const dot = filename.lastIndexOf('.')
   const extension = dot === -1 ? '' : filename.slice(dot).toLowerCase()
   return Object.hasOwn(mediaTypes, extension) ? mediaTypes[extension] : undefined

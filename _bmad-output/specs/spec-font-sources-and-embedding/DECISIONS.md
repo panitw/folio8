@@ -272,3 +272,125 @@ the loader's checks would fail at *load* rather than at render. Rather than add 
 check to make that true, the implementer narrowed the claim: these are the renderer's load-time
 checks, and a face that passes is one this build can *read*, not one guaranteed to *draw*. Dropping
 an over-promise is the right call over widening a validator to match marketing copy.
+
+## Story 3 — decisions taken while planning
+
+### A-15 — The designer must key a face exactly as `fontdir` does (cross-story constraint)
+
+**Decision:** the designer keys an imported face by sfnt name ID 1, plus name ID 2 when the
+subfamily is not `Regular` — byte-for-byte the same rule story 2's `fontdir.Set` uses.
+
+**Reasoning, and this is the one decision in story 3 that reaches outside it:** in story 6 a
+document may *name* its faces rather than carry them, and a host resolves those names from a
+directory `fontdir.Set` built. If the designer keyed a face any other way — filename, PostScript
+name, family record alone — the name the document carries would not be the name the host's
+directory produces, and a name-only document would fail to resolve on exactly the deployment this
+whole spec exists to serve. Two implementations, one rule; recorded because the coupling is
+invisible from inside either story.
+
+### A-16 — Follow the image-file seam rather than inventing a font one
+
+**Decision:** font file access copies `src/image-file.ts` exactly — a `showOpenFilePicker` tier and
+an `<input type="file">` tier, selected in `src/file/capability.ts`, injected as an `App` prop.
+
+**Reasoning:** the designer has already answered "let the author pick a file" twice, for images and
+for sample JSON, and both went through the same two-tier seam with capability selection. A third
+answer would be a third thing to keep working across browsers. The seam also keeps the new module
+clear of `src/file/file-access-contract.test.ts`'s bans (`showDirectoryPicker`, IndexedDB outside
+`font-store.ts`).
+
+### A-17 — The acknowledgement is one gesture per import, and it is not remembered
+
+**Decision:** one acknowledgement per import gesture, covering every file picked together, and
+never persisted across imports.
+
+**Rejected:** per file (an author importing four cuts would answer four times — the way to make
+people click through without reading); and remembered forever (a checkbox nobody sees again is not
+an acknowledgement, it is a setting).
+
+**Reasoning:** this dialog is the product's entire statement of position on a question it has
+deliberately stopped answering, so it has to stay a conscious act. Per-gesture is the only framing
+where that is true and the flow is still usable.
+
+### A-18 — An absent copyright record stops being fatal, for author-supplied faces only
+
+**Decision:** `faceCopyright` throws when name ID 0 is absent; that refusal does not apply to an
+author-supplied face, which stores an empty string.
+
+**Reasoning:** the throw exists because a face embedded into a `.folio` must state whose it is, and
+the engine refuses a document that does not. Nothing is embedded in story 3 — the face only enters
+the local store — and CAP-5 says an absent name record produces an empty value and a loadable
+document. Refusing an import over a record the store does not need would decline a face the owner
+has explicitly said the author is entitled to use. The constraint reappears in story 5, where the
+record actually travels.
+
+### A-19 — A cross-story gap I missed, carried to story 5 rather than patched here
+
+**Finding:** an author can import a face whose binary declares no licence records — story 3's I/O
+matrix explicitly admits it — and then never use it on a chain. `folio-go/component_commands.go:4914`
+refuses a font record whose `licence`, `licenceText` or `copyright` is blank, and `parse.go`'s
+`requireEmbeddedFaceLicence` refuses whitespace-only terms. Verified by reading both doors.
+
+**Decision:** change nothing in story 3, and add the requirement to **story 5**.
+
+**Reasoning:** nothing is embedded in story 3, so nothing here is actually broken — the face reaches
+the store exactly as specified. The promise only becomes false at the moment something embeds it,
+which is story 5, and story 5 already opens the very doors this refusal lives behind. Patching
+story 3 instead would mean either refusing an import the frozen matrix admits, or showing the
+author a warning that story 5 immediately makes untrue.
+
+**And it fits CAP-6 rather than straining it.** The acknowledgement is precisely what stands in
+place of a licence assertion for an author-supplied face. A document carrying an acknowledged
+record should therefore satisfy `requireEmbeddedFaceLicence` with blank terms — the same override,
+at the same doors, that CAP-6 already requires for the copyleft case. Story 5 now carries this.
+
+**What I got wrong when planning:** SPEC.md CAP-5 says an absent name record produces "an empty
+value and a loadable document", and I wrote story 3's matrix from it without checking that the
+engine agreed. It does not, today. The spec's claim is one story premature, not wrong.
+
+### A-20 — An imported family carries no script badge, and that is deliberate
+
+**Decision:** accepted that an imported face stores `scripts: []`, so such a family shows no script
+badge and is excluded by the writing-system filters.
+
+**Reasoning:** populating it would mean classifying the face's coverage — inference about a binary
+nobody vetted, which is exactly what this story's Boundaries forbid. The honest cost is that an
+author who filters by writing system loses sight of their own imported family. Recorded rather than
+patched because the alternative is worse than the symptom.
+
+### A-21 — A family-name collision is refused at import, not made to work
+
+**Decision:** accepted the implementer's deviation. An imported face whose binary declares a family
+name the designer already offers — from the catalogue snapshot or the shipped set — is **refused
+per file, by name**, rather than stored. The sentence says why: two different faces cannot share one
+family name, and a face is named by its own binary, so this one cannot be renamed.
+
+**What the review asked for instead:** make it reachable. The implementer investigated and reported
+that both routes restructure `FamilySource` — either two browser rows share a family name (rows are
+keyed by family, the family control stages by family, React keys collide), or the stored row
+displaces the catalogue row, which takes the release's own cuts of that family out of reach and is
+the same class of regression as the census bug this same review pass found.
+
+**Why I accepted it:** the behaviour before this change was the worst of the three — the face was
+stored, reported as kept, and then never appeared anywhere. Refusing it is honest, and it is a
+strictly smaller lie than a success message for a face the author can never use. Restructuring
+`FamilySource` is a real piece of work and does not belong inside a story about importing files.
+
+**The cost, stated plainly for the owner:** an author who licenses their own cut of a family the
+catalogue also publishes — a bought Kanit, a corporate build of Inter — cannot import it. That is a
+genuine product limitation, not a technicality, and it is the kind of thing a brand-typeface user
+may well hit. If it matters, it is its own story: let a stored family coexist with a catalogue
+family of the same name, which means `FamilySource` carries the tier as part of its identity rather
+than the family name alone.
+
+### A-22 — Two smaller implementer calls, accepted
+
+**Media type stays an extension check.** The review offered deriving it from the sfnt version
+instead. Kept the extension, improved the sentence (*"rename it to the extension it really is and
+pick it again"*). Reasoning given and accepted: deriving it would put the designer and `fontdir` on
+two different rules for one fact, and story 3's whole D2 point is that those two must agree.
+
+**The acknowledgement day is stamped at the answer, not at the pick.** `ImportedFace` no longer
+carries `source` at all; `acknowledgedFace(face, today)` is the single writer, and `importFontFiles`
+has no date parameter — so recording the pick's day is not merely avoided, it is unreachable. A
+better fix than the one asked for.

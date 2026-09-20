@@ -1363,6 +1363,9 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
 /* The degraded-model note sits beside the confirm control, in the panel's own
    warning ink, because it changes what pressing that control does. */
 .font-browser-degraded { color: var(--color-ink); font: var(--type-mono); max-width: 34rem; }
+.font-browser-import { padding: var(--space-2) var(--space-6); border: var(--hairline) solid var(--color-edge); border-radius: var(--radius-default); background: none; color: var(--color-ink); font: var(--type-body-em); cursor: pointer; }
+.font-browser-import:disabled { opacity: 0.5; cursor: default; }
+.font-browser-import-message { margin: 0; padding: 0 var(--space-6) var(--space-4); font: var(--type-body); color: var(--color-ink-low); }
 .font-browser-cancel { padding: var(--space-2) var(--space-6); border: var(--hairline) solid var(--color-edge); border-radius: var(--radius-default); background: none; color: var(--color-ink); font: var(--type-body-em); cursor: pointer; }
 .font-browser-confirm { padding: var(--space-2) var(--space-6); border: var(--hairline) solid var(--color-select); border-radius: var(--radius-default); background: var(--color-select); color: var(--color-ground); font: var(--type-body-em); font-weight: 500; cursor: pointer; }
 .font-browser-confirm:disabled { border-color: var(--color-line-strong); background: var(--color-raised); color: var(--color-ink-ghost); cursor: default; }

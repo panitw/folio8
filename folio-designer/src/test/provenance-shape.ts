@@ -245,3 +245,49 @@ export function assertProvenanceShape(expect: Expect, tier: string, subject: str
   // (`ofl/notosans/NotoSans-Regular.ttf`, `TTF/SourceSans3-Regular.ttf`).
   expect(pathHalfOf(value).trim(), `${tier}: ${subject} names a project and a fetch date but no path within the project, so it never says which file of that project the bytes are`).not.toBe('')
 }
+
+/**
+ * ─────────────────────────────────────────────────────────────────────────────
+ * THE THIRD KIND OF `source`, AND IT IS A DIFFERENT GRAMMAR RATHER THAN A
+ * LOOSENING OF THE ONE ABOVE.
+ *
+ * `assertProvenanceShape` holds the two CATALOGUE tiers to
+ * `<owner>/<repo>[@<release>] — <path within the project>, fetched YYYY-MM-DD`,
+ * because for a face this product distributes there is an upstream project, a
+ * file within it, and a day it was fetched. A face the AUTHOR supplies has none
+ * of those: it was never fetched, it belongs to no project this product can
+ * name, and the one place it came from is a machine whose identity must not
+ * travel.
+ *
+ * SO IT IS ADMITTED DELIBERATELY, WITH ITS OWN ASSERTION, rather than by
+ * relaxing the catalogue predicate until a third shape slips under it. Relaxing
+ * would have cost the catalogue tiers their grammar — the exact "two writers
+ * drifting apart" failure this module exists to prevent, one tier wider.
+ *
+ * WHAT IT FORBIDS IS THE HALF THAT IS SHARED: a resolvable-looking scheme and a
+ * restatement of the asset key are wrong in any tier, for the reasons written at
+ * `schemeShaped` and `digestShaped`. WHAT IT ADDS IS THIS TIER'S OWN
+ * PROHIBITION — no path, no filename, no machine identity — which is the
+ * promise the import path makes and the one nothing but a tripwire will hold:
+ * a path would make the document machine-specific, and a filename is not even
+ * identity, since the family and the cut are read from the binary and renaming
+ * the file changes neither.
+ */
+export const pathShaped = /[/\\~]/
+export const filenameShaped = /\.(?:ttf|otf|ttc|otc|woff2?|dfont)\b/i
+
+export function assertAuthorSuppliedProvenanceShape(expect: Expect, subject: string, value: string): void {
+  expect(value, `author-supplied tier: ${subject} publishes an empty source`).not.toBe('')
+  expect(value, `author-supplied tier: ${subject} carries a URL scheme in \`source\`. A resolvable-looking string is a promise of fetchability (D-16.R.13).`).not.toMatch(schemeShaped)
+  expect(value, `author-supplied tier: ${subject} restates a SHA-256 in \`source\`. The digest is already the asset key (D-16.R.13).`).not.toMatch(digestShaped)
+  expect(value, `author-supplied tier: ${subject} carries a PATH SEPARATOR in \`source\`. No filesystem path may reach a document — it would make the file machine-specific.`).not.toMatch(pathShaped)
+  expect(value, `author-supplied tier: ${subject} carries a FILENAME in \`source\`. A face is identified by the name its own binary states; renaming the file changes nothing, so recording the filename records a fact that is not about the face.`).not.toMatch(filenameShaped)
+
+  // AND IT IS STILL PROVENANCE: it says where the face came from, and the day
+  // the author made the assertion that admitted it.
+  expect(value, `author-supplied tier: ${subject} does not say the face came from the author's own machine`).toContain("the author's own machine")
+  expect(value, `author-supplied tier: ${subject} does not name the day of the acknowledgement`).toMatch(/, acknowledged \d{4}-\d{2}-\d{2}$/)
+  // NOTHING WAS FETCHED, SO NOTHING MAY CLAIM A FETCH DATE. A field borrowing
+  // the catalogue tiers' words would read as a retrieval that never happened.
+  expect(value, `author-supplied tier: ${subject} claims a fetch date, and nothing was fetched`).not.toMatch(/, fetched \d{4}-\d{2}-\d{2}/)
+}

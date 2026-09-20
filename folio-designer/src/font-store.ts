@@ -420,8 +420,31 @@ const detail = (error: unknown): string => error instanceof Error ? error.messag
 function soundFace(value: unknown): StoredFace | undefined {
   if (!value || typeof value !== 'object') return undefined
   const candidate = value as Record<string, unknown>
-  const strings = ['key', 'family', 'style', 'licence', 'licenceText', 'copyright', 'source', 'mediaType', 'fetchedAt'] as const
-  for (const field of strings) if (typeof candidate[field] !== 'string' || candidate[field] === '') return undefined
+  // ⚠ TWO CLASSES OF STRING, AND THE SPLIT IS THE DISK-IMPORT STORY'S ONE
+  // CHANGE TO THIS MODULE.
+  //
+  // THE IDENTITY FIELDS MUST BE PRESENT AND NON-EMPTY. A record with no `key`
+  // cannot be addressed, one with no `family`/`style` cannot be resolved to a
+  // cut, one with no `mediaType` cannot be embedded, and one with no `source`
+  // or `fetchedAt` has lost the provenance the store exists to carry beside the
+  // bytes. An empty one of those is a corrupt entry and goes.
+  //
+  // THE LICENCE FIELDS MAY BE EMPTY, AND EMPTY IS A REAL VALUE RATHER THAN A
+  // MISSING ONE. They used to be held to the same non-empty rule, on the
+  // ground that `embedFontFamily` refuses without all three — true of a face
+  // this product DISTRIBUTES, and false of one the AUTHOR supplies. A brand
+  // typeface off an author's own disk can legally declare no nameID 0, 13 or
+  // 14 at all; its terms are the author's responsibility and the designer
+  // transcribes what the binary says, which is sometimes nothing. Under the old
+  // rule such a face was written to the store and then read back as CORRUPT and
+  // dropped — a face that vanished between one listing and the next, with no
+  // error anybody could see. The field must still be a STRING: absent is still
+  // an unreadable record, because absence means a record shape this build does
+  // not understand, while `''` means the binary said nothing.
+  const identity = ['key', 'family', 'style', 'source', 'mediaType', 'fetchedAt'] as const
+  for (const field of identity) if (typeof candidate[field] !== 'string' || candidate[field] === '') return undefined
+  const transcribed = ['licence', 'licenceText', 'copyright'] as const
+  for (const field of transcribed) if (typeof candidate[field] !== 'string') return undefined
   if (!storedKeyShape.test(candidate.key as string)) return undefined
   if (!Array.isArray(candidate.scripts) || !candidate.scripts.every((script) => typeof script === 'string')) return undefined
   if (typeof candidate.byteLength !== 'number' || !Number.isSafeInteger(candidate.byteLength) || candidate.byteLength <= 0) return undefined

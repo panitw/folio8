@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
 import { familyIsComplete, indexCategories, indexScripts, type FamilySource } from './font-index'
 import type { LocalFaceHoldings } from './held-local-faces'
-import { browserRows, browserSorts, browserViews, buttonLabel, buttonName, confirmLabel, confirmName, cutLine, degradedFooterNote, defaultSpecimenSize, emptyStateHeading, emptyStateHint, filterRows, filtersActive, maxSpecimenSize, minSpecimenSize, noFilters, pageCount, pageLine, pageOf, pendingLine, resultLine, rowState, rowTierNote, scriptBadge, sizeReadout, sortRows, specimenFor, specimenSize, weightLine, type BrowserFilters, type BrowserRow, type BrowserSort, type BrowserView } from './font-browser-model'
+import { browserRows, browserSorts, browserViews, buttonLabel, buttonName, confirmLabel, confirmName, cutLine, degradedFooterNote, defaultSpecimenSize, emptyStateHeading, emptyStateHint, filterRows, filtersActive, importControlLabel, importControlName, importUnavailableNote, maxSpecimenSize, minSpecimenSize, noFilters, pageCount, pageLine, pageOf, pendingLine, resultLine, rowState, rowTierNote, scriptBadge, sizeReadout, sortRows, specimenFor, specimenSize, weightLine, type BrowserFilters, type BrowserRow, type BrowserSort, type BrowserView } from './font-browser-model'
 import { previewFaceFamily } from './preview-face-family'
 import { openPreviewFaceRegistry, type PreviewFaceBytes, type PreviewFaceRegistry, type PreviewFaceStatus } from './preview-face-registry'
 
@@ -59,12 +59,31 @@ type Props = Readonly<{
    * faces to a document must not look like one that adds five to a machine.
    */
   storeKeepsFaces: boolean
+  /**
+   * THE DOOR TO THE AUTHOR'S OWN MACHINE, AND IT IS THE CALLER'S ACT ENTIRELY.
+   * This dialog opens nothing and reads nothing: it draws a control, and App
+   * owns the picker, the acknowledgement that admits the faces and the store
+   * write. `undefined` when this browser has no file picker at all, which is
+   * `imageAvailable`'s treatment of the same absence — the control is simply
+   * not drawn rather than drawn inert with nothing to say.
+   */
+  onImportFonts?: () => void
+  /**
+   * True when this browser has a file picker but no store to keep a face in, so
+   * the control is deliberately absent rather than merely undrawn. The two are
+   * different facts and only one of them is worth a sentence.
+   */
+  importUnavailable?: boolean
+  /** True while an accepted import is being written to the machine. Absent is not busy. */
+  importBusy?: boolean
+  /** What the last import did, or the sentence that refused it. Drawn where a per-family refusal is. */
+  importMessage?: string
   onClose: () => void
 }>
 
 type Refusal = Readonly<{ family: string; message: string }>
 
-export function FontBrowser({ sources, inTemplate, localFaceHoldings, previewBytes, onAddFamily, storeKeepsFaces, onClose }: Props) {
+export function FontBrowser({ sources, inTemplate, localFaceHoldings, previewBytes, onAddFamily, storeKeepsFaces, onImportFonts, importUnavailable = false, importBusy = false, importMessage, onClose }: Props) {
   const [filters, setFilters] = useState<BrowserFilters>(noFilters)
   const [sort, setSort] = useState<BrowserSort>('Trending')
   const [view, setView] = useState<BrowserView>('Row')
@@ -156,7 +175,7 @@ export function FontBrowser({ sources, inTemplate, localFaceHoldings, previewByt
     // an unmounted component and their per-family refusals landing nowhere. The
     // batch is short, bounded and already announced — waiting for it is the
     // behaviour the rest of the footer promises.
-    if (event.key === 'Escape') { event.preventDefault(); if (!busy) onClose(); return }
+    if (event.key === 'Escape') { event.preventDefault(); if (!busy && !importBusy) onClose(); return }
     if (event.key !== 'Tab') return
     const focusable = Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled])') ?? []).filter((element) => element.tabIndex >= 0)
     if (focusable.length === 0) return
@@ -392,9 +411,21 @@ export function FontBrowser({ sources, inTemplate, localFaceHoldings, previewByt
             be inaudible and the note alone would be unreachable. */}
         {!storeKeepsFaces && <span className="font-browser-degraded" role="status">{degradedFooterNote(storeKeepsFaces)}</span>}
         <span className="font-browser-spacer" />
-        <button type="button" className="font-browser-cancel" disabled={busy} onClick={onClose}>Cancel</button>
+        {/* THE THIRD SOURCE. It sits beside the confirm pair rather than among
+            the rows because a file the author has not picked yet cannot be a
+            row. Disabled with everything else while a batch runs, for the
+            reason the Escape gate gives: a second act started under a running
+            one lands nowhere. */}
+        {onImportFonts && <button type="button" className="font-browser-import" aria-label={importControlName} disabled={busy || importBusy} onClick={onImportFonts}>{importControlLabel}</button>}
+        {importUnavailable && <span className="font-browser-degraded" role="status">{importUnavailableNote}</span>}
+        {/* ⚠ CANCEL IS DISABLED WHILE AN IMPORT IS WRITING, for the reason the
+            Escape gate already gives about a running batch: closing mid-write
+            unmounts the one region the import's report lands in, so the author
+            would never learn what did and did not reach their machine. */}
+        <button type="button" className="font-browser-cancel" disabled={busy || importBusy} onClick={onClose}>Cancel</button>
         <button type="button" className="font-browser-confirm" aria-label={confirmName(staged.length, storeKeepsFaces)} disabled={busy || staged.length === 0} onClick={() => void confirm()}>{confirmLabel(staged.length)}</button>
       </div>
+      {importMessage !== undefined && <p className="font-browser-import-message" role="status">{importMessage}</p>}
       {refusals.length > 0 && <ul className="font-browser-refusals" aria-label="Families that could not be added">
         {refusals.map((refusal) => <li key={refusal.family} role="alert" className="property-error">{refusal.family}: {refusal.message}</li>)}
       </ul>}
