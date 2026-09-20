@@ -1,0 +1,377 @@
+- id: "1"
+  title: Resolve a face once, and stop demanding a font set nobody reads
+  description: >-
+    A chain entry the renderer cannot resolve is painted in a coverage-resolved face it does
+    hold and reported, rather than refusing; an entry that resolves needs no font set at all,
+    so an all-embedded document renders with none (CAP-4, CAP-7, fixes issue #1 without closing
+    it). Engine and bindings — no designer change, no format change, no new font source.
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    THIS STORY REVERSES A GUARANTEE THE PRODUCT WAS BUILT AROUND, and that is the frame to
+    hold it in. spec-fonts CAP-4 promised "no render produces a page set with a substituted
+    face". The amended clause promises "no SILENT substitution" instead. The absent-ASSET-KEY
+    load error is NOT in scope and does not move: a chain naming an assets key that is not
+    there, or an asset whose bytes are not a readable font, is still a load error. Only the
+    NAMED-face supply failure changes.
+
+    The emission sites are two, and they are not the same shape. `render.go:2200` raises it
+    with an elementID and `fontFamilyDataPath`; `wrap.go:674` raises it with an empty
+    elementID. `page_setup.go:1663` catches `DiagCodeTextFaceAbsent` by code and propagates it
+    — read that site before touching either emitter, because it is a caller that currently
+    depends on this being an ERROR disposition and may need to change with it.
+
+    THE SUBSTITUTE IS COVERAGE-RESOLVED, PER RUNE, AMONG THE FACES THE RENDERER WAS GIVEN —
+    the supplied FontSet plus the document's own embedded assets. Owner decision, and the reason
+    is the whole point: do not use a fixed face and do not use the chain's own first entry, so a
+    Thai or CJK document falls back to something that can actually draw it. A fallback that
+    renders tofu has substituted nothing.
+
+    IT IS NOT "THE SHIPPED SET", AND AN EARLIER DRAFT OF THIS SPEC SAID SO WRONGLY. Package
+    folio8 never imports folio-go/fonts — fonts.go's header calls that one-directional import
+    load-bearing because reversing it drags ~14.8 MB into every consumer — so THE ENGINE OWNS NO
+    FACES. It can only paint with what the caller handed it. A host passing fonts.Shipped() gets
+    the eleven; a host passing nothing has nothing to substitute from, and that case is still
+    TEXT_FACE_ABSENT.
+
+    THIS STORY FIXES github.com/panitw/folio8/issues/1 BUT MUST NOT CLOSE IT. Owner direction:
+    the issue stays open until folio-dotnet's next release is PUBLISHED, because the reporter is
+    on the 1.0.1 nuget package and is living with a zero-byte-face workaround until there is a
+    build they can consume. So: NO closing keyword — no "closes #1", "fixes #1" or "resolves #1"
+    — in any commit message, PR body or changelog entry. Reference it plainly ("see #1") if you
+    reference it at all. It is closed by hand once 2.0.0 ships.
+
+    The issue is not a bolt-on — it is the same rule seen from the other side. Read it before
+    starting. THREE STATES, ONE RULE, and
+    no eager argument check may pre-empt it before resolution has been attempted:
+    an entry that RESOLVES renders (and needs no font set at all);
+    an entry that CANNOT resolve WITH CANDIDATES AVAILABLE substitutes and warns;
+    an entry that CANNOT resolve WITH NO CANDIDATE AT ALL is TEXT_FACE_ABSENT.
+
+    THE ARGUMENT CHECK TO REMOVE is folio-dotnet/src/Folio8/Folio8.cs:181-183 — "fonts must name
+    at least one face; there is no default font set". I found no equivalent in Go or JS; CONFIRM
+    that rather than trusting it, because the three bindings ship the same behaviour at 2.0.0 and
+    a check that exists in only one of them is exactly the kind of divergence this release should
+    close. folio-dotnet/test/Folio8.Tests/ArgumentTests.cs:43 asserts the current behaviour and
+    will need to change with it.
+
+    "NO DEFAULT FONT SET" SURVIVES, NARROWED, AND THE WORDING IS PART OF THE DELIVERABLE. The
+    engine still performs no ambient lookup and still owns no faces. What changes is that
+    SUPPLYING NONE stops being a caller error when the document needs none. That principle is
+    written in folio-dotnet/src/Folio8/FontSet.cs:10, docs/folio-dotnet.md:89, docs/folio-js.md:68,
+    folio-go/cshared/README.md:158 and _bmad-output/specs/spec-client-libraries/api-surface.md:47
+    — all of them say "omitting fonts is a caller error", and that sentence is no longer true as
+    written.
+
+    THE ISSUE'S OWN EVIDENCE IS WORTH A TEST. The reporter measured that an all-embedded template
+    renders byte-identically whether the passed set holds a real font, garbage bytes, or nothing —
+    the set is unused by construction. That is the property to pin down: for a document whose every
+    chain entry is an asset, the font set must not affect the output bytes at all.
+
+    THE NEW DIAGNOSTIC NEEDS THREE REGISTRATIONS, not one. `internal/diag/diag.go` holds the
+    code constant (~:168), the ordered code list (~:428) and the disposition map (~:474); the
+    public mirror is `folio-go/diagnostic.go` (~:235). The disposition is WARNING, not error.
+    `diagnostic_registry_census_test.go` and `diag_no_empty_code_test.go` will both have
+    opinions — read them before choosing the code name. It must carry the chain, the entry
+    INDEX, the face requested and the face actually painted; an integrator has to be able to
+    fail their own build on it, so all four are fields, not prose in a message.
+
+    STRICT REFUSAL MUST STAY REACHABLE. An integrator for whom a substituted face in a legal
+    document is a genuine failure must still be able to get today's behaviour. How that is
+    selected — a render option, a FontSet-level flag, something else — is YOUR design call, but
+    it is a public-surface addition, so check `public_surface_census_test.go` and
+    `public_surface_consumer_test.go` and raise it as an Open Question if the shape is not
+    obvious from the existing options pattern. THE TIMING IS IN YOUR FAVOUR: the three libraries
+    cut 2.0.0 together once this epic and spec-loop-section land (folio-go is at 1.0.0 today,
+    folio-js at 1.0.1), so a breaking or awkward public shape is cheapest right now. Shape it
+    right rather than shaping it around 1.x compatibility.
+
+    THE DIAGNOSTIC MUST REACH ALL THREE SURFACES. folio-go, folio-js and folio-dotnet ship the
+    same behaviour at 2.0.0, and a substitution that is only visible through the Go API is not
+    done. Check how the existing diagnostics cross that boundary before assuming yours does.
+
+    `internal/wasm/engine.go:271` comments on the original TEXT_FACE_ABSENT behaviour in the
+    designer's own path. The designer supplies its faces from its store, so this change should
+    be invisible there — confirm that rather than assuming it, because a designer that silently
+    substitutes instead of reporting a missing face would be a regression in the one place the
+    author can still fix it.
+
+- id: "2"
+  title: Build a FontSet from a directory on disk
+  description: >-
+    A host-side helper turns a directory of font files into a folio8.FontSet, and the CLI gains
+    a flag for it, so a document that names a face it does not carry can resolve (CAP-3). The
+    engine is untouched by this story.
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    THE ENGINE DOES NOT READ DISK, AND THIS STORY MUST NOT MAKE IT. `folio8.FontSet`
+    (folio-go/fontset.go) stays the engine's only font input, and its doc comment — "the engine
+    never goes looking for fonts on the machine it runs on" — stays true and stays written. What
+    you are adding is a HOST-SIDE helper that produces a `FontSet`; the caller decides to call
+    it. That split is what lets spec-fonts' render-time purity constraint be amended rather than
+    deleted.
+
+    WHERE THE HELPER LIVES IS THE ONE REAL DESIGN CALL. It must not force a consumer who wants
+    only the disk loader to pull in `folio-go/fonts` and its ~14.8 MB of embedded faces —
+    fonts.go's own header comment records that figure and calls the one-directional
+    `fonts -> folio8` import load-bearing (AC9). So: not in `fonts`, and not something that
+    makes package `folio8` import `fonts`. A new leaf package is the obvious shape. Check
+    `gomod_test.go` and `arch_test.go` for what they assert about package structure before
+    committing to a location.
+
+    NAME COLLISION NEEDS A RULE AND A TEST. A disk face and a shipped face may carry the same
+    key. Decide precedence explicitly, write it in the doc comment, and test it — a caller
+    merging two FontSets with an undocumented winner is a bug that surfaces months later as "it
+    renders differently on the new server".
+
+    WHAT KEYS A DISK FACE is the second rule that needs stating: the filename, or the binary's
+    own sfnt name ID 1. There is a precedent to follow — fonts.go's header is emphatic that
+    nothing may DERIVE a family from a key ("a strings.TrimSuffix(key, ' Bold') anywhere would
+    reinstate the naming-convention weight carrier D-B explicitly foreclosed") and that the
+    machine-readable family is the face's own name ID 1. Read that comment before choosing.
+
+    THE CLI IS THE DEMONSTRATION. `cmd/folio8/main.go` builds its FontSet from `fonts.Shipped()`
+    alone, at :235 (Validate) and :286 (Render) — both, not one. `main_test.go`,
+    `subcommand_parity_test.go` and `cmd_folio8_path_test.go` are the tests that will care.
+
+    A BAD FILE IN THE DIRECTORY MUST NOT KILL THE RUN. Skip what will not parse, and make the
+    skip visible to the caller rather than silent — the same instinct as Story 1's diagnostic.
+    A directory with one corrupt .ttf in it is the normal case on a real server, not an
+    exceptional one.
+
+- id: "3"
+  title: Import font files from the author's own machine, on their acknowledgement
+  description: >-
+    The designer gains an import control that takes one or more font files off the author's
+    disk, asks them to acknowledge they hold the right to use it, groups the files into a
+    family by their own name records, and puts them in the local face store with their licence
+    identity transcribed from the binary (CAP-1, CAP-5, CAP-6 dialog half).
+  spec_checkpoint: false
+  done_checkpoint: true
+  invoke_dev_with: >-
+    THIS REVERSES A DECLINE THAT WAS ARGUED AT LENGTH, so read spec-fonts' D-8.6.1 open question
+    and its 2026-09-20 reversal before starting. The short version: D-8.6.1 declined because a
+    disk file supplies no licence terms and the designer would have to invent them. The owner
+    removed the premise — Folio takes no position on the terms of a face the AUTHOR supplies —
+    so the fields are filled by TRANSCRIPTION, never by judgement.
+
+    TRANSCRIPTION, LITERALLY. `copyright` from name ID 0, `licenceText` from name ID 13,
+    `licence` from name ID 14, verbatim. No classification, no inference from a family name, no
+    defaulting to an identifier nobody read. An absent name record produces an EMPTY value and a
+    document that still loads. `folio-designer/src/font-name-table.ts` already exposes
+    `nameTableString(view, tables, nameID)` generically and already reads nameID 0 at :153 — you
+    are extending a call site, not writing a name-table reader. NOTE what :154 currently does:
+    it THROWS when nameID 0 is absent. Whether that refusal survives for an author-supplied face
+    is a real question and the answer is not obviously yes — raise it rather than silently
+    keeping or dropping it.
+
+    DO NOT ROUTE THIS THROUGH `font-licence.ts`. That module decides whether terms a FAMILY
+    PUBLISHES are terms this product accepts, and its own header says so. It governs the
+    CATALOGUE tier and it keeps its build-time allowlist and its fail-the-build gate untouched.
+    An author-supplied face does not go through it. Getting this wrong collapses the whole
+    distinction the owner drew.
+
+    THE ACKNOWLEDGEMENT DIALOG IS PART OF THIS STORY, AND IT IS THE ADMISSION GATE. Before any
+    face enters the store the author accepts that they hold the right to use and redistribute
+    this font and that Folio takes no responsibility for it. Declining imports NOTHING — not a
+    partial family, not a face held pending. It is the gate, not a notice.
+
+    IT RECORDS NOTHING IN THE DOCUMENT IN THIS STORY, and that is deliberate — the same shape as
+    Story 4's setting-with-no-reader. Nothing is embedded here, so there is no font record to
+    carry it. Story 5 is where the acknowledgement becomes a field the engine honours. Do not
+    reach forward into the format from here.
+
+    WORDING IS LOAD-BEARING AND IT IS NOT YOURS TO IMPROVISE. This dialog is the product's whole
+    statement of position on a question it has deliberately stopped answering. If the phrasing is
+    not obvious from the spec, raise it rather than drafting something that reads as legal advice.
+
+    WHAT YOU MAY HAVE READ ELSEWHERE ABOUT A LICENCE BLOCKER IS RESOLVED, and it is narrower than
+    it first looked. `refuseLicenceSignatures`
+    (folio-go/internal/fontset/licencesignature.go:114-121) matches ONLY the GPL family, SSPL and
+    ShareAlike. A proprietary foundry face — the case this spec exists for — trips none of them,
+    and a face that says nothing admits already. Story 5 carries the override for the copyleft
+    case. Nothing in THIS story needs it.
+
+    MULTI-FILE IMPORT, GROUPED BY THE BINARIES. Owner decision: the picker takes several files
+    at once and groups them into one family by name ID 1 plus weight and slope, so an author
+    imports all four cuts in one gesture and a disk family is not second-class next to a
+    catalogue family. spec-install-all-face-cuts Story 1 has already generalised the cut model —
+    `regularFilename` is gone, replaced at font-source.ts:221-225, and that comment warns that
+    inferring a filename like `${family}-Bold.ttf` is a guess that is wrong often enough to
+    matter. Group on what the BINARY says, not on the filename.
+
+    PER-FILE CHECKS STAY PER FILE, exactly as they do for a fetched family: the `.ttf`/`.otf`
+    media-type check (font-source.ts:206-211, `mediaTypes` at :262) and the variable-face
+    refusal (~:513-515). One bad file is refused on its own without poisoning the import — an
+    author who picks four cuts and whose italic is a variable build gets the other three.
+
+    THE LOCAL FONT ACCESS GUARD STAYS GREEN AND UNTOUCHED.
+    `folio-designer/src/host-font-access.test.ts` runs a source scan
+    (`assertNoHostFontAccess`, `HOST_FONT_ACCESS_APIS`) forbidding the Local Font Access API.
+    That is exactly the thing this work still does NOT do: a file the author picks is not the
+    operating system's font book enumerated. If that test goes red you have built the wrong
+    feature.
+
+    DOWNSTREAM OF THE IMPORT, NOTHING SHOULD BE ABLE TO TELL. Same `font-store.ts`, same
+    `held-local-faces.ts`, same `FontBrowser.tsx` / `font-browser-model.ts` listing, same chain
+    entry, same round trip. The success criterion is indistinguishability, so the tests worth
+    writing are the ones that would catch a special case leaking out.
+
+- id: "4"
+  title: The document declares whether it carries its faces
+  description: >-
+    A document-settings command, a format field and a page-setup checkbox for embed-or-not,
+    following the setDocumentLocale / setDocumentUTCOffset precedent end to end (CAP-2, setting
+    half). Deliberately changes no embedding behaviour — Story 5 does that.
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    THE SETTING EXISTS, AND NOTHING READS IT YET. That is the whole scope and it is deliberate.
+    At the end of this story a document declares whether it embeds, the author can toggle it,
+    it round-trips and it undoes — and saves behave exactly as they do today. Resist wiring the
+    behaviour in; Story 5 is where it earns its keep, and keeping them apart is what makes each
+    one reviewable.
+
+    THE PRECEDENT IS EXACT AND YOU SHOULD FOLLOW IT RATHER THAN INVENT. `setDocumentLocale`
+    (component_commands.go:3307-3342) and `setDocumentUTCOffset` (:3343-) are the two existing
+    document-settings commands, dispatched at :313-316. Each is documented as "the only writer
+    of its field outside the loader" — keep that property. `document_settings_command_test.go`
+    is the test file to extend, and its helpers (`documentSettingsField`,
+    `documentSettingsPair`, `documentSettingsRefusal`) already encode the three-part refusal
+    shape every command owes.
+
+    THE DESIGNER SIDE HAS A KNOWN ORDERING. App.tsx:2264 spells out the order document-settings
+    commands are emitted in ("the two DOCUMENT-SETTINGS commands (locale, then utcOffset)") and
+    :2299 counts the five things applied together; :2335 shows the draft/canvas comparison
+    pattern. The PAGE SETUP section itself is App.tsx:4439, the `Draft` type is :6517 and
+    `draftFor` is :6671. This is a third member of a set of two — every one of those sites is a
+    place the set size is currently written down.
+
+    THE VERSION IS SETTLED AT THE TOP AND OPEN AT THE BOTTOM. The owner has ruled that this
+    spec's format additions ride the 5.0 that spec-loop-section opens — the ceiling is
+    SupportedMajor = 4 (internal/template/version.go:116) and the ladder tops at 4.1
+    (docs/folio-format.md:113). What is NOT settled is whether THIS field is one of the
+    constructs that triggers the 5.0 row, and it genuinely cuts the other way from the
+    acknowledgement field: this setting governs what a SAVE writes, not what a render does, so
+    an older reader that ignored it would render the document IDENTICALLY and diverge only on
+    re-save. That is not obviously D-7.3.1's refuse-rather-than-render-wrong case. It turns on
+    how the loader treats an unknown top-level document key — read that, do not assume it, and
+    raise the answer rather than quietly picking one.
+
+    SupportedMajor MOVES 4 -> 5 EXACTLY ONCE, and spec-loop-section's stories are making the same
+    edit. If you find it already at 5, that is correct and not a merge accident. The 5.0 ladder
+    row and version.go are a SHARED edit surface between the two specs — add your trigger to the
+    row, do not rewrite it.
+
+    DEFAULT IS EMBED. Every existing document embeds, and an absent field must keep meaning
+    that. A field whose absence changed behaviour would silently rewrite every template already
+    on disk.
+
+    docs/folio-format.md is part of the deliverable, not a follow-up. `docs_examples_test.go`
+    and `matrixdocs_source_test.go` hold the documentation to the code.
+
+- id: "5"
+  title: The acknowledgement travels, and the engine honours it
+  description: >-
+    An embedded font record carries the author's acknowledgement, and both doors that ask the
+    licence question admit an acknowledged face without the contradiction check — the guard
+    standing unchanged for every face that carries none (CAP-6, record and engine halves).
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    ONE FIELD, DOING BOTH JOBS — owner decision, and it is the thing to hold onto. What the
+    document records IS what the engine reads. There is no separate origin discriminant beside
+    the acknowledgement, and adding one would give you two sources of truth about the same face
+    that can disagree.
+
+    BOTH DOORS, OR THE FEATURE IS A TRAP. `RefuseContradictedLicence` is asked at
+    `embedFontFamily` (component_commands.go:4598 AND :4767 — two call sites, not one) and again
+    at document load (internal/template/parse.go:711, whose comment calls it "exactly one door"
+    — that describes the LOAD path and is not a claim the codebase has a single call site; read
+    it in context). Honour the acknowledgement at the embed door only and you produce a document
+    that saves and will not reopen. Honour it at the load door only and the author cannot create
+    one in the first place.
+
+    THE GUARD ITSELF DOES NOT CHANGE. `refuseLicenceSignatures` and its GPL/SSPL/ShareAlike
+    patterns, the admit table above it, and the silence-admits rule on
+    `RefuseContradictedLicence` all stay exactly as they are. You are adding a CONDITION on
+    whether the question is asked about a given face — not editing the answer. Read that
+    function's header comments first; they record why silence admits and why the refuse half
+    consults every face regardless, and both reasons survive this change.
+
+    THE CATALOGUE TIER NEVER WRITES ONE. A catalogue face carrying an acknowledgement is a
+    defect, and worth a test that says so — it is the single thing that would quietly collapse
+    the distinction between a face Folio distributes and a face the author supplied.
+
+    THE VERSION IS SETTLED: 5.0, shared with spec-loop-section. A new key on a font record is a
+    MAJOR change by the format's own compatibility rules, and the owner has ruled it rides the 5.0
+    that spec-loop-section opens rather than opening a 6.0. Two things follow. SupportedMajor
+    (internal/template/version.go:116) moves 4 -> 5 EXACTLY ONCE — spec-loop-section's stories
+    make the same edit, so finding it already done is correct, not a merge accident; the 5.0
+    ladder row and version.go are a SHARED edit surface, so ADD your trigger to the row rather
+    than rewriting it. And ONLY A DOCUMENT THAT CARRIES AN ACKNOWLEDGED FONT RECORD declares 5.0 —
+    the same rule spec-loop-section states for the loop element, and the same D-1.4.13 principle
+    that makes version a property of the document. Every other document keeps its version and its
+    bytes; byte_neutrality_test.go will tell you if that slipped. docs/folio-format.md is part of
+    the deliverable.
+
+    ALL THREE LIBRARIES, NOT JUST GO. folio-go, folio-js and folio-dotnet cut 2.0.0 together and
+    ship the same behaviour. A document carrying an acknowledged record must load the same way
+    through each of them. NOTE THE TWO VERSION LINES AND DO NOT CONFLATE THEM: the FORMAT goes
+    4.1 -> 5.0 (what a document declares), the LIBRARIES go 1.x -> 2.0.0 (what an integrator
+    upgrades). A document never declares 2.0.0.
+
+    WRITE THE LIMIT DOWN WHERE THE FIELD IS DEFINED. This flag asserts and does not prove: the
+    file cannot say who made the acknowledgement or whether it is true, and anyone hand-writing a
+    `.folio` can set it. That is accepted deliberately — it is the same position the product
+    already takes on the author's responsibility — but a reader of the format must meet it at the
+    field, not deduce it.
+
+- id: "6"
+  title: The setting governs what a save writes
+  description: >-
+    Saving embeds the referenced faces or names them only, according to the document's setting,
+    and turning the setting off strips faces the document already carries after warning the
+    author (CAP-2, behaviour half).
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    STORY 5 MUST HAVE LANDED. This story embeds author-supplied faces, and the acknowledgement
+    field plus both engine doors are Story 5's deliverable. Without them an acknowledged copyleft
+    face saves and will not reopen. The owner ruling that made this possible is recorded in the
+    spec at CAP-6; you are consuming it, not deciding it.
+
+    THE EMBEDDED MODE IS NOT BEING TOUCHED, and every test that protects it must stay green.
+    Byte identity across the four targets, dedupe by lowercase-hex SHA-256, faces stored whole,
+    no save-time subsetting, PDF subsetting unchanged. `byte_neutrality_test.go`,
+    `embedded_font_fixture_test.go`, `embedded_font_signoff_matrix_test.go` and
+    `embedded_font_signoff_transfer_test.go` are the ones that will tell you if you have.
+
+    NAME-ONLY MEANS THE STRING SHAPE, AND NO PATH ANYWHERE. A non-embedded face is recorded as
+    the chain entry's existing string — a face name — which docs/folio-format.md already defines
+    as "a face the renderer is given at render time". There is no new entry shape in this story,
+    and there is NO path, URL or machine identity in the document, not even as a hint or a
+    comment. A document that named a filesystem location would end FR12/S9.
+
+    STRIP ON TOGGLE-OFF, WITH THE AUTHOR WARNED FIRST — owner decision. Turning the setting off
+    on a document that carries faces drops them from `assets` and rewrites the chain entries to
+    names, on the next save. The author is warned BEFORE the first strip, because it is
+    destructive and the only way back is document undo. Two things to get right: the strip must
+    not orphan other assets (images share that map), and it must be one undoable unit — see
+    commit e08f558, "apply several commands as one undoable unit", which exists for exactly this
+    shape of operation.
+
+    ALL THREE LIBRARIES SHIP THE SAME BEHAVIOUR at 2.0.0, so a name-only document must render
+    the same way through folio-go, folio-js and folio-dotnet. This story writes the documents
+    Story 1's substitution path will meet on every one of those surfaces.
+
+    THE PREVIEW MUST NOT MOVE. The spec's success criterion is that toggling changes only what
+    the file contains, never the page set the designer previews. The designer resolves from its
+    own face store either way, so this should fall out — but assert it, because it is the
+    property an author will trust without checking.
+
+    WORTH RAISING IF IT BITES: nothing yet tells the author, at authoring time, that a
+    name-only document will substitute on a host that lacks the face. The spec lists that as an
+    open question and does not require it here. If the work makes an obvious place for it, say
+    so rather than building it unasked.

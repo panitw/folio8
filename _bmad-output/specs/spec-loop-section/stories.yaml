@@ -1,0 +1,389 @@
+- id: "1"
+  title: Name the document root explicitly with $
+  description: >-
+    A path may begin with the segment `$`, meaning the document root, so a root field stays
+    reachable however many row aliases are live. Optional everywhere, required nowhere, and it
+    raises the version ladder to 5.0 once so the loop stories inherit it (CAP-11).
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    NO LOOP IN THIS STORY. This is the expression language alone, useful in templates that will
+    never hold a loop. It ships first because it is small, independently provable, and because
+    doing the 5.0 ladder work once here keeps it out of story 2.
+
+    THE PROBLEM IT SOLVES, stated precisely. `bind.Scope` resolves by first-path-segment equality
+    in the order params, row alias, data root — see `WithRow` and its comment in
+    folio-go/internal/bind/scope.go, and D-3.1.1 referenced there. A root field whose name equals
+    a live alias is therefore UNREACHABLE today, by any spelling. That is already true for one
+    table alias; nested loops make three aliases live at once and turn a latent trap into a
+    likely one.
+
+    THE ORDER BECOMES params, $, aliases (innermost first), data root. `$` is a resolution root
+    that nothing can shadow, exactly as `params` is. The existing machinery is the model: the
+    rootKind parameter of lookupBound (folio-go/internal/bind/text.go) is a named struct type
+    rather than a string precisely so an author's alias spelling can never be smuggled in as a
+    root class. Add `$` as another root CLASS there; do not special-case it as a string compare
+    in the resolver.
+
+    OPTIONAL, NEVER REQUIRED. `{{customer.name}}` keeps working unchanged at every depth. This
+    is the whole reason no existing template changes meaning, and it must be proven: a
+    round-trip/render test over existing fixtures showing byte-identical output.
+
+    Legal wherever a path is legal — a text element's `value`, a `visibleIf`, a table
+    `columns[].bind`, a `columns[].footerOf`, and a table's own `bind`. `$.orders[]` must be a
+    valid collection bind. Check `footerOf`'s derivation rules in docs/folio-format.md: it
+    derives from a column's bind in exactly two syntactic shapes, and a `$.`-prefixed bind needs
+    a decided answer there rather than an accidental one.
+
+    A bare `$` with no dot is a LOCATED ERROR saying it is a namespace, not a value. There is an
+    existing error of exactly this shape for a bare row alias — see the bare-alias arm in
+    folio-go/internal/bind/scope_test.go and reuse its wording and its diagnostic code rather
+    than minting a second one.
+
+    No alias may be named `$`. The reserved-alias check already exists for `params`, `page` and
+    `pages` in `checkTableBindings` (folio-go/render.go, around the AD-11/AD-4 comment); add `$`
+    there with the same shape of message.
+
+    THE VERSION LADDER. A document using a `$.` path requires 5.0, because an older reader's
+    expression parser fails on the `$` character. Add the ladder row in docs/folio-format.md and
+    implement the save-side trigger. The rule is derived from the PARSED AST, as the 2.0 formula
+    trigger already is — a `$` inside a quoted string literal raises nothing. Saving never lowers
+    a loaded version.
+
+    5.0 IS A MAJOR BUMP AND THE OWNER HAS ACCEPTED IT. Adding `$` is not itself a closed-set
+    change, but it changes the legal shape of an existing value, which docs/folio-format.md's
+    Compatibility rules already classify as MAJOR (the `fonts` chain entry precedent is spelled
+    out there). Story 2 adds `loop` to closed set #1 and rides the same 5.0.
+
+    Every new diagnostic is registered in folio-go/internal/diag/diag.go.
+
+- id: "2"
+  title: The loop element in the format
+  description: >-
+    A new element type `loop` that contains other elements, with container-relative child
+    coordinates, and every load error that keeps a loop unambiguous. Round-trip only — nothing
+    renders and nothing is drawn in this story (CAP-8).
+  spec_checkpoint: true
+  done_checkpoint: true
+  invoke_dev_with: >-
+    THIS STORY PRODUCES NOTHING VISIBLE. Its entire output is load, save, round-trip and
+    refusals. That is deliberate and it is how the section break was built. Do not reach forward
+    into rendering or the designer to make it feel finished.
+
+    `loop` JOINS CLOSED SET #1. The element type set is a literal map at
+    folio-go/internal/template/closedsets.go:22 and `ElementType` constants are in
+    folio-go/internal/template/model.go. Adding a member to a closed set is a MAJOR change by
+    docs/folio-format.md's own Compatibility rules — 4.1 to 5.0, owner accepted. Story 1 has
+    already opened 5.0; add the loop row to the ladder beside it. Only documents carrying a loop
+    or a `$.` path declare 5.0; every other document keeps its version AND ITS BYTES, and that
+    needs a test.
+
+    THE FIRST ELEMENT THAT CONTAINS ELEMENTS. Nothing in the format nests today. Expect this to
+    touch every place that walks a band's element list assuming it is flat — decode, validate,
+    save, id-uniqueness, and the section break's own straddle and membership checks. Find those
+    walkers before writing the type, not after.
+
+    FIELDS: `type`, `id`, `x`, `y`, `width`, `height`, `bind`, `as`, `elements[]`, plus the two
+    settings story 6 adds (do NOT add them here — this story's schema must not carry keys nothing
+    reads). `height` is the DECLARED ITERATION HEIGHT and story 4 makes it a floor; here it is
+    simply a required positive length that round-trips.
+
+    COORDINATES. A child's `x`/`y` are relative to the LOOP's top-left. docs/folio-format.md
+    currently states the rule as "relative to its band's top-left corner" — that sentence becomes
+    "relative to its container's top-left", with a band and a loop both being containers. Rewrite
+    it; do not leave it standing while the code does something else.
+
+    IDS stay unique across the whole document, children included, so every diagnostic can still
+    name an element by id. The existing duplicate-id load error (`TEMPLATE_FIELD_INVALID`) must
+    catch a child colliding with a band element.
+
+    EVERY LOAD ERROR IN THIS STORY, each located and each registered in
+    folio-go/internal/diag/diag.go: a loop on `pageHeader` or `pageFooter` (same grounds as
+    `keepTogether` and `sectionBreak` — those bands are repeated verbatim and never paginated); a
+    child whose DECLARED box leaves the loop's box; two sibling loops whose boxes overlap, naming
+    both; a loop whose declared box straddles a `sectionBreak`; nesting deeper than three levels;
+    an `as` colliding with an enclosing loop's or table's alias, naming both; an `as` of `params`,
+    `page`, `pages` or `$`; a `keepTogether` tag with members both inside and outside a loop,
+    naming the tag and both sides.
+
+    THE STRADDLE RULE IS NOT NEW WORK — it is the section break's, applied to a box instead of a
+    line. Read folio-go/section_break.go and the `SECTION_BREAK_STRADDLED` handling before
+    inventing a containment check. A child may still GROW past the declared box at render (story
+    4); only the DECLARED box is checked here.
+
+    `keepTogether` SCOPING. A tag inside a loop groups within ONE iteration — members of the same
+    tag in different iterations are different groups, never one. Nothing enforces iterations yet,
+    so what this story owns is the load-time refusal of a tag that spans the boundary. Note in
+    the code why, so story 3 does not have to rediscover it.
+
+    Round-trip byte-identically, nested and not. docs/folio-format.md gains the element, the
+    container-coordinate rule, and the ladder row.
+
+- id: "3"
+  title: Render a loop once per item
+  description: >-
+    The engine lays a loop out once per entry of its bound collection, each child reading that
+    item through the loop's alias, and moves the content below the loop down as one rigid block
+    by however much the loop grew (CAP-2, CAP-4).
+  spec_checkpoint: true
+  done_checkpoint: false
+  invoke_dev_with: >-
+    THIS IS THE PAGINATION STORY. What is settled here is the hardest thing in the spec to change
+    later, which is why it is gated.
+
+    SCOPE FENCE: single level only, fixed iteration height, no settings, no designer. Nesting is
+    story 5, growth is story 4, the empty-array and keep-together settings are story 6. An empty
+    collection may do the simplest correct thing here; story 6 owns the author's choice about it.
+
+    THE THIRD EXCEPTION TO AD-24. docs/folio-format.md's Pagination section states that nothing
+    moves because a neighbour grew, "with two exceptions" — the section break's below-line section
+    and a Page Break off designed page. A loop is the THIRD, and the largest: the other two move a
+    rigid block once, while a loop's displacement repeats and its magnitude comes from the data.
+    Write it into that section beside the other two, and update the "two exceptions" wording — do
+    not leave the doc claiming two.
+
+    THE PUSH. Content below the loop in the loop's own container moves down by (total iteration
+    extent − the loop's declared height), as one rigid block, every member keeping its offset. The
+    section break's below-line section is the working model for "rigid block, each member keeps
+    its offset from the line" — read folio-go/section_break.go rather than inventing a second
+    mechanism. Iterations are FLUSH: iteration i+1 begins at iteration i's bottom, with no
+    invented gap.
+
+    ROW SCOPE. `bind.Scope.WithRow` (folio-go/internal/bind/scope.go) already does exactly what a
+    loop iteration needs for ONE alias, and folio-go/table_render.go shows the call site pattern —
+    `bind.NewScope(data, params).WithRow(rowVal, alias)` per row. Use it. Unqualified paths still
+    resolve from the document root (a row never shadows it), `params.` is shadowed by nothing
+    (AD-11), and `$.` from story 1 reaches the root explicitly.
+
+    ALIAS DEFAULT is `row` when `as` is omitted, resolved at RESOLUTION time the way a table's is
+    — see the defaulted-alias test in folio-go/internal/bind/scope_test.go.
+
+    BIND VALIDATION. `checkTableBindings` in folio-go/render.go is the model: the declaration-level
+    alias check is data-free, and the collection check strips one trailing `[]` and resolves the
+    remainder. A bind that does not end `[]`, or that resolves to a non-array, is a located error
+    naming the loop. An empty array is NOT an error.
+
+    DIAGNOSTICS INSIDE A LOOP NAME THE ITERATION INDEX, because the same child id renders many
+    times. A diagnostic that names only the id is ambiguous the moment there are two iterations.
+    Check how table_render.go keeps (elementID, lineIndex) unique across rows — its comment about
+    never merging two distinct physical lines into one ColumnItem is the same hazard here, and
+    getting it wrong will show up as mis-paginated iterations rather than as a visible error.
+
+    PAGES ADDED BY A LOOP ARE FULL PAGES: page header, page footer, counted by `{{page}}` and
+    `{{pages}}`. A loop whose iterations run past the content window continues under the four
+    window rules.
+
+    PROVE THE ZERO-CHANGE CASE: a loop with a one-entry collection must render byte-identically to
+    the same template with the loop replaced by its single iteration's elements. That test is what
+    shows the push arithmetic has no off-by-one in it.
+
+- id: "4"
+  title: Iterations that grow with their data
+  description: >-
+    An iteration's height becomes the larger of the loop's declared height and what that
+    iteration's own content actually reached, so a variable-length table inside the loop makes
+    one iteration taller without disturbing the others (CAP-5).
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    THE DECLARED HEIGHT BECOMES A FLOOR, never a ceiling and never a clip. Iteration i occupies
+    max(declared height, the measured extent of that iteration's content). folio8 already has this
+    idiom twice — a table's `headerHeight` is a floor the header row grows past when a label wraps,
+    and `minHeight` is a floor under each page's slice. Read both in docs/folio-format.md and match
+    the vocabulary; do not invent a third way of saying "floor".
+
+    A TABLE INSIDE A LOOP BINDING THE ITEM'S OWN COLLECTION IS NEW BEHAVIOUR, NOT EXISTING
+    BEHAVIOUR REUSED. `checkTableBindings` (folio-go/render.go) resolves a table's bind "against
+    the DATA ROOT ONLY — never params, never a row", citing AD-11, and says so in its own comment.
+    A loop makes `bind: "line.charges[]"` a thing an author will write immediately. Decide and
+    implement whether a table's bind resolves in the enclosing row scope, update that comment, and
+    make sure `$.` still reaches the root from in there. If this turns out to conflict with AD-11
+    as written, STOP AND ASK rather than reinterpreting an AD.
+
+    PER-ITERATION MEASUREMENT is the substance of this story. Each iteration is laid out and
+    measured on its own; heights legitimately differ between iterations of the same loop. Every
+    child keeps its declared offset from ITS OWN iteration's top — an iteration growing taller
+    does not reposition anything inside it, only what comes after it.
+
+    The push from story 3 now sums real iteration heights instead of multiplying a constant. Keep
+    the arithmetic integer fixed-point (AD-21); four-platform byte-identical output is not
+    negotiable.
+
+    A child may GROW past the loop's declared box here. That is expected and is what raises the
+    iteration's height. Story 2's containment check is on the DECLARED box only — make sure this
+    story does not accidentally start enforcing it at render.
+
+- id: "5"
+  title: Loops inside loops
+  description: >-
+    A loop may sit inside another loop, up to three levels, binding a collection reached through
+    the enclosing item or through `$`, with an alias scope stack in which nothing shadows
+    anything (CAP-3).
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    THE SCOPE STACK IS THE WHOLE STORY. `bind.Scope` holds exactly ONE row today — `rowSet`, `row`,
+    `rowAlias` in folio-go/internal/bind/scope.go, selected by first-path-segment equality against
+    a single alias. Three live aliases means that becomes a stack, resolved innermost first. Change
+    the shape deliberately; do not bolt a second row field beside the first.
+
+    THE ORDER, FIXED: params, $, aliases innermost first, data root. `params` can be shadowed by
+    nothing (AD-11) and `$` was made unshadowable in story 1. Both must still hold at depth three.
+
+    NOTHING SHADOWS ANYTHING. An inner `as` equal to any ENCLOSING loop's or table's alias is a
+    load error naming both — story 2 added that refusal, so this story is where it starts having
+    depth to check against. Because collisions are refused, innermost-first can never actually
+    mask a live alias; it is the resolution order, not a shadowing policy.
+
+    AN INNER LOOP MAY BIND A ROOT COLLECTION (owner decision), rendering it whole once per outer
+    item — `$.invoices[]` inside an `orders[]` loop. Alias-relative and root-relative binds are
+    both legal.
+
+    DEPTH IS CAPPED AT THREE (invoice, line, charge). A fourth is a load error naming the loop.
+    This is an ASSUMPTION in SPEC.md, a chosen bound rather than a stated requirement — if three
+    turns out to be wrong in practice, raise it rather than quietly widening it.
+
+    Growth composes: an inner loop's growth raises its own iteration's height (story 4), which
+    raises the outer loop's total extent, which pushes the content below the outer loop. Prove
+    that chain with a test at all three levels rather than assuming it falls out.
+
+- id: "6"
+  title: The empty array and keeping an iteration whole
+  description: >-
+    Two author settings — whether an empty collection collapses the loop or leaves its space as
+    designed, and whether an iteration may be split across a page — plus the clip-with-warning
+    answer for an iteration no page can hold (CAP-6, CAP-7).
+  spec_checkpoint: false
+  done_checkpoint: true
+  invoke_dev_with: >-
+    THE EMPTY-ARRAY COLLAPSE IS FOLIO8'S FIRST UPWARD MOVE, and it is opt-in for exactly that
+    reason. The format has refused every upward move so far — docs/folio-format.md is explicit
+    that an unanchored section is never pulled up on page 1. The setting DEFAULTS TO RESERVED, so
+    the default never changes existing behaviour or output, and the key is WRITTEN ONLY WHEN THE
+    AUTHOR OPTS IN. `sectionBreakAnchor` is the precedent for a default-valued key that is dropped
+    on save; follow it exactly.
+
+    With a non-empty array the setting changes nothing, and that needs a test — otherwise it will
+    be discovered later that it subtly shifts something.
+
+    PER-ITERATION KEEP-TOGETHER. Default OFF: an iteration splits at a page boundary under the
+    four window rules, exactly as band content does. This matches folio8's own defaults (no widow
+    or orphan control, nothing kept together unless the author tags it) and deliberately NOT the
+    banded-engine default, which keeps a detail band whole. It is recorded as an assumption in
+    SPEC.md.
+
+    ON: an iteration that does not fit in the room left starts the next page whole, and the space
+    it vacated stays empty. `keepTogether`'s existing semantics are the model — read the
+    `keepTogether` field docs in docs/folio-format.md — but note the scoping difference story 2
+    already fixed at load time: a tag inside a loop groups within ONE iteration.
+
+    THE CLIP, and read this carefully because it is a fork the format already settled. An iteration
+    taller than a WHOLE content window under keep-together is placed alone on a fresh page, drawn
+    as far down as that page has room for, cut off there, and THE RENDER SUCCEEDS with a warning
+    naming the loop and the iteration index. Whole lines are dropped, never half of one, and an
+    image in the cut-off part is REMOVED rather than moved.
+
+    The grounds, from docs/folio-format.md's own table of who is responsible for the height: a
+    table row is clipped because its height came from the DATA and the author may never have seen
+    that record; a keepTogether group too tall only IN AGGREGATE is clipped for the same reason. An
+    iteration is that second case almost exactly — every child fits, the sum does not, and the sum
+    came from how many charges that one item had. A print run of a hundred thousand documents must
+    not fail because one record was unusual.
+
+    THE HARD ERROR SURVIVES UNDERNEATH: an iteration holding a single child that is BY ITSELF
+    taller than a content window stays a refusal naming that child, unchanged. The format's rule is
+    that what decides is WHAT is too tall, never whether it happens to be tagged — a group of one
+    adds nothing, so tagging can never turn a refusal into a warning. Do not let the iteration
+    wrapper become a loophole around that.
+
+    Reuse `TABLE_ROW_CLIPPED_HEIGHT` if its wording can carry an iteration, or mint a sibling and
+    register it in folio-go/internal/diag/diag.go. Do not leave a clip unreported — no clip path in
+    folio8 is silent.
+
+- id: "7"
+  title: The loop on the design canvas
+  description: >-
+    The designer's palette, chrome, selection and editing for a loop — placing one, dropping
+    elements in and dragging them out, and a canvas projection whose geometry comes from the
+    engine (CAP-1, CAP-9).
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    THE AUTHOR'S MENTAL MODEL IS TWO MARKERS EVEN THOUGH THE FILE HOLDS ONE ELEMENT. The owner
+    asked for "Loop Start" and "Loop End" and chose the container shape after reading the prior-art
+    comparison. Honour both: draw the region with a solid top edge carrying a mono LOOP START tab
+    showing the bind path and alias, and a solid bottom edge carrying a LOOP END tab. Chrome is
+    never drawn in the PDF; a printed border around an iteration is still a `rect` inside the loop.
+
+    THE PALETTE ENTRY STAYS ARMED (owner decision) and a band may hold several loops. This is the
+    OPPOSITE of the Section Break entry, which disables after one — see the spec-section-break
+    comment at folio-designer/src/App.tsx:497 and `paletteItems` at :212. Do not copy the disabling
+    behaviour by reflex.
+
+    DRAG IN AND OUT WITH COORDINATE CONVERSION is the substantive new interaction. Dropping a band
+    element into a loop makes it a child and converts its stored `x`/`y` to loop-relative, with its
+    on-screen position UNCHANGED; dragging a child out converts back. Dragging the loop moves every
+    child with it and changes NO child's stored offset. This is the opposite of the section break,
+    which refuses every crossing — a loop must allow crossing, because dropping things in is how an
+    author builds one.
+
+    Dragging or typing one loop into another sibling's box is refused, naming the loop that
+    blocked it, and a refused edit leaves the document unchanged — the section break's refusal
+    behaviour is the model.
+
+    ONE UNDO ENTRY PER AUTHOR ACTION, each round-tripping through the engine. Note that a general
+    transaction mechanism now exists (commit e08f558, "apply several commands as one undoable
+    unit") — a drag that both re-parents an element and converts its coordinates may be two
+    commands in one undoable unit rather than a new fused command. Check what that mechanism
+    actually delivers before designing around it.
+
+    THE ENGINE IS THE ONLY LAYOUT AUTHORITY, ON THE CANVAS TOO. The projection carries the loop's
+    box, bind, alias, settings and its children's container-relative positions. The DOM-measurement
+    ban test must still pass — see folio-go/canvas_projection_wire_test.go and the designer's
+    engine-protocol tests for the shape of the contract.
+
+    THE CANVAS DRAWS ONE ITERATION, at the declared position, and never draws where later
+    iterations would land — the canvas has no data. This is exactly the principle the section break
+    settled when it drew the below-line section only at its declared position.
+
+- id: "8"
+  title: Loops with section breaks, designed pages, and the golden invoice
+  description: >-
+    Loops compose with the section break and with designed pages without either feature changing
+    meaning, proven by a golden invoice fixture that joins the four-platform hash matrix (CAP-10).
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    NEITHER FEATURE CHANGES MEANING. What makes this tractable is that the section break already
+    defines the quantity a loop affects: pagination rule 1 in docs/folio-format.md defines "where
+    the above-line content ends" as the lowest bottom of any above-line item, ALREADY counting a
+    table's row displacement and its `minHeight` floor. A loop's iteration displacement simply
+    joins that list. Extend the existing definition; do not add a parallel one.
+
+    An above-line loop's growth pushes that end point, so the below-line section lands correctly.
+    A below-line loop grows the section. A loop whose declared box straddles a break is refused —
+    story 2 added that refusal; this story proves it does the right thing under data.
+
+    Test anchored and unanchored, at 1, 12 and 60 items. The unanchored fit rule is intricate
+    (section-break pagination rule 5, with its extent measurement and its no-room cases) and a
+    loop is a new way to reach every one of its branches.
+
+    DESIGNED PAGES: a loop on a Page Break off page feeds that page's end point the same way, via
+    the same measurement. Each designed page's own section break applies to that page's column
+    alone.
+
+    THE GOLDEN INVOICE, which is SPEC.md's success signal: one loop bound to `lines[]`, each
+    iteration holding a bordered panel with the line's description, a barcode and a nested table
+    of that line's charges, and a signature block declared below the loop. Render at 1, 12 and 60
+    lines, and with `lines` empty under BOTH empty-array settings. On no page is the signature
+    block overdrawn; every iteration reads its own line's data; iterations with different charge
+    counts have different heights and none is clipped.
+
+    IT JOINS THE FOUR-PLATFORM HASH MATRIX — darwin/arm64, linux/amd64, linux/arm64, js/wasm
+    (AD-21). See folio-go/matrix_test.go and the section break's own fixture
+    (folio-go/section_break_statement_fixture_test.go) for how a fixture is added. Byte-identical
+    output across all four is the acceptance bar, not a nice-to-have.
+
+    Confirm every diagnostic minted across stories 1-7 is registered in
+    folio-go/internal/diag/diag.go, and that docs/folio-format.md's Pagination section now
+    describes THREE exceptions to "nothing moves because a neighbour grew", not two.

@@ -63,9 +63,21 @@ the faces a document uses are declared in it, chosen in the designer, and carrie
 - **CAP-4 — Located failure for a broken font reference**
   - **intent:** A chain entry that names neither a shipped face nor a present, decodable font
     asset fails where it is written, rather than being silently substituted or dropped.
-  - **success:** Loading a document whose chain names an absent asset key, or an asset whose bytes
+  - ~~**success:** Loading a document whose chain names an absent asset key, or an asset whose bytes
     are not a font this version can read, is a load error naming the chain and the entry; no
-    render produces a page set with a substituted face.
+    render produces a page set with a substituted face.~~
+  - **success (AMENDED 2026-09-20 by OWNER DECISION, recorded in
+    [SPEC-font-sources-and-embedding](../spec-font-sources-and-embedding/SPEC.md); the original is
+    preserved above verbatim):** The first clause is untouched — a chain naming an **absent asset
+    key**, or an asset whose bytes are not a font this version can read, is still a **load error**
+    naming the chain and the entry. **What changed is the second clause only.** A document may now
+    legitimately name a face it does not carry (the embed-or-not option), so a **named** face that
+    the renderer was not given no longer refuses the render: it is painted in a shipped face and a
+    **diagnostic names the chain, the entry, the face requested and the face painted**. The
+    guarantee this capability exists for is therefore no longer *"no substitution"* — it is **"no
+    SILENT substitution"**. Why the reversal was accepted: once a document may name what it does
+    not carry, `TEXT_FACE_ABSENT` turns a deployment gap into a dead pipeline, and a statement that
+    went out in Noto Sans is recoverable where a nightly run that produced nothing is not.
 
 ## Constraints
 
@@ -76,8 +88,18 @@ the faces a document uses are declared in it, chosen in the designer, and carrie
 - Font bytes use the **existing `assets` map** — content-addressed by lowercase hex SHA-256,
   base64 hard-wrapped at 76 columns, deduplicated by key, emitted in stable order. No second
   storage mechanism, no new canonical-serialization rule.
-- **Nothing is fetched or read at render time.** No network, no host-installed font, no path on
-  disk (FR33). A document renders from its own bytes plus the shipped set.
+- ~~**Nothing is fetched or read at render time.** No network, no host-installed font, no path on
+  disk (FR33). A document renders from its own bytes plus the shipped set.~~
+  **AMENDED 2026-09-20 by OWNER DECISION**, recorded in
+  [SPEC-font-sources-and-embedding](../spec-font-sources-and-embedding/SPEC.md); the original is
+  preserved above verbatim. **What still holds, and it is most of it:** **no network** at render
+  time, ever; **no enumeration of the machine's installed fonts**; and **no path on disk inside the
+  `.folio`** — a non-embedded face is recorded as a face NAME, never a path, so the document stays
+  machine-independent and hand-editable (FR12/S9). **The ENGINE also still never touches the
+  filesystem**: `folio8.FontSet` remains its only font input. **What changed:** the **rendering
+  host** may now build that `FontSet` from a **directory the integrator names**, so a document that
+  declines to embed its faces can still find them. The read is host-side; the engine's own change
+  is the resolution mode, not an I/O path.
 - ~~**The designer's authoring path is offline too.** The catalogue and its faces ship in the offline
   release bundle behind the service worker's verified asset URLs; no call to `fonts.google.com` or
   `fonts.gstatic.com` at any point.~~
@@ -146,8 +168,15 @@ the faces a document uses are declared in it, chosen in the designer, and carrie
   D-8.6.5 — 17 of 21 faces carrying another project's licence, undetected until review — is the
   precedent for what that costs when it is not watched. **This clause records the POLICY only**; the
   mechanism is Epic 16's.
-- **No host fonts.** Faces installed on the authoring or rendering machine are never enumerated or
-  read.
+- ~~**No host fonts.** Faces installed on the authoring or rendering machine are never enumerated or
+  read.~~
+  **AMENDED 2026-09-20 by OWNER DECISION**, recorded in
+  [SPEC-font-sources-and-embedding](../spec-font-sources-and-embedding/SPEC.md); the original is
+  preserved above verbatim. **What still holds, and it is the word "installed":** neither side ever
+  **enumerates the operating system's font book**. **What changed:** both sides may read a font
+  file a human pointed at — the **author picks a file** off their own machine in the designer, and
+  the **integrator names a directory** the rendering host reads. Explicit, named, and chosen; never
+  discovered.
 - **No synthetic bold or oblique**, and no variable-font axes. A weight is a face or it does not
   exist.
 - **No save-time subsetting**, and no change to how the PDF producer subsets.
@@ -221,6 +250,22 @@ installed a font, and nobody had to be told which one to install.
   check against a named allowlist (D-8.5.2/D-8.5.3) rather than a judgement made at authoring time
   about a file nobody has seen. The decline is explicit because a control that is simply absent
   reads as an omission; this one is a decision.
+  **REOPENED AND REVERSED 2026-09-20 by OWNER DECISION**, recorded in
+  [SPEC-font-sources-and-embedding](../spec-font-sources-and-embedding/SPEC.md). The D-8.6.1
+  paragraph is preserved above verbatim and **is no longer this project's policy: an author MAY
+  embed a font file from their own disk.** The reversal is of the **premise, not the mechanism**.
+  D-8.6.1 declined because a disk file supplies no licence terms and the designer would have to
+  invent them, ask for them, or write a document its own engine refuses. The owner's ruling removes
+  the first horn: **Folio does not take a position on the terms of a face the author supplies** —
+  *"it's their responsibility to have the right license for those fonts."* With no position to
+  take, nothing has to be invented. **How the required fields are filled:** the designer **copies
+  what the binary says** — name ID 0 into `copyright`, name ID 13 into `licenceText`, name ID 14
+  into `licence` — verbatim, with **no classification and no inference**, and an absent name record
+  producing an **empty value**. The document reports the face's **self-description**, which is a
+  weaker and more honest claim than the catalogue tier's. **What did NOT change:** the catalogue
+  tier keeps its build-time allowlist and its fail-the-build admission gate (D-8.5.2/D-8.5.3)
+  untouched. The no-gate ruling is scoped to faces the **author** supplies and does not travel to
+  faces **Folio** distributes.
 - ~~Does the licence record live inline on each font asset, or in one document-level notice
   block?~~ **SETTLED (Story 8.6, D-8.6.1): INLINE, on each font asset, and with the ACTUAL TEXT —
   and, on an asset a chain names, REQUIRED rather than optional.** Derived from what a `.folio` is
