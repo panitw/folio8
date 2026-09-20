@@ -36,16 +36,17 @@ const (
 	pageSetupCommandPath = "page.setup"
 )
 
-// documentLocalePath and documentUTCOffsetPath are the DataPaths the two
-// document-settings refusals carry. Each command names no element and no band —
-// it writes ONE top-level document field — so ElementID stays empty and the
-// path is the field's own name, which is also the key parse.go's own load error
-// locates. Unlike bandHeightPath and fontChainPath they need no bound: nothing
-// from the wire is interpolated into them, so neither can arrive at the host's
-// 256-byte DataPath cut.
+// documentLocalePath, documentUTCOffsetPath and documentEmbedFontsPath are the
+// DataPaths the three document-settings refusals carry. Each command names no
+// element and no band — it writes ONE top-level document field — so ElementID
+// stays empty and the path is the field's own name, which is also the key
+// parse.go's own load error locates. Unlike bandHeightPath and fontChainPath
+// they need no bound: nothing from the wire is interpolated into them, so none
+// can arrive at the host's 256-byte DataPath cut.
 const (
-	documentLocalePath    = "locale"
-	documentUTCOffsetPath = "utcOffset"
+	documentLocalePath     = "locale"
+	documentUTCOffsetPath  = "utcOffset"
+	documentEmbedFontsPath = "embedFonts"
 )
 
 // EACH DOOR'S REFUSAL CARRIES ITS OWN DIAGNOSTIC CODE, and the two are reached
@@ -314,6 +315,8 @@ func applyComponentCommand(t *Template, command []byte, fonts ...FontSet) (desig
 		return setDocumentLocale(t, raw)
 	case "setDocumentUTCOffset":
 		return setDocumentUTCOffset(t, raw)
+	case "setDocumentEmbedFonts":
+		return setDocumentEmbedFonts(t, raw)
 	case "setTableHeaderHeight":
 		return applyTableColumnCommand(t, raw, setTableHeaderHeight)
 	case "setTableAltRowBackground":
@@ -3310,6 +3313,11 @@ func setBandHeight(t *Template, raw map[string]json.RawMessage) (designer.Canvas
 
 // ---------------------------------------------------------------------------
 // STORY 12.2: THE DOCUMENT'S LOCALE AND ITS UTC OFFSET, AS COMMANDS.
+// spec-font-sources-and-embedding STORY 4 ADDED A THIRD: whether the document
+// carries its faces. Everything below is written for two settings and holds for
+// three — same arity-3 shape, same one-field-each rule, same
+// save-previous/write/canvas(t)/restore-on-error body, and each arm is still
+// the only writer of its field outside the loader.
 //
 // Document.Locale and Document.UTCOffset had a loader, two consumers (render.go's
 // two expr.NewFormatContext sites) and NO WRITER: every author who wanted Thai
@@ -3402,6 +3410,56 @@ func setDocumentUTCOffset(t *Template, raw map[string]json.RawMessage) (designer
 	updated, err := canvas(t)
 	if err != nil {
 		t.doc.UTCOffset = previous
+		return designer.CanvasProjection{}, err
+	}
+	return updated, nil
+}
+
+// setDocumentEmbedFonts is the only writer of Document.EmbedFonts outside the
+// loader (spec-font-sources-and-embedding CAP-2).
+//
+// IT WRITES A SETTING NOTHING READS, AND THAT IS THE WHOLE STORY. No embedding
+// decision, no stripping, no resolution rule and no renderer branch consults
+// the field this arm sets; a later story gives it teeth. What this arm owes is
+// the same thing its two siblings owe — the value the author chose, written
+// atomically, refused by naming the field when the payload is not a boolean.
+//
+// THERE IS NO PREDICATE TO SHARE WITH THE LOADER, unlike the two string arms.
+// `embedFonts` is a bare boolean with no closed set and no syntax, so its only
+// rule is its type, and both doors state that same rule directly — parse.go
+// through decodeBoolRaw, this arm through commandBool. There is no second
+// authority that could drift.
+func setDocumentEmbedFonts(t *Template, raw map[string]json.RawMessage) (designer.CanvasProjection, error) {
+	if err := componentFields(raw, 3); err != nil {
+		return designer.CanvasProjection{}, err
+	}
+	// `null` IS CHECKED BEFORE THE DECODE, and it has to be. commandBool
+	// refuses a missing key and a non-boolean, but encoding/json admits the
+	// literal `null` into a *bool destination without complaint — leaving the
+	// value untouched and returning no error — so a null payload would land as
+	// `false` and turn embedding off for an author who typed nothing. It is a
+	// value nobody chose, exactly as the empty string is on the two string
+	// arms.
+	//
+	// BOTH SENTENCES ARE THE LOADER'S, rendered rather than re-typed, exactly
+	// as this arm's siblings render LocaleTags and UTCOffsetSyntax. `null` is
+	// the one malformed value with a REMEDY worth stating — remove the key —
+	// and a command door that collapsed it into the generic type sentence would
+	// answer the same question differently from the file door.
+	if literal, ok := raw[documentEmbedFontsPath]; ok && string(bytes.TrimSpace(literal)) == "null" {
+		return designer.CanvasProjection{}, componentFailure("", documentEmbedFontsPath, documentEmbedFontsPath+" "+template.EmbedFontsNullMessage)
+	}
+	embed, err := commandBool(raw, documentEmbedFontsPath)
+	if err != nil {
+		return designer.CanvasProjection{}, componentFailure("", documentEmbedFontsPath, documentEmbedFontsPath+" "+template.EmbedFontsTypeMessage)
+	}
+	// Atomic on ONE field, exactly as the locale and offset arms are. Neither
+	// of the other two document settings is read or written here.
+	previous := t.doc.EmbedFonts
+	t.doc.EmbedFonts = embed
+	updated, err := canvas(t)
+	if err != nil {
+		t.doc.EmbedFonts = previous
 		return designer.CanvasProjection{}, err
 	}
 	return updated, nil

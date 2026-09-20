@@ -17,7 +17,7 @@ import { bandBoundaryCeiling, boundaryOffset, proposedBandHeight } from './band-
 import { removeSectionBreakCommand, setSectionBreakAnchorCommand, setSectionBreakCommand } from './section-break-command'
 import { addPageCommand, deletePageCommand, setPageBreakCommand } from './page-command'
 import { contentBandHeight, proposedSectionBreak, sectionBreakOnPage, sectionBreakPlacement } from './section-break'
-import { documentLocaleCommand, documentUTCOffsetCommand } from './document-settings-command'
+import { documentLocaleCommand, documentUTCOffsetCommand, documentEmbedFontsCommand } from './document-settings-command'
 import { bindComponentScalarCommand, bindTableCollectionCommand, createComponentCommand, deleteComponentCommand, deleteComponentsCommand, dropComponentCommand, duplicateComponentCommand, duplicateComponentsCommand, moveComponentCommand, setComponentBoundsCommand, type PaletteKind } from './component-command'
 import { ORIGIN_FLOOR_FIELDS, POSITIVE_LENGTH_FIELDS, isPropertyField, updateComponentPropertiesCommand, updateComponentPropertiesFragment, type PropertyField, type PropertyIntent, type PropertyIntents } from './component-property-command'
 import { FontBrowser } from './FontBrowser'
@@ -2351,12 +2351,14 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
       {proposal ? <><div className="section-break-proposal" aria-hidden="true" style={at(y + proposal.proposed - proposal.original)} /><div className="section-break-readout" aria-hidden="true" style={at(y + proposal.proposed - proposal.original)}>{points(proposal.proposed)}</div></> : undefined}
     </>
   }
-  // STORY 12.1, WIDENED BY 12.2: APPLY IS A SEQUENCE, AND ITS HALVES REFUSE
-  // DIFFERENTLY.
+  // STORY 12.1, WIDENED BY 12.2, WIDENED AGAIN BY
+  // spec-font-sources-and-embedding STORY 4: APPLY IS A SEQUENCE, AND ITS
+  // HALVES REFUSE DIFFERENTLY.
   //
-  // THE ORDER IS: the two DOCUMENT-SETTINGS commands (locale, then utcOffset),
-  // then the two BAND HEIGHTS, then the pageSetup command. The first four are
-  // component commands and refuse LOCATED, through componentDiagnostic; the
+  // THE ORDER IS: the three DOCUMENT-SETTINGS commands (locale, then utcOffset,
+  // then embedFonts), then the two BAND HEIGHTS, then the pageSetup command.
+  // The first five are component commands and refuse LOCATED, through
+  // componentDiagnostic; the
   // last is a page-setup command and refuses through pageSetupDiagnostic's
   // fixed sentence. The sequence stops at the first refusal, so the common
   // failure leaves the document wholly unchanged.
@@ -2366,9 +2368,10 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
   // command of this sequence that is ACCEPTED before a later one is REFUSED
   // STANDS. Concretely — a `setDocumentLocale` that lands stays landed when the
   // offset, a band height, or the pageSetup that follows is refused; a band
-  // height that lands stays landed when the pageSetup is refused. Each command
-  // is individually atomic, which is what the engine guarantees; this gesture
-  // is not, and nothing here claims it is.
+  // height that lands stays landed when the pageSetup is refused, and an
+  // embedFonts that lands stays landed when a band height does not. Each
+  // command is individually atomic, which is what the engine guarantees; this
+  // gesture is not, and nothing here claims it is.
   //
   // A ROW IS SENT ONLY WHEN IT DIFFERS FROM THE PROJECTED VALUE, and that is
   // not an optimisation. Re-sending a band height that has not changed is not
@@ -2379,18 +2382,21 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
   // comparison is two strings, both of them the engine's own spelling of its
   // own numbers; it is not a layout computation and it is not a bound.
   //
-  // A REFUSAL FROM ANY OF THE FOUR COMPONENT COMMANDS GOES THROUGH
+  // A REFUSAL FROM ANY OF THE FIVE COMPONENT COMMANDS GOES THROUGH
   // componentDiagnostic, never pageSetupDiagnostic: the latter discards the
   // engine's message for anything not carrying PAGE_SETUP_INVALID, and the
   // engine's own located sentence — the height it refused and the element it
-  // would have stranded, or the field and the legal values for a locale or an
-  // offset — is the entire point of refusing at the command door.
+  // would have stranded, or the field and the legal values for a locale, an
+  // offset or the embed setting — is the entire point of refusing at the
+  // command door.
   //
   // AND BECAUSE IT IS NOW A SEQUENCE, IT IS GUARDED LIKE ONE. Before Story 12.1
   // this function awaited once and its `!engine || !canvas || fileBusy` test was
   // taken once, which was the whole of the check it needed. It now awaits up to
-  // FIVE times — locale, utcOffset, the two band heights, pageSetup (Story 12.1
-  // made it three; 12.2 added the first two) — with the Apply button live
+  // SIX times — locale, utcOffset, embedFonts, the two band heights, pageSetup
+  // (Story 12.1 made it three; 12.2 added the first two; story 4 of
+  // spec-font-sources-and-embedding added the third setting) — with the Apply
+  // button live
   // throughout, so between any two of those awaits the author can open a file,
   // start a blank template, or undo — every
   // one of which REPLACES the document and advances documentGeneration — or
@@ -2407,25 +2413,40 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
     const requestDocument = documentGeneration.current
     pageSetupInFlight.current = true
     try {
-      // THE TWO DOCUMENT-SETTINGS ROWS GO FIRST, before the band heights and
+      // THE THREE DOCUMENT-SETTINGS ROWS GO FIRST, before the band heights and
       // before the pageSetup command, for the same reason the band heights go
       // before pageSetup: the sequence stops at the first refusal, so the
       // cheapest and most independent writes are attempted first and a common
       // refusal leaves the document wholly unchanged.
       //
       // ONE COMMAND PER CHANGED ROW, and NOTHING for a row the author left
-      // alone. Both comparisons are between two strings the ENGINE spelled —
-      // the draft was seeded from the projection and nothing here rewrites it —
-      // so an untouched row is byte-equal by construction and is worth no
+      // alone. All three comparisons are between two strings the ENGINE spelled
+      // — the draft was seeded from the projection and nothing here rewrites it
+      // — so an untouched row is byte-equal by construction and is worth no
       // command, no round trip and no history entry. Nothing here validates:
       // AD-12's closed set and ±HH:MM are the engine's rules, asked through one
-      // exported predicate each, and a refusal arrives located on `locale` or
-      // `utcOffset` and is rendered by componentDiagnostic — never by
-      // pageSetupDiagnostic, which would discard the engine's sentence and
-      // print one about size and margins that the author never touched.
+      // exported predicate each, and a refusal arrives located on `locale`,
+      // `utcOffset` or `embedFonts` and is rendered by componentDiagnostic —
+      // never by pageSetupDiagnostic, which would discard the engine's sentence
+      // and print one about size and margins that the author never touched.
+      //
+      // A ROW WHOSE DRAFT IS NOT A VALUE THE ENGINE COULD HAVE SPELLED IS NOT
+      // SENT AT ALL, and that guard is the embed row's alone because it is the
+      // only row whose seed is not one of its own legal values: `draftFor`
+      // seeds `''` when there is no canvas, and `'' !== 'true'` would otherwise
+      // fire the row and send `embedFonts:false` — turning embedding OFF for a
+      // document nobody asked to change. The two string rows need no such test:
+      // an empty locale or offset is a value the ENGINE refuses by naming the
+      // field, which is the right answer, while `false` is a value it accepts.
       for (const [typed, projected, build] of [
         [draft.locale, canvas.locale, () => documentLocaleCommand(draft.locale as LocaleTag)],
         [draft.utcOffset, canvas.utcOffset, () => documentUTCOffsetCommand(draft.utcOffset)],
+        // spec-font-sources-and-embedding CAP-2's row. The draft holds the
+        // engine's own boolean SPELLED as a string, so the unchanged test above
+        // stays one string comparison for all three rows rather than growing a
+        // type switch — and the comparand is `String(canvas.embedFonts)`, the
+        // engine's value spelled the same way, never a value this panel chose.
+        [embedFontsRowValue(draft.embedFonts, canvas.embedFonts), String(canvas.embedFonts), () => documentEmbedFontsCommand(draft.embedFonts === 'true')],
       ] as ReadonlyArray<readonly [string, string, () => ArrayBuffer]>) {
         if (typed === projected) continue
         const priorRevision = snapshotRef.current?.revision
@@ -5056,7 +5077,7 @@ function scanJSONValue(raw: string, cursor: number): number | undefined {
 }
 
 function PageSetup({ preset, orientation, draft, onPreset, onOrientation, onDraft, onApply, disabled }: { preset: string; orientation: string; draft: Draft; onPreset: (value: string) => void; onOrientation: (value: string) => void; onDraft: (key: keyof Draft, value: string) => void; onApply: () => void; disabled: boolean }) {
-  return <section className="property-section property-section-page-setup"><p className="section-label">PAGE SETUP</p><p className="honest-note">Component properties require a selection.</p><div className="property-grid"><label>Preset<select aria-label="Page preset" value={preset} onChange={(event) => onPreset(event.target.value)}><option value="A4">A4</option><option value="Letter">Letter</option><option value="custom">Custom</option></select></label><label>Orientation<select aria-label="Page orientation" value={orientation} onChange={(event) => onOrientation(event.target.value)}><option value="portrait">Portrait</option><option value="landscape">Landscape</option></select></label><label>Locale<select aria-label="Document locale" value={draft.locale} onChange={(event) => onDraft('locale', event.target.value)}>{draft.locale === '' && <option value="" disabled>Not set</option>}{LOCALE_TAGS.map((tag) => <option key={tag} value={tag}>{tag}</option>)}</select></label><Field label="UTC offset (±HH:MM)" value={draft.utcOffset} inputMode="text" onChange={(value) => onDraft('utcOffset', value)}/></div>{preset === 'custom' && <><Field label="Width (pt)" value={draft.width} onChange={(value) => onDraft('width', value)}/><Field label="Height (pt)" value={draft.height} onChange={(value) => onDraft('height', value)}/></>}<div className="property-grid"><Field label="Top margin (pt)" value={draft.top} onChange={(value) => onDraft('top', value)}/><Field label="Right margin (pt)" value={draft.right} onChange={(value) => onDraft('right', value)}/><Field label="Bottom margin (pt)" value={draft.bottom} onChange={(value) => onDraft('bottom', value)}/><Field label="Left margin (pt)" value={draft.left} onChange={(value) => onDraft('left', value)}/></div>{(draft.pageHeader !== undefined || draft.pageFooter !== undefined) && <div className="property-grid">{draft.pageHeader !== undefined && <Field label="Page header height (pt)" value={draft.pageHeader} onChange={(value) => onDraft('pageHeader', value)}/>}{draft.pageFooter !== undefined && <Field label="Page footer height (pt)" value={draft.pageFooter} onChange={(value) => onDraft('pageFooter', value)}/>}</div>}<button type="button" className="file-button" onClick={onApply} disabled={disabled}>Apply page setup</button><p className="honest-note">Grid and snap are editor preferences; document undo is available in the document bar.</p></section>
+  return <section className="property-section property-section-page-setup"><p className="section-label">PAGE SETUP</p><p className="honest-note">Component properties require a selection.</p><div className="property-grid"><label>Preset<select aria-label="Page preset" value={preset} onChange={(event) => onPreset(event.target.value)}><option value="A4">A4</option><option value="Letter">Letter</option><option value="custom">Custom</option></select></label><label>Orientation<select aria-label="Page orientation" value={orientation} onChange={(event) => onOrientation(event.target.value)}><option value="portrait">Portrait</option><option value="landscape">Landscape</option></select></label><label>Locale<select aria-label="Document locale" value={draft.locale} onChange={(event) => onDraft('locale', event.target.value)}>{draft.locale === '' && <option value="" disabled>Not set</option>}{LOCALE_TAGS.map((tag) => <option key={tag} value={tag}>{tag}</option>)}</select></label><Field label="UTC offset (±HH:MM)" value={draft.utcOffset} inputMode="text" onChange={(value) => onDraft('utcOffset', value)}/><label className="embed-fonts-setting"><input type="checkbox" aria-label="Embed fonts in the document" checked={draft.embedFonts === 'true'} disabled={draft.embedFonts === ''} onChange={(event) => onDraft('embedFonts', String(event.target.checked))}/>Embed fonts in the document</label></div><p className="honest-note">Recorded in the document and applied on Apply page setup. Nothing acts on it yet: a save still carries every face the document uses, whichever way this is set.</p>{preset === 'custom' && <><Field label="Width (pt)" value={draft.width} onChange={(value) => onDraft('width', value)}/><Field label="Height (pt)" value={draft.height} onChange={(value) => onDraft('height', value)}/></>}<div className="property-grid"><Field label="Top margin (pt)" value={draft.top} onChange={(value) => onDraft('top', value)}/><Field label="Right margin (pt)" value={draft.right} onChange={(value) => onDraft('right', value)}/><Field label="Bottom margin (pt)" value={draft.bottom} onChange={(value) => onDraft('bottom', value)}/><Field label="Left margin (pt)" value={draft.left} onChange={(value) => onDraft('left', value)}/></div>{(draft.pageHeader !== undefined || draft.pageFooter !== undefined) && <div className="property-grid">{draft.pageHeader !== undefined && <Field label="Page header height (pt)" value={draft.pageHeader} onChange={(value) => onDraft('pageHeader', value)}/>}{draft.pageFooter !== undefined && <Field label="Page footer height (pt)" value={draft.pageFooter} onChange={(value) => onDraft('pageFooter', value)}/>}</div>}<button type="button" className="file-button" onClick={onApply} disabled={disabled}>Apply page setup</button><p className="honest-note">Grid and snap are editor preferences; document undo is available in the document bar.</p></section>
 }
 
 type PanelComponent = CanvasProjection['components'][number]
@@ -7326,7 +7347,13 @@ function BorderEdgesProperty({ components, ids, onCommit, documentGeneration, er
 // the select can only emit a LOCALE_TAGS member and the placeholder is
 // disabled — but the label says `Not set` rather than `No document` so it stays
 // honest if a later change makes the empty draft reachable some other way.
-type Draft = { width: string; height: string; top: string; right: string; bottom: string; left: string; locale: string; utcOffset: string; pageHeader?: string; pageFooter?: string }
+// `embedFonts` IS A STRING HERE LIKE EVERY OTHER MEMBER, and deliberately so:
+// it holds the engine's boolean spelled `'true'` or `'false'`, so
+// applyPageSetup's document-settings table stays three string comparisons
+// rather than growing a type switch for one row. `''` is the no-canvas seed,
+// the same honesty the empty locale carries — the box is disabled and shows
+// unchecked rather than asserting `embed` for a document that does not exist.
+type Draft = { width: string; height: string; top: string; right: string; bottom: string; left: string; locale: string; utcOffset: string; embedFonts: string; pageHeader?: string; pageFooter?: string }
 // The height the ENGINE says a band has, or `undefined` when the projection
 // carries no such band. It is read off the projection and never measured, and
 // it is the only number the difference test in applyPageSetup compares a draft
@@ -7567,7 +7594,23 @@ function boundaryAbove(name: CanvasProjection['bands'][number]['name']): Capping
 // what a control is for: the tab beside it is a label and stays one.
 function boundaryLabel(band: CappingBand): string { return band === 'pageHeader' ? 'Resize the page header' : 'Resize the page footer' }
 function points(value: number): string { const negative = value < 0; const magnitude = Math.abs(value); const whole = Math.floor(magnitude / 1000); const fraction = String(magnitude % 1000).padStart(3, '0').replace(/0+$/, ''); return `${negative ? '-' : ''}${whole}${fraction ? `.${fraction}` : ''}` }
-function draftFor(canvas?: CanvasProjection): Draft { return canvas ? { width: points(canvas.commandWidth), height: points(canvas.commandHeight), top: points(canvas.marginTop), right: points(canvas.marginRight), bottom: points(canvas.marginBottom), left: points(canvas.marginLeft), locale: canvas.locale, utcOffset: canvas.utcOffset, pageHeader: bandDraft(canvas, 'pageHeader'), pageFooter: bandDraft(canvas, 'pageFooter') } : { width: '', height: '', top: '', right: '', bottom: '', left: '', locale: '', utcOffset: '' } }
+// THE EMBED ROW'S COMPARAND, and the only row in applyPageSetup's
+// document-settings table that needs one. `draftFor(undefined)` seeds `''` —
+// honestly, because a document that does not exist has not said whether it
+// embeds — and `''` is not one of this row's two legal values. Compared raw it
+// would DIFFER from the projection and fire the row, sending `embedFonts:false`
+// and turning embedding off for a document nobody asked to change. So a draft
+// that is neither `'true'` nor `'false'` reports the PROJECTED value, which is
+// the definition of "unchanged" and sends nothing.
+//
+// The two string rows need no equivalent: an empty locale or offset is a value
+// the ENGINE refuses by naming the field, which is the right answer for a value
+// an author emptied. `false` is a value it ACCEPTS, so a spurious send here is
+// silent.
+export function embedFontsRowValue(drafted: string, projected: boolean): string {
+  return drafted === 'true' || drafted === 'false' ? drafted : String(projected)
+}
+function draftFor(canvas?: CanvasProjection): Draft { return canvas ? { width: points(canvas.commandWidth), height: points(canvas.commandHeight), top: points(canvas.marginTop), right: points(canvas.marginRight), bottom: points(canvas.marginBottom), left: points(canvas.marginLeft), locale: canvas.locale, utcOffset: canvas.utcOffset, embedFonts: String(canvas.embedFonts), pageHeader: bandDraft(canvas, 'pageHeader'), pageFooter: bandDraft(canvas, 'pageFooter') } : { width: '', height: '', top: '', right: '', bottom: '', left: '', locale: '', utcOffset: '', embedFonts: '' } }
 // The canvas has one deliberately lossy display rounding rule. It maps only
 // Go-owned millipoints plus local zoom; viewport, DPR, font metrics and DOM
 // geometry are not inputs to painting or hit/drag proposals.

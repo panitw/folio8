@@ -53,6 +53,7 @@ Points rather than raw millipoints because a hand-editor writes `"x": 36`, not `
 | `assets` | Embedded binary assets, keyed by content hash (below). |
 | `nextId` | *Required.* The next element-id counter value, a plain decimal integer greater than the highest id present. Persisted so ids survive a save without renumbering; it is never repaired or inferred. |
 | `unbreakableValues` | *Optional.* A list of **bare root-relative dotted value paths** (e.g. `"customer.name"`) whose bound values must never be split across a line break — the same path convention `columns[].footerOf` uses: no `{{ }}`, no function call, no `[]`. Row-scoped paths are written root-relative under that same convention. The engine **never infers** membership; see [*Line breaking*](#line-breaking). Declared once for the document because the property belongs to the data, not to a box. Absent means no value is protected. |
+| `embedFonts` | *Optional.* A **boolean** — `true` or `false` and nothing else; a quoted `"true"`, a number or `null` is a load error, and `null` is not a synonym for the default. It says whether a **save** carries the faces the document's chains name, or merely names them. Absent means `true` — every document written before this key existed carries its faces. An authored `"embedFonts": true` is **accepted** and canonicalises back to the **absent key** on save (the same normalisation that turns `{"face": "X"}` with no variants into `"X"`), so `true` is legal to write and only `false` ever survives in a file. It governs what a save WRITES and nothing else: two copies of one document that differ only in this setting render identically, and a library that does not know the key carries it through verbatim and renders the same page set. It therefore raises no version (see [*Versions*](#versions)). |
 
 > `locale: "ja"` renders completely — the shipped font set has every Japanese glyph — but in
 > Simplified-Chinese kanji SHAPES, because a font holds one drawing per codepoint and Chinese and
@@ -131,6 +132,12 @@ back to the bare string `"X"`, raises nothing.) A document using none of those k
 
 A font asset that no chain references raises nothing: it rides through an older reader as ordinary
 passthrough and renders correctly. The trigger is the chain **entry**, not the asset.
+
+`embedFonts` has **no ladder row**, deliberately. A file declares the lowest version its own
+content requires, and this key requires nothing of a reader: a library that does not know it
+carries it through verbatim and renders exactly the same page set, because the setting governs
+what a **save writes** rather than what a render reads. Giving it a rank would make a document
+declare a version it does not need.
 
 ### Compatibility rules
 

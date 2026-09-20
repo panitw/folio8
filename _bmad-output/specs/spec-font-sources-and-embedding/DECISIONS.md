@@ -394,3 +394,58 @@ two different rules for one fact, and story 3's whole D2 point is that those two
 carries `source` at all; `acknowledgedFace(face, today)` is the single writer, and `importFontFiles`
 has no date parameter — so recording the pick's day is not merely avoided, it is unreachable. A
 better fix than the one asked for.
+
+## Story 4 — decisions taken while planning
+
+### A-23 — The embed setting moves NO version, and this reverses my own open question
+
+**Decision:** the embed-or-not key adds no ladder rank, does not move `SupportedMajor`, and is not
+part of the `5.0` the owner ruled on.
+
+**Evidence, which is what settled it:** an unknown top-level document key is **passthrough, not an
+error**. `internal/template/parse.go:216-222` collects leftovers into `doc.Extra`; `model.go:90-93`
+says they are carried opaquely; and `docs/folio-format.md:104-105` states the rule outright —
+*"Keys the library does not know are carried through verbatim and written back on save."*
+
+**Applying the project's own test (D-7.3.1):** would a pre-`4.2` reader **refuse** the file or
+**render it wrong**? Neither. This key governs what a *save* writes, not what a render does, so an
+older reader ignores it, renders the identical page set, and preserves the key on re-save. Under the
+ladder's own rule — a file declares the lowest version its content requires — it requires nothing.
+
+**Why this does not contradict the owner's `5.0` ruling.** That ruling covers constructs that change
+how a document is **read**: `spec-loop-section`'s `loop` element and `$.` paths, and story 5's
+acknowledgement, which the engine must honour at both licence doors. SPEC.md already framed the open
+question as *which* of this spec's constructs trigger the `5.0` row, and noted this one "cuts the
+other way". It does. The acknowledgement still rides `5.0`.
+
+**What I had assumed when planning, and got wrong:** that the loader might refuse an unknown
+top-level key, by analogy with chain entries, whose variant key set IS closed and whose unknown keys
+ARE load errors (`parse.go:549`). The passthrough is per-object, and the document object is open.
+
+### A-24 — Omitted when true, so no golden digest moves
+
+**Decision:** the key is absent when the document embeds (the default), and emitted only when the
+author turns embedding off.
+
+**Reasoning:** two things fall out of it. Every existing document keeps meaning "embeds" without
+being rewritten, and every golden digest and byte-neutrality check stays put — `byte_neutrality_test.go`
+moves the moment the serialized bytes of an existing fixture change. `serialize.go:145-154`'s
+`unbreakableValues` is the shape to copy.
+
+### A-25 — My Code Map overstated the blast radius, and the diff was right
+
+**Finding:** story 4's Code Map named `drift_test.go`, `omitempty_test.go`, `roundtrip_test.go` and
+five sites in `canvas_projection_wire_test.go` as "tests that move". The implementation touched one
+line of the projection-wire key list and none of the other three files.
+
+**Decision:** not patched. The implementation was correct and my plan was wrong.
+
+**Reasoning:** those suites did not need changing precisely *because* D2 held — the key is omitted
+when the document embeds, so no existing fixture's bytes move, no round trip changes, and the
+omitempty inventory is unaffected. I listed them from the investigation's "what will break" answer
+without re-deriving it against D2, which I had written two paragraphs earlier. A reviewer reading a
+`[x]` beside a task that names files nobody touched is entitled to be suspicious, which is why this
+is recorded rather than quietly dropped.
+
+**One thing it does mean:** the investigation's blast-radius list is an upper bound over all designs,
+not a checklist for the chosen one. Worth remembering for stories 5 and 6, which also add fields.

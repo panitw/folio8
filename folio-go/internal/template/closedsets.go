@@ -352,3 +352,26 @@ var utcOffsetPattern = regexp.MustCompile(`^[+-](?:[01][0-9]|2[0-3]):[0-5][0-9]$
 //
 // D-12.C: command and loader agree BY CONSTRUCTION, not by care.
 func IsUTCOffset(s string) bool { return utcOffsetPattern.MatchString(s) }
+
+// EmbedFontsNullMessage is the sentence BOTH doors that read `embedFonts`
+// answer `null` with — parse.go's loader and component_commands.go's
+// setDocumentEmbedFonts arm — for the same reason IsUTCOffset is one predicate
+// asked twice: a remedy stated at one door and withheld at the other is two
+// answers to one question, and the door an author happens to meet decides
+// whether they are told what to write instead.
+//
+// `null` EARNS ITS OWN SENTENCE rather than joining "must be a boolean".
+// encoding/json admits the literal into a bool without an error, so it is the
+// one malformed value that would otherwise be READ — silently, as `false` —
+// and the remedy is not obvious: removing the key is not the same gesture as
+// correcting it, because for this field the ABSENT key is the default.
+const EmbedFontsNullMessage = "must be true or false — remove the key to have the document carry its faces"
+
+// EmbedFontsTypeMessage is what both doors answer every other non-boolean
+// with. Stated here beside its sibling so the pair cannot drift apart.
+//
+// NEITHER CONSTANT NAMES THE FIELD. A LoadError prefixes the field itself, and
+// the command door prepends `embedFonts ` — so the two sentences differ by the
+// punctuation each door's own shape demands and by nothing an author would
+// read as a different rule.
+const EmbedFontsTypeMessage = "must be true or false"

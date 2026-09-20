@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { documentLocaleCommand, documentUTCOffsetCommand } from './document-settings-command'
+import { documentEmbedFontsCommand, documentLocaleCommand, documentUTCOffsetCommand } from './document-settings-command'
 import { LOCALE_TAGS } from './engine-protocol'
 
 // The wire, pinned to the byte and to the KEY ORDER, in the shape the sibling
@@ -85,5 +85,36 @@ describe('documentUTCOffsetCommand', () => {
     expect(payload.match(/"utcOffset"/g)).toHaveLength(1)
     expect(payload.match(/"locale"/g)).toBeNull()
     expect(Object.keys(command)).toEqual(['kind', 'version', 'utcOffset'])
+  })
+})
+
+describe('documentEmbedFontsCommand', () => {
+  it('encodes one opaque versioned command with the three top-level keys Go counts, in order', () => {
+    expect(text(documentEmbedFontsCommand(false)))
+      .toBe('{"kind":"setDocumentEmbedFonts","version":1,"embedFonts":false}')
+    expect(Object.keys(JSON.parse(text(documentEmbedFontsCommand(false))) as Record<string, unknown>))
+      .toEqual(['kind', 'version', 'embedFonts'])
+  })
+
+  it('sends a JSON boolean, both ways, and never a quoted one', () => {
+    // A STRING WOULD BE REFUSED BY GO, and the panel's draft holds this value
+    // as a string — so the one thing this factory owes is the conversion back.
+    // `"false"` on the wire is a payload the engine names the field over, and
+    // an author would see a refusal about a checkbox they ticked correctly.
+    expect(text(documentEmbedFontsCommand(true)))
+      .toBe('{"kind":"setDocumentEmbedFonts","version":1,"embedFonts":true}')
+    expect(text(documentEmbedFontsCommand(false))).not.toContain('"false"')
+    expect(text(documentEmbedFontsCommand(true))).not.toContain('"true"')
+  })
+
+  it('cannot be made to carry a second key from a value that is not a boolean', () => {
+    // The splice payload, in the shape a BOOLEAN field takes it: whatever is
+    // handed in, JSON.stringify produces one token and the command keeps its
+    // three keys. There is no arm through which a crafted value becomes a
+    // second key the engine would count.
+    const payload = text(documentEmbedFontsCommand('false,"locale":"ja' as never))
+    const command = JSON.parse(payload) as Record<string, unknown>
+    expect(payload.match(/"locale"/g)).toBeNull()
+    expect(Object.keys(command)).toEqual(['kind', 'version', 'embedFonts'])
   })
 })

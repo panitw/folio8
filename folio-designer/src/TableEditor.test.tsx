@@ -25,7 +25,7 @@ import { alignGlyphs, alignSegments } from './segmented-control'
 // focus that must survive one of them disappearing.
 
 const canvas = {
-  width: 595276, height: 841890, orientation: 'portrait' as const, preset: 'A4' as const, locale: 'en' as const, utcOffset: '+07:00',
+  width: 595276, height: 841890, orientation: 'portrait' as const, preset: 'A4' as const, locale: 'en' as const, utcOffset: '+07:00', embedFonts: true,
   marginTop: 36000, marginRight: 36000, marginBottom: 36000, marginLeft: 36000, gridIncrement: 6000,
   commandWidth: 595276, commandHeight: 841890,
   fontFamilies: ['body'], fontChains: [{ name: 'body', entries: [{ face: 'Noto Sans', assetKey: '', family: '', style: '', bold: '', italic: '', boldItalic: '' }] }],

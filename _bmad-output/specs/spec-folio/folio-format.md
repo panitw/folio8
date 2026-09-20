@@ -54,6 +54,7 @@ Points rather than raw millipoints because a hand-editor writes `"x": 36`, not `
 | `assets` | Embedded binary assets, keyed by content hash (below). |
 | `nextId` | The next element-id counter value. Persisted so ids survive a save without renumbering (AD-10). |
 | `unbreakableValues` | *Optional.* A list of **bare root-relative dotted value paths** (e.g. `"customer.name"`) whose bound values must never be split across a line break — the same path convention `columns[].footerOf` uses: no `{{ }}`, no function call, no `[]`. Row-scoped paths are written root-relative under that same convention. The engine **never infers** membership; see *Line breaking* below. Declared once for the document because the property belongs to the data, not to a box. Absent means no value is protected. |
+| `embedFonts` | *Optional.* A **boolean** — `true` or `false` and nothing else; a quoted `"true"`, a number or `null` is a load error, and `null` is not a synonym for the default. It says whether a **save** carries the faces the document's chains name, or merely names them. Absent means `true` — every document written before this key existed carries its faces. An authored `"embedFonts": true` is **accepted** and canonicalises back to the **absent key** on save (the same normalisation that turns `{"face": "X"}` with no variants into `"X"`), so `true` is legal to write and only `false` ever survives in a file. It governs what a save WRITES and nothing else: two copies of one document that differ only in this setting render identically, and a library that does not know the key carries it through verbatim and renders the same page set. It therefore raises no version (see *Versions* below). |
 
 > `locale: "ja"` renders completely — the shipped font set has every Japanese glyph — but in
 > Simplified-Chinese kanji SHAPES, because a font holds one drawing per codepoint and Chinese and
@@ -114,6 +115,18 @@ Top-level keys appear sorted, as does every object in the file — that is the s
 > table says 28/21/7, counted over the golden corpus alone; the wider walk here reaches the same
 > conclusion with three more files.) The only documents the repair excludes are ones whose every
 > `formatDate` already fails at render.
+>
+> **A FOURTH NON-EVENT: `embedFonts` TAKES NO INCREMENT EITHER
+> (spec-font-sources-and-embedding, CAP-2).** The document's embed-or-not setting is a new optional
+> top-level key, and it has **no ladder row**. Apply D-7.3.1's test — would a pre-`4.2` reader
+> REFUSE the file, or RENDER IT WRONG? Neither. The key governs what a **save writes**, not what a
+> render reads: an older reader meets an unknown top-level key, carries it through verbatim under
+> D-1.4.9's passthrough rule, renders the identical page set, and preserves the key on re-save. A
+> file declares the lowest version its own content requires, and this content requires nothing, so
+> adding a rank would make the document declare a version it does not need — the mirror of the error
+> D-7.3.1 guards against. (This is **not** the `5.0` the owner ruled on for that spec; that is its
+> font-record acknowledgement and `spec-loop-section`'s loop element, both of which change how a
+> document is READ.)
 >
 > **And an independent proof that reaches the same answer.** The `SupportedMajor` note below records
 > that a bump *"would also make every document declare `3.0`, including the twenty-two fixtures that

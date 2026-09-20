@@ -601,36 +601,6 @@ func TestSetDocumentUTCOffsetResentUnchangedLeavesTheBytesIdentical(t *testing.T
 	}
 }
 
-// TestTheTwoArmsWriteTheirOwnFieldAndOnlyTheirOwn is the ROTATION guard stated
-// as one claim rather than left implicit in two accepting tests: both commands
-// applied in sequence to one document leave exactly the two values sent, and
-// each applied alone leaves the other where it was. An arm writing its
-// sibling's field passes "a byte moved" and fails here.
-func TestTheTwoArmsWriteTheirOwnFieldAndOnlyTheirOwn(t *testing.T) {
-	tpl := documentSettingsTemplate(t, documentSettingsDocument("en", "+00:00"))
-	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"setDocumentLocale","version":1,"locale":"ja"}`)); err != nil {
-		t.Fatalf("setDocumentLocale ja was refused: %v", err)
-	}
-	if locale, offset := documentSettingsPair(t, tpl); locale != `"ja"` || offset != `"+00:00"` {
-		t.Fatalf("after the locale command the document reads locale=%s utcOffset=%s, want \"ja\" and the untouched \"+00:00\"", locale, offset)
-	}
-	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"setDocumentUTCOffset","version":1,"utcOffset":"+09:00"}`)); err != nil {
-		t.Fatalf("setDocumentUTCOffset +09:00 was refused: %v", err)
-	}
-	if locale, offset := documentSettingsPair(t, tpl); locale != `"ja"` || offset != `"+09:00"` {
-		t.Fatalf("after the offset command the document reads locale=%s utcOffset=%s, want the untouched \"ja\" and \"+09:00\"", locale, offset)
-	}
-	// AND A REFUSED SECOND COMMAND LEAVES THE FIRST ONE'S WRITE STANDING: the
-	// two are independent commands, not one transaction, and an arm that rolled
-	// its sibling back would be writing a field it does not name.
-	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"setDocumentUTCOffset","version":1,"utcOffset":"+99:99"}`)); err == nil {
-		t.Fatal("the command accepted +99:99 (D-12.C)")
-	}
-	if locale, offset := documentSettingsPair(t, tpl); locale != `"ja"` || offset != `"+09:00"` {
-		t.Fatalf("a refused offset command disturbed the document: locale=%s utcOffset=%s", locale, offset)
-	}
-}
-
 // ---------------------------------------------------------------------------
 // RED-PROOFS (D-000.14). Each was run by MUTATING THE SUBJECT — the production
 // code in component_commands.go, page_setup.go and
@@ -664,7 +634,7 @@ func TestTheTwoArmsWriteTheirOwnFieldAndOnlyTheirOwn(t *testing.T) {
 //     TestSetDocumentLocaleResentUnchangedLeavesTheBytesIdentical,
 //     TestSetDocumentUTCOffsetWritesTheOffsetTheAuthorSet,
 //     TestSetDocumentUTCOffsetResentUnchangedLeavesTheBytesIdentical,
-//     TestTheTwoArmsWriteTheirOwnFieldAndOnlyTheirOwn and, end to end,
+//     TestEachArmWritesItsOwnFieldAndOnlyItsOwn and, end to end,
 //     TestSetDocumentLocaleChangesWhatTheRendererDraws.
 //     THE BOTH-FIELDS ASSERTION IS WHAT SEES IT. An accepting test reading only
 //     the field its command names would report "the value did not change"
@@ -676,7 +646,7 @@ func TestTheTwoArmsWriteTheirOwnFieldAndOnlyTheirOwn(t *testing.T) {
 //     `if !template.IsUTCOffset(offset) { … }` block with `_ = offset`:
 //     TestSetDocumentUTCOffsetAgreesWithTheLoader FAILS on eight of its
 //     subtests (+99:99, +24:00, +00:60, Z, +7:00, +0700, 07:00, "+07:00 ") and
-//     TestTheTwoArmsWriteTheirOwnFieldAndOnlyTheirOwn FAILS on its `+99:99`
+//     TestEachArmWritesItsOwnFieldAndOnlyItsOwn FAILS on its `+99:99`
 //     row. Again nothing else moves: no backstop.
 //
 //  4. MAKE EACH ARM WRITE NOTHING. Deleting both assignments —
@@ -686,7 +656,7 @@ func TestTheTwoArmsWriteTheirOwnFieldAndOnlyTheirOwn(t *testing.T) {
 //     TestSetDocumentLocaleAcceptsEveryTagInTheClosedSet (th, zh-Hans and ja —
 //     `en` legitimately stays green, because the fixture already declares it),
 //     TestSetDocumentUTCOffsetWritesTheOffsetTheAuthorSet,
-//     TestTheTwoArmsWriteTheirOwnFieldAndOnlyTheirOwn and
+//     TestEachArmWritesItsOwnFieldAndOnlyItsOwn and
 //     TestSetDocumentLocaleChangesWhatTheRendererDraws FAIL. That is the proof
 //     the arms are REACHED and do the write, not merely that they are ordered
 //     correctly in the switch.
@@ -708,7 +678,7 @@ func TestTheTwoArmsWriteTheirOwnFieldAndOnlyTheirOwn(t *testing.T) {
 //     FAIL — the loader ADMITS the document again — and internal/expr's
 //     TestLoaderAdmitsNothingTheEvaluatorCannotParse FAILS, which is the defect
 //     itself: a file that opens and then renders no dates at all.
-//     TestTheTwoArmsWriteTheirOwnFieldAndOnlyTheirOwn fails on its `+99:99`
+//     TestEachArmWritesItsOwnFieldAndOnlyItsOwn fails on its `+99:99`
 //     row for the same reason.
 //
 //     TestSetDocumentUTCOffsetAgreesWithTheLoader STAYS GREEN under this
@@ -741,3 +711,463 @@ func TestTheTwoArmsWriteTheirOwnFieldAndOnlyTheirOwn(t *testing.T) {
 //     is caught by a drawn glyph and not only by bytes on disk. Mutation 4
 //     above is caught for the LOCALE half by that file's locale test; before
 //     this test existed, the offset half's only witness was serialization.
+
+// ---------------------------------------------------------------------------
+// spec-font-sources-and-embedding STORY 4: THE DOCUMENT DECLARES WHETHER IT
+// CARRIES ITS FACES.
+//
+// A THIRD DOCUMENT SETTING, ON THE SAME TERMS AS THE TWO ABOVE — arity-3
+// command, one field, located refusal, byte-identical document after a refusal
+// — and one thing neither of those two has: A DEFAULT THAT IS THE ABSENT KEY.
+// `embedFonts` is true unless the file says otherwise, and true is written back
+// as NO KEY AT ALL. That is what keeps every golden digest and every fixture on
+// disk byte-unchanged, and it is the property most of the rows below measure.
+//
+// AND IT IS INERT. Nothing in the engine reads the value in this story: no
+// embedding decision, no stripping, no resolution rule, no renderer branch. The
+// "render unaffected" row below is that claim stated as a measurement rather
+// than as a comment.
+
+// documentEmbedDocument is the fixture builder for the embed half. `embedFonts`
+// is spliced in only when the caller asks for it, because the ABSENT key is one
+// of the three states this suite is about — an always-present key would make
+// the default untestable.
+func documentEmbedDocument(embedFonts string) []byte {
+	declared := ""
+	if embedFonts != "" {
+		declared = `"embedFonts":` + embedFonts + `,`
+	}
+	return []byte(`{"version":"1.0","locale":"th","utcOffset":"+07:00",` + declared +
+		`"page":{"margin":{"top":36,"right":36,"bottom":36,"left":36},"orientation":"portrait","size":"A4"},` +
+		`"fonts":{"body":["Noto Sans"]},"bands":{"content":{"elements":[` +
+		`{"id":"e1","type":"text","x":0,"y":0,"width":200,"height":20,"value":"Embedded or not","style":{"fontFamily":"body","fontSize":12}}` +
+		`]},"pageFooter":{"elements":[],"height":20},"pageHeader":{"elements":[],"height":20}},` +
+		`"assets":{},"nextId":9}`)
+}
+
+// documentEmbedField reads the `embedFonts` key's raw literal and whether the
+// key is present at all. Presence is half of every claim here: "the value is
+// true" and "there is no key" are different documents, and only one of them
+// leaves an existing file's bytes where they were.
+func documentEmbedField(t *testing.T, tpl *Template) (string, bool) {
+	t.Helper()
+	canonical, err := SerializeTemplate(tpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return documentSettingsField(t, canonical, "embedFonts")
+}
+
+// TestADocumentWithNoEmbedKeyReadsAsEmbeddingAndSavesUnchanged is the Matrix's
+// "existing document" row, and it is the one that protects every file already
+// on disk: absent means embed, and a load/save round trip must not invent the
+// key.
+func TestADocumentWithNoEmbedKeyReadsAsEmbeddingAndSavesUnchanged(t *testing.T) {
+	original := documentEmbedDocument("")
+	tpl := documentSettingsTemplate(t, original)
+	projection, err := canvas(tpl)
+	if err != nil {
+		t.Fatalf("project the canvas: %v", err)
+	}
+	if !projection.EmbedFonts {
+		t.Fatal("a document with no embedFonts key projects EmbedFonts=false — absent must mean \"this document carries its faces\", which is what every file written before the key existed does")
+	}
+	if literal, present := documentEmbedField(t, tpl); present {
+		t.Fatalf("a save invented an embedFonts key (%s) for a document that never declared one — every golden digest and every fixture on disk moves if this is allowed", literal)
+	}
+	// AND THE WHOLE FILE, not only that one key: the canonical form of a
+	// document that never mentioned the setting is the canonical form it had
+	// before the setting existed.
+	saved, err := SerializeTemplate(tpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reparsed := documentSettingsTemplate(t, saved)
+	resaved, err := SerializeTemplate(reparsed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(saved, resaved) {
+		t.Fatalf("a document with no embedFonts key is not a fixed point:\nfirst:  %s\nsecond: %s", saved, resaved)
+	}
+}
+
+// TestSetDocumentEmbedFontsWritesTheSettingTheAuthorChose is the Matrix's
+// "turned off" row: the key appears, sorted into place, and the document is a
+// fixed point carrying it.
+func TestSetDocumentEmbedFontsWritesTheSettingTheAuthorChose(t *testing.T) {
+	tpl := documentSettingsTemplate(t, documentEmbedDocument(""))
+	projection, err := applyComponentCommand(tpl, []byte(`{"kind":"setDocumentEmbedFonts","version":1,"embedFonts":false}`))
+	if err != nil {
+		t.Fatalf("turning embedding off was refused: %v", err)
+	}
+	// A FRESH PROJECTION carrying the new value: the panel's box is seeded from
+	// this and from nothing else.
+	if projection.EmbedFonts {
+		t.Fatal("the projection still says the document embeds after the setting was turned off")
+	}
+	literal, present := documentEmbedField(t, tpl)
+	if !present || literal != "false" {
+		t.Fatalf("serialized embedFonts = %q (present %v), want false", literal, present)
+	}
+	// SORTED INTO PLACE BY THE SERIALIZER, not by a hand-chosen position: the
+	// key sits between `bands` and `fonts` in byte order, which is what
+	// writeObject's sort produces and what a hand-editor would write.
+	saved, err := SerializeTemplate(tpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bands, embed, fonts := bytes.Index(saved, []byte(`"bands"`)), bytes.Index(saved, []byte(`"embedFonts"`)), bytes.Index(saved, []byte(`"fonts"`)); !(bands < embed && embed < fonts) {
+		t.Fatalf("embedFonts is not in byte order among the top-level keys (bands %d, embedFonts %d, fonts %d):\n%s", bands, embed, fonts, saved)
+	}
+	// AND THE OTHER TWO DOCUMENT SETTINGS ARE UNTOUCHED — the rotation claim,
+	// made in the same breath as the accepting one, exactly as the two older
+	// arms make it.
+	if locale, offset := documentSettingsPair(t, tpl); locale != `"th"` || offset != `"+07:00"` {
+		t.Fatalf("the embed command moved another document setting: locale=%s utcOffset=%s", locale, offset)
+	}
+	// IT RAISES NO VERSION. The key governs what a save writes, not what a
+	// render does, so the document still declares the lowest version its own
+	// content requires.
+	if version, _ := documentSettingsField(t, saved, "version"); version != `"1.0"` {
+		t.Fatalf("declaring embedFonts raised the document to %s — this key is not on the ladder", version)
+	}
+}
+
+// TestTurningEmbeddingOffAndOnAgainReturnsTheOriginalBytes is the Matrix's
+// "turned back on" row AND its round-trip pair. Off must survive a save and a
+// reopen; on must return the file to the bytes it started with, because `true`
+// is written as an absent key rather than as a value.
+func TestTurningEmbeddingOffAndOnAgainReturnsTheOriginalBytes(t *testing.T) {
+	tpl := documentSettingsTemplate(t, documentEmbedDocument(""))
+	original, err := SerializeTemplate(tpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"setDocumentEmbedFonts","version":1,"embedFonts":false}`)); err != nil {
+		t.Fatalf("turning embedding off was refused: %v", err)
+	}
+	off, err := SerializeTemplate(tpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(off, original) {
+		t.Fatal("turning embedding off changed nothing in the file — the setting does not travel")
+	}
+	// REOPENED: the setting is still off, and a further save is byte-identical.
+	reopened := documentSettingsTemplate(t, off)
+	reopenedProjection, err := canvas(reopened)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reopenedProjection.EmbedFonts {
+		t.Fatal("a reopened document that declared embedFonts=false reads as embedding")
+	}
+	resaved, err := SerializeTemplate(reopened)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(off, resaved) {
+		t.Fatalf("a document carrying embedFonts=false is not a fixed point:\nfirst:  %s\nsecond: %s", off, resaved)
+	}
+
+	// AND BACK ON: no key, and the ORIGINAL bytes, not merely equivalent ones.
+	if _, err := applyComponentCommand(reopened, []byte(`{"kind":"setDocumentEmbedFonts","version":1,"embedFonts":true}`)); err != nil {
+		t.Fatalf("turning embedding back on was refused: %v", err)
+	}
+	back, err := SerializeTemplate(reopened)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(back, original) {
+		t.Fatalf("turning the setting back on did not restore the original bytes — `true` must be written as an ABSENT key:\nwant: %s\ngot:  %s", original, back)
+	}
+}
+
+// TestAnAuthoredEmbedFontsTrueCanonicalisesToNoKeyAtAll is the "older reader"
+// row's file half: a hand-written document may spell `true`, it loads, and it
+// canonicalises back to the absent key — the same normalisation
+// `{"face": "X"}` -> `"X"` performs. Nothing is refused and nothing is lost,
+// because absent and `true` are the same document.
+func TestAnAuthoredEmbedFontsTrueCanonicalisesToNoKeyAtAll(t *testing.T) {
+	spelled := documentSettingsTemplate(t, documentEmbedDocument("true"))
+	if literal, present := documentEmbedField(t, spelled); present {
+		t.Fatalf("an authored embedFonts=true was written back as %s — the default state has exactly one canonical spelling, and it is the absent key", literal)
+	}
+	silent, err := SerializeTemplate(documentSettingsTemplate(t, documentEmbedDocument("")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	declared, err := SerializeTemplate(spelled)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(silent, declared) {
+		t.Fatalf("a document that spells embedFonts=true and one that says nothing canonicalise differently:\nsilent:   %s\ndeclared: %s", silent, declared)
+	}
+}
+
+// TestTheEmbedSettingIsUnreadableFromTheRenderedBytes is the Matrix's "render
+// unaffected" row, and it is this story's central claim stated as a
+// measurement: the SAME document rendered with the setting true and with it
+// false produces BYTE-IDENTICAL PDFs, because nothing reads the value yet.
+// When a later story gives the setting teeth, this test is the one that must
+// be changed deliberately rather than discovered to have gone red.
+func TestTheEmbedSettingIsUnreadableFromTheRenderedBytes(t *testing.T) {
+	render := func(source []byte) []byte {
+		t.Helper()
+		tpl, err := ParseTemplate(source)
+		if err != nil {
+			t.Fatalf("parse: %v", err)
+		}
+		res, err := Render(tpl, Data("{}"), nil, testShippedFontSet())
+		if err != nil {
+			t.Fatalf("render: %v", err)
+		}
+		if len(res.Diagnostics) != 0 {
+			t.Fatalf("render produced diagnostics: %v", res.Diagnostics)
+		}
+		return res.Bytes
+	}
+	// TWO DOCUMENTS, AND THE SECOND IS THE ONE THAT MATTERS. A chain of
+	// SHIPPED faces cannot detect the coupling most likely to leak: the field
+	// would be read on the CARRIED-face path, at newDocumentFontCache
+	// (render.go), where "does this document embed?" is a question the code has
+	// something to do with. `embeddedFontTemplateJSON` is this package's
+	// document whose chain names an asset the file carries, and it draws Thai
+	// through that asset — so an `if !t.doc.EmbedFonts { drop the carried face }`
+	// changes its glyphs and reddens here, where the shipped-only document
+	// would stay green.
+	for _, probe := range []struct {
+		name         string
+		with, withNo []byte
+	}{
+		{"a chain of shipped faces", documentEmbedDocument("true"), documentEmbedDocument("false")},
+		{"a chain naming the face the document carries", embeddedFontDocument("true"), embeddedFontDocument("false")},
+	} {
+		t.Run(probe.name, func(t *testing.T) {
+			embedding, declining := render(probe.with), render(probe.withNo)
+			if !bytes.Equal(embedding, declining) {
+				t.Fatalf("the two PDFs differ (%d bytes vs %d) — something now READS embedFonts, which this story deliberately does not do", len(embedding), len(declining))
+			}
+			// Non-vacuity: the comparison is of real page sets, not of two
+			// empty byte slices that trivially agree.
+			if len(embedding) == 0 {
+				t.Fatal("coverage witness: the render produced no bytes")
+			}
+		})
+	}
+}
+
+// embeddedFontDocument is embedded_font_fixture_test.go's carried-face document
+// with `embedFonts` spliced in at its sorted position. It is built by splice
+// rather than by a parameter on that fixture because every other test in this
+// package depends on those exact bytes.
+func embeddedFontDocument(embedFonts string) []byte {
+	source := embeddedFontTemplateJSON()
+	const anchor = "\n  \"fonts\": {"
+	if !strings.Contains(source, anchor) {
+		panic("embedded-font fixture no longer has a top-level fonts key to splice before")
+	}
+	return []byte(strings.Replace(source, anchor, "\n  \"embedFonts\": "+embedFonts+","+anchor, 1))
+}
+
+// TestAnUnknownTopLevelBooleanRendersTheSamePageSet is the RENDER half of D1's
+// premise. internal/template's
+// TestAnUnknownTopLevelBooleanIsCarriedThroughVerbatim proves such a key loads
+// and is written back byte-for-byte; this proves the other clause of the same
+// argument — that a reader which does not know the key draws exactly what it
+// would have drawn without it. Together they are the whole ground for giving
+// `embedFonts` no ladder rank.
+func TestAnUnknownTopLevelBooleanRendersTheSamePageSet(t *testing.T) {
+	render := func(source []byte) []byte {
+		t.Helper()
+		tpl, err := ParseTemplate(source)
+		if err != nil {
+			t.Fatalf("an unknown top-level boolean was REFUSED at load, which is the premise failing: %v", err)
+		}
+		res, err := Render(tpl, Data("{}"), nil, testShippedFontSet())
+		if err != nil {
+			t.Fatalf("render: %v", err)
+		}
+		return res.Bytes
+	}
+	plain := documentEmbedDocument("")
+	withUnknown := bytes.Replace(plain, []byte(`"fonts":`), []byte(`"embedsItsFacesSomeday":false,"fonts":`), 1)
+	if bytes.Equal(plain, withUnknown) {
+		t.Fatal("fixture precondition: the unknown key was not spliced in")
+	}
+	before, after := render(plain), render(withUnknown)
+	if !bytes.Equal(before, after) {
+		t.Fatalf("a top-level key the library does not know changed the page set (%d bytes vs %d)", len(before), len(after))
+	}
+	if len(before) == 0 {
+		t.Fatal("coverage witness: the render produced no bytes")
+	}
+}
+
+// TestSetDocumentEmbedFontsRefusesAMalformedValue is the Matrix's bad-payload
+// row. `null` is in this list deliberately and is the one a reader should look
+// at twice: encoding/json admits it into a bool destination WITHOUT an error,
+// so a command arm that only called commandBool would turn embedding off for an
+// author who chose nothing.
+func TestSetDocumentEmbedFontsRefusesAMalformedValue(t *testing.T) {
+	for _, probe := range []struct {
+		name    string
+		command string
+		message string
+	}{
+		{"a string", `{"kind":"setDocumentEmbedFonts","version":1,"embedFonts":"false"}`, template.EmbedFontsTypeMessage},
+		{"a number", `{"kind":"setDocumentEmbedFonts","version":1,"embedFonts":0}`, template.EmbedFontsTypeMessage},
+		{"an object", `{"kind":"setDocumentEmbedFonts","version":1,"embedFonts":{}}`, template.EmbedFontsTypeMessage},
+		{"a misspelled key at the right arity", `{"kind":"setDocumentEmbedFonts","version":1,"embedFnots":false}`, template.EmbedFontsTypeMessage},
+		// `null` CARRIES THE REMEDY, and it is the row worth pinning: it is the
+		// one malformed value encoding/json would have READ (as `false`), and
+		// the sentence that tells an author to remove the key instead is
+		// deliberate. Pinned to the LOADER's constant, so the file door and the
+		// command door cannot answer one question two ways.
+		{"null", `{"kind":"setDocumentEmbedFonts","version":1,"embedFonts":null}`, template.EmbedFontsNullMessage},
+	} {
+		t.Run(probe.name, func(t *testing.T) {
+			tpl := documentSettingsTemplate(t, documentEmbedDocument(""))
+			failure := documentSettingsRefusal(t, tpl, probe.command)
+			if failure.ElementID != "" {
+				t.Errorf("refusal ElementID = %q, want empty", failure.ElementID)
+			}
+			if failure.DataPath != "embedFonts" {
+				t.Errorf("refusal DataPath = %q, want embedFonts", failure.DataPath)
+			}
+			if failure.Message != "embedFonts "+probe.message {
+				t.Errorf("refusal = %q, want %q", failure.Message, "embedFonts "+probe.message)
+			}
+			// AND THE DOCUMENT STILL EMBEDS. documentSettingsRefusal already
+			// proved the bytes did not move; this proves the refusal did not
+			// leave the in-memory field turned off either, which a write-then-
+			// validate arm would.
+			if literal, present := documentEmbedField(t, tpl); present {
+				t.Errorf("a refused command left embedFonts=%s in the document", literal)
+			}
+		})
+	}
+}
+
+// TestSetDocumentEmbedFontsIsRefusedByTheDoorsExistingGates is the Matrix's
+// wrong-arity row: the third arm is gated exactly as the other two are.
+func TestSetDocumentEmbedFontsIsRefusedByTheDoorsExistingGates(t *testing.T) {
+	for _, probe := range []struct {
+		name    string
+		located bool
+		command string
+	}{
+		{"two keys", false, `{"kind":"setDocumentEmbedFonts","version":1}`},
+		{"four keys", false, `{"kind":"setDocumentEmbedFonts","version":1,"embedFonts":false,"locale":"th"}`},
+		{"a repeated embedFonts", true, `{"kind":"setDocumentEmbedFonts","version":1,"embedFonts":true,"embedFonts":false}`},
+	} {
+		t.Run(probe.name, func(t *testing.T) {
+			tpl := documentSettingsTemplate(t, documentEmbedDocument(""))
+			before, err := SerializeTemplate(tpl)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, applyErr := applyComponentCommand(tpl, []byte(probe.command))
+			if applyErr == nil {
+				t.Fatalf("the door accepted %s", probe.command)
+			}
+			after, err := SerializeTemplate(tpl)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(before, after) {
+				t.Fatal("a command the door refused still mutated the document")
+			}
+			var failure *designer.ComponentCommandError
+			located := errors.As(applyErr, &failure)
+			if located != probe.located {
+				t.Fatalf("refusal for %s is located=%v (%T: %v), want located=%v", probe.command, located, applyErr, applyErr, probe.located)
+			}
+			if located && failure.DataPath != componentCommandPath {
+				t.Fatalf("a duplicate-key refusal is located on %q, want %q", failure.DataPath, componentCommandPath)
+			}
+		})
+	}
+}
+
+// TestSetDocumentEmbedFontsResentUnchangedLeavesTheBytesIdentical is the
+// "value re-sent unchanged" row for the third arm.
+func TestSetDocumentEmbedFontsResentUnchangedLeavesTheBytesIdentical(t *testing.T) {
+	tpl := documentSettingsTemplate(t, documentEmbedDocument("false"))
+	before, err := SerializeTemplate(tpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"setDocumentEmbedFonts","version":1,"embedFonts":false}`)); err != nil {
+		t.Fatalf("re-sending the setting already in force was refused: %v", err)
+	}
+	after, err := SerializeTemplate(tpl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatalf("re-sending the current setting moved the bytes:\nbefore: %s\nafter:  %s", before, after)
+	}
+}
+
+// TestEachArmWritesItsOwnFieldAndOnlyItsOwn is THE rotation ledger for the
+// document settings — one ledger, over the whole set, deliberately. It began
+// (Story 12.2) as TestTheTwoArmsWriteTheirOwnFieldAndOnlyTheirOwn; when
+// spec-font-sources-and-embedding added a third setting the choice was to fold
+// the new field in here rather than stand a second ledger beside it, because
+// two ledgers means a FOURTH setting has to pick one, and the older one would
+// go on asserting non-interference over a set that is no longer the set.
+//
+// THE CLAIM: each arm writes its own field and leaves its siblings exactly
+// where they were, and an arm that is REFUSED disturbs nothing at all. An arm
+// writing a sibling's field passes "a byte moved" and fails here.
+//
+// `embedFonts` IS READ BY PRESENCE AS WELL AS BY VALUE, because for that field
+// the absent key IS a value — "this document carries its faces" — and a
+// rotation into it would otherwise be invisible while it happened to agree.
+func TestEachArmWritesItsOwnFieldAndOnlyItsOwn(t *testing.T) {
+	tpl := documentSettingsTemplate(t, documentEmbedDocument(""))
+	assert := func(stage, wantLocale, wantOffset string, wantEmbedKey bool) {
+		t.Helper()
+		locale, offset := documentSettingsPair(t, tpl)
+		literal, present := documentEmbedField(t, tpl)
+		if locale != wantLocale || offset != wantOffset || present != wantEmbedKey {
+			t.Fatalf("%s: locale=%s utcOffset=%s embedFonts=%s (present %v); want %s, %s and embedFonts present=%v",
+				stage, locale, offset, literal, present, wantLocale, wantOffset, wantEmbedKey)
+		}
+	}
+	assert("the fixture", `"th"`, `"+07:00"`, false)
+
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"setDocumentLocale","version":1,"locale":"ja"}`)); err != nil {
+		t.Fatalf("setDocumentLocale ja was refused: %v", err)
+	}
+	assert("after the locale command", `"ja"`, `"+07:00"`, false)
+
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"setDocumentUTCOffset","version":1,"utcOffset":"+09:00"}`)); err != nil {
+		t.Fatalf("setDocumentUTCOffset +09:00 was refused: %v", err)
+	}
+	assert("after the offset command", `"ja"`, `"+09:00"`, false)
+
+	if _, err := applyComponentCommand(tpl, []byte(`{"kind":"setDocumentEmbedFonts","version":1,"embedFonts":false}`)); err != nil {
+		t.Fatalf("setDocumentEmbedFonts false was refused: %v", err)
+	}
+	assert("after the embed command", `"ja"`, `"+09:00"`, true)
+
+	// AND A REFUSED COMMAND LEAVES EVERY EARLIER WRITE STANDING: these are
+	// independent commands, not one transaction, and an arm that rolled a
+	// sibling back would be writing a field it does not name. One refusal per
+	// arm, so no arm's restore path is left unexercised.
+	for _, refused := range []string{
+		`{"kind":"setDocumentLocale","version":1,"locale":"fr"}`,
+		`{"kind":"setDocumentUTCOffset","version":1,"utcOffset":"+99:99"}`,
+		`{"kind":"setDocumentEmbedFonts","version":1,"embedFonts":"no"}`,
+	} {
+		if _, err := applyComponentCommand(tpl, []byte(refused)); err == nil {
+			t.Fatalf("the door accepted %s", refused)
+		}
+		assert("after a refused command ("+refused+")", `"ja"`, `"+09:00"`, true)
+	}
+}

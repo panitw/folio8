@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import { createHash } from 'node:crypto'
 import { act, cleanup, createEvent, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import App, { placementPoint, PROSE_COMMIT_DEBOUNCE_MS } from './App'
+import App, { embedFontsRowValue, placementPoint, PROSE_COMMIT_DEBOUNCE_MS } from './App'
 import type { OfflineLifecycle } from './offline-lifecycle'
 import { isMacPlatform, shortcutHintsFor } from './shortcuts'
 import { PREVIEW_DEBOUNCE_MS } from './preview/freshness'
@@ -220,7 +220,7 @@ const declaredOptions = () => {
   return group ? within(group).queryAllByRole('option') : []
 }
 const sample = acceptSampleData('sample.json', new TextEncoder().encode('{"customer":{"name":"Preview customer"},"transactions":[]}').buffer)
-const canvas = { width: 595276, height: 841890, orientation: 'portrait' as const, preset: 'A4' as const, locale: 'en' as const, utcOffset: '+07:00', marginTop: 36000, marginRight: 36000, marginBottom: 36000, marginLeft: 36000, gridIncrement: 6000, commandWidth: 595276, commandHeight: 841890, fontFamilies: ['body', 'heading'], fontChains: [{ name: 'body', entries: [face('Noto Sans')] }, { name: 'heading', entries: [face('Noto Sans'), face('Noto Sans Thai')] }], defaultFontSize: 12000, defaultLineSpacing: 1000, contentWindowHeight: 729890, contentWindowCount: 1, contentWindowOrigins: [0], contentWindowPages: [0], contentWindowCountIsExact: true, bands: [{ name: 'pageHeader' as const, x: 36000, y: 36000, width: 523276, height: 20000 }, { name: 'content' as const, x: 36000, y: 56000, width: 523276, height: 729890 }, { name: 'pageFooter' as const, x: 36000, y: 785890, width: 523276, height: 20000 }], components: [] }
+const canvas = { width: 595276, height: 841890, orientation: 'portrait' as const, preset: 'A4' as const, locale: 'en' as const, utcOffset: '+07:00', embedFonts: true, marginTop: 36000, marginRight: 36000, marginBottom: 36000, marginLeft: 36000, gridIncrement: 6000, commandWidth: 595276, commandHeight: 841890, fontFamilies: ['body', 'heading'], fontChains: [{ name: 'body', entries: [face('Noto Sans')] }, { name: 'heading', entries: [face('Noto Sans'), face('Noto Sans Thai')] }], defaultFontSize: 12000, defaultLineSpacing: 1000, contentWindowHeight: 729890, contentWindowCount: 1, contentWindowOrigins: [0], contentWindowPages: [0], contentWindowCountIsExact: true, bands: [{ name: 'pageHeader' as const, x: 36000, y: 36000, width: 523276, height: 20000 }, { name: 'content' as const, x: 36000, y: 56000, width: 523276, height: 729890 }, { name: 'pageFooter' as const, x: 36000, y: 785890, width: 523276, height: 20000 }], components: [] }
 const snapshot = (revision: number) => ({ documentState: 'loaded' as const, revision, byteLength: 3, canvas })
 const engine = (request = vi.fn(async (operation: string) => ({ snapshot: { documentState: 'loaded' as const, revision: operation === 'command' ? 2 : 1, byteLength: 3 }, ...(operation === 'serialize' ? { bytes } : {}) }))) => ({ request: (operation: string, payload?: ArrayBuffer, ...rest: unknown[]) => {
   if (operation === 'group-move-preview') {
@@ -3646,6 +3646,114 @@ describe('application shell', () => {
     const only = new TextDecoder().decode((request.mock.calls[0] as unknown as [string, ArrayBuffer])[1])
     expect(only).toContain('"kind":"pageSetup"')
     expect(only).not.toContain('setDocument')
+  })
+
+  it('sends exactly the embed command when only the embed setting changed', async () => {
+    // spec-font-sources-and-embedding CAP-2. The projection says the document
+    // embeds; unticking the box is a change, and it is worth exactly ONE
+    // command — pinned to the byte, because "an embed command was sent" passes
+    // with the value inverted and with a third row crossed into it.
+    const request = vi.fn(async () => ({ snapshot: snapshot(2) }))
+    render(<App engine={engine(request)} initialSnapshot={snapshot(1)} />)
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Embed fonts in the document' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Apply page setup' }))
+    await waitFor(() => expect(request).toHaveBeenCalledTimes(2))
+    const sent = (request.mock.calls as unknown as ReadonlyArray<[string, ArrayBuffer]>).map(([, payload]) => new TextDecoder().decode(payload))
+    expect(sent[0]).toBe('{"kind":"setDocumentEmbedFonts","version":1,"embedFonts":false}')
+    // AND NEITHER OF THE OTHER TWO document settings: they were not touched.
+    expect(sent.some((command) => command.includes('setDocumentLocale'))).toBe(false)
+    expect(sent.some((command) => command.includes('setDocumentUTCOffset'))).toBe(false)
+    expect(sent[1]).toContain('"kind":"pageSetup"')
+  })
+
+  it('sends all three, in order, when all three document-settings rows changed', async () => {
+    const request = vi.fn(async () => ({ snapshot: snapshot(2) }))
+    render(<App engine={engine(request)} initialSnapshot={snapshot(1)} />)
+    fireEvent.change(screen.getByRole('combobox', { name: 'Document locale' }), { target: { value: 'ja' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'UTC offset (±HH:MM)' }), { target: { value: '+09:00' } })
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Embed fonts in the document' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Apply page setup' }))
+    await waitFor(() => expect(request).toHaveBeenCalledTimes(4))
+    const sent = (request.mock.calls as unknown as ReadonlyArray<[string, ArrayBuffer]>).map(([, payload]) => new TextDecoder().decode(payload))
+    // THREE COMMANDS, ONE FIELD EACH, in the order applyPageSetup's table
+    // declares them — the third joins the set without rotating it.
+    expect(sent[0]).toBe('{"kind":"setDocumentLocale","version":1,"locale":"ja"}')
+    expect(sent[1]).toBe('{"kind":"setDocumentUTCOffset","version":1,"utcOffset":"+09:00"}')
+    expect(sent[2]).toBe('{"kind":"setDocumentEmbedFonts","version":1,"embedFonts":false}')
+    expect(sent[3]).toContain('"kind":"pageSetup"')
+  })
+
+  it('shows the engine\'s embed setting and re-ticking the box already in force sends nothing', async () => {
+    // The box is seeded from the projection and from nothing else, and ticking
+    // it back to the value the engine holds is not a change — the same rule
+    // the locale row keeps directly below.
+    const request = vi.fn(async () => ({ snapshot: snapshot(2) }))
+    render(<App engine={engine(request)} initialSnapshot={snapshot(1)} />)
+    const box = screen.getByRole('checkbox', { name: 'Embed fonts in the document' })
+    expect(box).toBeChecked()
+    fireEvent.click(box)
+    fireEvent.click(box)
+    expect(box).toBeChecked()
+    fireEvent.click(screen.getByRole('button', { name: 'Apply page setup' }))
+    await waitFor(() => expect(request).toHaveBeenCalledOnce())
+    expect(new TextDecoder().decode((request.mock.calls[0] as unknown as [string, ArrayBuffer])[1])).toContain('"kind":"pageSetup"')
+  })
+
+  it('shows a document that declined to embed as unchecked, and changes nothing on Apply', async () => {
+    // THE PROJECTION IS THE ONLY SEED, and this is the case that proves it: a
+    // panel that seeded `draftFor` with a constant instead of READING
+    // `canvas.embedFonts` shows a ticked box here — telling an author who
+    // turned embedding off that it is on — and then, on the next Apply, sends
+    // `embedFonts:true` and turns it back on behind them.
+    const request = vi.fn(async () => ({ snapshot: snapshot(2) }))
+    render(<App engine={engine(request)} initialSnapshot={{ documentState: 'loaded' as const, revision: 1, byteLength: 3, canvas: { ...canvas, embedFonts: false } }} />)
+    const box = screen.getByRole('checkbox', { name: 'Embed fonts in the document' })
+    expect(box).not.toBeChecked()
+    expect(box).toBeEnabled()
+    // APPLY WITH NOTHING TOUCHED SENDS ONLY THE pageSetup COMMAND. A row that
+    // compared the draft against anything but the projected value would fire
+    // here and write a setting the author never chose.
+    fireEvent.click(screen.getByRole('button', { name: 'Apply page setup' }))
+    await waitFor(() => expect(request).toHaveBeenCalledOnce())
+    const only = new TextDecoder().decode((request.mock.calls[0] as unknown as [string, ArrayBuffer])[1])
+    expect(only).toContain('"kind":"pageSetup"')
+    expect(only).not.toContain('setDocument')
+  })
+
+  it('never sends an embed command for a draft that is not one of the two legal values', () => {
+    // THE SEED `''` IS THE CASE. It is what `draftFor(undefined)` writes for a
+    // document that does not exist, and compared raw it differs from the
+    // projection either way — so the row would fire and send `embedFonts:false`
+    // for a document whose author touched nothing. Reporting the PROJECTED
+    // value is what makes "unchanged" the answer.
+    expect(embedFontsRowValue('', true)).toBe('true')
+    expect(embedFontsRowValue('', false)).toBe('false')
+    expect(embedFontsRowValue('yes', true)).toBe('true')
+    // AND A REAL CHOICE STILL TRAVELS, in both directions — a guard that
+    // swallowed everything would be a checkbox that never wrote anything.
+    expect(embedFontsRowValue('false', true)).toBe('false')
+    expect(embedFontsRowValue('true', false)).toBe('true')
+  })
+
+  it('says the embed setting is inert, in the panel, for as long as it is', async () => {
+    // THE NOTE IS PINNED BECAUSE IT IS A CLAIM, not decoration. Go's
+    // TestTheEmbedSettingIsUnreadableFromTheRenderedBytes pins the inertness in
+    // the engine; this pins the sentence that tells the author about it. When a
+    // later story gives the setting teeth, BOTH must be changed deliberately —
+    // otherwise this note survives as a lie the panel keeps telling.
+    render(<App engine={engine()} initialSnapshot={snapshot(1)} />)
+    expect(screen.getByText(/Nothing acts on it yet: a save still carries every face the document uses/)).toBeInTheDocument()
+  })
+
+  it('does not assert that a document which does not exist embeds', async () => {
+    // NO CANVAS. `draftFor(undefined)` seeds `embedFonts: ''`, so the box is
+    // unchecked AND disabled rather than painting either answer for a document
+    // that has said nothing — the same honesty the `Not set` locale
+    // placeholder carries.
+    render(<App engine={engine()} />)
+    const box = screen.getByRole('checkbox', { name: 'Embed fonts in the document' })
+    expect(box).not.toBeChecked()
+    expect(box).toBeDisabled()
   })
 
   it('re-selecting the locale already in force sends nothing', async () => {

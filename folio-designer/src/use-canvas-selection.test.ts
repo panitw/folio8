@@ -6,7 +6,7 @@ import { useCanvasSelection } from './use-canvas-selection'
 import { canvasDisplay } from './App'
 
 const canvas: CanvasProjection = {
-  orientation: 'portrait', preset: 'A4', locale: 'en', utcOffset: '+00:00', marginTop: 0, marginRight: 0, marginBottom: 0, marginLeft: 0, gridIncrement: 6000, commandWidth: 600000, commandHeight: 800000, fontFamilies: [], fontChains: [], defaultFontSize: 12000, defaultLineSpacing: 1000,
+  orientation: 'portrait', preset: 'A4', locale: 'en', utcOffset: '+00:00', embedFonts: true, marginTop: 0, marginRight: 0, marginBottom: 0, marginLeft: 0, gridIncrement: 6000, commandWidth: 600000, commandHeight: 800000, fontFamilies: [], fontChains: [], defaultFontSize: 12000, defaultLineSpacing: 1000,
   width: 600000, height: 800000, contentWindowHeight: 600000, contentWindowOrigins: [0], contentWindowPages: [0], contentWindowCount: 1, contentWindowCountIsExact: true,
   bands: [{ name: 'pageHeader', x: 0, y: 0, width: 600000, height: 100000 }, { name: 'content', x: 0, y: 100000, width: 600000, height: 600000 }, { name: 'pageFooter', x: 0, y: 700000, width: 600000, height: 100000 }],
   components: [{ id: 'e1', type: 'rect', band: 'content', x: 10000, y: 10000, width: 20000, height: 20000, resizable: true }, { id: 'e2', type: 'rect', band: 'content', x: 60000, y: 10000, width: 20000, height: 20000, resizable: true }],

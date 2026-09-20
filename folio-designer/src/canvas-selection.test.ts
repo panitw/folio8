@@ -4,7 +4,7 @@ import { contentPageAt, enclosedComponents, selectionRectangle, translatedCanvas
 import { MAX_CANVAS_SHEETS, sheetPitch } from './sheet-stack'
 
 const base: CanvasProjection = {
-  width: 600000, height: 800000, orientation: 'portrait', preset: 'A4', locale: 'en', utcOffset: '+00:00',
+  width: 600000, height: 800000, orientation: 'portrait', preset: 'A4', locale: 'en', utcOffset: '+00:00', embedFonts: true,
   marginTop: 30000, marginBottom: 30000, marginLeft: 40000, marginRight: 40000,
   gridIncrement: 6000, commandWidth: 600000, commandHeight: 800000, fontFamilies: [], fontChains: [], defaultFontSize: 12000, defaultLineSpacing: 1000,
   contentWindowHeight: 620000, contentWindowOrigins: [0], contentWindowPages: [0], contentWindowCount: 1, contentWindowCountIsExact: true,

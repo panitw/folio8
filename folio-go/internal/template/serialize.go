@@ -152,6 +152,17 @@ func writeDocument(dst []byte, d *Document, minimum ...string) []byte {
 			return writeStringArray(dst, depth, paths)
 		}})
 	}
+	// embedFonts (spec-font-sources-and-embedding CAP-2) is OPTIONAL and
+	// DEFAULTS TO TRUE, so the key is written only when the author has
+	// turned embedding OFF — the same shape unbreakableValues takes
+	// directly above, for the same reason. Emitting `"embedFonts": true`
+	// on every document that never touched the setting would move the
+	// bytes of every golden and every fixture already on disk, which is
+	// the one thing this field must not do. writeObject sorts, so the key
+	// lands in byte order without being placed here.
+	if !d.EmbedFonts {
+		fields = append(fields, kv{"embedFonts", writeBool(false)})
+	}
 	// SPEC-multi-pages (D-G.1): the shape is chosen by page count. Two or more
 	// pages write every page in `pages`; one page keeps `bands.content`.
 	if d.PageCount() >= 2 {

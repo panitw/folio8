@@ -22,7 +22,7 @@
 // engine-protocol.ts's LOCALE_TAGS and tied to Go by
 // engine-bounds-mirror.test.ts; the tags are NOT spelled again here, because a
 // copy outside that census is the only kind that can go stale unnoticed.
-import { commandBytes, jsonString } from './command-json'
+import { commandBytes, jsonBoolean, jsonString } from './command-json'
 import type { LocaleTag } from './engine-protocol'
 
 export function documentLocaleCommand(locale: LocaleTag): ArrayBuffer {
@@ -36,4 +36,18 @@ export function documentLocaleCommand(locale: LocaleTag): ArrayBuffer {
 // in the shape a STRING field takes.
 export function documentUTCOffsetCommand(utcOffset: string): ArrayBuffer {
   return commandBytes('setDocumentUTCOffset', [['utcOffset', jsonString(utcOffset)]])
+}
+
+// spec-font-sources-and-embedding CAP-2: whether the document carries its
+// faces. A THIRD function rather than a key on either of the two above, by the
+// same rule that made those two separate — Go has three arms, one field each,
+// and a command names exactly what it changes.
+//
+// THE VALUE IS A BOOLEAN AND IT TRAVELS AS ONE. jsonBoolean emits `true` or
+// `false`, never `"true"` and never `null`: the panel's checkbox has exactly
+// two states, so there is no unset value to represent and nothing for the
+// engine to guess at. Nothing is validated here either — the engine's arm owns
+// the refusal, as it does for the other two.
+export function documentEmbedFontsCommand(embedFonts: boolean): ArrayBuffer {
+  return commandBytes('setDocumentEmbedFonts', [['embedFonts', jsonBoolean(embedFonts)]])
 }

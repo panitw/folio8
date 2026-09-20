@@ -1,6 +1,7 @@
 package template
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -59,6 +60,13 @@ func ParseDocument(b []byte) (*Document, error) {
 	ctx := newParseCtx()
 	doc := &Document{}
 	consumed := map[string]bool{}
+
+	// embedFonts defaults to TRUE, and it is seeded here — before any key
+	// is read — rather than in the optional block below, so there is no
+	// order in which a document can be observed with the Go zero value.
+	// Absent means "this document carries its faces", which is what every
+	// document written before the key existed does.
+	doc.EmbedFonts = true
 
 	// version (AC6, AC7)
 	verRaw, ok := top["version"]
@@ -196,6 +204,31 @@ func ParseDocument(b []byte) (*Document, error) {
 			return nil, err
 		}
 		doc.UnbreakableValues = paths
+	}
+
+	// embedFonts (spec-font-sources-and-embedding CAP-2) — optional, a
+	// plain boolean, never coerced. The field was seeded `true` above, so
+	// an absent key leaves the document declaring that it carries its
+	// faces; a present `true` is admitted and canonicalises back to an
+	// ABSENT key on save, exactly as `{"face": "X"}` canonicalises to the
+	// bare string. Nothing in the engine reads the value.
+	if raw, ok := top["embedFonts"]; ok {
+		consumed["embedFonts"] = true
+		// `null` IS REFUSED RATHER THAN READ AS A VALUE, and it has to be
+		// checked before the decode: encoding/json admits the literal into a
+		// bool destination without an error, leaving Go's zero value — which
+		// here would silently turn embedding OFF for a document whose author
+		// declared nothing. The sentence says what to write instead, in the
+		// shape parse_bands.go's `sectionBreakAnchor` already uses for the
+		// same trap.
+		if string(bytes.TrimSpace(raw)) == "null" {
+			return nil, newLoadError("embedFonts", "", "null", EmbedFontsNullMessage)
+		}
+		embed, err := decodeBoolRaw(raw)
+		if err != nil {
+			return nil, newLoadError("embedFonts", "", string(raw), EmbedFontsTypeMessage)
+		}
+		doc.EmbedFonts = embed
 	}
 
 	// nextId (AC32, AC33, AC37) — must be a plain decimal integer, never

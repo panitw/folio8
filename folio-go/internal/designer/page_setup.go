@@ -311,8 +311,17 @@ type CanvasProjection struct {
 	// the ZERO CanvasProjection as well as a real one and demands the same
 	// key set from both, because a key that appears only sometimes is a key
 	// the browser's guard rejects only sometimes.
-	Locale        string            `json:"locale"`
-	UTCOffset     string            `json:"utcOffset"`
+	Locale    string `json:"locale"`
+	UTCOffset string `json:"utcOffset"`
+	// EmbedFonts is the DOCUMENT's third declared setting
+	// (spec-font-sources-and-embedding CAP-2): whether a save carries the
+	// faces its chains name. It is projected for the same reason Locale and
+	// UTCOffset are — so the panel shows what the engine holds instead of a
+	// default of its own — and it carries no omitempty for the same reason
+	// they do not: `false` is a legal, authored value, and a key that
+	// appears only sometimes is a key the browser's guard rejects only
+	// sometimes. Nothing downstream of the panel reads it.
+	EmbedFonts    bool              `json:"embedFonts"`
 	Orientation   string            `json:"orientation"`
 	Preset        string            `json:"preset"`
 	MarginTop     int64             `json:"marginTop"`

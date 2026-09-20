@@ -258,6 +258,22 @@ var minimalEscapeTrapFixture = []byte("{\n  \"assets\": {},\n  \"bands\": {\n   
 // (D-1.4.13), and it is asserted directly in linespacing_test.go rather
 // than resting on this fixture.
 //
+// ⚠ THE FIXTURE CARRIES `embedFonts: false`, AND IT IS A COVERAGE CHOICE
+// RATHER THAN A STATEMENT ABOUT THIS DOCUMENT. maximalFixture exists to
+// exercise EVERY key the serializer can emit — TestDriftASTMatchesRuntimeEmission
+// compares the AST's key set against what this fixture actually emits at
+// runtime, in both directions — and `embedFonts` is written ONLY when it is
+// false, because true is the default and is written as an absent key. So
+// `false` is the only value that makes the key appear at all, and appearing is
+// the fixture's whole job.
+//
+// THE CONSEQUENCE IS WORTH KNOWING BEFORE THE SETTING GAINS BEHAVIOUR. Nothing
+// reads the field today, so this changes nothing for any test using the
+// fixture. When a later story makes the setting behavioural, a test that uses
+// maximalFixture and cares whether faces are embedded must say so itself —
+// this document declines, and it declines for a serializer-coverage reason,
+// not because a document that carries a font asset ought to.
+
 // ⚠ THE FIXTURE DECLARES 2.0 SINCE STORY 11.2, AND ITS CHAIN IS WHY. The
 // story added two genuinely new serialized keys — `face` and
 // `boldItalic` — so the middle chain entry is written in the OBJECT form
@@ -454,6 +470,7 @@ var maximalFixture = []byte(`{
       "height": 60
     }
   },
+  "embedFonts": false,
   "fonts": {
     "body": [
       "Noto Sans",

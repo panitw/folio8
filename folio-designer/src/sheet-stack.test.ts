@@ -10,7 +10,7 @@ const WINDOW = 727890
 const CONTENT_TOP = 48000
 const component = (id: string, y: number, height = 24_000): CanvasProjection['components'][number] => ({ id, type: 'text', band: 'content', x: 0, y, width: 72_000, height, resizable: true })
 const canvas = (patch: Partial<CanvasProjection>): CanvasProjection => ({
-  width: 595276, height: 841890, orientation: 'portrait', preset: 'A4', locale: 'en', utcOffset: '+00:00',
+  width: 595276, height: 841890, orientation: 'portrait', preset: 'A4', locale: 'en', utcOffset: '+00:00', embedFonts: true,
   marginTop: 30_000, marginRight: 54_000, marginBottom: 42_000, marginLeft: 36_000,
   gridIncrement: 6000, commandWidth: 595276, commandHeight: 841890,
   fontFamilies: ['body'], fontChains: [{ name: 'body', entries: ['Noto Sans'] }], defaultFontSize: 12_000, defaultLineSpacing: 1_000,

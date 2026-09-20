@@ -84,6 +84,32 @@ type Document struct {
 	// author's file). Duplicates are a load error.
 	UnbreakableValues []string
 
+	// EmbedFonts is the document's declaration of whether a SAVE carries
+	// the faces its chains name, or merely names them
+	// (spec-font-sources-and-embedding CAP-2).
+	//
+	// NOTHING READS IT YET. It has a loader, a serializer, a command and a
+	// projection, and no consumer at all: no embedding decision, no
+	// stripping, no resolution rule and no renderer branch turns on it.
+	// That is deliberate — the setting exists, round-trips and undoes in
+	// this story, and the behaviour it governs is a later one.
+	//
+	// TRUE IS THE DEFAULT AND IT IS THE ABSENT STATE. Every document
+	// written before this field existed embeds, so an absent key must keep
+	// meaning that: ParseDocument seeds `true` BEFORE it looks for the key,
+	// and writeDocument emits nothing when it is true. The consequence is
+	// that a Document built as a literal rather than parsed starts at
+	// `false` and would serialize the key — every production Document comes
+	// from ParseDocument, and a hand-built one in a test that cares must set
+	// it.
+	//
+	// IT MOVES NO FORMAT VERSION. An older reader meets an unknown top-level
+	// key, carries it through verbatim (the passthrough rule Extra
+	// implements below) and renders the document identically, because the
+	// key governs only what a save WRITES. A file declares the lowest
+	// version its own content requires, and this content requires nothing.
+	EmbedFonts bool
+
 	// NextID is the next element-id counter value, decimal (AC32).
 	NextID int64
 

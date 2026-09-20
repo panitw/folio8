@@ -439,6 +439,12 @@ export type CanvasProjection = Readonly<{
 	// panel shows what the engine holds, proposes what the author typed, and
 	// lets the engine refuse it in the engine's own sentence.
 	locale: LocaleTag; utcOffset: string
+	// The DOCUMENT's third declared setting (spec-font-sources-and-embedding
+	// CAP-2): whether a SAVE carries the faces the chains name. Like the two
+	// above it comes from Go and is neither defaulted nor derived here. It is
+	// inert in this story — the panel shows it and proposes a change, and
+	// nothing in the designer or the engine branches on the value.
+	embedFonts: boolean
 	marginTop: number; marginRight: number; marginBottom: number; marginLeft: number; gridIncrement: number; commandWidth: number; commandHeight: number
 	// contentWindowHeight is ONE page's worth of content column, and
 	// contentWindowCount is how many of those windows the column occupies —
@@ -787,13 +793,14 @@ const isTableColumns = (value: unknown): value is TableColumns => {
   return typeof table.tableId === 'string' && table.tableId.length > 0 && table.tableId.length <= MAX_ENGINE_ELEMENT_ID_LENGTH && typeof table.collection === 'string' && table.collection.length > 0 && table.collection.length <= MAX_ENGINE_BINDING_LENGTH && typeof table.alias === 'string' && table.alias.length > 0 && table.alias.length <= 64 && Array.isArray(table.columns) && table.columns.length <= 128 && table.columns.every((column) => isRecord(column) && hasExactKeys(column, ['id', 'header', 'width', 'proportion', 'align', 'headerAlign', 'headerAlignResolved', 'binding', 'rowField', 'rowFieldEditable', 'footer', 'footerOf', 'footerFormat']) && typeof column.id === 'string' && column.id.length > 0 && column.id.length <= MAX_ENGINE_ELEMENT_ID_LENGTH && typeof column.header === 'string' && Array.from(column.header).length <= MAX_TABLE_COLUMN_HEADER_CODE_POINTS && typeof column.width === 'number' && Number.isSafeInteger(column.width) && column.width > 0 && typeof column.proportion === 'string' && (table.sizing === 'points' ? column.proportion === '' : isProportionString(column.proportion)) && ['left', 'center', 'right'].includes(column.align as string) && ['', 'left', 'center', 'right'].includes(column.headerAlign as string) && ['left', 'center', 'right'].includes(column.headerAlignResolved as string) && typeof column.binding === 'string' && column.binding.length <= MAX_ENGINE_BINDING_LENGTH && typeof column.rowField === 'string' && column.rowField.length <= MAX_ENGINE_BINDING_LENGTH && typeof column.rowFieldEditable === 'boolean' && ['','sum','avg','count'].includes(column.footer as string) && typeof column.footerOf === 'string' && column.footerOf.length <= MAX_ENGINE_BINDING_LENGTH && typeof column.footerFormat === 'string' && column.footerFormat.length <= 256) && new Set(table.columns.map((item) => (item as Record<string, unknown>).id)).size === table.columns.length
 }
 const isCanvas = (value: unknown): value is CanvasProjection => {
-  if (!isRecord(value) || !hasOnly(value, ['width', 'height', 'orientation', 'preset', 'locale', 'utcOffset', 'marginTop', 'marginRight', 'marginBottom', 'marginLeft', 'gridIncrement', 'commandWidth', 'commandHeight', 'fontFamilies', 'fontChains', 'defaultFontSize', 'defaultLineSpacing', 'contentWindowHeight', 'contentWindowCount', 'contentWindowOrigins', 'contentWindowPages', 'pageBreaks', 'contentWindowCountIsExact', 'sectionBreak', 'sectionBreakAnchor', 'sectionBreaks', 'sectionBreakAnchors', 'bands', 'components']) || !['A4', 'Letter', 'custom'].includes(value.preset as string) || (value.orientation !== 'portrait' && value.orientation !== 'landscape')) return false
-  // THE TWO DOCUMENT-SETTINGS CLAUSES ARE LOAD-BEARING, and `hasOnly` above
+  if (!isRecord(value) || !hasOnly(value, ['width', 'height', 'orientation', 'preset', 'locale', 'utcOffset', 'embedFonts', 'marginTop', 'marginRight', 'marginBottom', 'marginLeft', 'gridIncrement', 'commandWidth', 'commandHeight', 'fontFamilies', 'fontChains', 'defaultFontSize', 'defaultLineSpacing', 'contentWindowHeight', 'contentWindowCount', 'contentWindowOrigins', 'contentWindowPages', 'pageBreaks', 'contentWindowCountIsExact', 'sectionBreak', 'sectionBreakAnchor', 'sectionBreaks', 'sectionBreakAnchors', 'bands', 'components']) || !['A4', 'Letter', 'custom'].includes(value.preset as string) || (value.orientation !== 'portrait' && value.orientation !== 'landscape')) return false
+  // THE THREE DOCUMENT-SETTINGS CLAUSES ARE LOAD-BEARING, and `hasOnly` above
   // cannot stand in for them: it is a SUBSET check, so a key Go simply failed
   // to send passes it and reaches the panel as `undefined` — a locale row with
-  // no value and an offset row that would send the string "undefined" back.
-  // Only a typed clause catches an ABSENT key, which is the failure this story
-  // could otherwise ship in silence.
+  // no value, an offset row that would send the string "undefined" back, and an
+  // embed box painted unchecked for a document that embeds. Only a typed clause
+  // catches an ABSENT key, which is the failure this story could otherwise ship
+  // in silence.
   //
   // `locale` is checked against LOCALE_TAGS, the browser's one spelling of
   // AD-12's closed set, exactly as `preset` and `orientation` are checked
@@ -805,6 +812,12 @@ const isCanvas = (value: unknown): value is CanvasProjection => {
   // could refuse a document Go admits.
   if (!LOCALE_TAGS.includes(value.locale as LocaleTag)) return false
   if (typeof value.utcOffset !== 'string' || value.utcOffset.length === 0 || value.utcOffset.length > MAX_CANVAS_PROPERTY_STRING) return false
+  // `embedFonts` is checked for TYPE and nothing else, because its type is its
+  // whole rule: a bare boolean with no closed set and no syntax. The clause is
+  // here rather than left to `hasOnly` for the same reason the two above it are
+  // — `hasOnly` is a subset check, so a key Go failed to send would reach the
+  // panel as `undefined` and paint an unchecked box for a document that embeds.
+  if (typeof value.embedFonts !== 'boolean') return false
   const integer = (key: string, positive = false) => typeof value[key] === 'number' && Number.isSafeInteger(value[key]) && (positive ? value[key] > 0 : value[key] >= 0)
   if (!['width', 'height', 'gridIncrement', 'commandWidth', 'commandHeight', 'defaultFontSize', 'defaultLineSpacing', 'contentWindowHeight', 'contentWindowCount'].every((key) => integer(key, true)) || !['marginTop', 'marginRight', 'marginBottom', 'marginLeft'].every((key) => integer(key))) return false
   // The declared font chain names, as Go sorted them: bounded in count and

@@ -7,10 +7,12 @@ import { ENGINE_PROTOCOL_VERSION, LOCALE_TAGS, MAX_CANVAS_BODY_TEXT_LINES, MAX_E
 // family and no style — its name is its identity.
 const face = (name: string, variants: Partial<Readonly<{ bold: string; italic: string; boldItalic: string }>> = {}) => ({ face: name, assetKey: '', family: '', style: '', bold: '', italic: '', boldItalic: '', ...variants })
 
-const canvas = { width: 1000, height: 2000, orientation: 'portrait', preset: 'custom', locale: 'th', utcOffset: '+07:00', marginTop: 0, marginRight: 0, marginBottom: 0, marginLeft: 0, gridIncrement: 100, commandWidth: 1000, commandHeight: 2000, fontFamilies: ['body'], fontChains: [{ name: 'body', entries: [face('Noto Sans')] }], defaultFontSize: 12000, defaultLineSpacing: 1000, contentWindowHeight: 1800, contentWindowCount: 1, contentWindowOrigins: [0], contentWindowPages: [0], contentWindowCountIsExact: true, bands: [{ name: 'pageHeader', x: 0, y: 0, width: 1000, height: 100 }, { name: 'content', x: 0, y: 100, width: 1000, height: 1800 }, { name: 'pageFooter', x: 0, y: 1900, width: 1000, height: 100 }], components: [] }
+const canvas = { width: 1000, height: 2000, orientation: 'portrait', preset: 'custom', locale: 'th', utcOffset: '+07:00', embedFonts: true, marginTop: 0, marginRight: 0, marginBottom: 0, marginLeft: 0, gridIncrement: 100, commandWidth: 1000, commandHeight: 2000, fontFamilies: ['body'], fontChains: [{ name: 'body', entries: [face('Noto Sans')] }], defaultFontSize: 12000, defaultLineSpacing: 1000, contentWindowHeight: 1800, contentWindowCount: 1, contentWindowOrigins: [0], contentWindowPages: [0], contentWindowCountIsExact: true, bands: [{ name: 'pageHeader', x: 0, y: 0, width: 1000, height: 100 }, { name: 'content', x: 0, y: 100, width: 1000, height: 1800 }, { name: 'pageFooter', x: 0, y: 1900, width: 1000, height: 100 }], components: [] }
 
 describe('canvas projection protocol guard', () => {
-  // STORY 12.2: THE DOCUMENT'S TWO DECLARED FORMATTING AUTHORITIES.
+  // STORY 12.2: THE DOCUMENT'S TWO DECLARED FORMATTING AUTHORITIES. The third
+  // document setting, `embedFonts`, has its own `it` block directly below, on
+  // the same terms and for the same reason.
   //
   // The projection gained `locale` and `utcOffset` so the PAGE SETUP panel can
   // show what the engine holds. `hasOnly` cannot carry them: it is a SUBSET
@@ -53,9 +55,35 @@ describe('canvas projection protocol guard', () => {
     // cannot judge is ACCEPTED on shape alone.
     expect(projection({ ...canvas, utcOffset: '+99:99' })).toBeDefined()
     expect(projection({ ...canvas, utcOffset: 'Z' })).toBeDefined()
-    // The extra-key direction, on the two new keys' own account: a THIRD
+    // The extra-key direction, on the document settings' own account: a FOURTH
     // document-settings key Go started sending drops the snapshot.
     expect(projection({ ...canvas, timeZone: 'Asia/Bangkok' })).toBeUndefined()
+  })
+
+  // spec-font-sources-and-embedding CAP-2: the THIRD document setting, and it
+  // needs its own clause for exactly the reason the two above do. `hasOnly` is
+  // a subset check, so an `embedFonts` Go failed to send would reach the panel
+  // as `undefined` — a checkbox painted UNCHECKED for a document that embeds,
+  // which is the wrong answer stated confidently. Its type is its whole rule:
+  // a bare boolean, no closed set and no syntax, so `true` and `false` are both
+  // accepted and everything else is not.
+  it('requires embedFonts, and requires it to be a boolean', () => {
+    const projection = (patch: object) => parseInbound({ protocolVersion: ENGINE_PROTOCOL_VERSION, kind: 'response', requestId: 'canvas-1', ok: true, snapshot: { documentState: 'loaded', revision: 1, byteLength: 1, canvas: patch } })
+    expect(projection(canvas)).toBeDefined()
+    // BOTH VALUES ARE LEGAL CONTENT. `false` is the authored state this
+    // setting exists for, so a guard that admitted only `true` would blank the
+    // canvas for precisely the documents the feature is for.
+    expect(projection({ ...canvas, embedFonts: true })).toBeDefined()
+    expect(projection({ ...canvas, embedFonts: false })).toBeDefined()
+    // ABSENT — the case hasOnly cannot catch.
+    const { embedFonts: _embed, ...noEmbed } = canvas
+    expect(projection(noEmbed)).toBeUndefined()
+    // AND NOT COERCED FROM ANYTHING THAT MERELY READS AS ONE.
+    expect(projection({ ...canvas, embedFonts: 'true' })).toBeUndefined()
+    expect(projection({ ...canvas, embedFonts: 'false' })).toBeUndefined()
+    expect(projection({ ...canvas, embedFonts: 0 })).toBeUndefined()
+    expect(projection({ ...canvas, embedFonts: 1 })).toBeUndefined()
+    expect(projection({ ...canvas, embedFonts: null })).toBeUndefined()
   })
 
   // spec-section-break CAP-6: an OPTIONAL offset and per-content-component
