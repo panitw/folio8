@@ -43,6 +43,39 @@
     The comment at :269-272 explains what the current fold was for; replace the mechanism, and
     replace that comment with one that says what the new model is.
 
+- id: "6"
+  title: Apply several commands as one undoable unit
+  description: >-
+    Teach the engine to accept a group of commands that apply together and undo together, so a
+    single author action that needs more than one command is a single entry in undo history.
+    Prerequisite for story 2, where pressing B must embed a face and set a property as one step.
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    OWNER DECISION, taken knowing the cost: a general mechanism, not a purpose-built fused
+    command. The alternative offered was one command meaning "embed this face AND turn bold on",
+    as a scoped exception to D-16.5; the owner chose the reusable mechanism instead.
+
+    THE CONSTRAINT THAT MAKES THIS A STORY OF ITS OWN: `Apply` decodes exactly one command
+    object, and there is no compound, batch or transaction command anywhere in the repository.
+    This is the command protocol itself, so it is engine work with a wire contract, not a
+    designer change.
+
+    D-16.5 ruled deliberately that a pick's embed and its property commit are two commands with
+    two undo entries, never fused. This story does not reverse that ruling — it keeps embedding
+    and property-setting as separate commands, and changes only how many undo entries a GROUP of
+    them produces. Say so plainly wherever the ruling is cited, so the next reader does not read
+    this as a reversal.
+
+    Scope fence: this story delivers the mechanism and proves it with tests. It does NOT change
+    what the designer sends today. No existing author action becomes fused as part of this story
+    — story 2 is the first consumer, and it comes next.
+
+    Design questions that are genuinely open and should be raised rather than guessed: whether a
+    group is all-or-nothing on failure and what happens to state already applied when a later
+    command in the group refuses; whether groups may nest; whether a group has a bound on its
+    length the way `maxCanvasFontChainEntries` bounds a chain; and how a group appears in the
+    projected canvas revision, which the designer reads to decide `canUndo`/`canRedo`.
+
 - id: "2"
   title: Embed a cut on first use
   description: >-
@@ -54,6 +87,26 @@
   invoke_dev_with: >-
     This is the wire-contract story. Everything after it builds on the command shape settled
     here.
+
+    DEPENDS ON STORY 6, which runs first: pressing B is ONE undo entry (owner decision), and the
+    general transaction mechanism story 6 delivers is how that is achieved. Embedding and
+    property-setting stay two separate commands — they simply travel inside one undoable unit.
+    Re-ask the command-shape question once story 6 has landed: with transactions available,
+    minting `embedFontCut` beside `embedFontFamily` may be the plain answer rather than a
+    trade-off against a 13-field mode switch.
+
+    THE WARNING HAS THREE STATES, NOT TWO (owner decision). Story 1 shipped a family census that
+    classifies a missing cut as: upstream publishes none, upstream publishes it but the fetch
+    failed permanently, or the fetch failed transiently. "No bold face in this family" is for the
+    first only. A cut that exists upstream but could not be fetched gets its own sentence naming
+    that, and a transient failure is retryable — `font-source.ts`'s "Try the pick again if you
+    like" must stay true. Read the census API story 1 added to `font-store.ts` rather than
+    inventing a second source for this.
+
+    A MISMATCHED VINTAGE IS EMBEDDED ANYWAY (owner decision). If the store holds a Bold from a
+    newer upstream vintage than the Regular already in the document, embed it. The freeze rule
+    still holds because the embedded Regular is never touched. Note the premise: a mismatch is
+    not reliably detectable today, since `fetchedAt` is day-granular.
 
     Chain entry cuts are single STRINGS, never arrays — `FontChainEntry` at
     folio-go/internal/template/model.go:197-221, `""` meaning absent and deliberately not
