@@ -1,0 +1,220 @@
+- id: "1"
+  title: Fetch and store a family's whole face set
+  description: >-
+    Installing a family puts every cut it publishes into the designer's local face store, and
+    the designer models an installed family as a set of faces rather than one face, so a
+    family with four faces held is offered once and each cut resolves to its own face
+    (CAP-1 store half, CAP-5).
+  spec_checkpoint: false
+  invoke_dev_with: >-
+    Nothing about the DOCUMENT changes in this story. No embedding, no chain entry, no engine
+    command. This story ends with four faces in the store and one face in the document, and
+    the panel still warns exactly as it does today. Story 2 is where the document catches up.
+
+    The upstream data is already in hand. `FamilyMetadata.faces`
+    (folio-designer/src/font-source.ts:116-121, parsed at :138-187) already carries every
+    static face the family publishes with its weight and style. `regularFilename` at :196-198
+    is the ONLY thing throwing the other three away. Identify bold by weight 700 and slope by
+    style `italic`, matching how the four shipped families are cut in shipped-face-cuts.ts.
+
+    Keep the refusal at font-source.ts:449-453 — a family with no upright weight-400 face is
+    still refused outright. The Regular stays the base; the other cuts are additions to it,
+    never substitutes.
+
+    Per-face checks stay PER FACE: the variable-font refusal at font-source.ts:513-515 and the
+    .ttf/.otf media-type check at :206-211. One bad cut is refused on its own without
+    poisoning the family — a family whose italic fails to fetch still installs its regular and
+    bold.
+
+    `fetchWebFamily` currently returns one `FetchedFace` with `style` hardcoded `'Regular'`
+    (font-source.ts:532) and `source` computed per file at :240. Both need to become per-face.
+
+    folio-designer/src/font-store.ts already tolerates N faces of one family — records are
+    keyed by the SHA-256 of the face bytes (:122-138), there is no family index and no
+    per-family uniqueness — and it ALREADY requires a non-empty `style` on every record
+    (:234). Nothing downstream reads that field for cut selection yet. This story is where it
+    starts mattering, so make sure what is written there is the real cut name.
+
+    The collapse to be removed is `mostRecentlyFetched` (font-index.ts:257-260) feeding
+    `storedByFamily` (:273-278). Do NOT fix it by improving the tie-break. `fetchedAt` is
+    DAY-GRANULAR, so four faces installed on the same day tie and it falls through to lowest
+    key — an arbitrary cut, not the Regular. The model itself is wrong: `FamilySource` is
+    single-face by type (font-index.ts:81) and needs a shape that holds a family's face set.
+    The comment at :269-272 explains what the current fold was for; replace the mechanism, and
+    replace that comment with one that says what the new model is.
+
+- id: "2"
+  title: Embed a cut on first use
+  description: >-
+    Using bold or italic for the first time embeds that face in the document and declares it
+    on the chain entry, with its own licence record; and the cut-absence warning consults the
+    local store as well as the chain, so a cut held but not yet embedded never reads as
+    missing (CAP-1 document half, CAP-2).
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    This is the wire-contract story. Everything after it builds on the command shape settled
+    here.
+
+    Chain entry cuts are single STRINGS, never arrays — `FontChainEntry` at
+    folio-go/internal/template/model.go:197-221, `""` meaning absent and deliberately not
+    `Presence[string]` (see :206-220). The closed variant set is one table, `fontChainVariants`
+    at :245-254, and `Variant`, `SerialisesAsObject` and `EmbeddedAssetKeys` (:304, :283, :321)
+    all derive from it. Four faces of one family is ONE entry naming up to four asset keys.
+
+    `embedFontFamily` today carries exactly one data blob and twelve fields, checked by
+    `componentFields(raw, 12)` at folio-go/component_commands.go:4281. The comment at
+    :4412-4414 states that the picked entry declares no cut and that a pick embeds one face.
+    That comment is the thing this story changes — rewrite it, do not leave it standing over
+    code that no longer does what it says. The same applies to
+    folio-designer/src/App.tsx:2535-2538.
+
+    A variant asset key clears the SAME licence bar as the entry's own asset —
+    docs/folio-format.md:960-961 says so explicitly, and `embeddedFontRecord`
+    (component_commands.go:4429) requires all six of family, style, licence, licenceText,
+    copyright and source non-blank. A sibling that skipped it would let a document carry an
+    unlicensed embedded bold.
+
+    Load-error rules that already exist and must keep holding: a cross-namespace sibling, and
+    a sibling naming its own entry's base, are located load errors
+    (docs/folio-format.md:262-274). Bounds: `maxCanvasFontChainEntries` = 64 per chain
+    (component_commands.go:3886) and the 512-char `maxCanvasPropertyString` applies to every
+    projected cut name (page_setup.go:227-231).
+
+    `shippedFamilyEntry` (folio-designer/src/shipped-face-cuts.ts:119-142) is the working
+    model for building an entry with cuts: set only cuts that exist, as an ABSENT key rather
+    than an `undefined`-valued one, because Go refuses `""`. `FontChainEntryAsk` and
+    `chainEntry` are at font-chain-command.ts:63 and :74-82.
+
+    THE WARNING NOW HAS TWO SOURCES. `chainDeclaresCut` (App.tsx:5214) reads the
+    document's chain alone and returns true for an unknown family or a missing chain. After
+    this story a cut held in the local store but not yet embedded is AVAILABLE, and saying
+    "No bold face in this family" about it would be false. The sentence must mean "this family
+    has no such face", never "this document has not embedded it yet".
+
+    FREEZE RULE: a face already embedded in the document is never replaced, even when the
+    store holds a newer upstream vintage. An asset key IS the SHA-256 of the face bytes, so a
+    swapped vintage is a changed document and a no-op open/save round trip would stop being
+    byte-identical. Take a later cut at the embedded Regular's vintage where that is
+    available. Where it is not, stop and ask — SPEC.md carries this as an open question.
+
+- id: "3"
+  title: Commit the committed tier's cuts and raise the asset budget
+  description: >-
+    The 31 committed families gain their bold, italic and bold-italic cuts, taken from the same
+    upstream project archives their Regulars came from rather than fetched by the designer, and
+    the offline release asset budget rises to fit them (CAP-3).
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    These cuts cannot be fetched by the designer. 30 of the 31 committed families are unreachable
+    from the web tier — 28 carry variable axes ON THE google/fonts MIRROR and `addableFromTheWeb`
+    filters variable families out (folio-designer/src/font-index.ts:149), and Inter Display and
+    Source Serif 4 Display are absent from the index entirely. The committed tier exists because a
+    family variable-only on that mirror often publishes ordinary statics from its OWN project, and
+    those are what this repository commits.
+
+    CORRECTED: tools/fontgen/instance_faces.py is NOT that pipeline and must not be extended
+    into one without an owner ruling. It drives a hardcoded seven-entry UPSTREAM list of ENGINE
+    faces, all Noto, writing to folio-go/fonts/. Every one of the 31 catalogue Regulars is an
+    upstream file copied byte for byte: each NOTICE.md records "copied unmodified, no derivation",
+    and the arimo one states "This repository cannot derive a face at all". The cuts follow the
+    same route — the Bold, Italic and BoldItalic statics sit beside the Regular in the very
+    archives each NOTICE already pins by URL and sha256.
+
+    MEASURED at planning: the 31 families publish 112 cuts (25 families x 4, 6 x 2 — Fira Code,
+    Noto Sans Thai Looped, Noto Serif Thai, Oswald, Roboto Slab and Space Grotesk have no upstream
+    italic). That is 81 new faces, or 78 if Roboto's three reuse the existing core assets; the
+    release goes from 80 assets to 161 or 158, and the repo grows about 21.8 MiB. Treat these as
+    the best offline figures, not confirmed ones: per-family availability was read from the
+    2026-09-03 Google Fonts snapshot while the catalogue is acquired from upstream PROJECT
+    archives, and the two can disagree for Cascadia, Geist, Intel One Mono, Inter, Source* and
+    Ubuntu. Inter Display and Source Serif 4 Display are absent from the snapshot entirely and were
+    assumed to publish four cuts.
+
+    A LIVE BYTE CEILING the earlier note missed: `maximumCoreCacheBytes` = 6553600 with only about
+    155 KB of Brotli headroom, and src/generated/font-catalogue.ts inlines roughly 4 KB of licence
+    text PER FACE into the core bundle. 81 more faces is about 324 KB of raw bundle text. If it
+    breaches, the remedy is deduplicating licence texts by SPDX id — build-wasm.mjs:341-342 already
+    notes 31 faces emit 31 texts over three identifiers — not moving the ceiling.
+
+    Two places hardcode Regular and both must change together:
+    folio-designer/scripts/build-wasm.mjs:460 stamps `style: "Regular"` when emitting the
+    catalogue TS, and folio-designer/font-catalogue.json rows carry no `style` field at all.
+
+    An asserted invariant is being RETIRED: folio-designer/src/font-catalogue.test.ts:461
+    asserts every catalogue face is a single upright static Regular with no bold, italic,
+    oblique or variable axis. Replace it with an assertion that each face's `subfamily` matches
+    its declared style — do not simply delete it. The reasoning at build-wasm.mjs:108-112, for
+    why the seven shipped cuts are deliberately not catalogue entries, also stops being true
+    here; rewrite that comment.
+
+    THE BUDGET. `maximumCacheAssets` and `warnCacheAssets` in
+    folio-designer/src/release-payload.ts are read out of the SOURCE TEXT by a line-anchored
+    reader in another language (scripts/offline-release-contract.mjs) that requires exactly one
+    live `const <name> = <digits>` match. Derive, never re-type, and keep each on its own line
+    in that exact shape. `npm run build` runs verify:offline but never runs Vitest, so a
+    re-typed constant plus a tie test would leave a drifted build green. Measure the real count
+    — not every family yields four cuts — and write the rationale beside the const the way the
+    existing raises did.
+
+    THE CORE TIER PIN DOES NOT MOVE. It is 30 on both ends (release-payload.ts:150-151) and
+    catalogue faces are classified `deferred` (offline-release-contract.mjs:126), so these cuts
+    must cost nothing at startup. `CORE_CATALOGUE_FACE_IDS` names `catalogue-roboto` and each
+    id is INTERPOLATED INTO A REGULAR EXPRESSION (offline-release-contract.mjs:113) — adding
+    Roboto's cuts must not widen the core rule to match them. Roboto Bold, Roboto Italic and
+    Roboto Bold Italic already exist as shipped core files; do not create a second copy of
+    them under a catalogue id.
+
+- id: "4"
+  title: Complete an opened document's families
+  description: >-
+    Opening a document or template whose families are missing cuts asks the author whether to
+    fetch them, and on acceptance fills the local store in the background with progress in the
+    status bar, without touching the document at all (CAP-4).
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    THE DOCUMENT IS NOT TOUCHED. Not edited, not marked changed, not saved, and nothing enters
+    undo. Completion writes to the designer's local face store only. An author who declines,
+    or who is offline, has a document byte-for-byte as it was. If this story finds itself
+    reaching for a document command, that is the signal to stop and ask, not to widen.
+
+    The author is ASKED at open — completion does not run silently. Fetching is EAGER once
+    accepted: a document's cuts are fetched as it opens rather than lazily on the first bold.
+    A decline is not remembered across opens; the prompt reappears next time. That is recorded
+    as an assumption in SPEC.md rather than a settled decision, so if it reads badly in
+    practice, raise it.
+
+    The open must not wait on any of this. A document naming three catalogue families fetches
+    more than it does today, and the status bar is what makes that visible rather than leaving
+    the author looking at a document that seems stalled.
+
+    There is already a path that fetches a document's faces as it opens — build on it rather
+    than adding a second mechanism beside it.
+
+    Offline, the document opens identically and the status bar says the cuts could not be
+    fetched. Never a failed open, never a broken chain entry, never a document that will not
+    render.
+
+- id: "5"
+  title: Show a family's cuts before the pick
+  description: >-
+    The Add font dialog shows which cuts each family has alongside it, so a Regular-only
+    family is recognisable when the author chooses it rather than when they press B (CAP-6).
+  spec_checkpoint: true
+  invoke_dev_with: >-
+    There is a shortcut here worth taking. folio-designer/font-index.json ALREADY carries a
+    per-family `styles` array — rows look like `"styles": ["400", "400i"]` — but
+    scripts/build-font-index.mjs:124 discards it when emitting the TS, which is why
+    generated/font-index.ts:8 has only family, category, scripts, variable and popularity.
+    Carrying `styles` through gives the pre-pick display for web families with no METADATA.pb
+    fetch at all. The snapshot is dated and ages between releases; that is already true of the
+    family list itself and is not a new exposure.
+
+    For committed families the source is the catalogue, which carries a real per-face style
+    after story 3.
+
+    What is shown must MATCH what installing actually yields. A family whose italic fetch would
+    be refused as a variable font must not advertise an italic. If the two can disagree, the
+    display is worse than nothing — it makes a promise the install breaks.
+
+    folio-designer/src/font-browser-model.ts holds the browser's strings, filters and sorting.
+    Keep new strings there with the others rather than inline in the component.
