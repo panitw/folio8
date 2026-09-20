@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { familyDirectorySlug, fetchTimeoutMs, fetchWebFamily, fontHostDeclarations, parseFamilyMetadata, probeDirectories, regularFilename, timedFetcher } from './font-source'
+import { cutsBesideTheRegular, familyDirectorySlug, fetchTimeoutMs, fetchWebFamily, fontHostDeclarations, parseFamilyMetadata, probeDirectories, publishedCuts, timedFetcher } from './font-source'
 import { admittedByTheTokenTable } from './font-licence'
 import { sfntWithNames } from './test/sfnt-fixture'
 import { assertProvenanceShape } from './test/provenance-shape'
@@ -60,6 +60,9 @@ source {
 `
 
 const face = sfntWithNames([{ platform: 3, nameID: 0, value: 'Copyright 2020 The Kanit Project Authors' }])
+// A DIFFERENT BYTE SEQUENCE FOR THE ITALIC, so a cut resolving to the wrong
+// face is visible rather than hidden behind two identical fixtures.
+const italicFace = sfntWithNames([{ platform: 3, nameID: 0, value: 'Copyright 2020 The Kanit Project Authors (italic)' }])
 
 type StubFile = Readonly<{ status?: number; body?: string | ArrayBuffer }>
 
@@ -81,10 +84,16 @@ function stub(files: Readonly<Record<string, StubFile>>) {
   return { fetcher, asked }
 }
 
+// THE FIXTURE SERVES EVERY CUT ITS OWN METADATA PUBLISHES, which since
+// spec-install-all-face-cuts story 1 is two: the upright 400 and the italic
+// 400. A fixture that published an italic and refused to serve it would make
+// every success-path request count a measurement of a 404 rather than of the
+// chain.
 const kanitUpstream = (overrides: Readonly<Record<string, StubFile>> = {}) => ({
   [`${base}/ofl/kanit/METADATA.pb`]: { body: kanitMetadata },
   [`${base}/ofl/kanit/OFL.txt`]: { body: 'Copyright 2020 The Kanit Project Authors\n\nThis Font Software is licensed under the SIL Open Font License, Version 1.1.\n' },
   [`${base}/ofl/kanit/Kanit-Regular.ttf`]: { body: face },
+  [`${base}/ofl/kanit/Kanit-Italic.ttf`]: { body: italicFace },
   ...overrides,
 })
 
@@ -128,18 +137,66 @@ describe('reading METADATA.pb', () => {
     expect(metadata?.faces).toHaveLength(3)
   })
 
-  it('reads the Regular filename from the style:"normal" weight:400 entry rather than constructing one', () => {
+  it('reads each cut\'s filename from its own style/weight entry rather than constructing one', () => {
     const metadata = parseFamilyMetadata(kanitMetadata)
-    expect(regularFilename(metadata!)).toBe('Kanit-Regular.ttf')
-    // AND IT IS NOT THE FIRST ENTRY, NOR THE ONE THE FAMILY NAME WOULD SUGGEST
-    // IF THE FILES WERE NAMED DIFFERENTLY: the Thin comes first in the file and
-    // the italic 400 sits between them.
+    // THE CUT SET, IN RIBBI ORDER AND READ OFF THE FILE. Kanit's fixture
+    // publishes an upright 400 and an italic 400 and no 700 of either, so the
+    // set is two entries — absence is a first-class answer and nothing is
+    // invented for the two it does not publish.
+    expect(publishedCuts(metadata!)).toEqual([
+      { cut: 'Regular', filename: 'Kanit-Regular.ttf' },
+      { cut: 'Italic', filename: 'Kanit-Italic.ttf' },
+    ])
+    // AND THE REGULAR IS NOT THE FIRST ENTRY, NOR THE ONE THE FAMILY NAME WOULD
+    // SUGGEST IF THE FILES WERE NAMED DIFFERENTLY: the Thin comes first in the
+    // file and the italic 400 sits between them.
     expect(metadata!.faces[0].filename).toBe('Kanit-Thin.ttf')
+    // NO WEIGHT OUTSIDE THE FOUR CUTS, EITHER. The Thin at weight 100 is a real
+    // face upstream and there is nowhere in this format to put it, so it is
+    // read and dropped rather than mapped onto a cut it is not.
+    expect(publishedCuts(metadata!).some((cut) => cut.filename === 'Kanit-Thin.ttf')).toBe(false)
+  })
+
+  it('reads all four cuts when upstream publishes all four, and no fifth', () => {
+    const full = parseFamilyMetadata(`name: "Full"
+license: "OFL"
+fonts {
+  style: "normal"
+  weight: 400
+  filename: "Full-Regular.ttf"
+}
+fonts {
+  style: "normal"
+  weight: 700
+  filename: "Full-Bold.ttf"
+}
+fonts {
+  style: "italic"
+  weight: 400
+  filename: "Full-Italic.ttf"
+}
+fonts {
+  style: "italic"
+  weight: 700
+  filename: "Full-BoldItalic.ttf"
+}
+fonts {
+  style: "normal"
+  weight: 500
+  filename: "Full-Medium.ttf"
+}
+`)
+    expect(publishedCuts(full!)).toEqual([
+      { cut: 'Regular', filename: 'Full-Regular.ttf' },
+      { cut: 'Bold', filename: 'Full-Bold.ttf' },
+      { cut: 'Italic', filename: 'Full-Italic.ttf' },
+      { cut: 'Bold Italic', filename: 'Full-BoldItalic.ttf' },
+    ])
   })
 
   it('has no Regular to offer when upstream declares no upright 400', () => {
     const variableOnly = parseFamilyMetadata('name: "Anuphan"\nlicense: "OFL"\nfonts {\n  style: "normal"\n  weight: 400\n  filename: ""\n}\n')
-    expect(regularFilename(variableOnly!)).toBeUndefined()
+    expect(publishedCuts(variableOnly!).some((cut) => cut.cut === 'Regular')).toBe(false)
   })
 
   it('returns nothing at all for a file that declares neither a name nor a licence', () => {
@@ -177,22 +234,200 @@ describe('fetching a family from the web tier', () => {
     const outcome = await fetchWebFamily('Kanit', fetcher)
     expect(outcome.ok).toBe(true)
     if (!outcome.ok) return
-    expect(outcome.face.family).toBe('Kanit')
-    expect(outcome.face.style).toBe('Regular')
+    // THE WHOLE CUT SET, IN RIBBI ORDER. The fixture publishes an upright 400
+    // and an italic 400, so both arrive and each carries its OWN record.
+    expect(outcome.published).toEqual(['Regular', 'Italic'])
+    expect(outcome.refused).toEqual([])
+    expect(outcome.faces.map((cut) => cut.style)).toEqual(['Regular', 'Italic'])
+    const regular = outcome.faces[0]!
+    expect(regular.family).toBe('Kanit')
+    expect(regular.style).toBe('Regular')
     // THE SPDX ID, NEVER THE UPSTREAM TOKEN. This value is literally Go's input
     // at component_commands.go's RefuseContradictedLicence call.
-    expect(outcome.face.licence).toBe('OFL-1.1')
+    expect(regular.licence).toBe('OFL-1.1')
     // THE UPSTREAM FILE, NEVER A HAND-COPY — a hand-copy would be a second
     // authority on the terms.
-    expect(outcome.face.licenceText).toContain('SIL Open Font License')
+    expect(regular.licenceText).toContain('SIL Open Font License')
     // nameID 0 FROM THE FACE'S OWN BYTES, never from METADATA.pb.
-    expect(outcome.face.copyright).toBe('Copyright 2020 The Kanit Project Authors')
-    expect(outcome.face.mediaType).toBe('font/ttf')
-    expect(outcome.face.source).toContain('ofl/kanit/Kanit-Regular.ttf')
-    expect(outcome.face.layoutDivergence).toBeUndefined()
-    // PROBING IS ONCE PER PICK: one metadata read, one licence file, one face.
-    expect(asked).toHaveLength(3)
+    expect(regular.copyright).toBe('Copyright 2020 The Kanit Project Authors')
+    expect(regular.mediaType).toBe('font/ttf')
+    expect(regular.source).toContain('ofl/kanit/Kanit-Regular.ttf')
+    expect(regular.layoutDivergence).toBeUndefined()
+    // AND THE ITALIC IS DESCRIBED FROM ITS OWN BYTES AND ITS OWN PATH, never
+    // copied off the Regular: a cut set whose records all named one file would
+    // put four rows in the store pointing at one face.
+    const italic = outcome.faces[1]!
+    expect(italic.style).toBe('Italic')
+    expect(italic.source).toContain('ofl/kanit/Kanit-Italic.ttf')
+    expect(italic.copyright).toBe('Copyright 2020 The Kanit Project Authors (italic)')
+    // The licence record travels with EVERY cut, because the store refuses a
+    // face without it and each cut is its own record.
+    expect(italic.licence).toBe('OFL-1.1')
+    expect(italic.licenceText).toContain('SIL Open Font License')
+    expect(italic.mediaType).toBe('font/ttf')
+    // PROBING IS ONCE PER PICK: one metadata read, one licence file, then one
+    // request per cut the family publishes.
+    expect(asked).toHaveLength(4)
     expect(asked[0]).toContain('/ofl/kanit/METADATA.pb')
+    expect(asked.filter((url) => url.endsWith('METADATA.pb'))).toHaveLength(1)
+    expect(asked.filter((url) => url.endsWith('OFL.txt'))).toHaveLength(1)
+  })
+
+  // D-3 — A RE-PICK OF A FAMILY THIS MACHINE HOLDS A SHORT SET FOR FETCHES ONLY
+  // WHAT IT LACKS.
+  //
+  // The Regular is the expensive one (median 107 KB, p99 1.7 MB) and it is
+  // already here; refetching it to get the italic would make a repair cost more
+  // than the original install. A cut named in `held` is absent from `faces` AND
+  // from `refused`, because it was never attempted — which is the third state
+  // the census has to be able to express.
+  it('fetches only the cuts this machine lacks, and never refetches one it holds', async () => {
+    const { fetcher, asked } = stub(kanitUpstream())
+    const outcome = await fetchWebFamily('Kanit', fetcher, '2026-09-20', ['Regular'])
+    expect(outcome.ok).toBe(true)
+    if (!outcome.ok) return
+    expect(outcome.faces.map((cut) => cut.style), 'only the missing cut is fetched').toEqual(['Italic'])
+    expect(outcome.published, 'what upstream publishes does not change because this machine holds some of it').toEqual(['Regular', 'Italic'])
+    expect(outcome.refused, 'a cut that was never attempted is not a refused one').toEqual([])
+    expect(asked.some((url) => url.endsWith('Kanit-Regular.ttf')), 'the held Regular must not be refetched').toBe(false)
+    // The metadata and the licence file are still read: the metadata is what
+    // says which cuts are missing, and the licence text travels with every new
+    // record.
+    expect(asked).toHaveLength(3)
+  })
+
+  // AND A FAMILY THIS MACHINE ALREADY HOLDS IN FULL FETCHES NO BYTES AND NO
+  // TERMS — the migration path, and the common case rather than a corner. 947
+  // of the 1,274 offered families publish a Regular and nothing else, so every
+  // one of them installed before this story is exactly this shape: everything
+  // it publishes is held, and the only thing missing is the census.
+  it('reads the metadata and stops when this machine already holds every cut', async () => {
+    const { fetcher, asked } = stub(kanitUpstream())
+    const outcome = await fetchWebFamily('Kanit', fetcher, '2026-09-20', ['Regular', 'Italic'])
+    expect(outcome.ok).toBe(true)
+    if (!outcome.ok) return
+    expect(outcome.faces).toEqual([])
+    expect(outcome.refused).toEqual([])
+    // WHAT UPSTREAM PUBLISHES IS STILL ANSWERED, because that is the whole
+    // reason the call was made.
+    expect(outcome.published).toEqual(['Regular', 'Italic'])
+    // ONE REQUEST: the metadata. The licence text travels with a NEW RECORD and
+    // no record will be written, so reading it would buy nothing.
+    expect(asked).toHaveLength(1)
+    expect(asked[0]).toContain('/ofl/kanit/METADATA.pb')
+  })
+
+  // `cutsBesideTheRegular` IS THE BROWSE PATH'S BOUND, AND IT IS A REAL ONE.
+  // The font browser sets a specimen in the family's REGULAR, and the re-embed
+  // refetch replaces one dropped record in a document that carries the Regular
+  // alone. Both pass this, and both would otherwise cost up to four body reads
+  // per family on a page of twelve rows.
+  it('fetches the Regular alone when the caller asks to skip every other cut', async () => {
+    const { fetcher, asked } = stub(kanitUpstream())
+    const outcome = await fetchWebFamily('Kanit', fetcher, '2026-09-20', cutsBesideTheRegular)
+    expect(outcome.ok).toBe(true)
+    if (!outcome.ok) return
+    expect(outcome.faces.map((cut) => cut.style)).toEqual(['Regular'])
+    expect(asked.some((url) => url.endsWith('Kanit-Italic.ttf')), 'a specimen needs no italic').toBe(false)
+    expect(asked).toHaveLength(3)
+    // AND A SKIPPED CUT IS NOT A REFUSED ONE: nothing was attempted, so nothing
+    // is recorded against it.
+    expect(outcome.refused).toEqual([])
+    expect(outcome.published, 'what upstream publishes is still answered in full').toEqual(['Regular', 'Italic'])
+  })
+
+  // THE PER-CUT REFUSALS, WHICH ARE THE WHOLE POINT OF DOING THIS PER CUT. One
+  // bad cut is refused on its own evidence and the family installs around it.
+  //
+  // AND EACH REFUSAL SAYS WHETHER IT IS SETTLED (D-2, amended). `permanence` is
+  // derived HERE, from the failure itself — the status, the abort, the `fvar`
+  // table — because only this module sees any of those. The classification is
+  // asserted per row rather than in one lump, because the whole point of the
+  // amendment is that these cases are NOT alike.
+  const badCut: ReadonlyArray<readonly [string, Readonly<Record<string, StubFile>>, RegExp, 'permanent' | 'transient']> = [
+    ['a variable cut', { [`${base}/ofl/kanit/Kanit-Italic.ttf`]: { body: sfntWithNames([{ platform: 3, nameID: 0, value: 'c' }], { withFvar: true }) } }, /VARIABLE font/, 'permanent'],
+    // 404 IS UPSTREAM STATING WHAT IT PUBLISHES; 500 IS THE HOST HAVING A BAD
+    // MINUTE. Recording them alike is what stranded a Bold upstream really has.
+    ['a cut upstream does not serve at all', { [`${base}/ofl/kanit/Kanit-Italic.ttf`]: { status: 404 } }, /responded 404/, 'permanent'],
+    ['a cut that responds 500', { [`${base}/ofl/kanit/Kanit-Italic.ttf`]: { status: 500 } }, /responded 500/, 'transient'],
+    // A 403 FROM A PROXY IS A CAPTIVE PORTAL, NOT A WITHDRAWN FILE — the
+    // default rule, and the reason it points at `transient`.
+    ['a cut a proxy refuses', { [`${base}/ofl/kanit/Kanit-Italic.ttf`]: { status: 403 } }, /responded 403/, 'transient'],
+    // AND A BODY THAT WILL NOT PARSE, which is what a captive portal's 200 HTML
+    // login page looks like from here.
+    ['a cut whose body is not a font', { [`${base}/ofl/kanit/Kanit-Italic.ttf`]: { body: new TextEncoder().encode('<!doctype html><title>Sign in</title>').buffer as ArrayBuffer } }, /not a static TrueType sfnt/, 'transient'],
+  ]
+  it.each(badCut)('installs the family without %s, and records why and whether it is settled', async (_case, overrides, reason, permanence) => {
+    const { fetcher } = stub(kanitUpstream(overrides))
+    const outcome = await fetchWebFamily('Kanit', fetcher)
+    expect(outcome.ok, 'one bad cut may not poison the family').toBe(true)
+    if (!outcome.ok) return
+    expect(outcome.faces.map((cut) => cut.style)).toEqual(['Regular'])
+    expect(outcome.published, 'what upstream publishes is unchanged by this machine failing to get it').toEqual(['Regular', 'Italic'])
+    expect(outcome.refused.map((entry) => entry.style)).toEqual(['Italic'])
+    expect(outcome.refused[0]!.reason).toMatch(reason)
+    expect(outcome.refused[0]!.permanence, 'the classification is derived from the failure, not from the sentence').toBe(permanence)
+  })
+
+  // AN OFFLINE CONNECTION IS THE OTHER TRANSIENT SHAPE, and it reaches the same
+  // catch by a different door: the fetcher REJECTS rather than aborting.
+  it('records a cut lost to a dead connection as transient, not as something upstream lacks', async () => {
+    const inner = stub(kanitUpstream())
+    const fetcher = async (url: string) => {
+      if (url.endsWith('Kanit-Italic.ttf')) throw new TypeError('Failed to fetch')
+      return inner.fetcher(url)
+    }
+    const outcome = await fetchWebFamily('Kanit', fetcher)
+    expect(outcome.ok).toBe(true)
+    if (!outcome.ok) return
+    expect(outcome.faces.map((cut) => cut.style)).toEqual(['Regular'])
+    expect(outcome.refused[0]!.permanence, 'a dead connection says nothing about what upstream publishes').toBe('transient')
+  })
+
+  // AND THE MEDIA-TYPE ROUTE, WHICH IS SHUT PER CUT AS WELL AS ON THE BASE. A
+  // `.woff2` italic costs no request at all — the filename alone refuses it —
+  // so this also asserts that the refusal happens before the fetch.
+  it('installs the family without a cut published in a format the engine cannot read', async () => {
+    const woff2 = kanitMetadata.replace('filename: "Kanit-Italic.ttf"', 'filename: "Kanit-Italic.woff2"')
+    const { fetcher, asked } = stub(kanitUpstream({ [`${base}/ofl/kanit/METADATA.pb`]: { body: woff2 } }))
+    const outcome = await fetchWebFamily('Kanit', fetcher)
+    expect(outcome.ok).toBe(true)
+    if (!outcome.ok) return
+    expect(outcome.faces.map((cut) => cut.style)).toEqual(['Regular'])
+    expect(outcome.refused.map((entry) => entry.style)).toEqual(['Italic'])
+    expect(outcome.refused[0]!.reason).toMatch(/not a font file this engine reads/)
+    expect(outcome.refused[0]!.permanence, 'the filename upstream publishes will not become a .ttf by asking again').toBe('permanent')
+    expect(asked.some((url) => url.includes('woff2')), 'a filename this engine cannot read costs no round-trip').toBe(false)
+  })
+
+  // A STALLED CUT IS THE SAME SHAPE, AND IT DOES NOT TERMINATE THE CHAIN. The
+  // base chain's abort contract stops at the Regular; past it, a stall is one
+  // cut's own failure.
+  it('installs the family without a cut whose body stalls, and does not abort the family', async () => {
+    const asked: string[] = []
+    const inner = stub(kanitUpstream())
+    const fetcher = async (url: string) => {
+      asked.push(url)
+      if (url.endsWith('Kanit-Italic.ttf')) throw new DOMException('The operation was aborted due to timeout', 'TimeoutError')
+      return inner.fetcher(url)
+    }
+    const outcome = await fetchWebFamily('Kanit', fetcher)
+    expect(outcome.ok, 'a stalled non-base cut may not refuse the family').toBe(true)
+    if (!outcome.ok) return
+    expect(outcome.faces.map((cut) => cut.style)).toEqual(['Regular'])
+    expect(outcome.refused.map((entry) => entry.style)).toEqual(['Italic'])
+    expect(outcome.refused[0]!.reason).toMatch(/stopped responding/)
+    // ⚠ AND IT IS TRANSIENT, WHICH IS WHAT MAKES THE SENTENCE IT CARRIES TRUE.
+    // That reason ends "Try the pick again if you like"; recorded as settled,
+    // the family would read complete and never be offered again, so the pick
+    // the sentence invites could not be made. This is the assertion that reds
+    // against the first cut of this story.
+    expect(outcome.refused[0]!.reason).toMatch(/Try the pick again if you like/)
+    expect(outcome.refused[0]!.permanence).toBe('transient')
+    // THE CHAIN RAN TO THE END OF THE CUT SET RATHER THAN STOPPING, and the
+    // stalled request was not retried.
+    expect(asked).toHaveLength(4)
+    expect(new Set(asked).size).toBe(asked.length)
   })
 
   // THE PROVENANCE SHAPE, ON THE REAL WRITE PATH AND WITH NO DATE SUPPLIED
@@ -215,11 +450,15 @@ describe('fetching a family from the web tier', () => {
     const outcome = await fetchWebFamily('Kanit', fetcher)
     expect(outcome.ok, 'the fixture must resolve, or the assertions below run on nothing').toBe(true)
     if (!outcome.ok) return
-    assertProvenanceShape(expect, 'fetched tier', 'a face fetched with no `today` argument', outcome.face.source)
+    // EVERY CUT'S PROVENANCE, not only the Regular's: the store writes one
+    // record per cut and each carries its own `source`, so a second cut whose
+    // field was built any other way would be invisible to a one-face check.
+    for (const cut of outcome.faces) assertProvenanceShape(expect, 'fetched tier', `the ${cut.style} fetched with no \`today\` argument`, cut.source)
+    const regular = outcome.faces[0]!
     // AND IT IS TODAY'S DATE, not a stale constant: the default is evaluated at
     // the call, so the recorded date must be the one this machine is running on.
-    expect(outcome.face.source).toContain(`, fetched ${new Date().toISOString().slice(0, 10)}`)
-    expect(outcome.face.source).toContain('ofl/kanit/Kanit-Regular.ttf')
+    expect(regular.source).toContain(`, fetched ${new Date().toISOString().slice(0, 10)}`)
+    expect(regular.source).toContain('ofl/kanit/Kanit-Regular.ttf')
   })
 
   it('walks the probe order and stops at the directory that answers', async () => {
@@ -273,9 +512,9 @@ describe('fetching a family from the web tier', () => {
     const outcome = await fetchWebFamily('Moved Family', fetcher)
     expect(outcome.ok, 'a layout disagreement is an observation, not a refusal').toBe(true)
     if (!outcome.ok) return
-    expect(outcome.face.licence).toBe('Apache-2.0')
-    expect(outcome.face.layoutDivergence).toContain('ofl/')
-    expect(outcome.face.layoutDivergence).toContain('APACHE2')
+    expect(outcome.faces[0]!.licence).toBe('Apache-2.0')
+    expect(outcome.faces[0]!.layoutDivergence).toContain('ofl/')
+    expect(outcome.faces[0]!.layoutDivergence).toContain('APACHE2')
   })
 
   it('refuses a mapped-but-unacceptable licence by name, with its reason, before any byte is fetched', async () => {
@@ -676,11 +915,14 @@ describe('a fetch that stalls rather than rejecting', () => {
     await fetchWebFamily('Kanit', fetcher)
     expect(asked).toHaveLength(3)
     expect(asked.filter((url) => url.endsWith('Kanit-Regular.ttf'))).toHaveLength(1)
-    // And a successful chain is three requests too, so the number above is a
-    // property of the chain rather than of the failure.
+    // AND THE SUCCESSFUL CHAIN IS THE SAME THREE REQUESTS PLUS ONE PER
+    // ADDITIONAL CUT — four here, because the Kanit fixture publishes an
+    // italic-400 beside its Regular. The abort above still stops at THREE, so
+    // the numbers differ on purpose: the base chain terminates at the Regular
+    // and the extra cut is only ever reached past it.
     const clean = stub(kanitUpstream())
     const outcome = await fetchWebFamily('Kanit', clean.fetcher)
     expect(outcome.ok).toBe(true)
-    expect(clean.asked).toHaveLength(3)
+    expect(clean.asked).toHaveLength(4)
   })
 })

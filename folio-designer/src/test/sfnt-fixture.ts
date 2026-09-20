@@ -27,7 +27,15 @@ const latin1 = (value: string): number[] => [...value].map((character) => charac
 /** `true` for the Unicode/Windows platforms, which store UTF-16BE. */
 const isUnicodePlatform = (platform: number) => platform === 3 || platform === 0
 
-export function sfntWithNames(records: ReadonlyArray<NameRecord>, options: Readonly<{ sfntVersion?: number; omitNameTable?: boolean }> = {}): ArrayBuffer {
+/**
+ * `withFvar` ADDS THE TABLE BY TAG AND NOTHING ELSE, which is exactly what the
+ * predicate under test reads. `faceIsVariable` asks `'fvar' in
+ * requireStaticTrueTypeTables(...)` — the TAG's presence in the directory, never
+ * the axis records behind it — so a well-formed but empty `fvar` is the honest
+ * fixture for "this face declares itself variable". Building real axis records
+ * would be building a second, richer claim than the code makes.
+ */
+export function sfntWithNames(records: ReadonlyArray<NameRecord>, options: Readonly<{ sfntVersion?: number; omitNameTable?: boolean; withFvar?: boolean }> = {}): ArrayBuffer {
   const encoded = records.map((record) => ({ record, bytes: isUnicodePlatform(record.platform) ? utf16BE(record.value) : latin1(record.value) }))
   const storage: number[] = []
   const offsets = encoded.map(({ bytes }) => { const at = storage.length; storage.push(...bytes); return at })
@@ -47,7 +55,7 @@ export function sfntWithNames(records: ReadonlyArray<NameRecord>, options: Reado
   })
   nameTable.push(...storage)
 
-  const tables = options.omitNameTable ? [] : [{ tag: 'name', data: nameTable }]
+  const tables = [...(options.omitNameTable ? [] : [{ tag: 'name', data: nameTable }]), ...(options.withFvar ? [{ tag: 'fvar', data: [0, 1, 0, 0, 0, 16, 0, 0, 0, 0, 0, 2, 0, 0, 0, 20] }] : [])]
   const directorySize = 12 + tables.length * 16
   const out: number[] = []
   const push32 = (value: number) => out.push((value >>> 24) & 0xff, (value >>> 16) & 0xff, (value >>> 8) & 0xff, value & 0xff)

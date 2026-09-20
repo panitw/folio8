@@ -1,4 +1,4 @@
-import { addableFamilyCount, indexRowFor, type FamilySource } from './font-index'
+import { addableFamilyCount, indexRowFor, sourceScripts, type FamilySource } from './font-index'
 
 // THE FONT BROWSER'S BEHAVIOUR, PORTED FROM THE DESIGN RATHER THAN RE-DERIVED
 // FROM A SCREENSHOT (Story 16.3).
@@ -156,7 +156,10 @@ export function rowTierNote(source: FamilySource): string {
 export function browserRows(sources: ReadonlyArray<FamilySource>): ReadonlyArray<BrowserRow> {
   return sources.map((source) => {
     const row = indexRowFor(source.family)
-    const scripts = source.tier === 'local' ? source.face.scripts : source.tier === 'stored' ? source.record.scripts : source.row.scripts
+    // ONE DERIVATION, SHARED WITH THE FAMILY CONTROL (`sourceScripts`). A tier
+    // now holds a family's whole face SET, and the coverage a row reports is
+    // its REGULAR's — read out of the set by `style`, never by position.
+    const scripts = sourceScripts(source)
     return {
       family: source.family,
       source,

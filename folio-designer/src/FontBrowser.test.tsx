@@ -458,14 +458,20 @@ describe('a browser that cannot keep typefaces says what confirming will do inst
 })
 
 describe('with no network the browser says so, and the faces this machine holds still work', () => {
+  // A COMPLETE STORED FAMILY: every cut upstream publishes is held, so
+  // `familyIsInstalled` reads it as already here. The census is what says so
+  // since spec-install-all-face-cuts story 1 — without it a stored family reads
+  // INCOMPLETE and this dialog offers it for install again, which is a
+  // different row state and a different test.
   const stored: FamilySource = {
     tier: 'stored',
     family: 'Kanit',
-    record: {
+    faces: [{
       key: 'b'.repeat(64), family: 'Kanit', style: 'Regular', licence: 'OFL-1.1', licenceText: 'terms',
       copyright: 'c', source: 'google/fonts — ofl/kanit/Kanit-Regular.ttf, fetched 2026-09-03',
       mediaType: 'font/ttf', scripts: ['latin', 'thai'], fetchedAt: '2026-09-03', byteLength: 4,
-    } satisfies StoredFace,
+    } satisfies StoredFace],
+    census: { family: 'Kanit', published: ['Regular'], refused: [], recordedAt: '2026-09-03' },
   }
 
   it('states the web rows it cannot fetch, and still sets the stored family in itself', async () => {

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react'
-import { familyIsInstalled, indexCategories, indexScripts, type FamilySource } from './font-index'
+import { familyIsComplete, indexCategories, indexScripts, type FamilySource } from './font-index'
 import { browserRows, browserSorts, browserViews, buttonLabel, buttonName, confirmLabel, confirmName, degradedFooterNote, defaultSpecimenSize, emptyStateHeading, emptyStateHint, filterRows, filtersActive, maxSpecimenSize, minSpecimenSize, noFilters, pageCount, pageLine, pageOf, pendingLine, resultLine, rowState, rowTierNote, scriptBadge, sizeReadout, sortRows, specimenFor, specimenSize, weightLine, type BrowserFilters, type BrowserRow, type BrowserSort, type BrowserView } from './font-browser-model'
 import { previewFaceFamily } from './preview-face-family'
 import { openPreviewFaceRegistry, type PreviewFaceBytes, type PreviewFaceRegistry, type PreviewFaceStatus } from './preview-face-registry'
@@ -101,7 +101,14 @@ export function FontBrowser({ sources, inTemplate, heldLocalFamilies, previewByt
   // point of routing it through the same predicate the family control uses: the
   // face this dialog says is not yet here is exactly the one that control
   // declines to offer.
-  const installedFamilies = useMemo(() => rows.filter((row) => familyIsInstalled(row.source, heldLocalFamilies)).map((row) => row.family), [rows, heldLocalFamilies])
+  // ⚠ IT IS `familyIsComplete`, NOT `familyIsInstalled` (D-8). This dialog's
+  // question is "is there anything left to fetch", and a family holding only
+  // the Regular of a family that publishes a Bold must read `addable` so the
+  // Bold is reachable at all. The family control asks the OTHER predicate —
+  // "can I use this now" — and answers yes for that same row, which is how a
+  // font already on the machine stays usable while still being offered for the
+  // cuts it lacks.
+  const installedFamilies = useMemo(() => rows.filter((row) => familyIsComplete(row.source, heldLocalFamilies)).map((row) => row.family), [rows, heldLocalFamilies])
 
   // THE REGISTRY'S LIFETIME IS THIS COMPONENT'S. It opens once, on mount, and
   // its release runs on unmount — so closing the modal removes every preview

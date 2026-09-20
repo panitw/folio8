@@ -5,8 +5,8 @@ import { describe, expect, it } from 'vitest'
 import { catalogueFaces } from './generated/font-catalogue'
 import { familyIndex, familyIndexPublishedFamilies, familyIndexSnapshotDate } from './generated/font-index'
 import { blankComments } from '../scripts/forbidden-font-hosts.mjs'
-import { addableFamilyCount, familyIsInstalled, familySourceNote, indexCategories, indexRowFor, indexScripts, indexExcludedCjkFamilies, localTierHolds, offeredFamilies, webFamilies } from './font-index'
-import type { StoredFace } from './font-store'
+import { addableFamilyCount, familyIsComplete, familyIsInstalled, familySourceNote, indexCategories, indexRowFor, indexScripts, indexExcludedCjkFamilies, localTierHolds, offeredFamilies, regularCutOf, sourceScripts, webFamilies } from './font-index'
+import type { FamilyCensus, FamilyCutRefusal, StoredFace } from './font-store'
 
 // EVERY CATALOGUE FAMILY HELD — the state this designer is in once its
 // catalogue faces have been fetched, and the one in which the offered-order
@@ -285,10 +285,10 @@ describe('what the browser shows and what it says about it', () => {
 // The seam is what makes the hand-off a mechanism rather than a sentence: an
 // exhaustive switch over the union stops compiling if an arm is unhandled.
 describe('the faces this machine already holds', () => {
-  const stored = (family: string, key: string): StoredFace => ({
+  const stored = (family: string, key: string, style = 'Regular'): StoredFace => ({
     key,
     family,
-    style: 'Regular',
+    style,
     licence: 'OFL-1.1',
     licenceText: 'SIL Open Font License',
     copyright: 'Copyright',
@@ -298,6 +298,19 @@ describe('the faces this machine already holds', () => {
     fetchedAt: '2026-09-03',
     byteLength: 1024,
   })
+
+  /**
+   * THE CENSUS THAT MAKES A STORED FAMILY READ INSTALLED
+   * (spec-install-all-face-cuts, story 1, D-5).
+   *
+   * A stored row is no longer installed by the mere fact of being stored: the
+   * family must hold every cut it publishes, or carry a refusal for each it
+   * lacks. Every case below that wants a family to read INSTALLED says which
+   * cuts upstream publishes; the cases about ORDER and MEMBERSHIP deliberately
+   * do not, because `offeredFamilies` does not consult the census at all.
+   */
+  const census = (family: string, published: ReadonlyArray<string> = ['Regular'], refused: ReadonlyArray<FamilyCutRefusal> = []): FamilyCensus =>
+    ({ family, published, refused, recordedAt: '2026-09-03' })
 
   // A FAMILY THE STORE HOLDS IS OFFERED FROM THE STORE, NOT FROM THE WEB. One
   // family, one row, from the cheapest tier that can serve it — the same rule
@@ -337,50 +350,59 @@ describe('the faces this machine already holds', () => {
     expect(offered.map((source) => [source.tier, source.family])).toEqual([['stored', withdrawn]])
   })
 
-  // TWO STORED FACES OF ONE FAMILY, AND WHICH ONE IS OFFERED IS A RULE.
+  // FOUR STORED FACES OF ONE FAMILY ARE ONE ROW, AND EACH CUT RESOLVES BY
+  // `style` (spec-install-all-face-cuts, story 1).
   //
-  // The store is keyed by the SHA-256 of the bytes, so one family can honestly
-  // have two entries — upstream re-cut the face, or the author holds a Regular
-  // and an Italic. `offeredFamilies` gives one row per family, so one of them
-  // is chosen, and it used to be whichever arrived LAST: the store's
-  // family-then-key sort, which is the hash order, which is arbitrary. Handing
-  // the author one of two faces on the strength of a digest ordering is exactly
-  // the silent substitution the content-address key exists to refuse.
-  //
-  // (Presenting BOTH — a group with two styles in it — is Story 16.4's, which
-  // owns the grouping. What 16.2 owes is a choice that is deterministic and
-  // written down.)
-  it('offers the most recently fetched of two stored faces of one family, whichever order they arrive in', () => {
+  // THESE TWO CASES REPLACE `mostRecentlyFetched` AND ITS SAME-DAY TIE-BREAK,
+  // AND THE REPLACEMENT IS THE STORY'S OWN CLAIM. The fold used to collapse a
+  // family's records to ONE, newest `fetchedAt` first and the lexicographically
+  // smaller key breaking a tie. `fetchedAt` is day-granular, so four cuts
+  // installed in one session ALL TIE and the tie-break handed the author
+  // whichever cut hashed lowest — an arbitrary face chosen by a digest, which
+  // is the silent substitution the content-address key exists to refuse. The
+  // mechanism is deleted rather than tie-broken: the union holds the SET, so
+  // there is nothing left to choose.
+  it('offers a family holding four cuts exactly once, with each cut resolving by its own style', () => {
     const family = webFamilies.find((row) => !localTierHolds(row.family))!.family
-    const older = { ...stored(family, '1'.repeat(64)), fetchedAt: '2026-01-05' }
-    const newer = { ...stored(family, '0'.repeat(64)), fetchedAt: '2026-09-03' }
-    // THE NEWER ONE WINS, and the KEYS ARE ORDERED AGAINST THE DATES ON PURPOSE:
-    // the newer face carries the lexicographically SMALLER key, so a rule that
-    // was really sorting by key would pick the other one and red here.
-    for (const listing of [[older, newer], [newer, older]]) {
-      const offered = offeredFamilies(family, listing).filter((source) => source.family === family)
+    // THE KEYS ARE ORDERED AGAINST THE CUTS ON PURPOSE. The Regular carries the
+    // lexicographically LARGEST key and the Bold Italic the smallest, so a
+    // resolver that was really sorting by key — which is what the deleted
+    // tie-break did — would hand back the Bold Italic and red here.
+    const listing = [
+      stored(family, 'f'.repeat(64), 'Regular'),
+      stored(family, '0'.repeat(64), 'Bold Italic'),
+      stored(family, '3'.repeat(64), 'Bold'),
+      stored(family, '7'.repeat(64), 'Italic'),
+    ]
+    // AND IT IS STABLE ACROSS ARRIVAL ORDER, which is the other half of what
+    // the fold was for: `list()` returns family-then-key order, so a resolver
+    // reading position rather than `style` would answer differently here.
+    for (const arrival of [listing, [...listing].reverse()]) {
+      const offered = offeredFamilies(family, arrival).filter((source) => source.family === family)
       expect(offered.map((source) => source.tier), 'one family is still one row').toEqual(['stored'])
       const only = offered[0]!
       if (only.tier !== 'stored') throw new Error('the stored family was not offered from the store')
-      expect(only.record.key, 'the most recently fetched face is the one offered, in either arrival order').toBe(newer.key)
+      expect(only.faces, 'every cut the store holds travels with the row').toHaveLength(4)
+      expect(regularCutOf(only.faces)?.key, 'the Regular resolves by style, not by key order or arrival order').toBe('f'.repeat(64))
+      for (const cut of ['Regular', 'Bold', 'Italic', 'Bold Italic']) {
+        expect(only.faces.filter((face) => face.style === cut), `${cut} must resolve to exactly one record`).toHaveLength(1)
+      }
     }
   })
 
-  // AND THE TIE IS BROKEN ON SOMETHING STABLE, not on arrival order. Two faces
-  // fetched on the same day is the ordinary case — a Regular and an Italic
-  // within one session — so the common case must not be the arbitrary one.
-  // The smaller key wins, which is also the face `font-store.ts`'s `list()`
-  // sorts first within a family, so the menu and the listing agree.
-  it('breaks a same-day tie on the key rather than on arrival order', () => {
+  // AND SAME-DAY `fetchedAt` IS NO LONGER A TIE TO BREAK — it is the ordinary
+  // state of a family installed in one session, and every cut survives it.
+  it('keeps every cut of a family whose faces all carry the same fetch date', () => {
     const family = webFamilies.find((row) => !localTierHolds(row.family))!.family
-    const first = { ...stored(family, 'a'.repeat(64)), fetchedAt: '2026-09-03' }
-    const second = { ...stored(family, 'f'.repeat(64)), fetchedAt: '2026-09-03' }
-    for (const listing of [[first, second], [second, first]]) {
-      const offered = offeredFamilies(family, listing).filter((source) => source.family === family)
-      const only = offered[0]!
-      if (only.tier !== 'stored') throw new Error('the stored family was not offered from the store')
-      expect(only.record.key).toBe(first.key)
-    }
+    const sameDay = [
+      { ...stored(family, 'a'.repeat(64), 'Regular'), fetchedAt: '2026-09-03' },
+      { ...stored(family, 'b'.repeat(64), 'Bold'), fetchedAt: '2026-09-03' },
+    ]
+    const offered = offeredFamilies(family, sameDay).filter((source) => source.family === family)
+    const only = offered[0]!
+    if (only.tier !== 'stored') throw new Error('the stored family was not offered from the store')
+    expect(only.faces.map((face) => face.style), 'a same-day install must not lose a cut').toEqual(['Regular', 'Bold'])
+    expect(regularCutOf(only.faces)?.key).toBe('a'.repeat(64))
   })
 
   it('filters the stored tier by the same search the other two use', () => {
@@ -461,7 +483,9 @@ describe('the faces this machine already holds', () => {
   it('describes every tier of the union, and says which rows install and which are used', () => {
     const family = webFamilies.find((row) => !localTierHolds(row.family))!.family
     const web = offeredFamilies(family).find((source) => source.family === family)!
-    const fromStore = offeredFamilies(family, [stored(family, 'e'.repeat(64))]).find((source) => source.family === family)!
+    const fromStore = offeredFamilies(family, [stored(family, 'e'.repeat(64))], [census(family)]).find((source) => source.family === family)!
+    const shortOfACut = offeredFamilies(family, [stored(family, 'e'.repeat(64))], [census(family, ['Regular', 'Bold'])]).find((source) => source.family === family)!
+    const noCensus = offeredFamilies(family, [stored(family, 'e'.repeat(64))]).find((source) => source.family === family)!
     const local = offeredFamilies(catalogueFaces[0]!.family).find((source) => source.tier === 'local')!
     expect(familySourceNote(local)).toBe(' — use it, already on this machine')
     expect(familySourceNote(fromStore)).toBe(' — use it, already downloaded to this machine')
@@ -482,12 +506,40 @@ describe('the faces this machine already holds', () => {
     expect(familyIsInstalled(fromStore, allHeld)).toBe(true)
     expect(familyIsInstalled(web, allHeld)).toBe(false)
     // AND THE CLAUSE STORY 2 ADDED: a catalogue family this browser has not
-    // fetched is NOT installed, whatever the release ships. The stored tier is
-    // unaffected — its listing is the evidence — and the web tier is still
-    // never installed.
+    // fetched is NOT installed, whatever the release ships. The web tier is
+    // still never installed.
     expect(familyIsInstalled(local, new Set())).toBe(false)
     expect(familyIsInstalled(fromStore, new Set())).toBe(true)
     expect(familyIsInstalled(web, new Set([web.family]))).toBe(false)
+    // AND THE CLAUSE spec-install-all-face-cuts STORY 1 ADDED (D-4/D-5), WHICH
+    // IS `familyIsComplete`'s AND NOT THIS PREDICATE'S (D-8). Holding the
+    // Regular of a family that publishes a Bold is INCOMPLETE, and is offered
+    // for install again so the missing cut is reachable at all.
+    expect(familyIsComplete(shortOfACut, allHeld), 'a family short of a published cut is not complete').toBe(false)
+    // A family installed before this change carries no census, so there is no
+    // authority on what it publishes and it reads incomplete — the honest
+    // answer rather than a migration.
+    expect(familyIsComplete(noCensus, allHeld), 'no census means no claim this designer can make about completeness').toBe(false)
+    // ⚠ AND BOTH OF THEM ARE STILL **USABLE** (D-8). Completeness governs
+    // whether a family is re-offered for install; it does not govern whether
+    // the faces already on this machine can be applied. A census-less family
+    // dropping out of AVAILABLE LOCALLY would make a font sitting on the
+    // machine unusable offline, which is strictly worse than the re-offer D-4
+    // accepted.
+    expect(familyIsInstalled(shortOfACut, allHeld), 'a family short of a cut is still usable').toBe(true)
+    expect(familyIsInstalled(noCensus, allHeld), 'a family installed before this story is still usable').toBe(true)
+    // AND THE REFUSAL CLAUSE, which is what stops incompleteness from being a
+    // re-offer loop: a cut upstream cannot serve is settled once it has been
+    // recorded as PERMANENT.
+    const refusedItsBold = offeredFamilies(family, [stored(family, 'e'.repeat(64))], [census(family, ['Regular', 'Bold'], [{ style: 'Bold', reason: 'upstream publishes it as a variable font', permanence: 'permanent' }])]).find((source) => source.family === family)!
+    expect(familyIsComplete(refusedItsBold, allHeld), 'a permanent refusal settles a cut this machine cannot have').toBe(true)
+    // ⚠ A TRANSIENT ONE DOES NOT. The stall sentence says "try the pick again
+    // if you like", and this is what makes that true for a cut that is not the
+    // base: the family stays incomplete, so it is offered again and the Bold is
+    // fetched on the next pick.
+    const stalledItsBold = offeredFamilies(family, [stored(family, 'e'.repeat(64))], [census(family, ['Regular', 'Bold'], [{ style: 'Bold', reason: 'its body stopped responding', permanence: 'transient' }])]).find((source) => source.family === family)!
+    expect(familyIsComplete(stalledItsBold, allHeld), 'a transient refusal settles nothing').toBe(false)
+    expect(familyIsInstalled(stalledItsBold, allHeld), 'and the family is usable while it waits to be retried').toBe(true)
   })
 })
 
@@ -518,7 +570,7 @@ describe('the browser chips name values the offered population actually carries'
     }
     for (const script of indexScripts) {
       const matching = offered.filter((source) => {
-        const scripts = source.tier === 'local' ? source.face.scripts : indexRowFor(source.family)?.scripts ?? []
+        const scripts = source.tier === 'local' ? sourceScripts(source) : indexRowFor(source.family)?.scripts ?? []
         return scripts.includes(script)
       })
       expect(matching.length, `script chip "${script}" matches no offered family`).toBeGreaterThan(0)
@@ -527,7 +579,7 @@ describe('the browser chips name values the offered population actually carries'
 
   it('names every value the offered population carries, so no family is unreachable by chip', () => {
     const categoriesOffered = [...new Set(offered.map((source) => indexRowFor(source.family)?.category).filter((value): value is string => value !== undefined))].sort()
-    const scriptsOffered = [...new Set(offered.flatMap((source) => source.tier === 'local' ? [...source.face.scripts] : [...(indexRowFor(source.family)?.scripts ?? [])]))].sort()
+    const scriptsOffered = [...new Set(offered.flatMap((source) => source.tier === 'local' ? [...sourceScripts(source)] : [...(indexRowFor(source.family)?.scripts ?? [])]))].sort()
     expect([...indexCategories]).toEqual(categoriesOffered)
     expect([...indexScripts]).toEqual(scriptsOffered)
   })

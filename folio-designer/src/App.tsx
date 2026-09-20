@@ -24,14 +24,14 @@ import { FontBrowser } from './FontBrowser'
 import { type FontChainCommitError, type FontChainControl } from './font-chain-control'
 import { addFontChainCommand, embedFontFamilyCommand, type FontChainEntryAsk } from './font-chain-command'
 import { catalogueFaces, scriptFallbackFaces } from './generated/font-catalogue'
-import { familyIsInstalled, indexRowFor, offeredFamilies, type FamilySource } from './font-index'
+import { familyIsComplete, familyIsInstalled, indexRowFor, offeredFamilies, regularCutOf, sourceScripts, type FamilySource } from './font-index'
 import { initialHeldLocalFamilies, readHeldLocalFamilies } from './held-local-faces'
 import { watchCanvasFaceMisses } from './canvas-face-misses'
 import { deferredFaceAssets, prefetchDeferredFaces } from './document-face-prefetch'
 import { isShippedFamily, shippedFamilyEntry } from './shipped-face-cuts'
 import { browserRows } from './font-browser-model'
-import { fetchWebFamily } from './font-source'
-import { openFontStore, storeWriteRefusal, storedFaceKey, type FontStore, type StoredFace } from './font-store'
+import { cutsBesideTheRegular, fetchWebFamily } from './font-source'
+import { openFontStore, storeWriteRefusal, storedFaceKey, type FamilyCensus, type FontStore, type StoredFace } from './font-store'
 import { previewFaceFamily } from './preview-face-family'
 import { openPreviewFaceRegistry, type PreviewFaceBytes, type PreviewFaceRegistry, type PreviewFaceStatus } from './preview-face-registry'
 import { proposedBounds, resizeAnchors, type DragAnchor, type DragLimit } from './resize-anchor'
@@ -354,6 +354,11 @@ const NO_FACE_MISSES: ReadonlyArray<string> = []
 // in a `useState` initialiser is a new value on every render.
 const NO_FACE_MISS_DISMISSALS: ReadonlySet<string> = new Set()
 const NO_STORED_FACES: ReadonlyArray<StoredFace> = []
+// AND THE SAME FOR THE FAMILY CENSUS (spec-install-all-face-cuts, story 1). A
+// store that could not be opened and a store that has never installed anything
+// both read as "no family publishes anything this designer knows of", which is
+// the honest answer and re-renders nothing for the privilege.
+const NO_FAMILY_CENSUSES: ReadonlyArray<FamilyCensus> = []
 /**
  * THE PROPOSED FALLBACK TAIL — the shipped faces for the scripts the picked
  * face does not cover, in the order `scriptFallbackFaces` names them, each
@@ -380,14 +385,14 @@ const proposedFallbackTail = (scripts: ReadonlyArray<string>): ReadonlyArray<Fon
 
 /**
  * The scripts a pickable row's face covers, read off whichever tier the row is.
- * Every tier carries them; only the field they sit in differs, and spelling the
- * discriminant here keeps the narrowing the compiler's rather than a comment's.
+ *
+ * IT IS `font-index.ts`'s OWN DERIVATION NOW, NOT A SECOND COPY OF IT. A tier
+ * holds a family's face SET since spec-install-all-face-cuts story 1, so the
+ * coverage reported is the REGULAR's, resolved by `style`; the font browser's
+ * rows read the same function, so the panel and the dialog cannot describe one
+ * family's coverage two different ways.
  */
-const scriptsOfSource = (source: FamilySource): ReadonlyArray<string> => {
-  if (source.tier === 'local') return source.face.scripts
-  if (source.tier === 'stored') return source.record.scripts
-  return source.row.scripts
-}
+const scriptsOfSource = sourceScripts
 
 // STORY 13.4 — `standIn` IS ON THE RECORD, NOT DERIVED FROM `sampleData`.
 // A no-data render that is later superseded by a real one stays visible while
@@ -670,6 +675,13 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
   // Story 16.6 deleted the panel that used to say so on screen, deliberately
   // reversing 16.2's stated-degradation clause.
   const [storedFaces, setStoredFaces] = useState<ReadonlyArray<StoredFace>>(NO_STORED_FACES)
+  // WHAT EACH INSTALLED FAMILY PUBLISHES, AND WHICH OF ITS CUTS THIS MACHINE
+  // ASKED FOR AND WAS REFUSED (D-7). It is read beside the face listing and for
+  // the same reason: `familyIsInstalled` is a pure function of its inputs and
+  // this module owns the read, its lifetime and its degradation. Without it a
+  // family reads INCOMPLETE — never complete — so a failed read can only offer
+  // an install again, which is the self-healing direction.
+  const [familyCensuses, setFamilyCensuses] = useState<ReadonlyArray<FamilyCensus>>(NO_FAMILY_CENSUSES)
   // WHETHER THIS BROWSER CAN KEEP TYPEFACES AT ALL. Optimistic until the store
   // answers, because the modal cannot be open before it has: flashing the
   // degraded copy and then withdrawing it would be a worse lie than either state.
@@ -926,9 +938,17 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
     void (async () => {
       const store = await opening
       if (!live || !store) return
-      const listed = await store.list()
-      if (!live || !listed.ok) return
-      setStoredFaces(listed.value)
+      // ⚠ THE TWO LISTINGS ARE READ TOGETHER, NOT ONE AFTER THE OTHER.
+      // `familyIsInstalled` answers from BOTH, so a face listing that lands one
+      // render before its census makes every stored family read INCOMPLETE for
+      // that render — the family control drops it out of AVAILABLE LOCALLY and
+      // then puts it back, which is a flicker the author would see on every
+      // load. Read as a pair, they land in one render and the predicate is
+      // never asked a half-answered question.
+      const [listed, census] = await Promise.all([store.list(), store.listCensus()])
+      if (!live) return
+      if (listed.ok) setStoredFaces(listed.value)
+      if (census.ok) setFamilyCensuses(census.value)
     })()
     return () => { live = false }
   }, [])
@@ -1029,8 +1049,13 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
   const refreshStoredFaces = async () => {
     const store = await fontStore.current
     if (!store) return
-    const listed = await store.list()
+    // THE CENSUS IS RE-READ WITH THE FACES, NEVER ON ITS OWN SCHEDULE AND NEVER
+    // AFTER THEM. The two together are what `familyIsInstalled` answers from, so
+    // refreshing one without the other would leave the predicate reading a face
+    // set from after an install against a census from before it.
+    const [listed, census] = await Promise.all([store.list(), store.listCensus()])
     if (listed.ok) setStoredFaces(listed.value)
+    if (census.ok) setFamilyCensuses(census.value)
   }
 
   // STORY 16.3 — WHAT THE FONT BROWSER OFFERS, AND WHAT ITS SPECIMENS ARE SET IN.
@@ -1041,7 +1066,7 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
   // — with its own opinion about variable-only families and its own tier order.
   // The browser filters and sorts what it is given; it never decides what it is
   // given.
-  const browsableFamilies = useMemo(() => offeredFamilies('', storedFaces), [storedFaces])
+  const browsableFamilies = useMemo(() => offeredFamilies('', storedFaces, familyCensuses), [storedFaces, familyCensuses])
 
   // AND THE BYTES A SPECIMEN IS SET IN COME FROM THE SAME THREE TIERS A PICK
   // RESOLVES FROM, THROUGH THE SAME THREE READS.
@@ -1067,23 +1092,38 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
   // promising something the product declines. Reusing the pick's own resolution
   // means a specimen appears exactly for the families that can actually be
   // added. The cost is the pick's cost, bounded by `familiesPerPage`.
+  //
+  // A SPECIMEN IS SET IN THE FAMILY'S REGULAR, WHICHEVER TIER SERVES IT. A tier
+  // holds a family's whole cut set now, and a row that drew its sample in
+  // whichever cut sorted first would show the author a Bold Italic under a name
+  // that says nothing of the kind. `regularCutOf` resolves it by `style`; a set
+  // with no Regular in it draws nothing rather than a substitute.
   const browserSpecimenBytes = async (family: string): Promise<ArrayBuffer | undefined> => {
     const source = browsableFamilies.find((entry) => entry.family === family)
     if (source === undefined) return undefined
     if (source.tier === 'local') {
+      const regular = regularCutOf(source.faces)
+      if (regular === undefined) return undefined
       try {
-        const response = await fetch(source.face.url)
+        const response = await fetch(regular.url)
         return response.ok ? await response.arrayBuffer() : undefined
       } catch {
         return undefined
       }
     }
     if (source.tier === 'stored') {
-      const read = await (await fontStore.current)?.get(source.record.key)
+      const regular = regularCutOf(source.faces)
+      if (regular === undefined) return undefined
+      const read = await (await fontStore.current)?.get(regular.key)
       return read?.ok ? read.value?.bytes : undefined
     }
-    const outcome = await fetchWebFamily(source.family)
-    return outcome.ok ? outcome.face.bytes : undefined
+    // ⚠ THE REGULAR AND NOTHING ELSE. A specimen is one `<span>` set in the
+    // family's Regular, so fetching its Bold, Italic and Bold Italic to throw
+    // them away would make browsing a page of twelve rows cost up to
+    // forty-eight body reads instead of twelve — on the one path in this
+    // designer that fetches for a row the author has not picked.
+    const outcome = await fetchWebFamily(source.family, undefined, undefined, cutsBesideTheRegular)
+    return outcome.ok ? regularCutOf(outcome.faces)?.bytes : undefined
   }
 
   // THE FAMILY CONTROL'S OWN READER (Story 16.7) — deliberately a SEPARATE
@@ -1106,14 +1146,18 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
     const source = browsableFamilies.find((entry) => entry.family === family)
     if (source === undefined || source.tier === 'web') return undefined
     if (source.tier === 'local') {
+      const regular = regularCutOf(source.faces)
+      if (regular === undefined) return undefined
       try {
-        const response = await fetch(source.face.url)
+        const response = await fetch(regular.url)
         return response.ok ? await response.arrayBuffer() : undefined
       } catch {
         return undefined
       }
     }
-    const read = await (await fontStore.current)?.get(source.record.key)
+    const regular = regularCutOf(source.faces)
+    if (regular === undefined) return undefined
+    const read = await (await fontStore.current)?.get(regular.key)
     return read?.ok ? read.value?.bytes : undefined
   }
 
@@ -2664,10 +2708,21 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
    * face this release carries but this browser has not yet fetched, because the
    * catalogue is deferred now; installing it means PULLING ITS BYTES through the
    * service worker, which verifies them against the release manifest and keeps
-   * them. Only a `stored` row still has nothing to install — it is in the
-   * machine store by definition — and reaching this function with one is a
-   * routing defect, NAMED rather than silently answered `undefined`, which would
-   * report a no-op as a success.
+   * them.
+   *
+   * AND SINCE spec-install-all-face-cuts STORY 1, A THIRD: a `stored` row whose
+   * CUT SET IS SHORT (D-3). A pick installs every cut a family publishes, so a
+   * family can be PARTLY on this machine — its Regular held, its Bold missing
+   * because the fetch failed or because it was installed by a build that only
+   * ever kept one face. The store is the only place those bytes can come from
+   * and picking the family again is the only way to ask for them, so a short
+   * `stored` row is an ordinary install of exactly what it lacks: what is
+   * already held is not refetched, and what is refused is recorded so the
+   * family does not re-offer for ever.
+   *
+   * A `stored` ROW THAT IS ALREADY COMPLETE STILL HAS NOTHING TO INSTALL, and
+   * reaching this function with one is a routing defect — NAMED rather than
+   * silently answered `undefined`, which would report a no-op as a success.
    */
   const installFamily = async (source: FamilySource, responseGeneration: number, selectionKey: string, announce: 'panel' | 'caller' = 'panel'): Promise<string | undefined> => {
     const refuse = (message: string) => refuseFontChain(message, responseGeneration, selectionKey, announce)
@@ -2702,20 +2757,47 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
       if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) {
         return refuse(`${source.family} could not be put on this machine yet: this page's offline layer is not in charge of its own requests. Reload the page and try again.`)
       }
+      // THE LOCAL TIER'S INSTALL IS ITS REGULAR'S BYTES — AND, WHEN THE
+      // CATALOGUE ONE DAY CARRIES MORE THAN ONE CUT OF A FAMILY, ALL OF THEM.
+      // The set is walked rather than indexed, so the story that SUPPLIES those
+      // cuts supplies data and nothing else.
+      const bundled = source.faces
+      if (bundled.length === 0) return refuse(`${source.family} is in this release's catalogue but carries no face, so there is nothing to put on this machine.`)
       try {
-        const response = await fetch(source.face.url)
-        if (!response.ok) throw new Error(`the bundled face responded ${response.status}`)
-        await response.arrayBuffer()
+        for (const cut of bundled) {
+          const response = await fetch(cut.url)
+          if (!response.ok) throw new Error(`the bundled face responded ${response.status}`)
+          await response.arrayBuffer()
+        }
       } catch (error) {
         return refuse(`${source.family} could not be fetched onto this machine: ${error instanceof Error ? error.message : String(error)}`)
       }
       refreshHeldLocalFamilies()
       return undefined
     }
-    // Spelled as the discriminant rather than through `familyIsInstalled` so the
-    // narrowing below is the compiler's and not a comment's.
-    if (source.tier !== 'web') return refuse(`${source.family} is already on this machine, so there is nothing to install. Pick it again to use it in this document.`)
-    const outcome = await fetchWebFamily(source.family)
+    // A `stored` ROW IS NO LONGER REFUSED OUTRIGHT (D-3). It used to be: the
+    // store held a family or it did not, so arriving here with one was a
+    // routing defect. A family can now be PARTLY here — its Regular held and
+    // its Bold missing — and the only way to reach the missing cuts is to pick
+    // it again, so a `stored` row whose census is short is an ordinary install
+    // of exactly what it lacks. A `stored` row that is COMPLETE is still a
+    // routing defect, NAMED rather than silently answered `undefined`, which
+    // would report a no-op as a success.
+    //
+    // WHAT IS ALREADY HELD IS NOT REFETCHED, AND THE HELD SET IS READ OFF THE
+    // FACE RECORDS. They are the authority on what is on this machine — a
+    // record dropped as unsound between a listing and this call reads as absent
+    // and is fetched again, which is the self-healing direction.
+    const held = source.tier === 'stored' ? [...new Set(source.faces.map((cut) => cut.style))] : []
+    // ⚠ THE GUARD IS COMPLETENESS, NOT USABILITY (D-8). `familyIsInstalled` is
+    // true for every stored row — that is what keeps a held family usable — so
+    // asking it here would refuse every re-pick and put the missing cuts back
+    // out of reach, which is the whole thing D-3 exists to open.
+    if (source.tier === 'stored' && familyIsComplete(source, heldLocalFamilies)) {
+      return refuse(`${source.family} is already on this machine, so there is nothing to install. Pick it again to use it in this document.`)
+    }
+    const scripts = scriptsOfSource(source)
+    const outcome = await fetchWebFamily(source.family, undefined, undefined, held)
     if (!outcome.ok) return refuse(outcome.reason)
     // LAYOUT DIVERGENCE IS AN OBSERVATION, AND AN OBSERVATION NEEDS A READER.
     // `fetchWebFamily` records when the directory a family was resolved in
@@ -2726,8 +2808,24 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
     // where a person already looks for what the designer did on a pick; it is
     // deliberately NOT a UI surface, because nothing here is wrong and an
     // author has no decision to make about it.
-    if (outcome.face.layoutDivergence !== undefined) console.info(outcome.face.layoutDivergence)
-    const face: ResolvedFace = { ...outcome.face, scripts: source.row.scripts }
+    //
+    // IT IS A PROPERTY OF THE FAMILY'S DIRECTORY, SO IT IS LOGGED ONCE. Every
+    // cut of one family carries the same note; printing it per face would turn
+    // one observation into four lines about one fact.
+    const divergence = outcome.faces.find((cut) => cut.layoutDivergence !== undefined)?.layoutDivergence
+    if (divergence !== undefined) console.info(divergence)
+    // A SKIPPED CUT SAYS NOTHING AT PICK TIME AND IS RECORDED ON THE FAMILY
+    // (D-2). The author asked for a family and got the family; a modal listing
+    // the one weight upstream publishes as a `.woff2` is noise they cannot act
+    // on. The record is what a later re-pick and the panel read, and it is the
+    // reason the family does not re-offer for ever.
+    for (const skipped of outcome.refused) console.info(`${source.family}: the ${skipped.style} cut was not installed (${skipped.permanence === 'permanent' ? 'settled; it will not be asked for again' : 'transient; it will be fetched again the next time this family is picked'}). ${skipped.reason}`)
+    const installed: ReadonlyArray<ResolvedFace> = outcome.faces.map((cut) => ({ ...cut, scripts }))
+    const census: FamilyCensus = { family: source.family, published: [...outcome.published], refused: outcome.refused.map((entry) => ({ style: entry.style, reason: entry.reason, permanence: entry.permanence })), recordedAt: new Date().toISOString().slice(0, 10) }
+    // THE REGULAR IS WHAT THE DEGRADED PATH BELOW EMBEDS, AND IT IS RESOLVED BY
+    // `style`. On a re-pick of a short family the Regular is already held and
+    // is deliberately not refetched, so the set can legitimately not carry one.
+    const face = regularCutOf(installed)
 
     // A STORE THAT CANNOT BE OPENED DEGRADES TO THE PRE-16.5 MODEL RATHER THAN
     // REFUSING (orchestrator ruling, 2026-09-03). NEITHER OBVIOUS ANSWER WAS RIGHT.
@@ -2753,6 +2851,12 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
     // fork: Story 8.6's *"carry this typeface"* and *"draw this box with it"* stay
     // two decisions, and the degradation may not quietly fuse them.
     if (!(await fontStore.current)) {
+      // ⚠ THE DEGRADED PATH CARRIES THE REGULAR ALONE, AND ONLY THE REGULAR.
+      // With nowhere to keep a face there is no cut set to keep, and a document
+      // may carry one face per chain entry — embedding four would be four
+      // entries nothing asked for. The other cuts are dropped, silently, for
+      // the same reason nothing else about this mode is said on screen.
+      if (face === undefined) return refuse(`${source.family} could not be installed: this browser will not keep typefaces, and the family's upright Regular is not among the faces this pick fetched.`)
       const rejected = await dispatchEmbed(face, responseGeneration, selectionKey, announce)
       if (rejected !== undefined) return rejected
       return undefined
@@ -2769,8 +2873,32 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
     //
     // The ordering question 16.2 answered has dissolved rather than flipped:
     // with one act there is no second act to order it against.
-    const kept = await keepOnThisMachine(face)
-    if (kept !== undefined) return refuse(storeWriteRefusal(face.family, kept))
+    //
+    // ⚠ A CUT'S WRITE FAILS PARTWAY: THE INSTALL IS REFUSED AND WHAT LANDED
+    // STAYS (D-1). There is no delete path in this designer and none is added.
+    // The store is content-addressed, so a cut written before the quota refusal
+    // is an ORPHAN AND NOT A CORRUPTION — nothing points at it, no census
+    // claims it, and a retry finds it under the same key and reuses it rather
+    // than refetching a face the author already paid for. Rolling back would
+    // spend a second write to throw away work that is free to keep.
+    for (const cut of installed) {
+      const kept = await keepOnThisMachine(cut, false)
+      if (kept !== undefined) {
+        // THE LISTING IS REFRESHED EVEN ON THE REFUSAL PATH, because D-1 leaves
+        // the cuts that landed on this machine and the designer must go on
+        // telling the truth about what it holds.
+        await refreshStoredFaces()
+        return refuse(storeWriteRefusal(cut.family, kept))
+      }
+    }
+    // THE CENSUS IS WRITTEN AFTER THE FACES AND ONLY IF THEY ALL LANDED, so it
+    // can never report a family complete whose cuts are half-written. A failed
+    // census write is the install's failure too: without it the family reads
+    // incomplete and is offered again, which is survivable, but reporting an
+    // install as succeeded while the record that terminates the re-offer loop
+    // is missing is the silent half-state D-5 exists to prevent.
+    const recorded = await recordFamilyCensus(census)
+    if (recorded !== undefined) return refuse(storeWriteRefusal(source.family, recorded))
     return undefined
   }
 
@@ -2831,19 +2959,35 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
       // already there byte for byte.
       let refetched = false
       if (source.tier === 'stored') {
-        const read = await (await fontStore.current)?.get(source.record.key)
+        // ⚠ THE DOCUMENT STILL CARRIES THE REGULAR ALONE, AND THAT IS THIS
+        // STORY'S BOUNDARY RATHER THAN AN OVERSIGHT. The machine now holds the
+        // family's whole cut set; nothing about the `.folio` changes here — no
+        // second embed, no chain entry naming a bold, no new engine command —
+        // so pressing B behaves exactly as it does today and the panel's
+        // absence sentence still stands. Carrying the cuts into the document is
+        // the next story's, and doing any of it here would put bytes in an
+        // author's file that this story promised not to.
+        const regular = regularCutOf(source.faces)
+        const read = regular === undefined ? undefined : await (await fontStore.current)?.get(regular.key)
         if (read?.ok && read.value !== undefined) {
           const held = read.value
           embedded = { family: held.family, style: held.style, licence: held.licence, licenceText: held.licenceText, copyright: held.copyright, source: held.source, mediaType: held.mediaType, bytes: held.bytes, scripts: held.scripts }
         } else {
-          const outcome = await fetchWebFamily(source.family)
+          // THE REGULAR AND NOTHING ELSE, for the same reason the document
+          // carries the Regular alone: this heal replaces one dropped record,
+          // and fetching three more cuts the embed cannot use would make a
+          // self-healing read cost four round-trips.
+          const outcome = await fetchWebFamily(source.family, undefined, undefined, cutsBesideTheRegular)
           if (!outcome.ok) return refuse(outcome.reason)
-          if (outcome.face.layoutDivergence !== undefined) console.info(outcome.face.layoutDivergence)
-          embedded = { ...outcome.face, scripts: source.record.scripts }
+          const refetchedRegular = regularCutOf(outcome.faces)
+          if (refetchedRegular === undefined) return refuse(`${source.family} could not be put into this document: upstream no longer publishes the upright Regular this machine held.`)
+          if (refetchedRegular.layoutDivergence !== undefined) console.info(refetchedRegular.layoutDivergence)
+          embedded = { ...refetchedRegular, scripts: scriptsOfSource(source) }
           refetched = true
         }
       } else if (source.tier === 'local') {
-        const face = source.face
+        const face = regularCutOf(source.faces)
+        if (face === undefined) return refuse(`${source.family} carries no upright Regular in this release's catalogue, so it cannot be put into this document.`)
         let bytes: ArrayBuffer
         try {
           const response = await fetch(face.url)
@@ -2923,7 +3067,7 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
    * bytes — `src/font-store.test.ts` asserts that agreement against a digest Go
    * itself produced, so the two addressings cannot drift.
    */
-  const keepOnThisMachine = async (face: ResolvedFace): Promise<string | undefined> => {
+  const keepOnThisMachine = async (face: ResolvedFace, refresh = true): Promise<string | undefined> => {
     const store = await fontStore.current
     if (!store) return 'this browser is not letting the designer keep typefaces on this machine'
     let key: string
@@ -2934,7 +3078,42 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
     }
     const written = await store.put({ ...face, key, byteLength: face.bytes.byteLength, fetchedAt: new Date().toISOString().slice(0, 10), bytes: face.bytes })
     if (!written.ok) return written.reason
+    // ⚠ `refresh` IS FALSE WHEN A CALLER IS WRITING A WHOLE CUT SET, AND THAT
+    // IS A COST RATHER THAN A CORRECTNESS QUESTION. Every refresh re-reads both
+    // listings and changes `machineFaceListing`, which tears down and rebuilds
+    // the preview registration — reading every stored face's BYTES. Refreshing
+    // per cut would do that four times for one install, so `installFamily`
+    // refreshes once, after the census, when the family is actually complete.
+    if (refresh) await refreshStoredFaces()
+    return undefined
+  }
+
+  /**
+   * RECORDING WHAT THE FAMILY PUBLISHES AND WHICH OF ITS CUTS WERE REFUSED
+   * (D-2, D-7).
+   *
+   * IT IS A SEPARATE WRITE FROM THE FACES AND IT IS NOT A CACHE OF THEM. The
+   * face records are content-addressed and say nothing about a family's other
+   * cuts; this says what upstream publishes, which is the only fact in the
+   * system that can answer "is this family complete". Without it a family that
+   * legitimately lacks a cut would be offered for install on every render for
+   * ever.
+   *
+   * IT RETURNS THE REASON AND RENDERS NOTHING, exactly as `keepOnThisMachine`
+   * does and for the same reason: the caller owes the author a sentence, and
+   * which sentence depends on whether the write WAS the act.
+   */
+  const recordFamilyCensus = async (census: FamilyCensus): Promise<string | undefined> => {
+    const store = await fontStore.current
+    if (!store) return 'this browser is not letting the designer keep typefaces on this machine'
+    const written = await store.putCensus(census)
+    // ⚠ THE LISTING IS REFRESHED ON BOTH EXITS, exactly as the per-cut write
+    // failure three lines up in `installFamily` already does. The faces landed
+    // before this call; returning the reason without refreshing would leave
+    // them written to the machine and invisible in the designer until something
+    // else happened to re-read the store.
     await refreshStoredFaces()
+    if (!written.ok) return written.reason
     return undefined
   }
 
@@ -3959,7 +4138,7 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
             itself belongs to the DATA panel.
             "Configure columns" stays live throughout: the TABLE is still the
             component selection, so `openTableEditor`'s
-            `selectedRef.current[0] !== id` guard is untouched. */}<span className="column-identity-name">Column</span><span className="column-identity-meta">{selectedTableColumn.label === '' ? selectedTableColumn.columnId : selectedTableColumn.label}</span></p>}{mode === 'preview' ? <><p className="section-label">PREVIEW INPUTS</p><ParameterEditor referenceState={parameterReferenceState} accepted={previewParams} draft={previewParamsDraft} error={previewParamsError} onDraft={acceptPreviewParameters} onNamedValue={setNamedParameter} /><p className="honest-note">Parameters are local Preview input and are not part of the template.</p></> : selectedBreak !== undefined && breakPage !== undefined ? <SectionBreakProperties key={`${documentGenerationValue}:${breakPage}:${selectedBreak.offset}`} offset={selectedBreak.offset} anchor={selectedBreak.anchored} onCommit={(draft) => void commitComponent(setSectionBreakCommand(draft, false, breakPage))} onAnchor={(anchor) => void commitComponent(setSectionBreakAnchorCommand(anchor, breakPage))} /> : selected.length > 0 && canvas ? <ComponentProperties key={`${documentGenerationValue}:${selected.join(',')}`} components={canvas.components.filter((component) => selected.includes(component.id))} fontFamilies={canvas.fontFamilies} fontChains={canvas.fontChains} carriedFaces={paintableFaces} specimenBytes={familyControlSpecimenBytes} defaultFontSize={canvas.defaultFontSize} defaultLineSpacing={canvas.defaultLineSpacing} onCommit={applyProperties} onUseFamily={(source) => embedInstalledFamily(source, documentGeneration.current, selected.join(','))} onDeclareFamily={(source) => declareShippedFamily(source, documentGeneration.current, selected.join(','))} onOpenFontBrowser={() => { refreshHeldLocalFamilies(); setFontBrowserOpen(true) }} browserOpen={fontBrowserOpen} storedFaces={storedFaces} heldLocalFamilies={heldLocalFamilies} onFamilyListOpened={refreshHeldLocalFamilies} fontChainError={fontChainError} fontChainBusy={fontChainBusy || fileBusy} documentGeneration={documentGenerationValue} propertyError={propertyError} drag={drag} groupPreview={canvasSelection.group} onEditTable={(id) => void openTableEditor(id)} onPickImage={(id) => void applyImageAsset(id)} imageAvailable={imageFileAccess !== undefined} assetBusy={assetBusy} assetError={assetError} /> : <><div className="component-identity"><ToolIcon glyph="blank" /><span className="component-identity-name">Page</span><span className="component-identity-meta">{pageSelection !== undefined ? `page ${pageSelection + 1} of ${pageCount}` : `document · ${pageCount} ${pageCount === 1 ? 'page' : 'pages'}`}</span></div>{canvas && pageSelection !== undefined && <PageSection page={pageSelection} pageBreak={canvas.pageBreaks?.[pageSelection] ?? true} disabled={fileBusy} onPageBreak={(value) => void commitComponent(setPageBreakCommand(pageSelection, value))} />}<PageSetup preset={preset} orientation={orientation} draft={draft} onPreset={setPreset} onOrientation={setOrientation} onDraft={updateDraft} onApply={applyPageSetup} disabled={!canvas || fileBusy} /></>}</div>
+            `selectedRef.current[0] !== id` guard is untouched. */}<span className="column-identity-name">Column</span><span className="column-identity-meta">{selectedTableColumn.label === '' ? selectedTableColumn.columnId : selectedTableColumn.label}</span></p>}{mode === 'preview' ? <><p className="section-label">PREVIEW INPUTS</p><ParameterEditor referenceState={parameterReferenceState} accepted={previewParams} draft={previewParamsDraft} error={previewParamsError} onDraft={acceptPreviewParameters} onNamedValue={setNamedParameter} /><p className="honest-note">Parameters are local Preview input and are not part of the template.</p></> : selectedBreak !== undefined && breakPage !== undefined ? <SectionBreakProperties key={`${documentGenerationValue}:${breakPage}:${selectedBreak.offset}`} offset={selectedBreak.offset} anchor={selectedBreak.anchored} onCommit={(draft) => void commitComponent(setSectionBreakCommand(draft, false, breakPage))} onAnchor={(anchor) => void commitComponent(setSectionBreakAnchorCommand(anchor, breakPage))} /> : selected.length > 0 && canvas ? <ComponentProperties key={`${documentGenerationValue}:${selected.join(',')}`} components={canvas.components.filter((component) => selected.includes(component.id))} fontFamilies={canvas.fontFamilies} fontChains={canvas.fontChains} carriedFaces={paintableFaces} specimenBytes={familyControlSpecimenBytes} defaultFontSize={canvas.defaultFontSize} defaultLineSpacing={canvas.defaultLineSpacing} onCommit={applyProperties} onUseFamily={(source) => embedInstalledFamily(source, documentGeneration.current, selected.join(','))} onDeclareFamily={(source) => declareShippedFamily(source, documentGeneration.current, selected.join(','))} onOpenFontBrowser={() => { refreshHeldLocalFamilies(); setFontBrowserOpen(true) }} browserOpen={fontBrowserOpen} storedFaces={storedFaces} familyCensuses={familyCensuses} heldLocalFamilies={heldLocalFamilies} onFamilyListOpened={refreshHeldLocalFamilies} fontChainError={fontChainError} fontChainBusy={fontChainBusy || fileBusy} documentGeneration={documentGenerationValue} propertyError={propertyError} drag={drag} groupPreview={canvasSelection.group} onEditTable={(id) => void openTableEditor(id)} onPickImage={(id) => void applyImageAsset(id)} imageAvailable={imageFileAccess !== undefined} assetBusy={assetBusy} assetError={assetError} /> : <><div className="component-identity"><ToolIcon glyph="blank" /><span className="component-identity-name">Page</span><span className="component-identity-meta">{pageSelection !== undefined ? `page ${pageSelection + 1} of ${pageCount}` : `document · ${pageCount} ${pageCount === 1 ? 'page' : 'pages'}`}</span></div>{canvas && pageSelection !== undefined && <PageSection page={pageSelection} pageBreak={canvas.pageBreaks?.[pageSelection] ?? true} disabled={fileBusy} onPageBreak={(value) => void commitComponent(setPageBreakCommand(pageSelection, value))} />}<PageSetup preset={preset} orientation={orientation} draft={draft} onPreset={setPreset} onOrientation={setOrientation} onDraft={updateDraft} onApply={applyPageSetup} disabled={!canvas || fileBusy} /></>}</div>
         <div className="panel-body" role="tabpanel" id="inspector-panel-data" aria-labelledby="inspector-tab-data" hidden={inspectorTab !== 'data'}><DataPanel sample={sampleData} error={sampleError} busy={sampleBusy} available={Boolean(sampleFileAccess)} selectedComponentId={selected.length === 1 ? selected[0] : undefined} selectedComponentType={selectedComponent?.type} selectedBinding={selectedComponent?.type === 'table' ? selectedComponent.tableBind : selectedComponent?.binding} bindingError={bindingError} bindingBusy={bindingBusy} runtimeParameters={{ status: parameterReferenceState.status, names: parameterReferenceState.names, values: parameterValues(previewParams) }} columnScope={columnBindScope} saveDisabled={fileBusy || !fileAccess} onLoad={() => void loadSample()} onSave={() => void saveSampleData()} onConnect={(segments) => void bindPickedPath(segments)} onConnectColumn={(field) => void bindPickedColumn(field)} /></div>
         {/* STORY 13.3 — THE EVIDENCE RAIL, A SIBLING OF THE TABPANELS AND NEVER
             INSIDE ONE.
@@ -4414,7 +4593,7 @@ const valignSegments: ReadonlyArray<SegmentSpec> = [{ value: 'top', label: 'Vert
 function PropertySection({ title, tone, children }: { title: string; tone?: 'bind'; children: ReactNode }) {
   return <section className={`property-section property-section-${title.toLowerCase()}${tone === 'bind' ? ' property-section-bind' : ''}`}><p className="section-label">{title}</p>{children}</section>
 }
-function ComponentProperties({ components, fontFamilies, fontChains, carriedFaces, specimenBytes, defaultFontSize, defaultLineSpacing, onCommit, onUseFamily, onDeclareFamily, onOpenFontBrowser, browserOpen, storedFaces, heldLocalFamilies, onFamilyListOpened, fontChainError, fontChainBusy, documentGeneration, propertyError, drag, groupPreview, onEditTable, onPickImage, imageAvailable, assetBusy, assetError }: { components: ReadonlyArray<PanelComponent>; fontFamilies: ReadonlyArray<string>; fontChains: CanvasProjection['fontChains']; carriedFaces: ReadonlySet<string>; specimenBytes: PreviewFaceBytes; defaultFontSize: number; defaultLineSpacing: number; onCommit: CommitProperties; onUseFamily: (source: FamilySource) => Promise<string | undefined>; onDeclareFamily: (source: FamilySource) => Promise<string | undefined>; onOpenFontBrowser: () => void; browserOpen: boolean; storedFaces: ReadonlyArray<StoredFace>; heldLocalFamilies: ReadonlySet<string>; onFamilyListOpened: () => void; fontChainError?: FontChainCommitError; fontChainBusy: boolean; documentGeneration: number; propertyError?: PropertyCommitError; drag?: DragState; groupPreview?: GroupPreview; onEditTable: (id: string) => void; onPickImage: (id: string) => void; imageAvailable: boolean; assetBusy: boolean; assetError?: Readonly<{ id: string; message: string }> }) {
+function ComponentProperties({ components, fontFamilies, fontChains, carriedFaces, specimenBytes, defaultFontSize, defaultLineSpacing, onCommit, onUseFamily, onDeclareFamily, onOpenFontBrowser, browserOpen, storedFaces, familyCensuses, heldLocalFamilies, onFamilyListOpened, fontChainError, fontChainBusy, documentGeneration, propertyError, drag, groupPreview, onEditTable, onPickImage, imageAvailable, assetBusy, assetError }: { components: ReadonlyArray<PanelComponent>; fontFamilies: ReadonlyArray<string>; fontChains: CanvasProjection['fontChains']; carriedFaces: ReadonlySet<string>; specimenBytes: PreviewFaceBytes; defaultFontSize: number; defaultLineSpacing: number; onCommit: CommitProperties; onUseFamily: (source: FamilySource) => Promise<string | undefined>; onDeclareFamily: (source: FamilySource) => Promise<string | undefined>; onOpenFontBrowser: () => void; browserOpen: boolean; storedFaces: ReadonlyArray<StoredFace>; familyCensuses: ReadonlyArray<FamilyCensus>; heldLocalFamilies: ReadonlySet<string>; onFamilyListOpened: () => void; fontChainError?: FontChainCommitError; fontChainBusy: boolean; documentGeneration: number; propertyError?: PropertyCommitError; drag?: DragState; groupPreview?: GroupPreview; onEditTable: (id: string) => void; onPickImage: (id: string) => void; imageAvailable: boolean; assetBusy: boolean; assetError?: Readonly<{ id: string; message: string }> }) {
   const ids = components.map((component) => component.id)
   const types = new Set(components.map((component) => component.type))
   const all = (predicate: (type: PanelComponent['type']) => boolean) => [...types].every(predicate)
@@ -4477,7 +4656,7 @@ function ComponentProperties({ components, fontFamilies, fontChains, carriedFace
     {single && types.has('text') && <PropertySection title="CONTENT">{draftFor(contentField)}<p className="honest-note">Literal text, or {'{{ }}'} placeholders for data.</p></PropertySection>}
     {single && types.has('qrcode') && <PropertySection title="CONTENT">{draftFor(barcodeContentField)}<p className="honest-note">Any text, UTF-8. Literal text or {'{{ }}'} placeholders; a new line (Enter) is a carriage return; type \n for a line feed, \\ for a backslash.</p><SegmentedProperty label="Error correction" field="errorCorrection" segments={errorCorrectionSegments} components={components} ids={ids} onCommit={onCommit} documentGeneration={documentGeneration} error={errorFor('errorCorrection')} /><p className="honest-note">Higher levels survive more damage and need more modules in the same box. None selected is M.</p></PropertySection>}
     {single && types.has('barcode') && <PropertySection title="CONTENT">{draftFor(barcodeContentField)}<p className="honest-note">Code 128, ASCII only. Literal text or {'{{ }}'} placeholders; a new line (Enter) is a carriage return; type \n for a line feed, \\ for a backslash.</p></PropertySection>}
-    {typographic && <PropertySection title="TYPOGRAPHY"><FontFamilyProperty families={fontFamilies} fontChains={fontChains} carriedFaces={carriedFaces} specimenBytes={specimenBytes} components={components} ids={ids} onCommit={onCommit} onUseFamily={onUseFamily} onDeclareFamily={onDeclareFamily} onOpenFontBrowser={onOpenFontBrowser} browserOpen={browserOpen} storedFaces={storedFaces} heldLocalFamilies={heldLocalFamilies} onFamilyListOpened={onFamilyListOpened} pickBusy={fontChainBusy} pickError={scopedChainError?.control.action === 'embed' ? scopedChainError : undefined} documentGeneration={documentGeneration} error={errorFor('fontFamily')} /><div className="property-size-row">{draftFor({ ...fontSizeField, empty: points(defaultFontSize), shown: true })}<div className="property-toggles"><div className="property-toggle-row"><BooleanProperty label="Bold" field="bold" components={components} ids={ids} onCommit={onCommit} documentGeneration={documentGeneration} error={errorFor('bold')} absentCutId={missingBoldCut && cutAbsenceId(missingBoldCut)} /><BooleanProperty label="Italic" field="italic" components={components} ids={ids} onCommit={onCommit} documentGeneration={documentGeneration} error={errorFor('italic')} absentCutId={missingItalicCut && cutAbsenceId(missingItalicCut)} /></div>{absentCuts.map((cut) => <p key={cut} id={cutAbsenceId(cut)} className="property-unavailable">{cutAbsenceSentence(cut)}</p>)}</div></div>{draftFor({ ...lineSpacingField, empty: points(defaultLineSpacing), shown: true })}{draftFor(colorField)}<div className="property-grid"><SegmentedProperty label="Align" field="align" segments={alignChoices} components={components} ids={ids} onCommit={onCommit} documentGeneration={documentGeneration} error={errorFor('align')} /><SegmentedProperty label="Vertical align" field="valign" segments={valignSegments} components={components} ids={ids} onCommit={onCommit} documentGeneration={documentGeneration} error={errorFor('valign')} /></div></PropertySection>}
+    {typographic && <PropertySection title="TYPOGRAPHY"><FontFamilyProperty families={fontFamilies} fontChains={fontChains} carriedFaces={carriedFaces} specimenBytes={specimenBytes} components={components} ids={ids} onCommit={onCommit} onUseFamily={onUseFamily} onDeclareFamily={onDeclareFamily} onOpenFontBrowser={onOpenFontBrowser} browserOpen={browserOpen} storedFaces={storedFaces} familyCensuses={familyCensuses} heldLocalFamilies={heldLocalFamilies} onFamilyListOpened={onFamilyListOpened} pickBusy={fontChainBusy} pickError={scopedChainError?.control.action === 'embed' ? scopedChainError : undefined} documentGeneration={documentGeneration} error={errorFor('fontFamily')} /><div className="property-size-row">{draftFor({ ...fontSizeField, empty: points(defaultFontSize), shown: true })}<div className="property-toggles"><div className="property-toggle-row"><BooleanProperty label="Bold" field="bold" components={components} ids={ids} onCommit={onCommit} documentGeneration={documentGeneration} error={errorFor('bold')} absentCutId={missingBoldCut && cutAbsenceId(missingBoldCut)} /><BooleanProperty label="Italic" field="italic" components={components} ids={ids} onCommit={onCommit} documentGeneration={documentGeneration} error={errorFor('italic')} absentCutId={missingItalicCut && cutAbsenceId(missingItalicCut)} /></div>{absentCuts.map((cut) => <p key={cut} id={cutAbsenceId(cut)} className="property-unavailable">{cutAbsenceSentence(cut)}</p>)}</div></div>{draftFor({ ...lineSpacingField, empty: points(defaultLineSpacing), shown: true })}{draftFor(colorField)}<div className="property-grid"><SegmentedProperty label="Align" field="align" segments={alignChoices} components={components} ids={ids} onCommit={onCommit} documentGeneration={documentGeneration} error={errorFor('align')} /><SegmentedProperty label="Vertical align" field="valign" segments={valignSegments} components={components} ids={ids} onCommit={onCommit} documentGeneration={documentGeneration} error={errorFor('valign')} /></div></PropertySection>}
     {image && <ImageSection component={image} onPick={onPickImage} available={imageAvailable} busy={assetBusy} error={assetError?.id === image.id ? assetError.message : undefined} />}
     <PropertySection title="BOX">{!types.has('line') && !types.has('barcode') && !types.has('qrcode') && borderFields.map(draftFor)}{!types.has('line') && !types.has('barcode') && !types.has('qrcode') && <BorderEdgesProperty components={components} ids={ids} onCommit={onCommit} documentGeneration={documentGeneration} error={errorFor('borderEdges')} />}{line && borderProjected(line) && <p className="honest-note">This line carries a border in the document — the panel does not offer one, because a line is authored as a thickness and a colour. The stored border is unchanged and still paints. This note reports what the engine projects, not what the PDF draws.</p>}{!types.has('barcode') && !types.has('qrcode') && draftFor(boxFillFieldFor(single?.type))}{draftFor(visibilityField)}<p className="honest-note">Visibility takes a boolean or null formula — {'e.g. loanAmount > 20000'}. Use true, false, arithmetic, or nested conditions. Empty is always visible.</p></PropertySection>
     {table && <PropertySection title="TABLE"><button type="button" className="file-button" onClick={() => onEditTable(table.id)}>Configure columns</button></PropertySection>}
@@ -5445,7 +5624,7 @@ function scriptsForFamilyName(family: string): ReadonlyArray<string> {
   return catalogueFaces.find((face) => face.family === family)?.scripts ?? indexRowFor(family)?.scripts ?? []
 }
 
-function FontFamilyProperty({ families, fontChains, carriedFaces, specimenBytes, components, ids, onCommit, onUseFamily, onDeclareFamily, onOpenFontBrowser, browserOpen, storedFaces, heldLocalFamilies, onFamilyListOpened, pickBusy, pickError, documentGeneration, error }: { families: ReadonlyArray<string>; fontChains: CanvasProjection['fontChains']; carriedFaces: ReadonlySet<string>; specimenBytes: PreviewFaceBytes; components: ReadonlyArray<PanelComponent>; ids: ReadonlyArray<string>; onCommit: CommitProperties; onUseFamily: (source: FamilySource) => Promise<string | undefined>; onDeclareFamily: (source: FamilySource) => Promise<string | undefined>; onOpenFontBrowser: () => void; browserOpen: boolean; storedFaces: ReadonlyArray<StoredFace>; heldLocalFamilies: ReadonlySet<string>; onFamilyListOpened: () => void; pickBusy: boolean; pickError?: FontChainCommitError; documentGeneration: number; error?: PropertyCommitError }) {
+function FontFamilyProperty({ families, fontChains, carriedFaces, specimenBytes, components, ids, onCommit, onUseFamily, onDeclareFamily, onOpenFontBrowser, browserOpen, storedFaces, familyCensuses, heldLocalFamilies, onFamilyListOpened, pickBusy, pickError, documentGeneration, error }: { families: ReadonlyArray<string>; fontChains: CanvasProjection['fontChains']; carriedFaces: ReadonlySet<string>; specimenBytes: PreviewFaceBytes; components: ReadonlyArray<PanelComponent>; ids: ReadonlyArray<string>; onCommit: CommitProperties; onUseFamily: (source: FamilySource) => Promise<string | undefined>; onDeclareFamily: (source: FamilySource) => Promise<string | undefined>; onOpenFontBrowser: () => void; browserOpen: boolean; storedFaces: ReadonlyArray<StoredFace>; familyCensuses: ReadonlyArray<FamilyCensus>; heldLocalFamilies: ReadonlySet<string>; onFamilyListOpened: () => void; pickBusy: boolean; pickError?: FontChainCommitError; documentGeneration: number; error?: PropertyCommitError }) {
   const values = components.map((component) => committedValue(component, 'fontFamily'))
   const uniform = sameProperty(components, 'fontFamily')
   const committed = uniform ? values[0] ?? '' : ''
@@ -5543,7 +5722,7 @@ function FontFamilyProperty({ families, fontChains, carriedFaces, specimenBytes,
   // document's own chains, and a font the open `.folio` carries is always
   // offered here whatever this browser's cache holds. Nothing in this line
   // reaches that group.
-  const onThisMachine = offeredFamilies(query, storedFaces).filter((source) => !families.includes(source.family) && familyIsInstalled(source, heldLocalFamilies))
+  const onThisMachine = offeredFamilies(query, storedFaces, familyCensuses).filter((source) => !families.includes(source.family) && familyIsInstalled(source, heldLocalFamilies))
   // THE REGISTRY HOLDS EXACTLY THE FAMILIES THIS RENDER CAN SHOW A SPECIMEN
   // FOR — `onThisMachine`, and nothing else. NUL-JOINED for the reason
   // `FontBrowser.tsx`'s own key is: family names contain spaces. EMPTY

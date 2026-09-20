@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { addableFamilyCount, indexCategories, indexScripts, offeredFamilies, type FamilySource } from './font-index'
+import { addableFamilyCount, indexCategories, indexScripts, offeredFamilies, sourceScripts, type FamilySource } from './font-index'
 import { browserRows, buttonLabel, buttonName, confirmLabel, emptyStateHeading, familiesPerPage, filterRows, filtersActive, gridSpecimenCap, latinSample, noFilters, pageCount, pageLine, pageOf, pendingLine, resultLine, rowState, rowTierNote, scriptBadge, sizeReadout, sortRows, specimenFor, specimenSize, thaiSample, weightLine, type BrowserRow, type BrowserSort, type BrowserView, type RowState } from './font-browser-model'
 import type { StoredFace } from './font-store'
 
@@ -31,7 +31,7 @@ describe('the font browser describes the families it is given', () => {
     expect(sarabun?.scripts).toEqual(['latin', 'thai'])
     // A family the snapshot has no row for keeps its tier's own scripts and
     // carries no category at all — never a guessed one.
-    const [invented] = browserRows([{ tier: 'stored', family: 'A Face Only This Machine Has', record: storedRecord('A Face Only This Machine Has', ['latin']) }])
+    const [invented] = browserRows([{ tier: 'stored', family: 'A Face Only This Machine Has', faces: [storedRecord('A Face Only This Machine Has', ['latin'])] }])
     expect(invented?.category).toBeUndefined()
     expect(invented?.popularity).toBeUndefined()
     expect(invented?.scripts).toEqual(['latin'])
@@ -41,7 +41,7 @@ describe('the font browser describes the families it is given', () => {
     // MECHANICAL (Story 16.5): the web arm's verb follows the action the
     // dialog now performs. The tier and the arm count are unchanged.
     expect(rowTierNote(webRow('Kanit', 'Sans Serif', ['latin', 'thai'], 8))).toBe('downloaded when you install it')
-    expect(rowTierNote({ tier: 'stored', family: 'Kanit', record: storedRecord('Kanit', ['latin']) })).toBe('downloaded to this machine')
+    expect(rowTierNote({ tier: 'stored', family: 'Kanit', faces: [storedRecord('Kanit', ['latin'])] })).toBe('downloaded to this machine')
     // THE LOCAL ARM, OVER A REAL COMMITTED FACE. It is the arm the other two are
     // measured against — the 31 faces that need no network at all — and it was
     // the one arm nothing exercised.
@@ -61,7 +61,7 @@ describe('the font browser describes the families it is given', () => {
       // The branch the two index-less local families depend on: their scripts
       // come from the face this machine holds, because no snapshot row exists to
       // read them from.
-      expect(row.scripts).toEqual(face?.tier === 'local' ? face.face.scripts : [])
+      expect(row.scripts).toEqual(face?.tier === 'local' ? sourceScripts(face) : [])
     }
     // AND THOSE TWO ARE REALLY THERE, so this is not a vacuous loop over rows
     // that all happen to have an index row behind them.

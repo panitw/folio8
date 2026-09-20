@@ -86,9 +86,20 @@
 // origin. Not the operating system, not synced, not shared with another browser
 // on the same machine, not shared with another user of the same computer.
 
-/** The database and its two object stores. Version 1; there is no earlier shape to migrate. */
+/**
+ * The database and its three object stores.
+ *
+ * VERSION 2 SINCE spec-install-all-face-cuts STORY 1, AND THE UPGRADE IS
+ * ADDITIVE. Version 1 held the two face stores below; version 2 adds the family
+ * census beside them and touches neither. `onupgradeneeded` creates each store
+ * behind a `contains` guard, so a v1 database is opened, given the one store it
+ * lacks, and handed back WITH EVERY FACE RECORD IT ALREADY HELD — an author's
+ * downloaded typefaces may not be wiped by a schema bump, and
+ * `src/font-store.test.ts` drives a real v1 database through this path rather
+ * than assuming it.
+ */
 const databaseName = 'folio8-machine-font-store'
-const databaseVersion = 1
+const databaseVersion = 2
 /** Metadata, keyed by the face's content address. Read by `list()` on its own. */
 const faceStoreName = 'faces'
 /**
@@ -107,6 +118,117 @@ const faceStoreName = 'faces'
  * what `get()` and `list()` treat as a CORRUPT ENTRY and drop.
  */
 const byteStoreName = 'face-bytes'
+
+/**
+ * THE FAMILY CENSUS — WHAT UPSTREAM PUBLISHES FOR A FAMILY, AND WHICH OF ITS
+ * CUTS THIS MACHINE ASKED FOR AND WAS REFUSED (D-7, spec-install-all-face-cuts).
+ *
+ * ⚠ IT IS THE ONE FAMILY-KEYED THING IN THIS MODULE, AND THAT IS DELIBERATE.
+ * The face store stays content-addressed: a face record is keyed by the SHA-256
+ * of its bytes and says nothing about its family's other cuts. The census is a
+ * SEPARATE store because the fact it holds — what the family PUBLISHES — is a
+ * fact about the family and about nothing this machine happens to hold. Copying
+ * it onto each face record would be N copies of one fact that can disagree,
+ * which is exactly what `webFaceSource`'s comment above refuses in those words.
+ *
+ * WHY IT EXISTS AT ALL. Installing a family now fetches every cut it publishes,
+ * and a cut can be refused on its own — a variable Bold, a `.woff2` Italic, a
+ * stalled body. Without a record of that refusal the completeness predicate
+ * would read the family as short FOREVER and offer it for install on every
+ * render, so a family whose italic upstream cannot serve would re-offer until
+ * the end of time. The refusal is what terminates that loop.
+ */
+const censusStoreName = 'family-census'
+
+/**
+ * WHETHER A REFUSED CUT IS SETTLED OR MERELY NOT HERE YET (D-2/D-5, amended
+ * 2026-09-20 after review).
+ *
+ * THE FIRST CUT OF THIS STORY RECORDED ONE KIND OF REFUSAL AND THAT WAS WRONG.
+ * A stalled body and an offline connection were written down exactly like a
+ * variable `fvar` or a 404, and because D-5 settled a cut on ANY recorded
+ * refusal, one bad minute of network permanently stranded a Bold the family
+ * really publishes, with no path back: the family read complete, so it was
+ * never offered for install again and the cut was never retried.
+ *
+ *   `permanent` — the refusal is a property of what upstream publishes and
+ *                 will not change by trying again: a variable `fvar`, a
+ *                 filename this engine cannot read, a 404. It SETTLES the cut,
+ *                 which is what keeps D-5's predicate from becoming a silent
+ *                 retry loop.
+ *   `transient` — the refusal is a property of this attempt: a stalled body,
+ *                 no network, a 5xx. It settles NOTHING. The family reads
+ *                 incomplete and the cut is fetched again on a later pick.
+ *
+ * ⚠ THE DEFAULT IS `transient`, AND THE ASYMMETRY IS THE REASON. Retrying
+ * something permanent costs one wasted request on a pick the author made
+ * anyway; stranding something transient costs a Bold that is gone for good. So
+ * only a failure shape that is CONFIDENTLY permanent is written down as one,
+ * and everything else — including a body that would not parse, which is exactly
+ * what a captive portal's 200 HTML login page looks like — is transient.
+ */
+export type FaceCutPermanence = 'permanent' | 'transient'
+
+/** One cut upstream publishes that this machine asked for and did not get, with the reason and whether it is settled. */
+export type FamilyCutRefusal = Readonly<{ style: string; reason: string; permanence: FaceCutPermanence }>
+
+/**
+ * THE CENSUS RECORD, AND IT DISTINGUISHES THREE STATES RATHER THAN TWO — which
+ * is the obligation D-7's approval came with, because the completeness
+ * predicate needs all three and story 2's panel sentence will too:
+ *
+ *   `published` holds the cut AND `refused` names it  →  upstream publishes it
+ *                                                        and the fetch failed.
+ *   `published` does not hold the cut                 →  upstream publishes no
+ *                                                        such cut.
+ *   `published` holds it and `refused` does not, and  →  never attempted.
+ *   no face record of that style is on this machine
+ *
+ * ⚠ THERE IS NO `held` FIELD, AND ITS ABSENCE IS THE DECISION'S OWN REASONING
+ * APPLIED TO ITSELF. D-7 chose a separate store over a per-face field because
+ * that is ONE AUTHORITY ON ONE FACT; a `held` list here would be a SECOND
+ * authority on a fact the face records already carry — every stored record has
+ * a `style`, so which cuts this machine holds is read off the face set. Two
+ * lists that can disagree is the failure this store's own shape exists to
+ * avoid, and it would also fail in a way the reader can see: the face store
+ * SELF-HEALS by dropping a record it cannot verify, and a `held` list would go
+ * on claiming a cut whose bytes had just been dropped.
+ *
+ * `published` IS THE AUTHORITY ON WHAT THE FAMILY PUBLISHES.
+ * `generated/font-index.ts`'s `styles` must not become a second one — that
+ * carry-through is a later story's and is deliberately not consulted here.
+ */
+export type FamilyCensus = Readonly<{
+  family: string
+  /** The RIBBI cuts upstream publishes, as subfamily names: `Regular`, `Bold`, `Italic`, `Bold Italic`. */
+  published: ReadonlyArray<string>
+  /** The published cuts this machine asked for and did not get, each with the sentence that refused it. */
+  refused: ReadonlyArray<FamilyCutRefusal>
+  /** The day the census was written, `YYYY-MM-DD`. */
+  recordedAt: string
+}>
+
+/**
+ * D-5's COMPLETENESS PREDICATE, OVER THE CENSUS AND THE CUTS ACTUALLY HELD.
+ *
+ * A family is complete when it holds every cut it publishes OR carries a
+ * recorded PERMANENT refusal for each cut it lacks. That second clause is what
+ * D-2's record exists for and what keeps a family whose Italic upstream cannot
+ * serve from being offered for install on every render for ever.
+ *
+ * ⚠ A TRANSIENT REFUSAL SETTLES NOTHING, and that is the amendment. A stalled
+ * Bold leaves the family INCOMPLETE, so it is offered for install again and the
+ * Bold is fetched on the next pick — which is what makes `font-source.ts`'s own
+ * stall sentence, *"Try the pick again if you like"*, true for a cut that is not
+ * the base.
+ *
+ * MEASURED: 947 of the 1,274 offered web families publish a Regular and nothing
+ * else (`font-index.json`, `axes == []`, `styles == ["400"]`), so for 74.3% of
+ * the population this is complete the moment the Regular lands and the census
+ * never has a refusal to carry at all.
+ */
+export const censusIsComplete = (census: FamilyCensus, heldCuts: ReadonlySet<string>): boolean =>
+  census.published.every((cut) => heldCuts.has(cut) || census.refused.some((entry) => entry.style === cut && entry.permanence === 'permanent'))
 
 /**
  * Everything the store keeps about a face EXCEPT its bytes: what `list()`
@@ -158,6 +280,10 @@ export type FontStore = Readonly<{
   put(record: StoredFaceRecord): Promise<StoreOutcome<void>>
   list(): Promise<StoreOutcome<ReadonlyArray<StoredFace>>>
   remove(key: string): Promise<StoreOutcome<void>>
+  /** Every family census this machine holds. Read once beside `list()`, for the same reason. */
+  listCensus(): Promise<StoreOutcome<ReadonlyArray<FamilyCensus>>>
+  /** Records what a family publishes and which of its cuts were refused. One row per family. */
+  putCensus(record: FamilyCensus): Promise<StoreOutcome<void>>
 }>
 
 /**
@@ -251,6 +377,43 @@ function soundFace(value: unknown): StoredFace | undefined {
   }
 }
 
+/**
+ * AND A CENSUS READ BACK IS CHECKED THE SAME WAY A FACE IS, FOR THE SAME REASON.
+ *
+ * What comes out of IndexedDB is whatever was in IndexedDB. A census that does
+ * not have this shape is treated as ABSENT, which reads the family as
+ * incomplete and offers it for install again — the self-healing direction. The
+ * other direction would be worse in kind: a malformed census admitted as sound
+ * could report a family complete that holds nothing, and the family would never
+ * be offered again.
+ */
+function soundCensus(value: unknown): FamilyCensus | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const candidate = value as Record<string, unknown>
+  for (const field of ['family', 'recordedAt'] as const) if (typeof candidate[field] !== 'string' || candidate[field] === '') return undefined
+  if (!Array.isArray(candidate.published) || !candidate.published.every((cut) => typeof cut === 'string' && cut !== '')) return undefined
+  if (!Array.isArray(candidate.refused)) return undefined
+  const refused: FamilyCutRefusal[] = []
+  for (const entry of candidate.refused as unknown[]) {
+    if (!entry || typeof entry !== 'object') return undefined
+    const cut = entry as Record<string, unknown>
+    if (typeof cut.style !== 'string' || cut.style === '') return undefined
+    if (typeof cut.reason !== 'string' || cut.reason === '') return undefined
+    // A REFUSAL WITH NO RECOGNISED PERMANENCE MAKES THE WHOLE CENSUS UNSOUND,
+    // which reads the family as incomplete and offers it for install again —
+    // the self-healing direction. Admitting one and assuming `permanent` would
+    // settle a cut on a record this build cannot actually read.
+    if (cut.permanence !== 'permanent' && cut.permanence !== 'transient') return undefined
+    refused.push({ style: cut.style, reason: cut.reason, permanence: cut.permanence })
+  }
+  return {
+    family: candidate.family as string,
+    published: [...(candidate.published as string[])],
+    refused,
+    recordedAt: candidate.recordedAt as string,
+  }
+}
+
 /** One IndexedDB request, as a promise that rejects with the request's own error rather than an `Event`. */
 function request<T>(source: IDBRequest<T>): Promise<T> {
   return new Promise<T>((resolve, reject) => {
@@ -295,6 +458,13 @@ export async function openFontStore(factory: IDBFactory | undefined = globalThis
         const upgrading = opening.result
         if (!upgrading.objectStoreNames.contains(faceStoreName)) upgrading.createObjectStore(faceStoreName, { keyPath: 'key' })
         if (!upgrading.objectStoreNames.contains(byteStoreName)) upgrading.createObjectStore(byteStoreName)
+        // THE ADDITIVE HALF OF THE v1 → v2 UPGRADE. Every branch here is a
+        // `contains` guard and a `createObjectStore`, and there is deliberately
+        // no `deleteObjectStore` anywhere in this function: a schema bump that
+        // wiped an author's downloaded typefaces is the failure mode that ruled
+        // the per-face-field option out of D-7, and it may not reappear through
+        // the upgrade path it was traded for.
+        if (!upgrading.objectStoreNames.contains(censusStoreName)) upgrading.createObjectStore(censusStoreName, { keyPath: 'family' })
       }
       opening.onsuccess = () => resolve(opening.result)
       opening.onerror = () => reject(opening.error ?? new Error('the database could not be opened'))
@@ -303,6 +473,22 @@ export async function openFontStore(factory: IDBFactory | undefined = globalThis
   } catch (error) {
     return failed(`This browser is not letting the designer keep typefaces on this machine (${detail(error)}), so the fonts you have already downloaded cannot be offered back to you. Everything else works, and picking a family still fetches it.`)
   }
+  // ⚠ AN OLDER TAB MUST GET OUT OF THE WAY, OR IT BLOCKS THE UPGRADE FOR A
+  // WHOLE SESSION.
+  //
+  // `onversionchange` fires on THIS connection when another tab opens the same
+  // database at a HIGHER version. Unanswered, this connection stays open, the
+  // other tab's `open` sits in `onblocked` — which `openFontStore` above turns
+  // into a stated degradation — and the newer tab runs with no store at all
+  // until this one is closed by hand. That is a real, ordinary condition the
+  // moment a release bumps `databaseVersion`, which this story does.
+  //
+  // CLOSING IS SAFE AND IS THE ONLY CORRECT ANSWER. Every operation in this
+  // module is its own transaction, so a closed connection fails the NEXT call
+  // with a stated outcome rather than corrupting one in flight — and the tab
+  // that closed is running an older build whose reads were about to be wrong
+  // anyway.
+  database.onversionchange = () => database.close()
   return succeeded(fontStoreOver(database))
 }
 
@@ -325,7 +511,12 @@ function fontStoreOver(database: IDBDatabase): FontStore {
   const transact = <T>(mode: IDBTransactionMode, work: (transaction: IDBTransaction) => Promise<T>): Promise<StoreOutcome<T>> =>
     (async () => {
       try {
-        const transaction = database.transaction([faceStoreName, byteStoreName], mode)
+        // ⚠ THE STORE LIST IS WHERE A TRANSACTION'S REACH IS DECIDED, and the
+        // census is named here rather than in a second `transact` of its own: a
+        // transaction that does not name a store cannot touch it, and a census
+        // write placed in a transaction opened over the two face stores would
+        // throw `NotFoundError` rather than fail quietly.
+        const transaction = database.transaction([faceStoreName, byteStoreName, censusStoreName], mode)
         const done = settled(transaction)
         // ⚠ `done` IS OBSERVED THE MOMENT IT EXISTS, NOT ONLY ON THE PATH THAT
         // AWAITS IT.
@@ -445,6 +636,37 @@ function fontStoreOver(database: IDBDatabase): FontStore {
         const bytes = request(transaction.objectStore(byteStoreName).delete(key))
         return Promise.all([face, bytes]).then(() => undefined)
       })
+    },
+
+    /**
+     * A CENSUS THIS BUILD CANNOT READ IS SKIPPED, NOT DROPPED.
+     *
+     * The face store drops a corrupt entry because the bytes behind it are
+     * unusable and the next pick should refetch them. A census carries no bytes
+     * and costs nothing to leave in place; skipping it reads the family as
+     * incomplete, which offers it for install again, and the next install
+     * overwrites the row with a sound one. Deleting would be the same outcome
+     * with an extra write.
+     */
+    async listCensus() {
+      const read = await transact('readonly', (transaction) => request<unknown[]>(transaction.objectStore(censusStoreName).getAll()))
+      if (!read.ok) return read
+      const sound: FamilyCensus[] = []
+      for (const candidate of read.value) {
+        const census = soundCensus(candidate)
+        if (census !== undefined) sound.push(census)
+      }
+      return succeeded(sound)
+    },
+
+    putCensus(record) {
+      return transact('readwrite', (transaction) =>
+        request(transaction.objectStore(censusStoreName).put({
+          family: record.family,
+          published: [...record.published],
+          refused: record.refused.map((entry) => ({ style: entry.style, reason: entry.reason, permanence: entry.permanence })),
+          recordedAt: record.recordedAt,
+        })).then(() => undefined))
     },
   }
 }

@@ -1,6 +1,6 @@
 import { catalogueFaces, type CatalogueFace, type CatalogueScript } from './generated/font-catalogue'
 import { familyIndex, familyIndexExcludedCjkFamilies, familyIndexPublishedFamilies, type IndexFamily } from './generated/font-index'
-import type { StoredFace } from './font-store'
+import { censusIsComplete, type FamilyCensus, type StoredFace } from './font-store'
 
 // THE TWO TIERS, AND THE JOIN BETWEEN THEM (D-16.R.3).
 //
@@ -74,13 +74,68 @@ import type { StoredFace } from './font-store'
 // D-16.1 left standing and it is untouched: the Local Font Access API is not
 // used, referenced or feature-detected anywhere in this designer, and
 // `src/host-font-access.test.ts` is the tripwire.
+//
+// AND SINCE spec-install-all-face-cuts STORY 1, AN INSTALLED TIER HOLDS A
+// FAMILY'S FACE **SET** RATHER THAN ONE FACE.
+//
+// A pick installs every RIBBI cut the family publishes, so `Kanit` on this
+// machine is up to four records — Regular, Bold, Italic, Bold Italic — and the
+// browser must offer that family ONCE with each cut resolving to the record
+// whose `style` matches. The union used to carry one face per arm and a fold
+// downstream picked one of them; the fold is gone, not tie-broken. See
+// `offeredFamilies` for what replaced it and why a better tie-break would have
+// been the wrong repair.
 export type FamilySource =
-  /** A face this machine already holds. Picking it fetches nothing. */
-  | Readonly<{ tier: 'local'; family: string; face: CatalogueFace }>
-  /** A face this designer fetched before and kept. Picking it fetches nothing. */
-  | Readonly<{ tier: 'stored'; family: string; record: StoredFace }>
+  /** The cuts of this family the release ships. Picking fetches nothing beyond the release's own assets. */
+  | Readonly<{ tier: 'local'; family: string; faces: ReadonlyArray<CatalogueFace> }>
+  /** The cuts of this family this designer fetched before and kept, with the census that says what it publishes. */
+  | Readonly<{ tier: 'stored'; family: string; faces: ReadonlyArray<StoredFace>; census?: FamilyCensus }>
   /** A family from the build-time index snapshot. Picking it fetches. */
   | Readonly<{ tier: 'web'; family: string; row: IndexFamily }>
+
+/**
+ * THE CUT A CALLER MEANS WHEN IT MEANS "THE FAMILY", AND IT IS RESOLVED BY
+ * `style` RATHER THAN BY POSITION.
+ *
+ * Everything that embeds, previews or describes a family reaches for its
+ * upright Regular: the chain entry names it, the specimen is set in it, the
+ * document paints with it. Reading `faces[0]` would make that a fact about
+ * arrival order — the store's listing sorts by family then KEY, which is the
+ * content hash, which is arbitrary — and handing the author one of four faces
+ * on the strength of a digest ordering is the silent substitution the
+ * content-address key exists to refuse.
+ *
+ * `undefined` FOR A SET WITH NO REGULAR IN IT IS A REAL ANSWER AND CALLERS SAY
+ * SO IN WORDS. It cannot arise from an install — the Regular is required before
+ * any byte is kept — but it CAN arise from a store whose Regular was dropped as
+ * unsound between a listing and a read, and inventing a substitute there would
+ * put a face nobody chose one step from a document.
+ */
+export const regularCutOf = <T extends Readonly<{ style: string }>>(faces: ReadonlyArray<T>): T | undefined =>
+  faces.find((face) => face.style === 'Regular')
+
+/**
+ * The scripts a pickable row's face covers, read off whichever tier the row is.
+ * Every tier carries them; only the field they sit in differs, and spelling the
+ * discriminant here keeps the narrowing the compiler's rather than a comment's.
+ *
+ * IT IS THE REGULAR'S COVERAGE, NOT THE UNION OF THE SET'S. A family's cuts are
+ * the same typeface at four weights and slopes; claiming the Bold covers a
+ * script the Regular does not would be a fact about one cut presented as a fact
+ * about the family, and the proposed fallback tail is computed from it.
+ */
+export function sourceScripts(source: FamilySource): ReadonlyArray<string> {
+  if (source.tier === 'web') return source.row.scripts
+  // WIDENED TO THE ONE SHAPE BOTH INSTALLED TIERS SHARE. A catalogue face and a
+  // stored face differ in every field but the two this answer needs, and
+  // narrowing the union arm by arm would be the same expression written twice.
+  const cuts: ReadonlyArray<Readonly<{ style: string; scripts: ReadonlyArray<string> }>> = source.faces
+  // THE REGULAR'S COVERAGE, AND A SET WITH NO REGULAR FALLS BACK TO ITS FIRST
+  // CUT RATHER THAN TO NOTHING: a family whose Regular was dropped as unsound
+  // still covers the scripts its remaining cuts do, and reporting no coverage
+  // would propose a fallback tail for every script the family actually has.
+  return regularCutOf(cuts)?.scripts ?? cuts[0]?.scripts ?? []
+}
 
 /* `indexSnapshotDate` STOOD HERE AND WENT WITH THE DISCLOSURE (Story 16.10).
    Its only reader was `familyIndexDisclosure()`, the sentence the browser's
@@ -115,8 +170,28 @@ export const indexExcludedCjkFamilies = familyIndexExcludedCjkFamilies
  * `Geist Pixel` is exactly the neighbourhood a loose matcher gets wrong. A LOCAL
  * FACE WITH NO INDEX ROW IS LOCAL-TIER-ONLY, AND THAT IS CORRECT BEHAVIOUR, NOT
  * A DEFECT.
+ *
+ * ⚠ IT GROUPS RATHER THAN OVERWRITING, AND THAT IS A REPAIR RATHER THAN A
+ * GENERALISATION. `new Map(catalogueFaces.map(face => [face.family, face]))` is
+ * LAST-WINS: the moment the catalogue carries two cuts of one family, one of
+ * them silently disappears from every reader of this map, chosen by position in
+ * a generated file. It does not carry two today — every committed face is a
+ * single upright Regular — so the defect is latent rather than live, and it is
+ * fixed here, in this story, so that the story which SUPPLIES those cuts has
+ * only data to supply.
  */
-const localByFamily: ReadonlyMap<string, CatalogueFace> = new Map(catalogueFaces.map((face) => [face.family, face]))
+const localByFamily: ReadonlyMap<string, ReadonlyArray<CatalogueFace>> = (() => {
+  const grouped = new Map<string, CatalogueFace[]>()
+  for (const face of catalogueFaces) {
+    const held = grouped.get(face.family)
+    if (held === undefined) grouped.set(face.family, [face])
+    else held.push(face)
+  }
+  return grouped
+})()
+
+/** The catalogue families, once each, in the order the generated catalogue writes them. */
+const localFamilies: ReadonlyArray<Readonly<{ family: string; faces: ReadonlyArray<CatalogueFace> }>> = [...localByFamily].map(([family, faces]) => ({ family, faces }))
 
 export const localTierHolds = (family: string): boolean => localByFamily.has(family)
 
@@ -224,59 +299,52 @@ export const addableFamilyCount = webFamilies.length + catalogueFaces.length
  * without a database.
  */
 /**
- * WHICH OF TWO STORED FACES OF ONE FAMILY IS OFFERED — A RULE, NOT AN ACCIDENT.
+ * A FAMILY'S STORED FACES ARE ALL OF THEM — THE FOLD THAT PICKED ONE IS GONE.
  *
- * The store is keyed by the SHA-256 of the bytes, so ONE FAMILY CAN HONESTLY
- * HAVE MORE THAN ONE ENTRY: upstream re-cut the face between two fetches, or
- * the author has a Regular and an Italic of it. Under AD-8 those are DIFFERENT
- * FACES, not versions of one, and this function is `offeredFamilies` — one row
- * per family — so exactly one of them is offered.
+ * WHAT USED TO STAND HERE. `mostRecentlyFetched` collapsed a family's stored
+ * records to a single `StoredFace`, newest `fetchedAt` first and the
+ * lexicographically smaller key breaking a tie. It was a careful rule and it
+ * was answering the wrong question. `fetchedAt` is day-granular, so the four
+ * cuts of one family installed in one session ALL TIE, and the tie-break then
+ * handed the author whichever cut happened to hash lowest — an arbitrary face,
+ * not the Regular, chosen by a digest.
  *
- * IT USED TO BE WHICHEVER ONE CAME LAST IN `list()` ORDER, which is the store's
- * family-then-key sort — that is, the hash, that is, arbitrary. A menu that
- * silently hands the author one of two faces on the strength of a digest
- * ordering is the "silent substitution" the contract forbids in the very clause
- * that makes the key a content hash.
+ * WHY THE TIE-BREAK WAS NOT WORTH REPAIRING. The fold was wrong in KIND. It
+ * existed because `FamilySource` held ONE face per family and something had to
+ * choose it; now the union holds the SET, so there is nothing to choose. A
+ * repaired tie-break — prefer `style === 'Regular'`, say — would have been a
+ * second authority on cut resolution sitting beside `regularCutOf`, agreeing
+ * with it today and free to disagree tomorrow.
  *
- * THE RULE IS: THE MOST RECENTLY FETCHED WINS. `fetchedAt` is `YYYY-MM-DD`, so
- * a plain string comparison is chronological. It is the right default because
- * the newer entry is the one the author's last pick of that family actually
- * produced, so it is the one they last saw work.
+ * ONE FAMILY IS STILL ONE ROW. That was the fold's real job and it is kept:
+ * the browser offers a family once, whatever its face count, and each cut
+ * resolves out of the set by its own `style`.
  *
- * TIES GO TO THE LEXICOGRAPHICALLY SMALLER KEY. Two faces fetched on the same
- * day are common (a Regular and an Italic within one session), and the tie must
- * break on something stable rather than on arrival order. The smaller key is
- * also the one `font-store.ts`'s `list()` sorts FIRST within a family, so what
- * the menu offers and what the listing shows first are the same face rather
- * than two answers to one question.
- *
- * NEITHER OF THESE IS A DROPDOWN GROUP, AND 16.2 DOES NOT BUILD ONE. Offering
- * both styles as separate rows is Story 16.4's, which owns the grouping; this
- * story owes only a choice that is deterministic and stated.
+ * TWO RECORDS OF THE SAME CUT ARE BOTH KEPT, AND THAT IS HONEST. Upstream can
+ * re-cut a face between two fetches; under AD-8 those are DIFFERENT FACES, not
+ * versions of one. `regularCutOf` takes the first match in the store's own
+ * stable family-then-key order, which is the same face its listing shows first
+ * — one answer to one question rather than two.
  */
-function mostRecentlyFetched(left: StoredFace, right: StoredFace): StoredFace {
-  if (left.fetchedAt !== right.fetchedAt) return left.fetchedAt > right.fetchedAt ? left : right
-  return left.key <= right.key ? left : right
-}
-
-export function offeredFamilies(query: string, storedListing: ReadonlyArray<StoredFace> = []): ReadonlyArray<FamilySource> {
+export function offeredFamilies(query: string, storedListing: ReadonlyArray<StoredFace> = [], censusListing: ReadonlyArray<FamilyCensus> = []): ReadonlyArray<FamilySource> {
   const needle = query.trim().toLowerCase()
   const hit = (family: string) => needle === '' || family.toLowerCase().includes(needle)
   // THE LOCAL TIER IS NOT DISPLACED BY THE STORE. Its record is the stronger
   // one (see the note on `FamilySource`), and it needs no network either, so
   // there is nothing to win by preferring a fetched copy of the same family.
-  //
-  // AND WHERE THE STORE HOLDS TWO FACES OF ONE FAMILY, WHICH ONE IS OFFERED IS
-  // CHOSEN AND WRITTEN DOWN — see `mostRecentlyFetched`. It used to be whichever
-  // `list()` happened to return last, which is the silent substitution the
-  // content-address key exists to refuse.
-  const storedByFamily = new Map<string, StoredFace>()
+  const censusByFamily = new Map(censusListing.map((census) => [census.family, census]))
+  const storedByFamily = new Map<string, StoredFace[]>()
   for (const record of storedListing) {
     if (localTierHolds(record.family)) continue
     const held = storedByFamily.get(record.family)
-    storedByFamily.set(record.family, held === undefined ? record : mostRecentlyFetched(held, record))
+    if (held === undefined) storedByFamily.set(record.family, [record])
+    else held.push(record)
   }
-  const local: ReadonlyArray<FamilySource> = catalogueFaces.filter((face) => hit(face.family)).map((face) => ({ tier: 'local', family: face.family, face }))
+  const storedSource = (family: string, faces: ReadonlyArray<StoredFace>): FamilySource => {
+    const census = censusByFamily.get(family)
+    return census === undefined ? { tier: 'stored', family, faces } : { tier: 'stored', family, faces, census }
+  }
+  const local: ReadonlyArray<FamilySource> = localFamilies.filter((entry) => hit(entry.family)).map((entry) => ({ tier: 'local', family: entry.family, faces: entry.faces }))
   // A STORED ROW IS COLLECTED, NOT PUSHED WHERE ITS WEB ROW STOOD (Story 16.4).
   //
   // The snapshot loop is walked for its MEMBERSHIP — which families the store
@@ -290,16 +358,16 @@ export function offeredFamilies(query: string, storedListing: ReadonlyArray<Stor
   const offeredFromStore = new Set<string>()
   for (const row of webFamilies) {
     if (!hit(row.family)) continue
-    const record = storedByFamily.get(row.family)
-    if (record === undefined) { web.push({ tier: 'web', family: row.family, row }); continue }
+    const records = storedByFamily.get(row.family)
+    if (records === undefined) { web.push({ tier: 'web', family: row.family, row }); continue }
     offeredFromStore.add(row.family)
-    stored.push({ tier: 'stored', family: row.family, record })
+    stored.push(storedSource(row.family, records))
   }
   // A stored family the snapshot no longer lists follows the ones it does, so
   // the two halves of the store stay adjacent and the run stays contiguous.
-  const orphanedStored: ReadonlyArray<FamilySource> = [...storedByFamily.values()]
-    .filter((record) => !offeredFromStore.has(record.family) && hit(record.family))
-    .map((record) => ({ tier: 'stored', family: record.family, record }))
+  const orphanedStored: ReadonlyArray<FamilySource> = [...storedByFamily]
+    .filter(([family]) => !offeredFromStore.has(family) && hit(family))
+    .map(([family, records]) => storedSource(family, records))
   return [...local, ...stored, ...orphanedStored, ...web]
 }
 
@@ -326,8 +394,20 @@ export function offeredFamilies(query: string, storedListing: ReadonlyArray<Stor
  * inputs and opens no storage of its own.
  *
  * THE STORED TIER IS UNCONDITIONAL AND THE WEB TIER IS STILL NEVER INSTALLED.
- * A stored face is in the machine store by definition — the listing it came from IS the
- * evidence — and a web row has bytes nowhere on this machine at all.
+ * A stored face is in the machine store by definition — the listing it came
+ * from IS the evidence — and a web row has bytes nowhere on this machine at all.
+ *
+ * ⚠ THIS PREDICATE ANSWERS "CAN THESE BYTES BE USED", NOT "IS THIS FAMILY
+ * COMPLETE", AND THE TWO WERE BRIEFLY FUSED (D-8, orchestrator direction 3).
+ * The first cut of spec-install-all-face-cuts story 1 made the stored arm
+ * answer D-5's completeness question, which had a consequence nobody had
+ * ruled on: a family installed before that story carries no census, so it read
+ * NOT INSTALLED, so the family control's AVAILABLE LOCALLY group dropped it —
+ * and offline that makes a font already sitting on the machine UNUSABLE. D-4
+ * moved incomplete families back into the installable group; it never put them
+ * out of reach. Completeness governs whether a family is RE-OFFERED FOR
+ * INSTALL, and that is `familyIsComplete` below; it does not govern whether
+ * what is here can be used.
  *
  * IT IS STILL DELIBERATELY NOT A FOURTH TIER. A tier says where a face's BYTES
  * COME FROM; whether this browser has yet fetched them is a different axis, and
@@ -336,11 +416,58 @@ export function offeredFamilies(query: string, storedListing: ReadonlyArray<Stor
 export const familyIsInstalled = (source: FamilySource, heldLocalFamilies: ReadonlySet<string>): boolean => {
   switch (source.tier) {
     case 'local': return heldLocalFamilies.has(source.family)
-    case 'stored': return true
+    // WRITTEN AS THE FACE SET RATHER THAN AS A BARE `true`, because that is the
+    // claim being made: this family has faces on this machine. `offeredFamilies`
+    // never builds this arm empty, so it reads `true` for every row the union
+    // actually produces — and a caller that hand-built one with no faces gets
+    // the honest answer instead of an inherited constant.
+    case 'stored': return source.faces.length > 0
     case 'web': return false
     default: {
       const unhandled: never = source
       throw new Error(`a FamilySource tier nothing describes reached the installed predicate: ${String((unhandled as FamilySource).tier)}`)
+    }
+  }
+}
+
+/**
+ * WHETHER THE FAMILY HOLDS EVERYTHING IT PUBLISHES — D-5's PREDICATE, AND THE
+ * ONE THAT DECIDES WHETHER IT IS OFFERED FOR INSTALL AGAIN.
+ *
+ * INSTALLED AND COMPLETE ARE DIFFERENT QUESTIONS AND HAVE DIFFERENT READERS
+ * (D-8). The family control asks `familyIsInstalled` — "can I use this now" —
+ * and the font browser's row state asks this one — "is there anything left to
+ * fetch". A family holding only the Regular of a family that publishes a Bold
+ * answers YES to the first and NO to the second, which is exactly right: it is
+ * usable today and there is more of it to get.
+ *
+ * A CUT IS SETTLED BY A **PERMANENT** REFUSAL AND BY NOTHING ELSE (D-2/D-5,
+ * amended). A transient one — a stall, an offline minute, a 5xx — leaves the
+ * family incomplete so the cut is fetched again on a later pick. That is what
+ * makes `font-source.ts`'s stall sentence true for a cut that is not the base.
+ *
+ * A FAMILY WITH NO CENSUS READS INCOMPLETE, NOT COMPLETE. That is every family
+ * installed before this story, and it is the honest answer rather than a
+ * migration: the census is the only authority on what a family publishes, so
+ * with none there is no cut this designer can claim to have. It is still
+ * USABLE — see above — and picking it again writes a census and fetches only
+ * what is missing.
+ *
+ * A `local` FAMILY NEEDS NO CENSUS AT ALL. The catalogue is the authority on
+ * what the local tier publishes and it publishes exactly what it ships, so a
+ * held catalogue family is complete by construction.
+ */
+export const familyIsComplete = (source: FamilySource, heldLocalFamilies: ReadonlySet<string>): boolean => {
+  switch (source.tier) {
+    case 'local': return heldLocalFamilies.has(source.family)
+    case 'stored': {
+      if (source.census === undefined) return false
+      return censusIsComplete(source.census, new Set(source.faces.map((face) => face.style)))
+    }
+    case 'web': return false
+    default: {
+      const unhandled: never = source
+      throw new Error(`a FamilySource tier nothing describes reached the completeness predicate: ${String((unhandled as FamilySource).tier)}`)
     }
   }
 }

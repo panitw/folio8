@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it, vi } from 'vitest'
 import { IDBFactory as FakeIndexedDBFactory, IDBObjectStore as FakeIndexedDBObjectStore } from 'fake-indexeddb'
-import { openFontStore, storedFaceKey, storeWriteRefusal, type FontStore, type StoredFaceRecord } from './font-store'
+import { censusIsComplete, openFontStore, storedFaceKey, storeWriteRefusal, type FamilyCutRefusal, type FontStore, type StoredFaceRecord } from './font-store'
 import { isCarriedFaceAssetKey } from './embedded-face-family'
 import { sfntWithCopyright } from './test/sfnt-fixture'
 import { assertProvenanceShape } from './test/provenance-shape'
@@ -297,10 +297,20 @@ describe('storage that cannot be opened or written', () => {
 })
 
 describe('an entry that has gone bad', () => {
-  /** Reaches past the store to write whatever a browser, another tab or an older build might have left. */
+  /**
+   * Reaches past the store to write whatever a browser, another tab or an older
+   * build might have left.
+   *
+   * ⚠ IT OPENS AT WHATEVER VERSION IS THERE, and must. Naming a version pins
+   * this helper to the schema of the day it was written: once `openFontStore`
+   * moved to version 2, `open(name, 1)` on a database it had already created
+   * raised `VersionError` and these three cases failed for a reason that had
+   * nothing to do with what they assert. An unversioned open is the only form
+   * that keeps reading the store the code under test actually made.
+   */
   const writeRaw = async (factory: IDBFactory, key: string, faceRecord: unknown, bytes: unknown): Promise<void> => {
     const database = await new Promise<IDBDatabase>((resolve, reject) => {
-      const opening = factory.open('folio8-machine-font-store', 1)
+      const opening = factory.open('folio8-machine-font-store')
       opening.onsuccess = () => resolve(opening.result)
       opening.onerror = () => reject(opening.error)
     })
@@ -388,6 +398,148 @@ describe('an entry that has gone bad', () => {
 // because DW-162 halved that bound's margin to 10 of 64 and nothing watches it:
 // a store implementation that accidentally landed a face in the release
 // manifest would otherwise be caught by a release failing, months later.
+// ─────────────────────────────────────────────────────────────────────────────
+// spec-install-all-face-cuts STORY 1 — THE FAMILY CENSUS, AND THE UPGRADE THAT
+// BRINGS IT.
+//
+// D-7's approval came with an obligation in those words: "An author's held
+// faces must survive the upgrade — silently wiping the store is the failure
+// mode that ruled the per-face-field option out, and it may not reappear
+// through the upgrade path." That is a claim about a DATABASE THAT ALREADY
+// EXISTS at the old version, so it cannot be asserted against a fresh one: a
+// v1 store is built here by hand, at version 1, with its two object stores and
+// a real face record in them, and only then is it handed to the code under
+// test.
+describe('the family census, and the additive upgrade that adds it', () => {
+  const databaseName = 'folio8-machine-font-store'
+
+  /** A version-1 database, exactly as a build before this story left it: two stores, one face, its bytes. */
+  const seedVersionOne = async (factory: IDBFactory, written: StoredFaceRecord): Promise<void> => {
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const opening = factory.open(databaseName, 1)
+      opening.onupgradeneeded = () => {
+        const upgrading = opening.result
+        upgrading.createObjectStore('faces', { keyPath: 'key' })
+        upgrading.createObjectStore('face-bytes')
+      }
+      opening.onsuccess = () => resolve(opening.result)
+      opening.onerror = () => reject(opening.error)
+    })
+    const { bytes, ...metadata } = written
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(['faces', 'face-bytes'], 'readwrite')
+      transaction.objectStore('faces').put({ ...metadata, scripts: [...metadata.scripts] })
+      transaction.objectStore('face-bytes').put(bytes, written.key)
+      transaction.oncomplete = () => resolve()
+      transaction.onerror = () => reject(transaction.error)
+    })
+    database.close()
+  }
+
+  it('upgrades a v1 store to v2 with every face record it already held still readable', async () => {
+    const factory = new FakeIndexedDBFactory()
+    const written = await record()
+    await seedVersionOne(factory, written)
+
+    const opened = await openFontStore(factory)
+    expect(opened.ok, 'a v1 store must open rather than being refused').toBe(true)
+    if (!opened.ok) throw new Error(opened.reason)
+
+    // THE FACES SURVIVED — the whole record, not merely the key. A wipe would
+    // show up as an empty listing; a half-migration would show up as a record
+    // the soundness check drops.
+    const listed = await opened.value.list()
+    expect(listed.ok).toBe(true)
+    if (!listed.ok) return
+    expect(listed.value.map((held) => held.family)).toEqual(['Kanit'])
+    expect(listed.value[0]!.licenceText).toBe(written.licenceText)
+    // AND THE BYTES CAME WITH THEM, verified against their own content address
+    // by the read itself: `get` drops an entry whose bytes no longer hash to
+    // its key, so a value coming back at all is the byte store surviving too.
+    const read = await opened.value.get(written.key)
+    expect(read.ok).toBe(true)
+    if (!read.ok) return
+    expect(read.value?.byteLength).toBe(written.byteLength)
+
+    // AND THE STORE THE UPGRADE EXISTED FOR IS THERE AND USABLE.
+    const census = { family: 'Kanit', published: ['Regular', 'Bold'], refused: [{ style: 'Bold', reason: 'upstream publishes it as a variable font', permanence: 'permanent' as const }], recordedAt: '2026-09-20' }
+    expect((await opened.value.putCensus(census)).ok).toBe(true)
+    const readBack = await opened.value.listCensus()
+    expect(readBack.ok).toBe(true)
+    if (!readBack.ok) return
+    expect(readBack.value).toEqual([census])
+  })
+
+  it('keeps one row per family and replaces it rather than accumulating rows', async () => {
+    const store = await freshStore()
+    await store.putCensus({ family: 'Kanit', published: ['Regular', 'Italic'], refused: [], recordedAt: '2026-09-19' })
+    await store.putCensus({ family: 'Kanit', published: ['Regular', 'Italic'], refused: [{ style: 'Italic', reason: 'it stalled', permanence: 'transient' }], recordedAt: '2026-09-20' })
+    const listed = await store.listCensus()
+    expect(listed.ok).toBe(true)
+    if (!listed.ok) return
+    expect(listed.value).toHaveLength(1)
+    expect(listed.value[0]!.refused.map((entry) => entry.style)).toEqual(['Italic'])
+  })
+
+  // D-5's PREDICATE, AND THE FOUR STATES IT HAS TO TELL APART.
+  it('reads complete only when every published cut is held or carries a PERMANENT refusal', () => {
+    const publishing = (published: ReadonlyArray<string>, refused: ReadonlyArray<FamilyCutRefusal> = []) =>
+      ({ family: 'Kanit', published, refused, recordedAt: '2026-09-20' })
+    // The 947-of-1,274 common case: one cut published, one cut held, complete
+    // the moment it lands and never re-offered.
+    expect(censusIsComplete(publishing(['Regular']), new Set(['Regular']))).toBe(true)
+    // Published and neither held nor refused — NEVER ATTEMPTED, so incomplete
+    // and offered for install again, which is what makes the cut reachable.
+    expect(censusIsComplete(publishing(['Regular', 'Bold']), new Set(['Regular']))).toBe(false)
+    // Published, not held, and PERMANENTLY refused — settled. This is the
+    // clause that stops a family whose Bold upstream cannot serve from
+    // re-offering for ever.
+    expect(censusIsComplete(publishing(['Regular', 'Bold'], [{ style: 'Bold', reason: 'it is a variable font', permanence: 'permanent' }]), new Set(['Regular']))).toBe(true)
+    // ⚠ AND TRANSIENTLY REFUSED SETTLES NOTHING (D-2/D-5, amended). A stalled
+    // Bold leaves the family incomplete so the cut is fetched again on a later
+    // pick — which is the whole amendment, and the assertion that reds against
+    // the first cut of this story.
+    expect(censusIsComplete(publishing(['Regular', 'Bold'], [{ style: 'Bold', reason: 'its body stalled', permanence: 'transient' }]), new Set(['Regular']))).toBe(false)
+    // A cut this machine holds that upstream does not publish does not make the
+    // family incomplete: the predicate asks what is OWED, not what is spare.
+    expect(censusIsComplete(publishing(['Regular']), new Set(['Regular', 'Bold']))).toBe(true)
+  })
+
+  // A CENSUS THAT COMES BACK MALFORMED IS SKIPPED, WHICH READS THE FAMILY AS
+  // INCOMPLETE. The other direction is the dangerous one: admitting a
+  // malformed census could report a family complete that holds nothing, and
+  // nothing would ever offer it again.
+  it('skips a census this build cannot read rather than admitting it', async () => {
+    const factory = new FakeIndexedDBFactory()
+    const opened = await openFontStore(factory)
+    if (!opened.ok) throw new Error(opened.reason)
+    await opened.value.putCensus({ family: 'Sound', published: ['Regular'], refused: [], recordedAt: '2026-09-20' })
+    await opened.value.putCensus({ family: 'No Permanence', published: ['Regular', 'Bold'], refused: [{ style: 'Bold', reason: 'it stalled', permanence: 'nearly' as unknown as FamilyCutRefusal['permanence'] }], recordedAt: '2026-09-20' })
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      const opening = factory.open(databaseName)
+      opening.onsuccess = () => resolve(opening.result)
+      opening.onerror = () => reject(opening.error)
+    })
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(['family-census'], 'readwrite')
+      // A refusal with no reason: exactly the shape a half-written or older
+      // build could leave, and the field story 2's panel sentence needs.
+      transaction.objectStore('family-census').put({ family: 'Unsound', published: ['Regular', 'Bold'], refused: [{ style: 'Bold' }], recordedAt: '2026-09-20' })
+      transaction.oncomplete = () => resolve()
+      transaction.onerror = () => reject(transaction.error)
+    })
+    database.close()
+    const listed = await opened.value.listCensus()
+    expect(listed.ok).toBe(true)
+    if (!listed.ok) return
+    // BOTH UNSOUND ROWS ARE SKIPPED: one whose refusal has no reason, and one
+    // whose refusal names a permanence this build does not recognise. The
+    // second would otherwise have to be admitted as SOMETHING, and admitting it
+    // as `permanent` would settle a cut on a record that cannot be read.
+    expect(listed.value.map((census) => census.family)).toEqual(['Sound'])
+  })
+})
+
 describe('the offline release contract is untouched', () => {
   const releasePayload = fs.readFileSync(path.join(here, 'release-payload.ts'), 'utf8')
 

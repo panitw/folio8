@@ -6,7 +6,7 @@ import type { EngineClient } from './engine-client'
 import { sfntWithNames } from './test/sfnt-fixture'
 import { embeddedFaceFamily } from './embedded-face-family'
 import { previewFaceFamily } from './preview-face-family'
-import { openFontStore, storedFaceKey, type StoredFaceRecord } from './font-store'
+import { openFontStore, storedFaceKey, type FontStore, type StoreOutcome, type StoredFaceRecord } from './font-store'
 import { webFamilies } from './font-index'
 import { catalogueFaces } from './generated/font-catalogue'
 import { shippedFaceFamily } from './shipped-face-family'
@@ -126,6 +126,27 @@ const storedOnly = (key: string, bytes: ArrayBuffer): StoredFaceRecord => ({
   bytes,
 })
 
+/**
+ * SEEDS A FAMILY THIS MACHINE FULLY HOLDS — THE FACE RECORD **AND** ITS CENSUS.
+ *
+ * Since spec-install-all-face-cuts story 1 a stored family is not installed by
+ * the mere fact of being stored: `familyIsInstalled` asks whether it holds every
+ * cut it publishes, and the census is the only authority on what it publishes.
+ * A face written without one reads INCOMPLETE — correctly, because a family
+ * installed before this change really does have no such record — and the family
+ * control stops offering it under AVAILABLE LOCALLY.
+ *
+ * EVERY TEST BELOW THAT STARTS FROM "this machine already holds X" therefore
+ * seeds both, because that is what an install through this designer writes. The
+ * incomplete state has its own case, named as such, rather than being the
+ * accidental default of every fixture in the file.
+ */
+const seedInstalled = async (store: FontStore, record: StoredFaceRecord): Promise<StoreOutcome<void>> => {
+  const written = await store.put(record)
+  if (!written.ok) return written
+  return store.putCensus({ family: record.family, published: [record.style], refused: [], recordedAt: record.fetchedAt })
+}
+
 let restoreFetch: typeof globalThis.fetch
 let restoreIndexedDB: PropertyDescriptor | undefined
 
@@ -190,7 +211,7 @@ describe('the font browser sets a stored family\'s specimen from the store', () 
     const key = await storedFaceKey(bytes)
     const opened = await openFontStore(globalThis.indexedDB)
     if (!opened.ok) throw new Error(opened.reason)
-    const written = await opened.value.put(storedOnly(key, bytes))
+    const written = await seedInstalled(opened.value, storedOnly(key, bytes))
     expect(written.ok, 'the fixture face must really be in the store before the designer opens it').toBe(true)
 
     const fontSet = installStubFontSet()
@@ -328,6 +349,402 @@ describe('the font browser names a refusal the seam returned', () => {
   })
 })
 
+// ─────────────────────────────────────────────────────────────────────────────
+// spec-install-all-face-cuts STORY 1 — A PICK INSTALLS EVERY CUT THE FAMILY
+// PUBLISHES, AND THE DOCUMENT IS UNCHANGED.
+//
+// WHY AT THIS LEVEL AND NOT ONLY IN `font-source.test.ts`. That file proves
+// what the FETCH returns; these prove what reaches the machine and what does
+// not reach the file — the store's record count, each record's own `style` and
+// `source`, the census that terminates the re-offer loop, and the fact that no
+// engine command is sent by any of it. Those are properties of the designer,
+// not of the resolver, and none of them can be asserted from `font-source.ts`
+// alone.
+describe('installing a family puts every cut it publishes on this machine', () => {
+  const twoCutMetadata = `name: "Kanit"
+license: "OFL"
+fonts {
+  style: "normal"
+  weight: 400
+  filename: "Kanit-Regular.ttf"
+}
+fonts {
+  style: "normal"
+  weight: 700
+  filename: "Kanit-Bold.ttf"
+}
+`
+  const fourCutMetadata = `name: "Kanit"
+license: "OFL"
+fonts {
+  style: "normal"
+  weight: 400
+  filename: "Kanit-Regular.ttf"
+}
+fonts {
+  style: "normal"
+  weight: 700
+  filename: "Kanit-Bold.ttf"
+}
+fonts {
+  style: "italic"
+  weight: 400
+  filename: "Kanit-Italic.ttf"
+}
+fonts {
+  style: "italic"
+  weight: 700
+  filename: "Kanit-BoldItalic.ttf"
+}
+`
+  // FOUR DISTINCT BYTE SEQUENCES, so "four records" cannot be satisfied by one
+  // face written four times: the store is content-addressed, and four copies of
+  // one face would collapse to ONE key.
+  const cutBytes: Readonly<Record<string, ArrayBuffer>> = {
+    'Kanit-Regular.ttf': sfntWithNames([{ platform: 3, nameID: 0, value: 'Copyright 2020 The Kanit Project Authors' }]),
+    'Kanit-Bold.ttf': sfntWithNames([{ platform: 3, nameID: 0, value: 'Copyright 2020 The Kanit Project Authors — Bold' }]),
+    'Kanit-Italic.ttf': sfntWithNames([{ platform: 3, nameID: 0, value: 'Copyright 2020 The Kanit Project Authors — Italic' }]),
+    'Kanit-BoldItalic.ttf': sfntWithNames([{ platform: 3, nameID: 0, value: 'Copyright 2020 The Kanit Project Authors — Bold Italic' }]),
+  }
+
+  /**
+   * Upstream serving a four-cut Kanit, minus whatever `withheld` names (404 —
+   * upstream publishes no such file) and with `failing` naming cuts that answer
+   * a given status instead (5xx — the host having a bad minute). The two are
+   * separate arguments because the whole amendment is that they are NOT the
+   * same failure.
+   */
+  const fourCutUpstream = (withheld: ReadonlyArray<string> = [], failing: Readonly<Record<string, number>> = {}) => vi.fn(async (url: string) => {
+    if (url.endsWith('/ofl/kanit/METADATA.pb')) return { ok: true, status: 200, text: async () => fourCutMetadata }
+    if (url.endsWith('/ofl/kanit/OFL.txt')) return { ok: true, status: 200, text: async () => kanitLicence }
+    const file = Object.keys(cutBytes).find((name) => url.endsWith(`/ofl/kanit/${name}`))
+    if (file !== undefined && Object.hasOwn(failing, file)) return { ok: false, status: failing[file], text: async () => '' }
+    if (file !== undefined && !withheld.includes(file)) return { ok: true, status: 200, arrayBuffer: async () => cutBytes[file] }
+    return { ok: false, status: 404, text: async () => '' }
+  })
+
+  /**
+   * Upstream publishing a Regular and a Bold AND NOTHING ELSE.
+   *
+   * This is a different condition from `fourCutUpstream(['Kanit-Italic.ttf'])`
+   * and the difference is the point: there, upstream publishes an italic and
+   * will not serve it, so the census lists it as published and refused. Here
+   * there is no italic to refuse, so it must not appear in either list.
+   */
+  const twoCutUpstream = () => vi.fn(async (url: string) => {
+    if (url.endsWith('/ofl/kanit/METADATA.pb')) return { ok: true, status: 200, text: async () => twoCutMetadata }
+    if (url.endsWith('/ofl/kanit/OFL.txt')) return { ok: true, status: 200, text: async () => kanitLicence }
+    const file = ['Kanit-Regular.ttf', 'Kanit-Bold.ttf'].find((name) => url.endsWith(`/ofl/kanit/${name}`))
+    if (file !== undefined) return { ok: true, status: 200, arrayBuffer: async () => cutBytes[file] }
+    return { ok: false, status: 404, text: async () => '' }
+  })
+
+  /** Everything the store holds about a family, read past the designer. */
+  const heldFaces = async (family: string) => (await faceRecordsOnThisMachine() as ReadonlyArray<StoredFaceRecord>).filter((held) => held.family === family)
+
+  /** The family census, read past the designer. */
+  const heldCensus = async (family: string) => {
+    const opened = await openFontStore(globalThis.indexedDB)
+    if (!opened.ok) throw new Error(opened.reason)
+    const listed = await opened.value.listCensus()
+    if (!listed.ok) throw new Error(listed.reason)
+    return listed.value.find((census) => census.family === family)
+  }
+
+  /** Installs `Kanit` the one way an author can: through the font browser. */
+  const installThroughTheBrowser = async () => {
+    fireEvent.focus(screen.getByRole('combobox', { name: 'Font family' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Add fonts…/ }))
+    const dialog = screen.getByRole('dialog', { name: 'Font browser' })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search fonts' }), { target: { value: 'Kanit' } })
+    fireEvent.click(await within(dialog).findByRole('button', { name: 'Install Kanit on this machine' }))
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Install 1 on this machine' }))
+    return dialog
+  }
+
+  it('writes one record per cut, each with its own style and source, and sends no command', async () => {
+    globalThis.fetch = fourCutUpstream() as never
+    const request = commandRequest()
+    mount(request)
+    await installThroughTheBrowser()
+    await waitFor(async () => expect(await heldFaces('Kanit')).toHaveLength(4))
+
+    const held = await heldFaces('Kanit')
+    expect([...held].map((cut) => cut.style).sort()).toEqual(['Bold', 'Bold Italic', 'Italic', 'Regular'])
+    // FOUR KEYS, NEVER ONE WRITTEN FOUR TIMES. The store is keyed by the hash
+    // of the bytes, so this is also the assertion that each record really holds
+    // its own cut's bytes.
+    expect(new Set(held.map((cut) => cut.key)).size).toBe(4)
+    for (const cut of held) {
+      // EVERY CUT CARRIES THE THREE FIELDS THE ENGINE REFUSES A DOCUMENT
+      // WITHOUT, because each is its own record and a record without them is a
+      // face the store cannot offer back.
+      expect(cut.licence).toBe('OFL-1.1')
+      expect(cut.licenceText).toBe(kanitLicence)
+      expect(cut.copyright, `${cut.style} must carry its OWN nameID 0, not the Regular's`).toContain('Kanit Project Authors')
+      expect(cut.mediaType).toBe('font/ttf')
+    }
+    // AND EACH `source` NAMES ITS OWN FILE. Four records pointing at one path
+    // would be four claims about one face.
+    const bold = held.find((cut) => cut.style === 'Bold')!
+    expect(bold.source).toContain('ofl/kanit/Kanit-Bold.ttf')
+    expect(bold.copyright).toContain('Bold')
+    expect(held.find((cut) => cut.style === 'Regular')!.source).toContain('ofl/kanit/Kanit-Regular.ttf')
+    expect(held.find((cut) => cut.style === 'Bold Italic')!.source).toContain('ofl/kanit/Kanit-BoldItalic.ttf')
+
+    // THE CENSUS RECORDS WHAT UPSTREAM PUBLISHES, with nothing refused.
+    expect(await heldCensus('Kanit')).toMatchObject({ family: 'Kanit', published: ['Regular', 'Bold', 'Italic', 'Bold Italic'], refused: [] })
+
+    // AND THE DOCUMENT IS UNTOUCHED. This story installs; it embeds nothing,
+    // declares no chain and sends no command — carrying the cuts into a
+    // `.folio` is the next story's and doing any of it here would put bytes in
+    // an author's file this story promised not to.
+    expect(embedPayloads(request), 'installing sends no command at all').toEqual([])
+  })
+
+  it('writes only the cuts upstream publishes, and no placeholder for the ones it does not', async () => {
+    // A FAMILY PUBLISHING FEWER THAN FOUR INSTALLS WHAT IT HAS. Absence here is
+    // not a refusal — there is no italic upstream to refuse — so the census must
+    // list exactly what is published and carry NO refusal, and the store must
+    // hold exactly two records rather than four with two of them empty.
+    globalThis.fetch = twoCutUpstream() as never
+    mount(commandRequest())
+    await installThroughTheBrowser()
+    await waitFor(async () => expect(await heldFaces('Kanit')).toHaveLength(2))
+
+    expect((await heldFaces('Kanit')).map((cut) => cut.style).sort()).toEqual(['Bold', 'Regular'])
+    // AND THE CENSUS DOES NOT INVENT THE TWO IT NEVER SAW. A `published` entry
+    // for a cut upstream does not publish would read as "never attempted" for
+    // ever, which is the one state that keeps re-offering the family.
+    expect(await heldCensus('Kanit')).toMatchObject({ family: 'Kanit', published: ['Regular', 'Bold'], refused: [] })
+  })
+
+  it('reads installed once every published cut is held, and is not offered for install again', async () => {
+    globalThis.fetch = fourCutUpstream() as never
+    mount(commandRequest())
+    await installThroughTheBrowser()
+    await waitFor(async () => expect(await heldFaces('Kanit')).toHaveLength(4))
+    // A SUCCESSFUL CONFIRM CLOSES THE DIALOG, so the row state is read from a
+    // FRESHLY OPENED one rather than from the detached node the install left
+    // behind — which would report the staged state the confirm was acting on.
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Font browser' })).toBeNull())
+    fireEvent.click(screen.getByRole('button', { name: /^Add fonts…/ }))
+    const reopened = screen.getByRole('dialog', { name: 'Font browser' })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search fonts' }), { target: { value: 'Kanit' } })
+    // THE ROW REPORTS THE FAMILY IS HERE AND CANNOT BE STAGED AGAIN — D-5's
+    // predicate, reaching the screen.
+    const row = await within(reopened).findByLabelText(/Kanit/i, { selector: 'button.font-browser-add' })
+    expect(row).toHaveAccessibleName('Kanit is already on this machine')
+    expect(row, 'a complete family may not be installed again').toBeDisabled()
+    fireEvent.keyDown(reopened, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Font browser' })).toBeNull())
+    // AND IT IS OFFERED FOR USE, ONCE, whatever its face count.
+    const combobox = screen.getByRole('combobox', { name: 'Font family' })
+    fireEvent.focus(combobox)
+    fireEvent.change(combobox, { target: { value: 'Kanit' } })
+    expect(screen.getAllByRole('option', { name: /^Kanit/ }), 'four faces is still one row').toHaveLength(1)
+  })
+
+  // THE MATRIX'S PER-CUT REFUSAL ROW, AT THE BOUNDARY: the family installs
+  // without the cut, nothing is said at pick time (D-2), and the refusal is
+  // RECORDED so the family does not re-offer for ever (D-5).
+  it('installs the family without a cut upstream will not serve, silently, and records the refusal', async () => {
+    globalThis.fetch = fourCutUpstream(['Kanit-Italic.ttf']) as never
+    mount(commandRequest())
+    await installThroughTheBrowser()
+    await waitFor(async () => expect(await heldFaces('Kanit')).toHaveLength(3))
+
+    expect((await heldFaces('Kanit')).map((cut) => cut.style).sort()).toEqual(['Bold', 'Bold Italic', 'Regular'])
+    const census = await heldCensus('Kanit')
+    expect(census?.published, 'what upstream publishes is unchanged by this machine failing to get it').toEqual(['Regular', 'Bold', 'Italic', 'Bold Italic'])
+    expect(census?.refused.map((entry) => entry.style)).toEqual(['Italic'])
+    expect(census?.refused[0]!.reason).toMatch(/responded 404/)
+    // A 404 IS UPSTREAM STATING WHAT IT PUBLISHES, so the cut is SETTLED — and
+    // that is what lets the family read complete two assertions down.
+    expect(census?.refused[0]!.permanence).toBe('permanent')
+    // NOTHING IS SAID AT PICK TIME. The author asked for a family and got the
+    // family; a modal listing the cut upstream would not serve is noise they
+    // cannot act on — so the install reads as an ordinary success: the dialog
+    // closes, no refusal is named against the row, and no alert is raised.
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Font browser' })).toBeNull())
+    expect(screen.queryByText(/Italic/), 'a skipped cut is silent at pick time').toBeNull()
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    // AND THE RECORDED REFUSAL SETTLES THE CUT, so the row reads installed
+    // rather than re-offering for ever — which is the whole reason D-2's record
+    // exists rather than being written off as a skipped cut.
+    fireEvent.click(screen.getByRole('button', { name: /^Add fonts…/ }))
+    const reopened = screen.getByRole('dialog', { name: 'Font browser' })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search fonts' }), { target: { value: 'Kanit' } })
+    expect(await within(reopened).findByLabelText(/Kanit/i, { selector: 'button.font-browser-add' })).toHaveAccessibleName('Kanit is already on this machine')
+  })
+
+  // MATRIX ROW: "Transient cut failure | Bold's body stalls, or the machine is
+  // offline | Regular installs; Bold recorded transient; family reads
+  // INCOMPLETE and the Bold is retried on a later pick".
+  //
+  // THIS IS THE AMENDMENT'S OWN ACCEPTANCE TEST, IN PLAIN WORDS. The stall
+  // sentence `font-source.ts` writes ends "Try the pick again if you like". The
+  // first cut of this story recorded a stall exactly like a 404, so the family
+  // read complete, the row reported "already on this machine", and the pick
+  // that sentence invites COULD NOT BE MADE — a Bold upstream really publishes
+  // was gone for good. This drives both halves: the failed pick, then the pick
+  // the sentence promises, against an upstream that has recovered.
+  it('retries a transiently refused cut on a later pick, so the stall sentence is true for it', async () => {
+    // THE FIRST PICK: the Bold's host has a bad minute. 500 is transient; every
+    // other cut lands.
+    globalThis.fetch = fourCutUpstream([], { 'Kanit-Bold.ttf': 500 }) as never
+    mount(commandRequest())
+    await installThroughTheBrowser()
+    await waitFor(async () => expect(await heldFaces('Kanit')).toHaveLength(3))
+    expect((await heldFaces('Kanit')).map((cut) => cut.style).sort()).toEqual(['Bold Italic', 'Italic', 'Regular'])
+    const first = await heldCensus('Kanit')
+    expect(first?.refused.map((entry) => entry.style)).toEqual(['Bold'])
+    expect(first?.refused[0]!.permanence, 'a 5xx says nothing about what upstream publishes').toBe('transient')
+
+    // THE FAMILY READS INCOMPLETE, so the row is offered for install AGAIN —
+    // which is the only way the missing Bold is reachable at all.
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Font browser' })).toBeNull())
+    // AND IT IS STILL USABLE MEANWHILE (D-8): an incomplete family has not been
+    // put out of reach, it has been put back in the installable group.
+    const combobox = screen.getByRole('combobox', { name: 'Font family' })
+    fireEvent.focus(combobox)
+    fireEvent.change(combobox, { target: { value: 'Kanit' } })
+    expect(within(screen.getByRole('group', { name: 'AVAILABLE LOCALLY' })).getAllByRole('option').map(optionText)).toContain('Kanit')
+    fireEvent.keyDown(combobox, { key: 'Escape' })
+
+    // THE SECOND PICK: upstream has recovered, and the author does exactly what
+    // the sentence told them to.
+    globalThis.fetch = fourCutUpstream() as never
+    const upstream = globalThis.fetch as unknown as ReturnType<typeof fourCutUpstream>
+    fireEvent.focus(screen.getByRole('combobox', { name: 'Font family' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Add fonts…/ }))
+    const dialog = screen.getByRole('dialog', { name: 'Font browser' })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search fonts' }), { target: { value: 'Kanit' } })
+    const row = await within(dialog).findByRole('button', { name: 'Install Kanit on this machine' })
+    expect(row, 'a transiently refused cut leaves the family offerable').toBeEnabled()
+    fireEvent.click(row)
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Install 1 on this machine' }))
+
+    // THE BOLD ARRIVES, AND ONLY THE BOLD. The three cuts already held are not
+    // refetched — a retry that re-downloaded the whole family would make a bad
+    // minute cost the author the whole install a second time.
+    await waitFor(async () => expect(await heldFaces('Kanit')).toHaveLength(4))
+    const asked = upstream.mock.calls.map(([url]) => String(url))
+    expect(asked.filter((url) => url.endsWith('Kanit-Bold.ttf'))).toHaveLength(1)
+    expect(asked.filter((url) => url.endsWith('Kanit-Regular.ttf')), 'the held cuts are not refetched').toEqual([])
+    // AND THE FAMILY IS NOW COMPLETE, with the transient refusal cleared rather
+    // than left standing beside the cut it no longer describes.
+    expect(await heldCensus('Kanit')).toMatchObject({ refused: [] })
+  })
+
+  // MATRIX ROW: "Held but census-less, offline | Family installed before this
+  // story; no network | Still listed in AVAILABLE LOCALLY and still usable
+  // (D-8) | Never unusable for want of a census".
+  //
+  // THIS IS THE REGRESSION D-8 WAS WRITTEN AGAINST. The first cut of this story
+  // made `familyIsInstalled` answer D-5's completeness question, so a family
+  // installed by any earlier build — which carries no census, because the store
+  // had none — read NOT INSTALLED and dropped out of the family control. With
+  // the network up that is merely a wasted re-install; with it down it makes a
+  // font sitting on the machine unusable, which is strictly worse than the
+  // re-offer D-4 accepted.
+  it('still lists and applies a family installed before this story, with no network at all', async () => {
+    const regularBytes = cutBytes['Kanit-Regular.ttf']!
+    const seeded = await openFontStore(globalThis.indexedDB)
+    if (!seeded.ok) throw new Error(seeded.reason)
+    // NO CENSUS, deliberately: that is exactly what an earlier build left.
+    const seedWrite = await seeded.value.put({ ...storedOnly(await storedFaceKey(regularBytes), regularBytes), family: 'Kanit', licenceText: kanitLicence, copyright: 'Copyright 2020 The Kanit Project Authors', source: 'google/fonts — ofl/kanit/Kanit-Regular.ttf, fetched 2026-09-03' })
+    expect(seedWrite.ok).toBe(true)
+    expect(await heldCensus('Kanit'), 'the premise is a family with NO census').toBeUndefined()
+
+    // THE NETWORK IS GONE, so anything that works can only have come from the
+    // store — and anything that needs a fetch simply cannot happen.
+    const offline = vi.fn(async () => { throw new TypeError('Failed to fetch') })
+    globalThis.fetch = offline as never
+    const request = commandRequest()
+    mount(request)
+    await waitForStoredFamily('Kanit')
+
+    // IT IS LISTED UNDER THE HEADING THAT SAYS THE BYTES ARE HERE.
+    fireEvent.focus(screen.getByRole('combobox', { name: 'Font family' }))
+    expect(within(screen.getByRole('group', { name: 'AVAILABLE LOCALLY' })).getAllByRole('option').map(optionText)).toContain('Kanit')
+
+    // AND IT CAN STILL BE APPLIED: the embed and the property, two commands, no
+    // network touched at all.
+    expect(pick('Kanit', /^Kanit$/), 'a census-less family must still be pickable').toBe(true)
+    await waitFor(() => expect(embedPayloads(request).map((payload) => payload['kind'])).toEqual(['embedFontFamily', 'updateComponentProperties']))
+    expect(offline, 'a family already on this machine must need no network').not.toHaveBeenCalled()
+  })
+
+  // D-3 — A FAMILY THIS MACHINE HOLDS A SHORT SET FOR IS INSTALLABLE AGAIN, AND
+  // PICKING IT FETCHES ONLY WHAT IT LACKS.
+  //
+  // This is also the migration case: a family installed before this change
+  // holds its Regular and has NO CENSUS, so every cut it lacks reads "never
+  // attempted", the family reads incomplete, and it is offered for install
+  // again. Nothing migrates it; picking it does.
+  it('offers a family installed before this change again, and fetches only the cuts it lacks', async () => {
+    const regularBytes = cutBytes['Kanit-Regular.ttf']!
+    const seeded = await openFontStore(globalThis.indexedDB)
+    if (!seeded.ok) throw new Error(seeded.reason)
+    // SEEDED WITHOUT A CENSUS, deliberately: that is exactly what a build
+    // before this story left behind.
+    const seedWrite = await seeded.value.put({ ...storedOnly(await storedFaceKey(regularBytes), regularBytes), family: 'Kanit', licenceText: kanitLicence, copyright: 'Copyright 2020 The Kanit Project Authors', source: 'google/fonts — ofl/kanit/Kanit-Regular.ttf, fetched 2026-09-03' })
+    expect(seedWrite.ok).toBe(true)
+
+    const upstream = fourCutUpstream()
+    globalThis.fetch = upstream as never
+    mount(commandRequest())
+    await waitForStoredFamily('Kanit')
+    await installThroughTheBrowser()
+    await waitFor(async () => expect(await heldFaces('Kanit')).toHaveLength(4))
+
+    // THE REGULAR WAS NOT REFETCHED. It is the expensive cut and it was already
+    // here; refetching it would make the repair cost more than the install.
+    expect(upstream.mock.calls.map(([url]) => String(url)).filter((url) => url.endsWith('Kanit-Regular.ttf')), 'the held Regular must not be refetched').toEqual([])
+    expect(upstream.mock.calls.map(([url]) => String(url)).filter((url) => url.endsWith('Kanit-Bold.ttf'))).toHaveLength(1)
+    // AND THE FAMILY IS NOW COMPLETE, with a census it did not have before.
+    expect(await heldCensus('Kanit')).toMatchObject({ published: ['Regular', 'Bold', 'Italic', 'Bold Italic'], refused: [] })
+  })
+
+  // D-1 — A CUT'S STORE WRITE FAILS PARTWAY: THE INSTALL IS REFUSED AND WHAT
+  // LANDED STAYS.
+  //
+  // There is no delete path in this designer and none is added. The store is
+  // content-addressed, so a cut written before the refusal is an orphan and not
+  // a corruption: nothing points at it, no census claims it, and a retry finds
+  // it under the same key rather than refetching a face the author already paid
+  // for. The refusal is stated at the control the author acted on.
+  it('refuses the install when a cut cannot be written, and leaves what already landed', async () => {
+    globalThis.fetch = fourCutUpstream() as never
+    mount(commandRequest())
+
+    // THE REFUSAL IS INJECTED INTO THE REAL PLUMBING, at the exact place a
+    // browser raises it, and only from the SECOND write — so the Regular lands
+    // and the Bold does not, which is the partial state the ruling is about.
+    const original = FakeIndexedDBObjectStore.prototype.put
+    let writes = 0
+    FakeIndexedDBObjectStore.prototype.put = function refuse(this: unknown, ...args: unknown[]) {
+      writes += 1
+      if (writes > 2) throw new DOMException('the origin has no room left for this face', 'QuotaExceededError')
+      return (original as (...rest: unknown[]) => unknown).apply(this, args)
+    } as typeof original
+    let dialog: HTMLElement
+    try {
+      dialog = await installThroughTheBrowser()
+      expect(await within(dialog).findByText(/Kanit was not installed on this machine/)).toBeInTheDocument()
+    } finally {
+      FakeIndexedDBObjectStore.prototype.put = original
+    }
+
+    // WHAT LANDED STAYS. The Regular is on this machine and nothing deleted it.
+    expect((await heldFaces('Kanit')).map((cut) => cut.style)).toEqual(['Regular'])
+    // AND NO CENSUS WAS WRITTEN, so the family reads incomplete and is offered
+    // again — which is what makes the retry reachable.
+    expect(await heldCensus('Kanit'), 'a refused install must not record a census that claims completeness').toBeUndefined()
+  })
+})
+
 describe('a fetched face stays on this machine', () => {
   // RETIRED (Story 16.9): drove the install mechanism itself — fetch, keep,
   // send no command, offer the row back as already downloaded — by picking
@@ -361,7 +778,7 @@ describe('a fetched face stays on this machine', () => {
     const seedKey = await storedFaceKey(kanitFace)
     const seeded = await openFontStore(globalThis.indexedDB)
     if (!seeded.ok) throw new Error(seeded.reason)
-    const seedWrite = await seeded.value.put({ ...storedOnly(seedKey, kanitFace), family: 'Kanit', licence: 'OFL-1.1', licenceText: kanitLicence, copyright: 'Copyright 2020 The Kanit Project Authors', source: 'google/fonts — ofl/kanit/Kanit-Regular.ttf, fetched 2026-09-03' })
+    const seedWrite = await seedInstalled(seeded.value, { ...storedOnly(seedKey, kanitFace), family: 'Kanit', licence: 'OFL-1.1', licenceText: kanitLicence, copyright: 'Copyright 2020 The Kanit Project Authors', source: 'google/fonts — ofl/kanit/Kanit-Regular.ttf, fetched 2026-09-03' })
     expect(seedWrite.ok, 'the fixture face must really be in the store before the designer opens it').toBe(true)
 
     globalThis.fetch = upstreamFetch() as never
@@ -455,7 +872,7 @@ describe('a fetched face stays on this machine', () => {
     const seedKey = await storedFaceKey(kanitFace)
     const seeded = await openFontStore(globalThis.indexedDB)
     if (!seeded.ok) throw new Error(seeded.reason)
-    const seedWrite = await seeded.value.put({ ...storedOnly(seedKey, kanitFace), family: 'Kanit', licenceText: kanitLicence, copyright: 'Copyright 2020 The Kanit Project Authors' })
+    const seedWrite = await seedInstalled(seeded.value, { ...storedOnly(seedKey, kanitFace), family: 'Kanit', licenceText: kanitLicence, copyright: 'Copyright 2020 The Kanit Project Authors' })
     expect(seedWrite.ok, 'the fixture face must really be in the store before the designer opens it').toBe(true)
 
     globalThis.fetch = upstreamFetch() as never
@@ -515,7 +932,7 @@ describe('a fetched face stays on this machine', () => {
     const key = await storedFaceKey(bytes)
     const opened = await openFontStore(globalThis.indexedDB)
     if (!opened.ok) throw new Error(opened.reason)
-    const written = await opened.value.put({ ...storedOnly(key, bytes), family: 'Philosopher' })
+    const written = await seedInstalled(opened.value, { ...storedOnly(key, bytes), family: 'Philosopher' })
     expect(written.ok, 'the fixture face must really be in the store before the designer opens it').toBe(true)
     expect(webFamilies.some((row) => row.family === 'Philosopher'), 'the fixture must really rank deep in the web-tier snapshot, or this measures nothing').toBe(true)
     // WITH NO NETWORK, so nothing here can be explained by a fetch.
@@ -558,7 +975,7 @@ describe('a fetched face stays on this machine', () => {
     expect(deep, 'the fixture needs enough stored families to overflow a union-wide cap').toHaveLength(25)
     for (const row of deep) {
       const bytes = sfntWithNames([{ platform: 3, nameID: 0, value: `Copyright 2026 ${row.family}` }])
-      const written = await opened.value.put({ ...storedOnly(await storedFaceKey(bytes), bytes), family: row.family })
+      const written = await seedInstalled(opened.value, { ...storedOnly(await storedFaceKey(bytes), bytes), family: row.family })
       expect(written.ok, `the fixture face for ${row.family} must reach the store`).toBe(true)
     }
     globalThis.fetch = vi.fn(async () => { throw new TypeError('Failed to fetch') }) as never
@@ -607,7 +1024,7 @@ describe('a fetched face stays on this machine', () => {
     const seedKey = await storedFaceKey(kanitFace)
     const seeded = await openFontStore(globalThis.indexedDB)
     if (!seeded.ok) throw new Error(seeded.reason)
-    const seedWrite = await seeded.value.put({ ...storedOnly(seedKey, kanitFace), family: 'Kanit', licenceText: kanitLicence, copyright: 'Copyright 2020 The Kanit Project Authors' })
+    const seedWrite = await seedInstalled(seeded.value, { ...storedOnly(seedKey, kanitFace), family: 'Kanit', licenceText: kanitLicence, copyright: 'Copyright 2020 The Kanit Project Authors' })
     expect(seedWrite.ok, 'the fixture face must really be in the store before the designer opens it').toBe(true)
 
     globalThis.fetch = upstreamFetch() as never
@@ -671,7 +1088,7 @@ describe('a fetched face stays on this machine', () => {
     const seedKey = await storedFaceKey(kanitFace)
     const seeded = await openFontStore(globalThis.indexedDB)
     if (!seeded.ok) throw new Error(seeded.reason)
-    const seedWrite = await seeded.value.put({ ...storedOnly(seedKey, kanitFace), family: 'Kanit', licenceText: kanitLicence, copyright: 'Copyright 2020 The Kanit Project Authors' })
+    const seedWrite = await seedInstalled(seeded.value, { ...storedOnly(seedKey, kanitFace), family: 'Kanit', licenceText: kanitLicence, copyright: 'Copyright 2020 The Kanit Project Authors' })
     expect(seedWrite.ok, 'the fixture face must really be in the store before the designer opens it').toBe(true)
 
     globalThis.fetch = upstreamFetch() as never
@@ -741,7 +1158,7 @@ describe('a fetched face stays on this machine', () => {
     const seedKey = await storedFaceKey(kanitFace)
     const seeded = await openFontStore(globalThis.indexedDB)
     if (!seeded.ok) throw new Error(seeded.reason)
-    const seedWrite = await seeded.value.put({ ...storedOnly(seedKey, kanitFace), family: 'Kanit', licenceText: kanitLicence, copyright: 'Copyright 2020 The Kanit Project Authors' })
+    const seedWrite = await seedInstalled(seeded.value, { ...storedOnly(seedKey, kanitFace), family: 'Kanit', licenceText: kanitLicence, copyright: 'Copyright 2020 The Kanit Project Authors' })
     expect(seedWrite.ok, 'the fixture face must really be in the store before the designer opens it').toBe(true)
 
     globalThis.fetch = upstreamFetch() as never
@@ -825,7 +1242,7 @@ describe('a fetched face stays on this machine', () => {
     const key = await storedFaceKey(kanitFace)
     const opened = await openFontStore(globalThis.indexedDB)
     if (!opened.ok) throw new Error(opened.reason)
-    const written = await opened.value.put({ ...storedOnly(key, kanitFace), family: 'Kanit', licenceText: kanitLicence, copyright: 'Copyright 2020 The Kanit Project Authors' })
+    const written = await seedInstalled(opened.value, { ...storedOnly(key, kanitFace), family: 'Kanit', licenceText: kanitLicence, copyright: 'Copyright 2020 The Kanit Project Authors' })
     expect(written.ok, 'the fixture face must really be in the store before the designer opens it').toBe(true)
 
     globalThis.fetch = upstreamFetch() as never
@@ -892,7 +1309,7 @@ describe('a fetched face stays on this machine', () => {
     const key = await storedFaceKey(kanitFace)
     const opened = await openFontStore(globalThis.indexedDB)
     if (!opened.ok) throw new Error(opened.reason)
-    const written = await opened.value.put({ ...storedOnly(key, kanitFace), family: 'Kanit', licenceText: kanitLicence, copyright: 'Copyright 2020 The Kanit Project Authors' })
+    const written = await seedInstalled(opened.value, { ...storedOnly(key, kanitFace), family: 'Kanit', licenceText: kanitLicence, copyright: 'Copyright 2020 The Kanit Project Authors' })
     expect(written.ok, 'the fixture face must really be in the store before the designer opens it').toBe(true)
 
     globalThis.fetch = upstreamFetch() as never
@@ -946,7 +1363,7 @@ describe('a fetched face stays on this machine', () => {
     const key = await storedFaceKey(kanitFace)
     const opened = await openFontStore(globalThis.indexedDB)
     if (!opened.ok) throw new Error(opened.reason)
-    const written = await opened.value.put({ ...storedOnly(key, kanitFace), family: 'Kanit', licenceText: kanitLicence, copyright: 'Copyright 2020 The Kanit Project Authors' })
+    const written = await seedInstalled(opened.value, { ...storedOnly(key, kanitFace), family: 'Kanit', licenceText: kanitLicence, copyright: 'Copyright 2020 The Kanit Project Authors' })
     expect(written.ok, 'the fixture face must really be in the store before the designer opens it').toBe(true)
 
     globalThis.fetch = upstreamFetch() as never
@@ -1123,7 +1540,7 @@ describe('a fetched face stays on this machine', () => {
     const key = await storedFaceKey(kanitFace)
     const opened = await openFontStore(globalThis.indexedDB)
     if (!opened.ok) throw new Error(opened.reason)
-    const written = await opened.value.put({ ...storedOnly(key, kanitFace), family: 'Noto Sans', licenceText: kanitLicence, copyright: 'Copyright 2026 The Noto Project Authors' })
+    const written = await seedInstalled(opened.value, { ...storedOnly(key, kanitFace), family: 'Noto Sans', licenceText: kanitLicence, copyright: 'Copyright 2026 The Noto Project Authors' })
     expect(written.ok, 'the fixture face must really be in the store before the designer opens it').toBe(true)
 
     globalThis.fetch = upstreamFetch() as never
@@ -1233,7 +1650,7 @@ describe('a fetched face stays on this machine', () => {
     const key = await storedFaceKey(bytes)
     const opened = await openFontStore(globalThis.indexedDB)
     if (!opened.ok) throw new Error(opened.reason)
-    const written = await opened.value.put(storedOnly(key, bytes))
+    const written = await seedInstalled(opened.value, storedOnly(key, bytes))
     expect(written.ok, 'the fixture face must really be in the store before the designer opens it').toBe(true)
 
     const fontSet = installStubFontSet()
@@ -1312,7 +1729,7 @@ describe('a fetched face stays on this machine', () => {
     const fixtures = ['Alpha Machine Face', 'Beta Machine Face', 'Gamma Machine Face']
     for (const family of fixtures) {
       const bytes = sfntWithNames([{ platform: 3, nameID: 0, value: `Copyright 2026 ${family}` }])
-      const written = await opened.value.put({ ...storedOnly(await storedFaceKey(bytes), bytes), family })
+      const written = await seedInstalled(opened.value, { ...storedOnly(await storedFaceKey(bytes), bytes), family })
       expect(written.ok, `the fixture face for ${family} must reach the store`).toBe(true)
     }
     globalThis.fetch = vi.fn(async () => { throw new TypeError('Failed to fetch') }) as never
@@ -1407,7 +1824,7 @@ describe('Story 16.7 — every row shows the typeface it names', () => {
     const key = await storedFaceKey(bytes)
     const opened = await openFontStore(globalThis.indexedDB)
     if (!opened.ok) throw new Error(opened.reason)
-    const written = await opened.value.put({ ...storedOnly(key, bytes), family })
+    const written = await seedInstalled(opened.value, { ...storedOnly(key, bytes), family })
     expect(written.ok, 'the fixture face must really be in the store before the designer opens it').toBe(true)
     const fontSet = installStubFontSet()
     const fetchSpy = vi.fn(async () => { throw new TypeError('Failed to fetch') })
@@ -1461,7 +1878,7 @@ describe('Story 16.7 — every row shows the typeface it names', () => {
     const key = await storedFaceKey(bytes)
     const opened = await openFontStore(globalThis.indexedDB)
     if (!opened.ok) throw new Error(opened.reason)
-    const written = await opened.value.put({ ...storedOnly(key, bytes), family })
+    const written = await seedInstalled(opened.value, { ...storedOnly(key, bytes), family })
     expect(written.ok, 'the fixture face must really be in the store before the read is broken').toBe(true)
     const fontSet = installStubFontSet()
     globalThis.fetch = vi.fn(async () => { throw new TypeError('Failed to fetch') }) as never
