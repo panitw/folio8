@@ -1,5 +1,5 @@
 import type { LocalFontFile } from './font-file'
-import { faceDeclaredCopyright, faceDeclaredLicence, faceDeclaredLicenceText, faceFamilyName, faceIsVariable, faceSubfamilyName } from './font-name-table'
+import { faceDeclaredCopyright, faceDeclaredLicence, faceDeclaredLicenceText, faceFamilyName, faceIsVariable, faceSubfamilyName, faceWeightClass } from './font-name-table'
 import { mediaTypeOf } from './font-source'
 
 // TURNING FILES THE AUTHOR PICKED INTO FACES, AND NOTHING ELSE.
@@ -42,6 +42,8 @@ export type ImportedFace = Readonly<{
   licenceText: string
   copyright: string
   mediaType: string
+  /** `OS/2.usWeightClass` when the face declares a usable one. See `faceWeightClass`. */
+  weight?: number
   bytes: ArrayBuffer
 }>
 
@@ -203,6 +205,9 @@ function readPickedFace(file: LocalFontFile): Readonly<{ ok: true; face: Importe
     }
     family = faceFamilyName(file.bytes)
     subfamily = faceSubfamilyName(file.bytes)
+    // ONE READ, NOT TWO: the table walk is cheap but it is not free, and
+    // calling it twice would let the shape below imply two questions were asked.
+    const declaredWeight = faceWeightClass(file.bytes)
     face = {
       // TRANSCRIBED, NEVER COMPOSED. Name ID 0, 13 and 14, byte for byte as the
       // binary holds them, with no classification, no inference from the family
@@ -214,6 +219,12 @@ function readPickedFace(file: LocalFontFile): Readonly<{ ok: true; face: Importe
       // operating system's guess off the same extension and is empty on some
       // hosts; the value the engine recognises is the one that must be stored.
       mediaType,
+      // THE CUT'S OWN WEIGHT, FOR THE FAMILY THAT HAS NO `Regular`. An imported
+      // family has no publisher to say which cut represents it, so `baseCutOf`
+      // picks the one nearest upright text weight — and this is where that
+      // number enters the designer. Spread for the reason `soundFace` spreads
+      // it: a face declaring none must carry no key rather than an `undefined`.
+      ...(declaredWeight === undefined ? {} : { weight: declaredWeight }),
       bytes: file.bytes,
     }
   } catch (error) {

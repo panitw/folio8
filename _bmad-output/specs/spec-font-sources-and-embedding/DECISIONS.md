@@ -597,6 +597,55 @@ one undo. The matrix row was reachable; the implementation had picked the wrong 
 obvious shape and false of the composition. Routing to `intent_gap` on the first reading would have
 stopped the run for a question that had an answer in the codebase.
 
+## A-35 — the reported bug: an imported family with no cut named `Regular` could not be used
+
+**Reported by the owner, after the epic closed.** They imported the six cuts of Sukhumvit Set from
+`~/Downloads`, picked the family in the TYPOGRAPHY panel, and were told the family *"is in this
+designer's snapshot of the family list but is no longer published upstream"* — a sentence about
+Google Fonts, said about files on their own disk.
+
+**Root cause, proved against the owner's actual files.** `regularCutOf` matches `style === 'Regular'`
+as an exact string. The six binaries declare subfamilies `Thin`, `Light`, `Text`, `Medium`,
+`Semi Bold` and `Bold` in their `name` tables — read them back and not one is `Regular`. So in
+`embedInstalledFamily`'s stored arm, `regularCutOf(source.faces)` returned `undefined`, the store
+read was skipped, and control fell into the **self-heal refetch** — an arm written to repair a
+dropped record by fetching the face again. The family was completely intact; the question was wrong.
+
+**Why the heal is wrong for an imported family at all, independent of the naming.** It repairs a
+record by going upstream, which is only a repair when somebody upstream publishes the face. Bytes
+that came off the author's disk have no upstream and never will, so that arm can only ever produce a
+confusing sentence. It is now not taken for an author-supplied family; the refusal names re-importing
+instead, which is the one act that can actually fix it.
+
+**Why the name could not simply be matched more loosely.** An imported family has no publisher to say
+which cut represents it, so the choice had to be made from the faces themselves. The owner asked the
+right question mid-fix — *"is it possible to read the weight from the font file?"* — and it is:
+`OS/2.usWeightClass`, a specified field on a 1–1000 scale, versus a subfamily name which is a
+foundry's prose (`Text`, `Book`, `Roman` and `Normal` all mean 400 and none of them says so). So
+`faceWeightClass` reads the declared weight, the store records it, and `baseCutOf` picks the cut
+nearest 400 — upright text weight. Sukhumvit Set's `Text` is exactly 400 and wins outright. The
+name-derived scale is kept as a fallback and is not dead code: every face imported before the field
+existed carries no weight, and those records are old rather than corrupt.
+
+**A second, latent defect fixed alongside.** `familyIsComplete` read a censusless stored family as
+incomplete on the doctrine that "the census is the only authority on what a family publishes". That
+doctrine carries an unstated premise — that the family HAS a publisher and merely has not been asked
+— which story 3 made false. Incomplete is what `installFamily` lets fall through to `fetchWebFamily`,
+so the same wrong sentence was reachable by a second door. An author-supplied family now reads
+complete. It is `every` and not `some`: a family where the author imported one cut of something this
+designer also fetches still has an upstream, and its remaining cuts must stay reachable.
+
+*(Not the live path for the report — the import writes a census, so the owner's family already read
+complete. Fixed because it is the same defect one door over.)*
+
+**Why all three review layers missed it.** Every fixture in the epic's tests names its cuts
+`Regular` and `Bold`. The defect is invisible to any family that does — it needs a family whose
+foundry does not use RIBBI names, which is most Thai and most display faces and no test fixture. The
+regression suite now uses the six real cut names off the reported binaries, for exactly that reason.
+
+**No format change.** `weight` is a designer store field only. Nothing enters a `.folio`, so the
+version ladder and the `5.0.0` bump are untouched.
+
 ## Epic summary — what an owner should look at first
 
 All six stories are implemented, reviewed by three independent layers each, and committed. One

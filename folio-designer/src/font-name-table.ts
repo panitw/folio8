@@ -200,6 +200,46 @@ export function faceIsVariable(bytes: ArrayBuffer | ArrayBufferView): boolean {
 }
 
 /**
+ * `OS/2.usWeightClass` — THE WEIGHT THE FACE ITSELF DECLARES, ON THE 1–1000
+ * SCALE OpenType FIXES FOR IT.
+ *
+ * READ FROM THE BYTES BECAUSE THE BYTES ARE THE AUTHORITY. The alternative is
+ * inferring a weight from the subfamily name, and a name is a foundry's prose:
+ * `Text`, `Book`, `Buch`, `Roman` and `Normal` all mean 400 and none of them
+ * says so. `usWeightClass` says so, in a field whose meaning is specified
+ * rather than conventional, and every static face carries an `OS/2` table.
+ *
+ * WHAT IT IS FOR. An imported family has no upstream publisher to say which of
+ * its cuts is the one to set text in, so `font-index.ts`'s `baseCutOf` picks
+ * the cut nearest upright text weight — and this is what "weight" means there.
+ *
+ * ABSENT IS `undefined`, NOT A DEFAULT. A face with no `OS/2` table, or one
+ * whose table is truncated before the field, has NOT declared 400 — it has
+ * declared nothing, and the caller has a name to fall back on. Substituting 400
+ * here would present the reader's own guess as the binary's statement, and the
+ * caller could no longer tell the two apart.
+ *
+ * VERSION-INDEPENDENT, BECAUSE THIS FIELD NEVER MOVED. `usWeightClass` is at
+ * byte 4 of `OS/2` in every version from 0 to 5; the versions differ only in
+ * what they append. So the length check is against this field's own end and
+ * not against any version's table size.
+ *
+ * NO CONTAINER GUARD, for the reason the readers below give: the import path
+ * has already run `faceIsVariable` over these same bytes, and that carries
+ * `requireStaticTrueTypeTables` inside it.
+ */
+export function faceWeightClass(bytes: ArrayBuffer | ArrayBufferView): number | undefined {
+  const view = fontView(bytes)
+  const os2 = sfntTableDirectory(view)['OS/2']
+  if (os2 === undefined || os2.length < 6 || os2.offset + 6 > view.byteLength) return undefined
+  const weight = view.getUint16(os2.offset + 4)
+  // OUT OF RANGE IS UNDECLARED, NOT CLAMPED. OpenType fixes the scale at 1–1000
+  // and a 0 is what a face writes when the field was never filled in, so both
+  // are the binary failing to state a weight rather than stating an odd one.
+  return weight >= 1 && weight <= 1000 ? weight : undefined
+}
+
+/**
  * nameID 1 AND nameID 2 — THE TWO RECORDS A FACE IS KEYED BY, AND THE KEYING
  * IS A CONTRACT WITH THE RENDERING HOST RATHER THAN A STYLE PREFERENCE.
  *

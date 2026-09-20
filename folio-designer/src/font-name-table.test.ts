@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { faceCopyright, faceDeclaredCopyright, faceDeclaredLicence, faceDeclaredLicenceText, faceFamilyName, faceSubfamilyName, fontView, nameTableString, requireStaticTrueTypeTables, sfntTableDirectory } from './font-name-table'
+import { faceCopyright, faceDeclaredCopyright, faceDeclaredLicence, faceDeclaredLicenceText, faceFamilyName, faceSubfamilyName, faceWeightClass, fontView, nameTableString, requireStaticTrueTypeTables, sfntTableDirectory } from './font-name-table'
 import { sfntWithCopyright, sfntWithNames } from './test/sfnt-fixture'
 import { blankComments } from '../scripts/forbidden-font-hosts.mjs'
 
@@ -16,7 +16,7 @@ import { blankComments } from '../scripts/forbidden-font-hosts.mjs'
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const fontsRoot = path.join(here, '..', 'public', 'fonts')
-const manifest: ReadonlyArray<{ directory: string; file: string; family: string }> = JSON.parse(fs.readFileSync(path.join(here, '..', 'font-catalogue.json'), 'utf8'))
+const manifest: ReadonlyArray<{ directory: string; file: string; family: string; style: string }> = JSON.parse(fs.readFileSync(path.join(here, '..', 'font-catalogue.json'), 'utf8'))
 
 describe('the shared sfnt name-table reader', () => {
   // NON-VACUITY: the loop below is over the manifest, and an empty one passes
@@ -221,5 +221,46 @@ describe('the name records an author-supplied face is keyed and described by', (
     const notAFont = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0, 0, 0, 0, 0, 0]).buffer
     expect(() => faceFamilyName(notAFont)).toThrow(/not a static TrueType sfnt/)
     expect(() => faceDeclaredCopyright(notAFont)).toThrow(/not a static TrueType sfnt/)
+  })
+})
+
+/**
+ * THE WEIGHT READER, HELD TO BOTH CORPORA like every other reader in this file.
+ *
+ * It exists because `baseCutOf` must choose which cut represents an imported
+ * family and a cut's NAME does not reliably say — Sukhumvit Set's upright text
+ * weight is called `Text`. `OS/2.usWeightClass` says, in a specified field.
+ */
+describe('the weight a face declares in its own OS/2 table', () => {
+  it('reads a usable weight out of every committed catalogue face', () => {
+    // NON-VACUITY, the discipline this file already holds its other loops to.
+    expect(manifest.length).toBeGreaterThanOrEqual(107)
+    for (const entry of manifest) {
+      const bytes = fs.readFileSync(path.join(fontsRoot, entry.directory, entry.file))
+      const weight = faceWeightClass(bytes)
+      expect(weight, `${entry.file} must declare an OS/2 weight on OpenType's 1-1000 scale`).toBeDefined()
+      expect(weight).toBeGreaterThanOrEqual(1)
+      expect(weight).toBeLessThanOrEqual(1000)
+    }
+  })
+
+  it('agrees with the cut each catalogue face is declared to be', () => {
+    // The catalogue's cuts are RIBBI, so the two weights it uses are the two
+    // OpenType names for them. This is the reader checked against a fact stated
+    // twice — once in the manifest, once in the binary.
+    const expected: Readonly<Record<string, number>> = { Regular: 400, Italic: 400, Bold: 700, 'Bold Italic': 700 }
+    for (const entry of manifest) {
+      const want = expected[entry.style]
+      if (want === undefined) continue
+      const bytes = fs.readFileSync(path.join(fontsRoot, entry.directory, entry.file))
+      expect(faceWeightClass(bytes), `${entry.file} is the '${entry.style}' cut`).toBe(want)
+    }
+  })
+
+  it('answers undefined for a face that carries no OS/2 table at all', () => {
+    // ABSENT IS NOT 400. The fixture synthesises a `name` table and nothing
+    // else, which is the case no committed binary can demonstrate — and it is
+    // the case `baseCutOf`'s name fallback exists for.
+    expect(faceWeightClass(sfntWithNames([{ platform: 3, nameID: 1, value: 'Brand Grotesk' }]))).toBeUndefined()
   })
 })

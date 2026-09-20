@@ -25,7 +25,7 @@ import { type FontChainCommitError, type FontChainControl } from './font-chain-c
 import { commandUnitBytes } from './command-json'
 import { addFontChainCommand, addFontChainEntryFragment, addFontChainFragment, deleteFontChainFragment, embedFontCutFragment, embedFontFamilyCommand, removeFontChainEntryFragment, renameFontChainFragment, type FontChainEntryAsk } from './font-chain-command'
 import { catalogueFaces, scriptFallbackFaces, type CatalogueFace } from './generated/font-catalogue'
-import { familyIsComplete, familyIsInstalled, indexRowFor, localTierHolds, offeredFamilies, regularCutOf, sourceScripts, type FamilySource } from './font-index'
+import { baseCutOf, familyIsComplete, familyIsInstalled, indexRowFor, localTierHolds, offeredFamilies, regularCutOf, sourceScripts, type FamilySource } from './font-index'
 import { initialLocalFaceHoldings, localFaceIsHeld, readLocalFaceHoldings, type LocalFaceHoldings } from './held-local-faces'
 import { watchCanvasFaceMisses } from './canvas-face-misses'
 import { deferredFaceAssets, prefetchDeferredFaces } from './document-face-prefetch'
@@ -3355,7 +3355,15 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
         // absence sentence still stands. Carrying the cuts into the document is
         // the next story's, and doing any of it here would put bytes in an
         // author's file that this story promised not to.
-        const regular = regularCutOf(source.faces)
+        //
+        // ⚠ AN IMPORTED FAMILY IS ASKED FOR ITS BASE CUT, NOT FOR A `Regular`
+        // (see `baseCutOf`). Sukhumvit Set publishes Thin, Light, Text, Medium,
+        // Semi Bold and Bold and NOTHING named `Regular`, so `regularCutOf`
+        // answered `undefined` for a family that was completely intact — and
+        // `undefined` falls into the refetch arm below, which read a naming
+        // convention this family never adopted as "the store lost these bytes".
+        const authorSupplied = source.faces.length > 0 && source.faces.every((face) => face.authorAcknowledged)
+        const regular = authorSupplied ? baseCutOf(source.faces) : regularCutOf(source.faces)
         const read = regular === undefined ? undefined : await (await fontStore.current)?.get(regular.key)
         if (read?.ok && read.value !== undefined) {
           const held = read.value
@@ -3364,6 +3372,19 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
           // terms and whether the author asserted a right to it, so a record and a
           // binary can never be paired from two reads.
           embedded = { family: held.family, style: held.style, licence: held.licence, licenceText: held.licenceText, copyright: held.copyright, source: held.source, authorAcknowledged: held.authorAcknowledged, mediaType: held.mediaType, bytes: held.bytes, scripts: held.scripts }
+        } else if (authorSupplied) {
+          // ⚠ THERE IS NO UPSTREAM TO HEAL FROM, SO THE HEAL IS NOT ATTEMPTED.
+          // The arm below repairs a dropped record by fetching the face again,
+          // which is only a repair when somebody out there publishes it. These
+          // bytes came off the author's own disk; the web has never held them
+          // and never will. Fetching anyway is how an author who imported
+          // Sukhumvit Set was told it "is no longer published upstream" — a
+          // sentence about Google Fonts, said about a file in their downloads.
+          //
+          // SO THE REFUSAL NAMES THE ONE ACT THAT CAN ACTUALLY FIX IT. The
+          // record is gone and only the author has the file, which makes
+          // importing it again the whole remedy rather than a suggestion.
+          return refuse(`${source.family} came from your own machine and this designer no longer holds its bytes, so there is nothing to put into the document. Import the family again to use it.`)
         } else {
           // THE REGULAR AND NOTHING ELSE, for the same reason the document
           // carries the Regular alone: this heal replaces one dropped record,

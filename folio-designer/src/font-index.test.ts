@@ -6,7 +6,7 @@ import { catalogueFaces } from './generated/font-catalogue'
 import { familyIndex, familyIndexPublishedFamilies, familyIndexSnapshotDate } from './generated/font-index'
 import { blankComments } from '../scripts/forbidden-font-hosts.mjs'
 import type { LocalFaceHoldings } from './held-local-faces'
-import { addableFamilyCount, familyIsComplete, familyIsInstalled, familySourceNote, indexCategories, indexRowFor, indexScripts, indexExcludedCjkFamilies, localTierHolds, offeredFamilies, regularCutOf, sourceCuts, sourceScripts, webFamilies, type FamilySource } from './font-index'
+import { addableFamilyCount, baseCutOf, familyIsComplete, familyIsInstalled, familySourceNote, indexCategories, indexRowFor, indexScripts, indexExcludedCjkFamilies, localTierHolds, offeredFamilies, regularCutOf, sourceCuts, sourceScripts, webFamilies, type FamilySource } from './font-index'
 import { faceCuts, type FaceCut } from './font-source'
 import type { FamilyCensus, FamilyCutRefusal, StoredFace } from './font-store'
 
@@ -870,5 +870,117 @@ describe('the browser chips name values the offered population actually carries'
     // offered under it — the snapshot excludes CJK wholesale. A vocabulary
     // derived from the TYPE rather than the DATA would ship a dead chip here.
     expect(indexScripts).not.toContain('cjk')
+  })
+})
+
+/**
+ * THE FAMILY WITH NO `Regular`, WHICH IS THE ONE AN AUTHOR IMPORTS
+ * (spec-font-sources-and-embedding, A-35).
+ *
+ * THIS IS A REGRESSION SUITE AND THE BUG IT GUARDS WAS REPORTED, NOT FOUND. An
+ * author imported the six cuts of Sukhumvit Set from their downloads and was
+ * told the family "is no longer published upstream" — a sentence about Google
+ * Fonts, said about files on their own disk. The cause was one exact-string
+ * match: every cut of that family is named Thin, Light, Text, Medium, Semi Bold
+ * or Bold, so `regularCutOf` found no `Regular`, and `embedInstalledFamily`
+ * read that `undefined` as "the store lost these bytes" and went to the network
+ * to heal a family that was completely intact.
+ *
+ * THE CUT NAMES BELOW ARE THE REAL ONES, taken from the `name` tables of the
+ * files in the report. A fixture that invented plausible-looking cuts would not
+ * have caught this and would not catch it again.
+ */
+describe('choosing the cut that represents an imported family', () => {
+  const cut = (style: string, weight?: number): StoredFace => ({
+    key: style.toLowerCase().replace(/[^a-z]/g, '').padEnd(64, '0'),
+    family: 'Sukhumvit Set',
+    style,
+    licence: '',
+    licenceText: '',
+    copyright: '',
+    source: 'supplied by the author from their own machine on 2026-09-21',
+    authorAcknowledged: true,
+    mediaType: 'font/ttf',
+    scripts: ['latin', 'thai'],
+    fetchedAt: '2026-09-21',
+    byteLength: 2048,
+    ...(weight === undefined ? {} : { weight }),
+  })
+
+  // THE REPORTED FAMILY, IN ITS REPORTED ORDER-INDEPENDENT FORM. `list()` returns
+  // faces in SHA-256 key order, so the suite must not depend on arrival order —
+  // see the shuffle case below.
+  const sukhumvit = [cut('Thin', 100), cut('Light', 300), cut('Text', 400), cut('Medium', 500), cut('Semi Bold', 600), cut('Bold', 700)]
+
+  it('answers nothing for a family with no cuts at all', () => {
+    expect(baseCutOf([])).toBeUndefined()
+  })
+
+  it('picks the upright text weight of a family that publishes no Regular', () => {
+    expect(baseCutOf(sukhumvit)?.style, 'Text is usWeightClass 400 — the cut an author expects to set text in').toBe('Text')
+  })
+
+  it('does not depend on the order the store happens to list the faces in', () => {
+    // The store lists by content-addressed key, so face order is a property of
+    // the BYTES the author imported. Left to it, which cut represented this
+    // family would depend on which file hashed lowest.
+    const shuffled = [cut('Bold', 700), cut('Text', 400), cut('Thin', 100), cut('Semi Bold', 600), cut('Light', 300), cut('Medium', 500)]
+    expect(baseCutOf(shuffled)?.style).toBe('Text')
+    expect(baseCutOf([...sukhumvit].reverse())?.style).toBe('Text')
+  })
+
+  it('still prefers an actual Regular where the family publishes one', () => {
+    expect(baseCutOf([cut('Bold', 700), cut('Regular', 400), cut('Light', 300)])?.style).toBe('Regular')
+  })
+
+  it('reads the weight off the binary in preference to the cut name', () => {
+    // A foundry may call 400 whatever it likes. `OS/2.usWeightClass` is the
+    // statement; the name is prose. Here the names would rank `Bold` nearest
+    // 400 if the field were ignored, and the field says otherwise.
+    const housenames = [cut('Bold', 400), cut('Regular', 900)]
+    expect(baseCutOf(housenames)?.style, 'the declared 400 wins over the cut that is merely NAMED Regular').toBe('Bold')
+  })
+
+  it('falls back to the cut name for a face stored before the weight was recorded', () => {
+    // Every face imported before `weight` existed carries none, and those
+    // records are sound rather than corrupt — they must still rank.
+    expect(baseCutOf([cut('Thin'), cut('Text'), cut('Bold')])?.style).toBe('Text')
+    expect(baseCutOf([cut('Light'), cut('Black')])?.style, 'Light is 300 and Black is 900, so Light is nearer upright').toBe('Light')
+  })
+
+  it('treats a cut name it does not know as a text weight rather than as an extreme', () => {
+    // An unrecognised name is far more often a foundry's house name for a text
+    // weight than it is a Black. Scoring it 900 would rank it last on one
+    // unfamiliar word.
+    expect(baseCutOf([cut('Bold', 700), cut('Buch')])?.style).toBe('Buch')
+  })
+
+  it('prefers an upright cut to an italic of the same weight', () => {
+    expect(baseCutOf([cut('Text Italic', 400), cut('Text', 400)])?.style).toBe('Text')
+    expect(baseCutOf([cut('Oblique', 400), cut('Text', 400)])?.style).toBe('Text')
+  })
+
+  it('reads an author-supplied family as complete, because nothing upstream publishes it', () => {
+    // A censusless family normally reads INCOMPLETE so that picking it fetches
+    // the rest. An imported one has no upstream to fetch from, and reading it
+    // incomplete is what let it fall through to the network.
+    const source: FamilySource = { tier: 'stored', family: 'Sukhumvit Set', faces: sukhumvit }
+    expect(familyIsComplete(source, { usable: new Set(), complete: new Set() })).toBe(true)
+  })
+
+  it('still reads a censusless WEB-FETCHED family as incomplete', () => {
+    // The pre-existing rule, which must not be relaxed: a family fetched before
+    // censuses existed has an upstream, and picking it again is what fetches
+    // its missing cuts.
+    const fetched: FamilySource = { tier: 'stored', family: 'Lora', faces: [{ ...cut('Regular', 400), family: 'Lora', authorAcknowledged: false }] }
+    expect(familyIsComplete(fetched, { usable: new Set(), complete: new Set() })).toBe(false)
+  })
+
+  it('reads a MIXED family as incomplete, because the rest of it is still upstream', () => {
+    // An author may import one cut of a family this designer also fetches. That
+    // family does have a publisher and its remaining cuts must stay reachable,
+    // so `isAuthorSupplied` is `every` and not `some`.
+    const mixed: FamilySource = { tier: 'stored', family: 'Lora', faces: [{ ...cut('Regular', 400), family: 'Lora', authorAcknowledged: false }, { ...cut('Bold', 700), family: 'Lora' }] }
+    expect(familyIsComplete(mixed, { usable: new Set(), complete: new Set() })).toBe(false)
   })
 })

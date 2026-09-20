@@ -330,6 +330,24 @@ export type StoredFace = Readonly<{
    */
   authorAcknowledged: boolean
   mediaType: string
+  /**
+   * `OS/2.usWeightClass` AS THE FACE'S OWN BYTES DECLARE IT, 1–1000.
+   *
+   * WHY THE STORE KEEPS IT: `baseCutOf` must choose which cut of an imported
+   * family represents it, the answer is the cut nearest upright text weight,
+   * and it has to answer from a LISTING — `list()` returns records without
+   * bytes, deliberately, so that showing a family costs no face reads. Reading
+   * the weight at import and recording it is what lets the choice stay a
+   * property of the binary without re-reading every binary to ask.
+   *
+   * ⚠ OPTIONAL, AND THE ABSENCE IS ORDINARY RATHER THAN CORRUPT. Two sound
+   * records carry none: any face stored before this field existed, and any face
+   * whose `OS/2` table does not declare a usable weight. `soundFace` therefore
+   * admits a record without it — dropping those would discard the author's
+   * whole font library on upgrade — and `baseCutOf` falls back to the cut's
+   * name, which is what it had before the field existed.
+   */
+  weight?: number
   scripts: ReadonlyArray<string>
   /** The day the bytes were fetched, `YYYY-MM-DD`. */
   fetchedAt: string
@@ -480,6 +498,14 @@ function soundFace(value: unknown): StoredFace | undefined {
   if (!storedKeyShape.test(candidate.key as string)) return undefined
   if (!Array.isArray(candidate.scripts) || !candidate.scripts.every((script) => typeof script === 'string')) return undefined
   if (typeof candidate.byteLength !== 'number' || !Number.isSafeInteger(candidate.byteLength) || candidate.byteLength <= 0) return undefined
+  // A WEIGHT IS CARRIED ONLY WHEN THE RECORD STATES A USABLE ONE, and anything
+  // else reads as absent rather than as a reason to drop the record — the same
+  // tolerance `authorAcknowledged` is given above, for the same reason: a face
+  // written before the field existed is old, not corrupt, and refusing it would
+  // empty an author's library on upgrade. The range is OpenType's own.
+  const weight = typeof candidate.weight === 'number' && Number.isSafeInteger(candidate.weight) && candidate.weight >= 1 && candidate.weight <= 1000
+    ? candidate.weight
+    : undefined
   return {
     key: candidate.key as string,
     family: candidate.family as string,
@@ -490,6 +516,11 @@ function soundFace(value: unknown): StoredFace | undefined {
     source: candidate.source as string,
     authorAcknowledged: acknowledged,
     mediaType: candidate.mediaType as string,
+    // SPREAD, SO AN ABSENT WEIGHT IS AN ABSENT KEY. Writing `weight: undefined`
+    // would put an explicit `undefined` into the record IndexedDB structured-
+    // clones, and `'weight' in record` would then be true of a face that
+    // declares none.
+    ...(weight === undefined ? {} : { weight }),
     scripts: [...(candidate.scripts as string[])],
     fetchedAt: candidate.fetchedAt as string,
     byteLength: candidate.byteLength as number,

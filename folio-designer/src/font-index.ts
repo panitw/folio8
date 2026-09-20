@@ -129,6 +129,96 @@ export const regularCutOf = <T extends Readonly<{ style: string }>>(faces: Reado
   faces.find((face) => face.style === 'Regular')
 
 /**
+ * THE CSS NAMED WEIGHT SCALE, WHICH IS WHAT A FOUNDRY'S SUBFAMILY NAME IS
+ * DRAWN FROM. CSS Fonts Level 4 fixes these names against these numbers, so
+ * reading a weight out of a subfamily is a LOOKUP IN A PUBLISHED TABLE rather
+ * than a guess about what a foundry meant.
+ *
+ * `Text` AND `Book` SIT AT 400 BESIDE `Regular`. They are the two names most
+ * used for an upright text weight by foundries that do not use `Regular` —
+ * Sukhumvit Set's base cut is `Text` — and CSS treats `Normal` as 400, which is
+ * the same claim under a third name.
+ */
+const namedWeights: Readonly<Record<string, number>> = {
+  thin: 100, hairline: 100,
+  extralight: 200, ultralight: 200,
+  light: 300,
+  regular: 400, normal: 400, book: 400, text: 400,
+  medium: 500,
+  semibold: 600, demibold: 600,
+  bold: 700,
+  extrabold: 800, ultrabold: 800,
+  black: 900, heavy: 900,
+}
+
+/**
+ * THE CUT A FAMILY SHOULD BE REPRESENTED BY WHEN NOBODY UPSTREAM SAYS WHICH —
+ * the author-supplied answer to the question `regularCutOf` answers for a
+ * published family.
+ *
+ * `regularCutOf` MATCHES THE LITERAL STRING `Regular` AND THAT IS RIGHT FOR
+ * WHAT IT SERVES. Every catalogue family and every family the web tier fetches
+ * publishes a cut by that exact name, so an exact match is a check rather than
+ * a heuristic there, and it must stay one.
+ *
+ * AN IMPORTED FAMILY MAKES NO SUCH PROMISE, AND SUKHUMVIT SET IS THE PROOF. Its
+ * six cuts are Thin, Light, Text, Medium, Semi Bold and Bold; not one is named
+ * `Regular`. Asked for a Regular, the family answered `undefined` — and
+ * `undefined` was read as "the store lost these bytes", which sent the designer
+ * to Google Fonts for a face that only ever existed on the author's disk. The
+ * family was not broken and nothing was missing: the question was wrong.
+ *
+ * SO THE WEIGHT DECIDES, NOT THE NAME, AND CLOSEST-TO-400 WINS. 400 is upright
+ * text weight on the scale above, which is what an author picking a family
+ * expects to see set in. Sukhumvit Set's `Text` is exactly 400 and wins
+ * outright; a family offering only Light and Bold yields the Light, at a
+ * distance of 100 against the Bold's 300.
+ *
+ * ⚠ THE FACE'S OWN `OS/2.usWeightClass` IS PREFERRED OVER ITS NAME, AND THE
+ * NAME IS ONLY A FALLBACK. `faceWeightClass` reads the weight the binary
+ * DECLARES, on a scale OpenType specifies; the table below reads a foundry's
+ * prose. A name is a decent guess and the field is a statement, so where both
+ * exist the statement wins — and the table above stops being consulted for any
+ * face imported since the store began recording the field.
+ *
+ * THE FALLBACK IS NOT DEAD CODE AND WILL NOT BECOME SO. Two sound records carry
+ * no weight: every face imported before the field existed, and any face whose
+ * `OS/2` table declares nothing usable. Both must still be ranked.
+ *
+ * AN UPRIGHT CUT BEATS AN ITALIC AT THE SAME WEIGHT, because a family's
+ * representative cut is its upright one — the slope is a variation on the face,
+ * not the face. Italic is detected in the style name for the same reason the
+ * weight is: it is the only thing a `StoredFace` records about the cut.
+ *
+ * A STYLE THE TABLE DOES NOT NAME SCORES 400, NOT ZERO. An unrecognised name is
+ * far more often a text weight the foundry gave a house name than it is a
+ * Black — and scoring it zero would rank every such cut above a genuine
+ * `Regular`, which inverts the whole answer on one unfamiliar word.
+ *
+ * ⚠ THE ORDER OF `faces` IS NOT A TIE-BREAK, WHICH IS WHY ONE IS SPELLED. The
+ * store lists faces by `getAll()` — key order, and the key is the SHA-256 of the
+ * bytes — so face order is content-addressed noise. Left to it, which cut of
+ * Sukhumvit Set an author got would depend on the hashes of the files they
+ * happened to import. The style name breaks the tie instead: arbitrary, but the
+ * SAME arbitrary answer on every machine and every listing.
+ */
+export const baseCutOf = <T extends Readonly<{ style: string; weight?: number }>>(faces: ReadonlyArray<T>): T | undefined => {
+  const score = (face: T) => {
+    const words = face.style.toLowerCase().replace(/[^a-z]+/g, ' ').trim().split(' ')
+    const italic = words.includes('italic') || words.includes('oblique')
+    const named = words.map((word) => namedWeights[word]).find((value) => value !== undefined)
+    return { distance: Math.abs((face.weight ?? named ?? 400) - 400), italic }
+  }
+  return [...faces].sort((left, right) => {
+    const a = score(left)
+    const b = score(right)
+    if (a.distance !== b.distance) return a.distance - b.distance
+    if (a.italic !== b.italic) return a.italic ? 1 : -1
+    return left.style.localeCompare(right.style)
+  })[0]
+}
+
+/**
  * The scripts a pickable row's face covers, read off whichever tier the row is.
  * Every tier carries them; only the field they sit in differs, and spelling the
  * discriminant here keeps the narrowing the compiler's rather than a comment's.
@@ -595,6 +685,23 @@ export const familyIsInstalled = (source: FamilySource, holdings: LocalFaceHoldi
 }
 
 /**
+ * WHETHER EVERY FACE OF A STORED FAMILY CAME OFF THE AUTHOR'S OWN MACHINE.
+ *
+ * `authorAcknowledged` is the store's per-face record of the licence
+ * acknowledgement spec-font-sources-and-embedding story 3 takes at import, and
+ * an import is the only thing that sets it — a face the web tier fetched is
+ * never acknowledged by anyone. So the flag doubles, exactly and without
+ * ambiguity, as the answer to "did this face come from a disk".
+ *
+ * AN EMPTY FAMILY IS NOT AUTHOR-SUPPLIED, which is what `length > 0` buys. The
+ * vacuous `every` would call a family with no faces at all author-supplied and
+ * therefore complete, and a family holding nothing is the one case where there
+ * is most certainly something left to fetch.
+ */
+export const isAuthorSupplied = (source: Extract<FamilySource, { tier: 'stored' }>): boolean =>
+  source.faces.length > 0 && source.faces.every((face) => face.authorAcknowledged)
+
+/**
  * WHETHER THE FAMILY HOLDS EVERYTHING IT PUBLISHES — D-5's PREDICATE, AND THE
  * ONE THAT DECIDES WHETHER IT IS OFFERED FOR INSTALL AGAIN.
  *
@@ -617,6 +724,29 @@ export const familyIsInstalled = (source: FamilySource, holdings: LocalFaceHoldi
  * USABLE — see above — and picking it again writes a census and fetches only
  * what is missing.
  *
+ * ⚠ EXCEPT AN AUTHOR-SUPPLIED FAMILY, WHICH IS COMPLETE BY CONSTRUCTION. The
+ * rule above carries an unstated premise — that a censusless family HAS an
+ * upstream publisher and merely has not been asked yet — and
+ * spec-font-sources-and-embedding story 3 made that premise false: a family
+ * imported from the author's own disk has no publisher to census. There is no
+ * upstream list of what it publishes because there is no upstream. What the
+ * author imported IS the family.
+ *
+ * READING ONE INCOMPLETE IS NOT A COSMETIC MISTAKE, IT SENDS THE DESIGNER TO
+ * THE WEB. Incomplete is what the font browser paints an Install button on
+ * (`FontBrowser.tsx`'s `installedFamilies`) and what `installFamily`'s own
+ * guard lets fall through to `fetchWebFamily`. So an author who imported
+ * Sukhumvit Set from their downloads and then picked it was told it "is no
+ * longer published upstream" — a sentence about Google Fonts, aimed at a face
+ * that was never there and did not need to be.
+ *
+ * IT IS `every`, NOT `some`, AND THE DIFFERENCE IS A MIXED FAMILY. An author
+ * may import a cut of a family this designer also fetches — a weight of Roboto
+ * the web tier does not carry. That family DOES have a publisher, the rest of
+ * it is still out there, and it must keep reading incomplete so the remaining
+ * cuts stay reachable. Only a family that is author-supplied THROUGHOUT has
+ * nothing upstream to complete it from.
+ *
  * A `local` FAMILY NEEDS NO CENSUS AT ALL. The catalogue is the authority on
  * what the local tier publishes and it publishes exactly what it ships, so a
  * catalogue family that holds every cut it declares is complete by
@@ -629,7 +759,7 @@ export const familyIsComplete = (source: FamilySource, holdings: LocalFaceHoldin
     // and must keep being offered here so its remaining cuts are reachable.
     case 'local': return holdings.complete.has(source.family)
     case 'stored': {
-      if (source.census === undefined) return false
+      if (source.census === undefined) return isAuthorSupplied(source)
       return censusIsComplete(source.census, new Set(source.faces.map((face) => face.style)))
     }
     case 'web': return false
