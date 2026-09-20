@@ -38,6 +38,7 @@ var codePins = []struct {
 	{"CodeTextMissingGlyph", CodeTextMissingGlyph, "TEXT_MISSING_GLYPH"},
 	{"CodeTextStyleFaceUndeclared", CodeTextStyleFaceUndeclared, "TEXT_STYLE_FACE_UNDECLARED"},
 	{"CodeTextFaceAbsent", CodeTextFaceAbsent, "TEXT_FACE_ABSENT"},
+	{"CodeTextFaceSubstituted", CodeTextFaceSubstituted, "TEXT_FACE_SUBSTITUTED"},
 	{"CodeInternalUnhandledCaveat", CodeInternalUnhandledCaveat, "INTERNAL_UNHANDLED_CAVEAT"},
 	{"CodeDocumentDateInvalid", CodeDocumentDateInvalid, "DOCUMENT_DATE_INVALID"},
 	{"CodeTableHeaderRepeatSuppressed", CodeTableHeaderRepeatSuppressed, "TABLE_HEADER_REPEAT_SUPPRESSED"},

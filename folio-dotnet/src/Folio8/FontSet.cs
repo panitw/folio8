@@ -9,8 +9,14 @@ using System.Collections.Generic;
 /// <remarks>
 /// There is no default font set and no ambient lookup. The engine never
 /// goes looking for fonts on the machine it runs on: a render either finds
-/// the face it needs here, or it fails with a located error. Omitting
-/// fonts is a caller error, not a fallback.
+/// the face it needs here, in the document's own embedded assets, or it
+/// fails with a located error.
+/// <para>
+/// A font set <b>may be empty</b>. A document that carries every face it
+/// names has nothing for a set to contribute, and no argument check refuses
+/// such a call before the engine has attempted to resolve anything. What is
+/// still a caller error is passing <c>null</c>.
+/// </para>
 /// <para>
 /// Enumeration is in <b>insertion order</b>, not hash order, so the buffer
 /// handed to the engine is a deterministic function of how the caller

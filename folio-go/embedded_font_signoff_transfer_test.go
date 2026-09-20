@@ -95,7 +95,7 @@ func shapedRunFromCommittedFixture(t *testing.T, fixtureDir, elementID string) f
 	// newDocumentFontCache, NOT newFontCache: the embedded side resolves its
 	// face out of the document, and a cache that could not see the document
 	// would silently skip the carried entry and shape nothing.
-	cache := newDocumentFontCache(tpl).forChain(el.Style.Value.FontFamily.Value)
+	cache := newDocumentFontCache(tpl, FaceFallbackStrict).forChain(el.Style.Value.FontFamily.Value)
 	segs, diags, err := shapeSegments(elementID, chain, styled, el.Value.Value, testShippedFontSet(), cache, breaksAreConsumed)
 	if err != nil {
 		t.Fatalf("fixtures/%s element %s: shapeSegments: %v", fixtureDir, elementID, err)

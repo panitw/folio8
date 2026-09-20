@@ -225,14 +225,48 @@ const DiagCodeTextStyleFaceUndeclared = string(diag.CodeTextStyleFaceUndeclared)
 // dropping it would ship a PDF with text silently missing on a guess.
 // Byte-identity exists to prevent exactly that outcome.
 //
-// IT REFUSES FOR EVERY CALLER, IN EVERY LANGUAGE. A caller passing
-// fonts.Shipped() wholesale can never reach it; a caller supplying a
-// partial set gets an error where it previously got a Warning and a PDF.
-// There is no opt-in flag and no per-language leniency.
+// IT IS THE DEFAULT IN EVERY LANGUAGE, AND IT IS OPT-OUT, NOT
+// UNCONDITIONAL. A caller passing fonts.Shipped() wholesale can never
+// reach it; a caller supplying a partial set gets an error where it
+// previously got a Warning and a PDF. A caller who asks for
+// FaceFallbackSubstitute gets DiagCodeTextFaceSubstituted instead —
+// except where the renderer holds NOTHING that covers the rune, which
+// still refuses with this code, under either selector. Asking for
+// nothing asks for this one, in all three libraries.
 //
 // Additive only (AD-14, verbatim: "changing a code's meaning is a
 // breaking change"): once shipped, this string's meaning is permanent.
 const DiagCodeTextFaceAbsent = string(diag.CodeTextFaceAbsent)
+
+// DiagCodeTextFaceSubstituted names the LENIENT counterpart of
+// DiagCodeTextFaceAbsent: the identical condition — a rune that no
+// PRESENT member of its element's declared font chain covers, where at
+// least one member of that chain was never supplied — met by a caller
+// who passed folio8.FaceFallbackSubstitute.
+//
+// The rune is PAINTED, in a face the renderer was actually given: the
+// document's own embedded assets first, then the supplied FontSet, each
+// arm in face-name order, and the first face that covers the rune wins.
+// The embedded arm goes first because an embedded face was chosen
+// deliberately by the author and is likelier to match their intent. The
+// outcome is therefore a pure function of the inputs — identical inputs
+// produce identical bytes, on any machine.
+//
+// IT IS A WARNING, and it is the SOLE record that the page is not in the
+// typeface the document asked for: it names the element id, the rune (as
+// U+XXXX and its literal form), THE FACE REQUESTED and THE FACE PAINTED,
+// so an integrator can fail their own build on it and a human reading a
+// log knows which font directory to repair. The guarantee this capability
+// gives up is "no substitution"; the one it keeps is "no SILENT
+// substitution".
+//
+// ONE WARNING PER (ELEMENT, DISTINCT RUNE), matching
+// DiagCodeTextStyleFaceUndeclared — a five-hundred-row table reports a
+// column's substituted rune once, not five hundred times.
+//
+// Additive only (AD-14): once shipped, this string's meaning is
+// permanent.
+const DiagCodeTextFaceSubstituted = string(diag.CodeTextFaceSubstituted)
 
 // DiagCodeTableFooterSourceUnresolved and DiagCodeTableFooterSourceForbidden
 // are DW-6's two long-owed codes (D-1.4.2, R8), minted here now that

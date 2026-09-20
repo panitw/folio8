@@ -159,7 +159,7 @@ func TestTheCarriedFaceNameAndTheAssetKeyAreOneDerivation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	cache := newDocumentFontCache(tpl)
+	cache := newDocumentFontCache(tpl, FaceFallbackStrict)
 	minted := embeddedFaceName(embeddedFontAssetKey())
 	got, ok := cache.carriedAssetKey(minted)
 	if !ok || got != embeddedFontAssetKey() {
@@ -422,7 +422,7 @@ func TestLatinThroughAThaiFirstChainIsAttributedToTheThaiFace(t *testing.T) {
 	// Latin-first stack would have reached instead really does have these
 	// glyphs, so the old behaviour was silent — right letters, wrong widths —
 	// rather than a visibly blank run.
-	cache := newDocumentFontCache(tpl)
+	cache := newDocumentFontCache(tpl, FaceFallbackStrict)
 	first, ferr := cache.get("Noto Sans", fs)
 	if ferr != nil {
 		t.Fatalf("get Noto Sans: %v", ferr)

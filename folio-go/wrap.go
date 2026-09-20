@@ -581,6 +581,13 @@ type verticalMetrics struct {
 // the PDF /FontDescriptor, not for placement.
 func chainLineMetrics(chain []string, fs FontSet, cache *fontCache) ([]fontset.LineMetrics, error) {
 	out := make([]fontset.LineMetrics, 0, len(chain))
+	// absent is "the caller never supplied this chain member at all" —
+	// the SAME bit resolveRuneFace collects, asked here through the same
+	// predicate — and it is the trigger for the pool arm below. It is
+	// deliberately NOT `!present`: metricsFace also answers false for a
+	// carried face this build cannot parse, which is a document fault
+	// with nothing to substitute for.
+	absent := false
 	for _, name := range chain {
 		// A chain member the caller did not supply cannot appear in the
 		// element, so it does not constrain the vertical model. Since
@@ -595,6 +602,9 @@ func chainLineMetrics(chain []string, fs FontSet, cache *fontCache) ([]fontset.L
 			return nil, err
 		}
 		if !present {
+			if !cache.declares(name, fs) {
+				absent = true
+			}
 			// A FACE THIS BUILD DECLARES BUT DOES NOT CARRY STILL
 			// CONSTRAINS THE MODEL (spec-deferred-offline-cache, CAP-6).
 			//
@@ -621,6 +631,52 @@ func chainLineMetrics(chain []string, fs FontSet, cache *fontCache) ([]fontset.L
 			continue
 		}
 		out = append(out, f.LineMetrics())
+	}
+	// THE POOL ARM (D1/D2), AND IT IS THE OTHER HALF OF SUBSTITUTION.
+	//
+	// The line box is derived from the chain's PRESENT faces, so a
+	// substitute taller than every one of them would overflow its box
+	// with no clipping warning — the metrics that size the line and the
+	// face that draws the glyphs would disagree. Under
+	// FaceFallbackSubstitute, any face in the pool may end up painted
+	// into this element, so every one of them constrains the model.
+	//
+	// ⚠ THE ENVELOPE, NOT THE FACES ACTUALLY PAINTED, AND THAT IS THE
+	// DECISION. Which pool face is painted is a function of the RUNES in
+	// this render's data, and this function sees a chain and a FontSet —
+	// no text. Sizing from the painted faces would need the text, and
+	// would make the line height of a table row depend on the row's own
+	// content, which is exactly what R2's one-vertical-model-per-table
+	// rule forbids: two renders of one template over two data sets would
+	// lay out differently for a reason no author could see. The envelope
+	// is data-independent, deterministic, and never too SMALL, which is
+	// the direction that clips glyphs.
+	//
+	// ⚠ IT IS GATED ON AN ABSENT CHAIN MEMBER, NOT ON THE SELECTOR
+	// ALONE. Substitution can only fire where TEXT_FACE_ABSENT would
+	// have, and that condition requires an absent member — so a lenient
+	// render of a document whose chains are fully supplied is sized
+	// exactly as a strict one, byte for byte.
+	//
+	// It is ALSO what makes the empty-metrics refusal below correct
+	// under lenient. `len(metrics) == 0` means no member of the CHAIN is
+	// present, which says nothing about the POOL: a single-entry chain
+	// naming a face the host lacks is this capability's headline case,
+	// and it must render, not refuse. It reaches verticalModel with the
+	// pool's metrics; only a pool that holds nothing leaves the slice
+	// empty, and that IS the "no candidate at all" state.
+	if absent && cache.fallback == FaceFallbackSubstitute {
+		for _, name := range cache.substitutionPool(fs) {
+			f, present, err := cache.metricsFace(name, fs)
+			// An unparseable candidate is SKIPPED, exactly as
+			// substituteFace skips it: a face this element will never be
+			// able to paint with must not decide whether it can be laid
+			// out.
+			if err != nil || !present {
+				continue
+			}
+			out = append(out, f.LineMetrics())
+		}
 	}
 	return out, nil
 }
@@ -652,6 +708,17 @@ func chainLineMetrics(chain []string, fs FontSet, cache *fontCache) ([]fontset.L
 // and now the ratio — of nothing that is drawn.
 func verticalModel(chain []string, metrics []fontset.LineMetrics, fontSize geom.Length, lineSpacing int64) (verticalMetrics, error) {
 	if len(metrics) == 0 {
+		// ⚠ THIS IS THE "NO CANDIDATE AT ALL" STATE, AND ONLY UNDER
+		// FaceFallbackSubstitute IS THAT A CLAIM WORTH MAKING. An
+		// earlier reading of this arm called `len(metrics) == 0` the
+		// no-candidate state outright, and it is not: it means no member
+		// of the CHAIN is present, which says nothing about what the
+		// renderer holds. chainLineMetrics (above) is where the pool is
+		// consulted under lenient, so by the time this arm is reached
+		// the pool has already been asked and had nothing — which is
+		// exactly the condition that still refuses, under either
+		// selector.
+		//
 		// spec-deferred-offline-cache CAP-7: THE SAME AUTHOR FAULT,
 		// CAUGHT ONE LEVEL UP. shapeSegments refuses a rune no present
 		// face covers when a chain member was absent; this is the case
@@ -673,7 +740,20 @@ func verticalModel(chain []string, metrics []fontset.LineMetrics, fontSize geom.
 		return verticalMetrics{}, newRenderError(
 			DiagCodeTextFaceAbsent, "", fontFamilyDataPath,
 			fmt.Errorf(
-				"folio8: none of the fallback chain's faces %v is present in the supplied FontSet, so no line height can be derived from it",
+				// THE WORDING IS TRUE UNDER BOTH SELECTORS, AND
+				// IT HAD TO BE REWRITTEN TO STAY SO. It used to
+				// say "none of the fallback chain's faces is
+				// present in the supplied FontSet", which is the
+				// whole story under FaceFallbackStrict and only
+				// half of it under FaceFallbackSubstitute: there
+				// the SUBSTITUTION POOL — the supplied FontSet
+				// plus the document's own carried faces — was
+				// consulted too (chainLineMetrics), and reaching
+				// here means it had nothing either. "No face this
+				// renderer holds" names the real set in both
+				// modes without claiming a lookup that strict
+				// never performs.
+				"folio8: no face this renderer holds supplies line metrics for the fallback chain %v, so no line height can be derived from it",
 				chain,
 			),
 		)
@@ -703,7 +783,12 @@ func verticalModel(chain []string, metrics []fontset.LineMetrics, fontSize geom.
 	units := maxAscent + maxDescent + maxLineGap
 	if units <= 0 {
 		return verticalMetrics{}, fmt.Errorf(
-			"folio8: the fallback chain %v yields a line height of %d font units — over its present faces max(hhea ascent)=%d, max(-hhea descent)=%d and max(hhea lineGap)=%d sum to nothing a line can be drawn in",
+			// "the faces that supplied metrics", not "its present
+			// faces": under FaceFallbackSubstitute the maxima are
+			// taken over the chain's present faces AND the
+			// substitution pool, so naming the chain's own would
+			// describe a smaller set than the arithmetic used.
+			"folio8: the fallback chain %v yields a line height of %d font units — over the faces that supplied metrics max(hhea ascent)=%d, max(-hhea descent)=%d and max(hhea lineGap)=%d sum to nothing a line can be drawn in",
 			chain, units, maxAscent, maxDescent, maxLineGap,
 		)
 	}

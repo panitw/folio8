@@ -202,6 +202,12 @@ func TestDiagnosticRegistryErrorCensus(t *testing.T) {
 			}
 			return result
 		},
+		// The substitution Warning's witness is a REAL Render through
+		// the public API with FaceFallbackSubstitute asked for — the
+		// only way to reach this code at all. It lives beside the rest
+		// of the capability's tests (face_fallback_test.go) rather than
+		// being re-spelled here.
+		diag.CodeTextFaceSubstituted: renderFaceSubstitutedWitness,
 		diag.CodeTextStyleFaceUndeclared: func(t *testing.T) Result {
 			// Story 11.2, FR57. A REAL production trigger, not a
 			// constructed Diagnostic: the worked example's element `e1`

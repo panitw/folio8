@@ -979,7 +979,18 @@ func addCanvasTextPaint(t *Template, projection *designer.CanvasProjection, fs F
 	// canvas consumes the IDENTICAL advance the renderer does (AD-17), so
 	// a canvas cache that could not see the document's carried faces would
 	// measure a document the PDF does not print.
-	cache := newDocumentFontCache(t)
+	// FaceFallbackStrict, PINNED EXPLICITLY, AND THE REASON IS THE
+	// DESIGNER'S WHOLE FACE-FETCH LOOP. The canvas projection is how the
+	// browser learns which face to install: addCanvasTableLabelLines and
+	// the body-text arm below catch TEXT_FACE_ABSENT by code and
+	// re-raise it, and internal/wasm/engine.go turns that into
+	// InstallFace. Substituting here would paint the canvas in some
+	// other face, report a Warning nothing on that path reads, and the
+	// browser would never be told which face to fetch — so the designer
+	// would quietly preview a document in the wrong typeface forever.
+	// The value is written rather than defaulted so this site STATES
+	// its answer instead of inheriting one.
+	cache := newDocumentFontCache(t, FaceFallbackStrict)
 	// degrade disposes of ONE element and carries on, and it is spelled
 	// once because two different conditions reach it (D-7.4.2: DEGRADE
 	// THIS ELEMENT, NEVER ABORT THE PROJECTION). See both call sites

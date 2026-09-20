@@ -1155,10 +1155,13 @@ func collectBandTableRuns(
 			// same reason the header has one: the leading must never be
 			// derived from a face the glyphs did not come from.
 			bodyMetricsChain := metricsFaceNames(bodyChain, bodyStyledChain, fs, bodyCache)
-			// AC3's Warning is one per (element, distinct rune), and a
-			// table shapes a column ONCE PER ROW — so the memo has to
-			// outlive the shapeSegments call. See coalesceStyleFaceDiags.
-			var styleFaceSeen []Diagnostic
+			// The per-face Warnings — AC3's style-variant fallback and
+			// this chain's substitutions — are one per (element,
+			// distinct rune), and a table shapes a column ONCE PER ROW,
+			// so the memo has to outlive the shapeSegments call. It
+			// carries BOTH codes; see coalesceFaceDiags for why one
+			// memo is safe for two.
+			var faceDiagSeen []Diagnostic
 			bodyFontSize := defaultFontSizePt
 			if el.Style.Set && !el.Style.Null && el.Style.Value.FontSize.Set && !el.Style.Value.FontSize.Null {
 				bodyFontSize = el.Style.Value.FontSize.Value
@@ -1251,7 +1254,7 @@ func collectBandTableRuns(
 					if serr != nil {
 						return nil, nil, nil, serr
 					}
-					diags = coalesceStyleFaceDiags(diags, glyphDiags, &styleFaceSeen)
+					diags = coalesceFaceDiags(diags, glyphDiags, &faceDiagSeen)
 					totalRunes := len([]rune(boundText))
 
 					atomic := atomicSpansFor(doc.doc.UnbreakableValues, subs)
@@ -1507,7 +1510,7 @@ func collectBandTableRuns(
 					if serr != nil {
 						return nil, nil, nil, serr
 					}
-					diags = coalesceStyleFaceDiags(diags, glyphDiags, &styleFaceSeen)
+					diags = coalesceFaceDiags(diags, glyphDiags, &faceDiagSeen)
 					totalRunes := len([]rune(boundText))
 
 					atomic := atomicSpansFor(doc.doc.UnbreakableValues, subs)

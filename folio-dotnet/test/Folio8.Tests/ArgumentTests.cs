@@ -40,25 +40,93 @@ namespace Folio8Tests
         }
 
         /// <summary>
-        /// There is no default font set and no ambient lookup, so an empty set
-        /// is a caller error rather than a fallback.
+        /// An empty font set is NOT a caller error — issue #1.
+        /// </summary>
+        /// <remarks>
+        /// There is still no default font set and no ambient lookup. What is
+        /// gone is the eager argument check that refused the call before the
+        /// engine had attempted to resolve anything: a document that carries
+        /// every face it names has nothing for a set to contribute, and this
+        /// binding used to make such a render impossible from .NET while the
+        /// same document rendered from Go and from Node.
+        /// <para>
+        /// The fixture is <c>fixtures/embedded-font</c>, whose chain's second
+        /// entry is a face the document itself carries. The claim asserted is
+        /// the TRUE one: a font set this document never consults does not
+        /// change its bytes. The stronger claim — that an ALL-embedded chain
+        /// renders identically under any set whatsoever — is proved in Go,
+        /// against a purpose-built all-asset document, because this fixture's
+        /// chain begins with a shipped face and supplying it legitimately
+        /// changes the page.
+        /// </para>
+        /// </remarks>
+        [Fact]
+        public void RenderAcceptsAnEmptyFontSet()
+        {
+            RenderResult empty = Folio8.Render(EmbeddedFixture(), new Data("{}"), null, new FontSet());
+            Assert.NotEmpty(empty.Bytes);
+        }
+
+        [Fact]
+        public void ValidateAcceptsAnEmptyFontSet()
+        {
+            IList<Diagnostic> found = Folio8.Validate(
+                Repo.File_("fixtures", "embedded-font", "input.folio"), new Data("{}"), null, new FontSet());
+            // NotNull would pass whatever happened — Validate is documented
+            // to return empty rather than null. What is asserted is that the
+            // prediction carries no absent-face refusal, which is the claim
+            // the deleted argument check made false. Its JS twin asserts the
+            // same thing.
+            foreach (Diagnostic d in found)
+            {
+                Assert.NotEqual("TEXT_FACE_ABSENT", d.Code);
+            }
+        }
+
+        /// <summary>
+        /// A font set the document never consults does not change its bytes —
+        /// the property that makes the check above safe to delete rather than
+        /// merely permitted.
         /// </summary>
         [Fact]
-        public void RenderRefusesAnEmptyFontSet()
+        public void AnUnconsultedFontSetDoesNotChangeTheBytes()
         {
-            Assert.Throws<ArgumentException>(() => Folio8.Render(Fixture(), FixtureData(), null, new FontSet()));
+            RenderResult empty = Folio8.Render(EmbeddedFixture(), new Data("{}"), null, new FontSet());
+            FontSet unrelated = new FontSet();
+            unrelated.Add("A Face This Document Never Names", Repo.ShippedFonts["Roboto"]);
+            RenderResult supplied = Folio8.Render(EmbeddedFixture(), new Data("{}"), null, unrelated);
+            Assert.Equal(empty.Bytes, supplied.Bytes);
+        }
+
+        /// <summary>
+        /// C# permits a cast to a value the enum does not declare. It is
+        /// refused HERE, as an ArgumentException naming the argument, because
+        /// Go returns a named error for the same input and the JavaScript
+        /// binding throws a TypeError — and "the three libraries ship the same
+        /// behaviour" includes the error contract.
+        /// </summary>
+        [Fact]
+        public void RenderRefusesAFallbackOutsideTheEnum()
+        {
+            Assert.Throws<ArgumentException>(() => Folio8.Render(Fixture(), FixtureData(), null, Repo.ShippedFonts, (FaceFallback)99));
+        }
+
+        [Fact]
+        public void ValidateRefusesAFallbackOutsideTheEnum()
+        {
+            Assert.Throws<ArgumentException>(() => Folio8.Validate(
+                Repo.File_("fixtures", "colour-strokes", "input.folio"), FixtureData(), null, Repo.ShippedFonts, (FaceFallback)99));
+        }
+
+        private static Template EmbeddedFixture()
+        {
+            return Template.Parse(Repo.File_("fixtures", "embedded-font", "input.folio"));
         }
 
         [Fact]
         public void ValidateRefusesNullTemplateBytes()
         {
             Assert.Throws<ArgumentNullException>(() => Folio8.Validate(null, FixtureData(), null, Repo.ShippedFonts));
-        }
-
-        [Fact]
-        public void ValidateRefusesAnEmptyFontSet()
-        {
-            Assert.Throws<ArgumentException>(() => Folio8.Validate(Repo.File_("fixtures", "colour-strokes", "input.folio"), FixtureData(), null, new FontSet()));
         }
 
         [Fact]

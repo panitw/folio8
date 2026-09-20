@@ -10,8 +10,11 @@ interface HostReply {
 /** The functions folio-go/wasm/cmd/render registers as globalThis.Folio8RenderHost. */
 export interface Host {
   parse(template: Uint8Array): HostReply
-  render(template: Uint8Array, data: Uint8Array, params: Uint8Array | null, fontNames: string[], fontBytes: Uint8Array[]): HostReply
-  validate(template: Uint8Array, data: Uint8Array, params: Uint8Array | null, fontNames: string[], fontBytes: Uint8Array[]): HostReply
+  // `fallback` is always a number: this binding resolves the default (see
+  // fallbackInput in index.ts), so the host's own null/undefined arm is
+  // never reached from here and the type does not pretend otherwise.
+  render(template: Uint8Array, data: Uint8Array, params: Uint8Array | null, fontNames: string[], fontBytes: Uint8Array[], fallback: number): HostReply
+  validate(template: Uint8Array, data: Uint8Array, params: Uint8Array | null, fontNames: string[], fontBytes: Uint8Array[], fallback: number): HostReply
   parameterReferences(template: Uint8Array): HostReply
   version: string
 }

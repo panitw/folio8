@@ -159,7 +159,7 @@ func TestADeclaredVariantIsShapedAndMeasuredFromItsOwnFace(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		cache := newDocumentFontCache(tpl)
+		cache := newDocumentFontCache(tpl, FaceFallbackStrict)
 		segs, _, err := shapeSegments("e1", base, styled, el.Value.Value, testShippedFontSet(), cache, breaksAreConsumed)
 		if err != nil {
 			t.Fatal(err)

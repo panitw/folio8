@@ -416,8 +416,10 @@ func TestDocsGuideNamesEveryExportedIdentifier(t *testing.T) {
 	// pass. D-7.8.2 retired two DiagCode* constants before the v1.0.0
 	// tag (2026-09-17), taking the surface from 60 to 58;
 	// spec-deferred-offline-cache CAP-7 minted DiagCodeTextFaceAbsent,
-	// taking it to 59.
-	if total < 59 {
+	// taking it to 59. spec-font-sources-and-embedding's first story
+	// minted DiagCodeTextFaceSubstituted and the FaceFallback selector
+	// (the type and its two constants), taking it to 63.
+	if total < 63 {
 		t.Fatalf("census found only %d identifiers", total)
 	}
 }

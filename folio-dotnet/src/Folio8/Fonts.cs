@@ -10,7 +10,7 @@ using System.Reflection;
 /// </summary>
 /// <remarks>
 /// Fonts stay an EXPLICIT ARGUMENT. Nothing here is ambient and nothing here
-/// is a default — <see cref="Folio8.Render(Template, Data, Params, FontSet)"/>
+/// is a default — <see cref="Folio8.Render(Template, Data, Params, FontSet, FaceFallback)"/>
 /// still demands a <see cref="FontSet"/>, and building your own instead of
 /// calling this is a first-class way to use the library.
 /// <para>

@@ -88,6 +88,7 @@ func TestMalformedCallsAreRefusedWithoutAllocating(t *testing.T) {
 				unsafe.Pointer(&template[0]), cI32(len(template)),
 				nil, 0,
 				unsafe.Pointer(&truncatedFonts[0]), -4,
+				0,
 				&out.token, &out.result, &out.length)
 		}},
 		{"truncated font buffer", func(out *outParams) cI32 {
@@ -95,6 +96,31 @@ func TestMalformedCallsAreRefusedWithoutAllocating(t *testing.T) {
 				unsafe.Pointer(&template[0]), cI32(len(template)),
 				nil, 0,
 				unsafe.Pointer(&truncatedFonts[0]), cI32(len(truncatedFonts)),
+				0,
+				&out.token, &out.result, &out.length)
+		}},
+		{"a face-fallback selector outside the closed set, validating", func(out *outParams) cI32 {
+			// THE TWIN OF THE ROW BELOW, AND IT IS NOT REDUNDANT:
+			// clamping folio8_validate to strict while leaving
+			// folio8_render refusing leaves the render row green.
+			// Two exports take this parameter, so two rows check it.
+			return folio8_validate(unsafe.Pointer(&template[0]), cI32(len(template)),
+				unsafe.Pointer(&template[0]), cI32(len(template)),
+				nil, 0,
+				nil, 0,
+				99,
+				&out.token, &out.result, &out.length)
+		}},
+		{"a face-fallback selector outside the closed set", func(out *outParams) cI32 {
+			// REFUSED, NOT CLAMPED, and the status is the ABI's
+			// argument error rather than a rendered document: Go
+			// returns a named error for the same input and the JS
+			// binding throws. One contract, three spellings.
+			return folio8_render(unsafe.Pointer(&template[0]), cI32(len(template)),
+				unsafe.Pointer(&template[0]), cI32(len(template)),
+				nil, 0,
+				nil, 0,
+				99,
 				&out.token, &out.result, &out.length)
 		}},
 		{"duplicate face name", func(out *outParams) cI32 {
@@ -102,6 +128,7 @@ func TestMalformedCallsAreRefusedWithoutAllocating(t *testing.T) {
 				unsafe.Pointer(&template[0]), cI32(len(template)),
 				nil, 0,
 				unsafe.Pointer(&duplicateFonts[0]), cI32(len(duplicateFonts)),
+				0,
 				&out.token, &out.result, &out.length)
 		}},
 	}

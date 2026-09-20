@@ -371,6 +371,11 @@ if err != nil {
 fontSet["Brand Sans"] = brand // referenced by a chain such as "body": ["Brand Sans", "Noto Sans Thai"]
 ```
 
+The `FontSet` may be **empty, or nil**. There is still no default font set and no lookup on the
+machine the render runs on, but a template that carries every face it names — one saved with
+embedding on — has nothing for a font set to contribute, so such a call is not refused before the
+engine has tried to resolve the chains.
+
 A character that no face in its chain covers is omitted, never drawn as a box, and reported with
 the warning `TEXT_MISSING_GLYPH` — but only when every face the chain declares was supplied. If any
 declared face is missing from the `FontSet`, an uncovered character fails the render instead, with
@@ -380,6 +385,34 @@ covering entry declares no face for is drawn in that entry's regular face with t
 `TEXT_STYLE_FACE_UNDECLARED`. `TEXT_FACE_ABSENT` is a `*folio8.RenderError` naming the absent faces,
 the element and `style.fontFamily`; bytes that are not a usable font still fail as a plain error, so
 keep your fallback branch for that.
+
+### When a face is missing, choose what happens
+
+`Render`, `RenderTo` and `Validate` take an optional trailing `folio8.FaceFallback`:
+
+| Value | Behaviour |
+|---|---|
+| `folio8.FaceFallbackStrict` | The default, and the zero value, so every call written before this argument existed asks for it: the refusal above, unchanged. |
+| `folio8.FaceFallbackSubstitute` | The character is painted in a face this renderer actually holds — the document's own embedded assets first, then the supplied `FontSet`, each searched in face-name order, the first face that covers the character winning — and the warning `TEXT_FACE_SUBSTITUTED` names the element, the character, the face requested and the face painted. A renderer holding nothing that covers the character still fails with `TEXT_FACE_ABSENT`. |
+
+```go
+result, err := folio8.Render(template, data, nil, fontSet, folio8.FaceFallbackSubstitute)
+if err != nil {
+	log.Fatal(err)
+}
+for _, d := range result.Diagnostics {
+	if d.Code == folio8.DiagCodeTextFaceSubstituted {
+		log.Println(d.Message) // fail your own build on this if a substituted face is unacceptable
+	}
+}
+```
+
+Substitution is resolved per character and the order is fixed, so the same inputs produce the same
+bytes on any machine. Passing more than one selector, or a value outside the two constants, is a
+named error rather than a clamp. Under `FaceFallbackSubstitute` a chain with an unsupplied member is
+also given a line box tall enough for anything the renderer might paint into it, so a substituted
+character can never overflow its box unreported; that makes the leading of such an element differ
+from the same element rendered strictly.
 
 ## Warnings and errors
 
@@ -1156,6 +1189,7 @@ Each constant is an untyped string constant whose value is the registry string. 
 | `DiagCodeTextClippedWidth` | `TEXT_CLIPPED_WIDTH` | Render warning | A text element's widest line exceeds its declared width and is clipped at the box edge. |
 | `DiagCodeTextMissingGlyph` | `TEXT_MISSING_GLYPH` | Render warning | No face in the element's declared chain covers a character. The character is omitted (no glyph, no advance); the message names the rune and the chain. |
 | `DiagCodeTextStyleFaceUndeclared` | `TEXT_STYLE_FACE_UNDECLARED` | Render warning | Bold and/or italic was requested, but the chain entry covering the character declares no such face. It is drawn in that entry's base face, with no synthetic emboldening or slant. |
+| `DiagCodeTextFaceSubstituted` | `TEXT_FACE_SUBSTITUTED` | Render warning (also `Validate`; `ElementID` = the element or table column) | Under `FaceFallbackSubstitute`, a character covered by no present face of its element's chain, where at least one face that chain declares was never supplied, was painted in another face this renderer holds. The message names the element, the character, every face requested and the face painted. One warning per element and distinct character per collection pass — once for a text element, and up to twice for a table body cell, which the page model walks in two passes (`TEXT_STYLE_FACE_UNDECLARED` reports the same way, for the same reason). The same condition under `FaceFallbackStrict` is `TEXT_FACE_ABSENT` instead. |
 | `DiagCodeEmptyAverage` | `AGGREGATE_EMPTY_AVERAGE` | Render warning | `avg()` over a present but empty collection; the aggregate resolves to empty. |
 | `DiagCodeTableHeaderRepeatSuppressed` | `TABLE_HEADER_REPEAT_SUPPRESSED` | Render warning | The repeated table header was dropped on one continuation page because the next row would not fit under it. |
 | `DiagCodeTableFooterOrphanSuppressed` | `TABLE_FOOTER_ORPHAN_SUPPRESSED` | Render warning | The footer and its preceding row together exceed the window, so the footer was placed alone. |

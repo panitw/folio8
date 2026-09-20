@@ -419,7 +419,24 @@
     <div class="notice">
       <p><strong>The same calls are executed, not illustrated.</strong> The package's consumer programs make exactly these calls — <code>Template</code> parse, <code>Fonts.Shipped</code>, <code>Folio8.Render</code> — against a corpus fixture from every supported process shape on both target framework families, and compare the PDF's SHA-256 against the committed expected hash. They differ from the program above only in taking the fixture from the command line and in holding the font set inside the <code>try</code> rather than in a static field, so that a load failure is reported rather than buried in a type initializer.</p>
     </div>
-    <p><strong>Fonts are an explicit argument, always.</strong> There is no default font set and no lookup on the machine the render runs on. <code>Fonts.Shipped</code> is a convenience that returns the eleven faces embedded in the managed assembly — the same faces, byte for byte, that Go's <code>fonts.Shipped</code> returns. Build your own <code>FontSet</code> instead whenever you want a different set. Omitting fonts is a caller error, not a fallback.</p>
+    <p><strong>Fonts are an explicit argument, always.</strong> There is no default font set and no lookup on the machine the render runs on. <code>Fonts.Shipped</code> is a convenience that returns the eleven faces embedded in the managed assembly — the same faces, byte for byte, that Go's <code>fonts.Shipped</code> returns. Build your own <code>FontSet</code> instead whenever you want a different set.</p>
+    <p><strong>The set may be empty.</strong> A template that carries every face it names — one saved with embedding on — has nothing for a font set to contribute, so <code>new FontSet()</code> is a legitimate call and not a caller error. Nothing is refused before the engine has tried to resolve the chains; an entry that genuinely cannot be resolved still fails with <code>TEXT_FACE_ABSENT</code>, located at the element. Passing <code>null</code> is still an <code>ArgumentNullException</code>.</p>
+    <p><strong>When a face is missing, choose what happens.</strong> <code>Folio8.Render</code>, <code>Folio8.RenderTo</code> and <code>Folio8.Validate</code> take an optional trailing <code>FaceFallback</code>:</p>
+    <table>
+      <thead><tr><th>Value</th><th>Behaviour</th></tr></thead>
+      <tbody>
+        <tr><td><code>FaceFallback.Strict</code></td><td>The default, and what every call made before this argument existed does: a character covered by no present face of its chain, where some face that chain declares was never supplied, throws <code>FolioRenderException</code> with the code <code>TEXT_FACE_ABSENT</code>.</td></tr>
+        <tr><td><code>FaceFallback.Substitute</code></td><td>The character is painted in a face this renderer actually holds — the document's own embedded assets first, then your <code>FontSet</code>, each searched in face-name order, the first face that covers the character winning — and the warning <code>TEXT_FACE_SUBSTITUTED</code> names the element, the character, the face requested and the face painted. A renderer holding nothing that covers the character still throws <code>TEXT_FACE_ABSENT</code>.</td></tr>
+      </tbody>
+    </table>
+<pre><code class="language-csharp">RenderResult result = Folio8.Render(template, data, null, fonts, FaceFallback.Substitute);
+foreach (Diagnostic d in result.Diagnostics)
+{
+    if (d.Code == "TEXT_FACE_SUBSTITUTED") Console.Error.WriteLine(d.Message);
+}
+</code></pre>
+    <p>The choice is deterministic: the same inputs produce the same bytes on any machine. A value outside the enum is an <code>ArgumentException</code> from the binding, never a silent default.</p>
+    <p><strong>A lenient render may space its lines differently.</strong> Under substitution any face the renderer holds may end up painted into an element whose chain has an unsupplied member, so such an element is given a line box tall enough for the tallest of them — the alternative is a substituted character overflowing its box with nothing reported. The leading of those elements therefore differs from the same document rendered strictly. An element whose chain is fully supplied is unaffected, and a strict render is unchanged in every case.</p>
     <p><strong>Call <code>Fonts.Shipped</code> once and hold what it gives you</strong>, as the program above does with a static field. The faces are read once for the life of the process, but every call allocates its own <code>FontSet</code> of about 14 MB so that mutating what you are handed cannot change what the next caller gets. A font set is immutable as far as the engine is concerned and is safe to share across calls and across threads.</p>
 
     <h3 id="passing-params">Passing params</h3>

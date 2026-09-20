@@ -37,6 +37,7 @@ int32_t folio8_render(const void *tpl,    int32_t tpl_len,
                       const void *data,   int32_t data_len,
                       const void *params, int32_t params_len,
                       const void *fonts,  int32_t fonts_len,
+                      int32_t fallback,
                       uint64_t *token, void **result, int32_t *len);
 
 int32_t folio8_validate(/* identical parameters to folio8_render */);
@@ -58,6 +59,16 @@ which .NET Framework's finalisers do not promise.
 `folio8_validate` takes **raw template bytes**, not a parsed template,
 matching Go's `Validate`.
 
+`fallback` selects what a render does with a font-chain entry naming a face
+this renderer was never given. **0 is strict** — refuse with
+`TEXT_FACE_ABSENT`, which is what every call made before this parameter
+existed did — and **1 is substitute**: paint the character in a face the
+renderer does hold (the document's own embedded assets first, then the
+supplied font set, each in face-name order) and report
+`TEXT_FACE_SUBSTITUTED`. Any other value is `FOLIO8_ERROR_ARGUMENT`, never a
+clamp. Keep the two values in step with `FaceFallback` in
+`folio-dotnet/src/Folio8/FaceFallback.cs`.
+
 `params` may be a null pointer or a zero-length buffer; **the two mean the
 same thing**, because the engine maps any params of length zero onto the empty
 params object (`decodeParams`, `render_entry.go`). There is nothing for a
@@ -76,7 +87,8 @@ allocates nothing, issues no token and cannot fail, so a caller may call it
 Without that check, a managed assembly paired with a native library from a
 different build decodes a frame grammar that has moved under it, and reports
 the result as data. Bump it for any change a caller would have to be
-recompiled for. It is **1** today. A library so old that it does not export
+recompiled for. It is **2** today: version 2 added the `fallback` parameter
+to `folio8_render` and `folio8_validate`, ahead of their out-parameters. A library so old that it does not export
 this symbol at all fails at the first call with the platform's
 missing-entry-point error, which is also a refusal to continue.
 
@@ -154,8 +166,12 @@ a name wins — so a **duplicate face name is refused** as a malformed buffer
 (`FOLIO8_ERROR_ARGUMENT`) rather than resolved silently in favour of the last
 one seen.
 
-An empty buffer is an empty font set — which the engine will refuse with a
-located error, because there is no default font set and no ambient lookup.
+An empty buffer is an empty font set, and **that is a legitimate call**.
+There is no default font set and no ambient lookup — the engine never goes
+looking for fonts on the machine it runs on — but a document that carries
+every face it names has nothing for a font set to contribute, and nothing is
+refused before the engine has tried to resolve the chains. An entry that
+genuinely cannot be resolved still fails, with a located `TEXT_FACE_ABSENT`.
 A buffer that does not decode cleanly is `FOLIO8_ERROR_ARGUMENT`.
 
 ## Ownership and lifetime

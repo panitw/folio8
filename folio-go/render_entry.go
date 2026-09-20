@@ -157,7 +157,26 @@ func decodeParams(p Params) (bind.Value, error) {
 // silently, and never by failing the render (AD-14). See Result's own
 // doc comment for the ordering and emptiness guarantees Diagnostics
 // carries.
-func Render(t *Template, d Data, p Params, f FontSet) (Result, error) {
+//
+// f MAY BE EMPTY, OR NIL, AND THAT IS NOT AN ARGUMENT ERROR. There is
+// no default font set and no ambient lookup — the engine still never
+// goes looking for fonts on the machine it runs on — but a document
+// whose every chain entry resolves to a face the document itself
+// CARRIES has nothing for a font set to contribute, and refusing such a
+// call before resolution has been attempted refuses a render that would
+// have succeeded. An entry that genuinely cannot be resolved still
+// fails, as DiagCodeTextFaceAbsent, at the point of use.
+//
+// fallback is the optional resolution-mode selector, and omitting it —
+// which every call written before it existed does — asks for
+// FaceFallbackStrict: today's behaviour, byte for byte. Passing
+// FaceFallbackSubstitute asks for a rune no present chain member covers
+// to be painted in a face this renderer WAS given rather than refused,
+// with a DiagCodeTextFaceSubstituted Warning naming what happened. It
+// is variadic because that is the only shape Go offers for an optional
+// argument on a frozen signature (AD-22); passing more than one, or a
+// value outside the closed set, is a named error rather than a clamp.
+func Render(t *Template, d Data, p Params, f FontSet, fallback ...FaceFallback) (Result, error) {
 	if t == nil {
 		return Result{}, errNilTemplate
 	}
@@ -169,7 +188,7 @@ func Render(t *Template, d Data, p Params, f FontSet) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	b, diags, rerr := renderDocument(t, data, params, f)
+	b, diags, rerr := renderDocument(t, data, params, f, fallback...)
 	if rerr != nil {
 		return Result{}, rerr
 	}
@@ -230,6 +249,9 @@ func Render(t *Template, d Data, p Params, f FontSet) (Result, error) {
 // check to close this gap is deliberately NOT built (disproportionate,
 // and it would test the OS rather than this library).
 //
+// It takes the same optional trailing FaceFallback Render does, which
+// is what keeps the two argument lists a prefix of one another.
+//
 // D-2.8.6: RenderTo returns ([]Diagnostic, error), NOT Result. Result
 // names what a render PRODUCED, and RenderTo does not produce bytes to
 // its caller — it writes them to w as a side effect. A Result whose
@@ -243,11 +265,17 @@ func Render(t *Template, d Data, p Params, f FontSet) (Result, error) {
 // returns those warnings — RenderTo never again produces "no output at
 // all" for a document that rendered successfully with something to
 // report.
-func RenderTo(w io.Writer, t *Template, d Data, p Params, f FontSet) ([]Diagnostic, error) {
+//
+// fallback is Render's optional FaceFallback, forwarded verbatim and
+// documented there. Omitting it is FaceFallbackStrict. Forwarding it is
+// load-bearing rather than tidy: a lenient caller who reached for the
+// streaming form and silently got a refusal would have no way to tell
+// the binding had dropped their selector.
+func RenderTo(w io.Writer, t *Template, d Data, p Params, f FontSet, fallback ...FaceFallback) ([]Diagnostic, error) {
 	if w == nil {
 		return nil, errNilWriter
 	}
-	res, err := Render(t, d, p, f)
+	res, err := Render(t, d, p, f, fallback...)
 	if err != nil {
 		return nil, err
 	}

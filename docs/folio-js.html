@@ -382,7 +382,23 @@
     <div class="notice">
       <p><strong>That snippet is executed, not illustrated.</strong> It is the one the package's own offline-install test runs: it packs the tarball, installs it into an empty project with the network refused, renders a corpus fixture with it, and compares the PDF's SHA-256 against the committed expected hash.</p>
     </div>
-    <p><strong>Fonts are an explicit argument, always.</strong> There is no default font set and no lookup on the machine the render runs on. <code>shipped</code> is a convenience that resolves the eleven faces packaged with folio-js — the same faces, byte for byte, that Go's <code>fonts.Shipped</code> returns. Build your own map instead whenever you want a different set. Omitting fonts is a caller error, not a fallback.</p>
+    <p><strong>Fonts are an explicit argument, always.</strong> There is no default font set and no lookup on the machine the render runs on. <code>shipped</code> is a convenience that resolves the eleven faces packaged with folio-js — the same faces, byte for byte, that Go's <code>fonts.Shipped</code> returns. Build your own map instead whenever you want a different set.</p>
+    <p><strong>The map may be empty.</strong> A template that carries every face it names — one saved with embedding on — has nothing for a font set to contribute, so <code>new Map()</code> is a legitimate call and not a caller error. Nothing is refused before the engine has tried to resolve the chains; an entry that genuinely cannot be resolved still fails with <code>TEXT_FACE_ABSENT</code>, located at the element.</p>
+    <p><strong>When a face is missing, choose what happens.</strong> <code>render</code> and <code>validate</code> take an optional fifth argument of type <code>FaceFallback</code>; <code>renderTo</code> takes it sixth, after its own leading <code>writable</code>:</p>
+    <table>
+      <thead><tr><th>Value</th><th>Behaviour</th></tr></thead>
+      <tbody>
+        <tr><td><code>'strict'</code></td><td>The default, and what every call made before this argument existed does: a character covered by no present face of its chain, where some face that chain declares was never supplied, fails the render with <code>TEXT_FACE_ABSENT</code>.</td></tr>
+        <tr><td><code>'substitute'</code></td><td>The character is painted in a face this renderer actually holds — the document's own embedded assets first, then your map, each searched in face-name order, the first face that covers the character winning — and the warning <code>TEXT_FACE_SUBSTITUTED</code> names the element, the character, the face requested and the face painted. A renderer holding nothing that covers the character still fails with <code>TEXT_FACE_ABSENT</code>.</td></tr>
+      </tbody>
+    </table>
+<pre><code class="language-js">const { bytes, diagnostics } = await render(template, data, null, await shipped(), 'substitute')
+for (const d of diagnostics) {
+  if (d.code === 'TEXT_FACE_SUBSTITUTED') console.warn(d.message) // fail your own build on this if you want to
+}
+</code></pre>
+    <p>The choice is deterministic: the same inputs produce the same bytes on any machine. Anything other than <code>'strict'</code> or <code>'substitute'</code> is a <code>TypeError</code> from the binding, never a silent default.</p>
+    <p><strong>A lenient render may space its lines differently.</strong> Under substitution any face the renderer holds may end up painted into an element whose chain has an unsupplied member, so such an element is given a line box tall enough for the tallest of them — the alternative is a substituted character overflowing its box with nothing reported. The leading of those elements therefore differs from the same document rendered strictly. An element whose chain is fully supplied is unaffected, and a strict render is unchanged in every case.</p>
     <p><strong>Call <code>shipped</code> once and hold what it gives you.</strong> The first call reads about 14 MB from the package and later calls resolve from memory, but each call returns its own map over those shared bytes, so deleting or replacing an entry cannot change what the next caller sees.</p>
     <p><strong>A render blocks the event loop.</strong> It runs synchronously inside WebAssembly for its whole duration. Offload a large document to a worker thread if the same process is also serving requests.</p>
 

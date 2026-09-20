@@ -65,7 +65,27 @@ for (const d of diagnostics) console.warn(`${d.severity} ${d.code}: ${d.message}
 
 **That snippet is executed, not illustrated.** It is the one the package's own offline-install test runs: it packs the tarball, installs it into an empty project with the network refused, renders a corpus fixture with it, and compares the PDF's SHA-256 against the committed expected hash.
 
-**Fonts are an explicit argument, always.** There is no default font set and no lookup on the machine the render runs on. `shipped` is a convenience that resolves the eleven faces packaged with folio-js — the same faces, byte for byte, that Go's `fonts.Shipped` returns. Build your own map instead whenever you want a different set. Omitting fonts is a caller error, not a fallback.
+**Fonts are an explicit argument, always.** There is no default font set and no lookup on the machine the render runs on. `shipped` is a convenience that resolves the eleven faces packaged with folio-js — the same faces, byte for byte, that Go's `fonts.Shipped` returns. Build your own map instead whenever you want a different set.
+
+**The map may be empty.** A template that carries every face it names — one saved with embedding on — has nothing for a font set to contribute, so `new Map()` is a legitimate call and not a caller error. Nothing is refused before the engine has tried to resolve the chains; an entry that genuinely cannot be resolved still fails with `TEXT_FACE_ABSENT`, located at the element.
+
+**When a face is missing, choose what happens.** `render` and `validate` take an optional fifth argument of type `FaceFallback`; `renderTo` takes it sixth, after its own leading `writable`:
+
+| Value | Behaviour |
+|---|---|
+| `'strict'` | The default, and what every call made before this argument existed does: a character covered by no present face of its chain, where some face that chain declares was never supplied, fails the render with `TEXT_FACE_ABSENT`. |
+| `'substitute'` | The character is painted in a face this renderer actually holds — the document's own embedded assets first, then your map, each searched in face-name order, the first face that covers the character winning — and the warning `TEXT_FACE_SUBSTITUTED` names the element, the character, the face requested and the face painted. A renderer holding nothing that covers the character still fails with `TEXT_FACE_ABSENT`. |
+
+```js
+const { bytes, diagnostics } = await render(template, data, null, await shipped(), 'substitute')
+for (const d of diagnostics) {
+  if (d.code === 'TEXT_FACE_SUBSTITUTED') console.warn(d.message) // fail your own build on this if you want to
+}
+```
+
+The choice is deterministic: the same inputs produce the same bytes on any machine. Anything other than `'strict'` or `'substitute'` is a `TypeError` from the binding, never a silent default.
+
+**A lenient render may space its lines differently.** Under substitution any face the renderer holds may end up painted into an element whose chain has an unsupplied member, so such an element is given a line box tall enough for the tallest of them — the alternative is a substituted character overflowing its box with nothing reported. The leading of those elements therefore differs from the same document rendered strictly. An element whose chain is fully supplied is unaffected, and a strict render is unchanged in every case.
 
 **Call `shipped` once and hold what it gives you.** The first call reads about 14 MB from the package and later calls resolve from memory, but each call returns its own map over those shared bytes, so deleting or replacing an entry cannot change what the next caller sees.
 

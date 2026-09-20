@@ -167,6 +167,38 @@ const (
 	// still draws the rune.
 	CodeTextFaceAbsent Code = "TEXT_FACE_ABSENT"
 
+	// CodeTextFaceSubstituted names the LENIENT counterpart of
+	// CodeTextFaceAbsent: the identical condition — a rune that no
+	// PRESENT member of its element's declared font chain covers, where
+	// at least one member of that chain was never supplied — reached by a
+	// caller who asked for folio8.FaceFallbackSubstitute. Instead of
+	// refusing, the render paints the rune in a face the renderer WAS
+	// given (the document's own embedded assets first, then the supplied
+	// FontSet, each in face-name order, first face that covers the rune
+	// winning) and emits this Warning. Its message names the element id,
+	// the rune (as U+XXXX and its literal form), THE FACE REQUESTED and
+	// THE FACE PAINTED.
+	//
+	// IT IS THE RECORD THAT MAKES SUBSTITUTION ADMISSIBLE AT ALL. The
+	// guarantee spec-fonts CAP-4 gives up is "no substitution"; the one
+	// it keeps is "no SILENT substitution". A render that substitutes and
+	// says nothing is a defect, not a configuration — which is why this
+	// code is emitted at the one arm that substitutes and nowhere else.
+	//
+	// IT IS NOT CodeTextFaceAbsent, which is the same condition REFUSED,
+	// and a caller can still reach that code under this selector: a
+	// renderer holding nothing that covers the rune has nothing to
+	// substitute, so it refuses exactly as before.
+	//
+	// IT IS NOT CodeTextStyleFaceUndeclared, which is about a variant the
+	// CHAIN did not declare on an entry that IS present and DOES cover
+	// the rune — the typeface is right and the weight is wrong. This one
+	// means the typeface itself is not the one the document asked for.
+	//
+	// IT IS NOT CodeTextMissingGlyph, which means every declared face WAS
+	// supplied and none draws the rune, and the rune is DROPPED.
+	CodeTextFaceSubstituted Code = "TEXT_FACE_SUBSTITUTED"
+
 	// CodeInternalUnhandledCaveat names an internal/expr.Caveat whose
 	// Kind has no matching arm in diagnosticFromCaveat (render.go) —
 	// unreachable given expr.CaveatKind's current single member, but a
@@ -426,6 +458,7 @@ var allCodes = []Code{
 	CodeTextMissingGlyph,
 	CodeTextStyleFaceUndeclared,
 	CodeTextFaceAbsent,
+	CodeTextFaceSubstituted,
 	CodeInternalUnhandledCaveat,
 	CodeDocumentDateInvalid,
 	CodeTableHeaderRepeatSuppressed,
@@ -472,6 +505,7 @@ var dispositions = map[Code]Disposition{
 	CodeTextMissingGlyph:               DispositionWarning,
 	CodeTextStyleFaceUndeclared:        DispositionWarning,
 	CodeTextFaceAbsent:                 DispositionError,
+	CodeTextFaceSubstituted:            DispositionWarning,
 	CodeInternalUnhandledCaveat:        DispositionWarning,
 	CodeDocumentDateInvalid:            DispositionError,
 	CodeTableHeaderRepeatSuppressed:    DispositionWarning,

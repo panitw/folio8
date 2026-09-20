@@ -50,15 +50,26 @@ public static class Folio8
     /// <param name="template">The template. Required.</param>
     /// <param name="data">The JSON report data. Required.</param>
     /// <param name="parameters">The runtime params, or null for none.</param>
-    /// <param name="fonts">The faces the template may use. Required, and never empty.</param>
+    /// <param name="fonts">
+    /// The faces the template may use. Required, and <b>may be empty</b>: a
+    /// document that carries every face it names has nothing for a font set to
+    /// contribute, so the call is not refused before resolution is attempted.
+    /// </param>
+    /// <param name="fallback">
+    /// What to do with a chain entry naming a face this renderer was never
+    /// given. <see cref="FaceFallback.Strict"/> by default, which refuses with
+    /// <c>TEXT_FACE_ABSENT</c> exactly as every call did before this argument
+    /// existed.
+    /// </param>
     /// <returns>The PDF bytes and the engine's warnings.</returns>
     /// <exception cref="ArgumentNullException"><paramref name="template"/>, <paramref name="data"/> or <paramref name="fonts"/> is null.</exception>
-    /// <exception cref="ArgumentException"><paramref name="fonts"/> is empty.</exception>
+    /// <exception cref="ArgumentException"><paramref name="fallback"/> is not a member of <see cref="FaceFallback"/>.</exception>
     /// <exception cref="FolioRenderException">The engine aborted with a coded diagnostic.</exception>
     /// <exception cref="InvalidOperationException">The engine aborted without one.</exception>
-    public static RenderResult Render(Template template, Data data, Params parameters, FontSet fonts)
+    public static RenderResult Render(Template template, Data data, Params parameters, FontSet fonts, FaceFallback fallback = FaceFallback.Strict)
     {
         byte[] fontBuffer = Check(template, data, fonts);
+        int mode = CheckFallback(fallback);
         byte[] tpl = template.CanonicalBytes;
         byte[] payload = data.Bytes;
         byte[] parameterBytes = parameters == null ? null : parameters.Bytes;
@@ -68,6 +79,7 @@ public static class Folio8
                 payload, payload.Length,
                 parameterBytes, parameterBytes == null ? 0 : parameterBytes.Length,
                 fontBuffer, fontBuffer.Length,
+                mode,
                 out token, out result, out length));
         return new RenderResult(frame.Payload, RenderResult.Readonly(frame.Diagnostics));
     }
@@ -85,13 +97,14 @@ public static class Folio8
     /// <param name="template">The template. Required.</param>
     /// <param name="data">The JSON report data. Required.</param>
     /// <param name="parameters">The runtime params, or null for none.</param>
-    /// <param name="fonts">The faces the template may use. Required, and never empty.</param>
+    /// <param name="fonts">The faces the template may use. Required, and may be empty.</param>
+    /// <param name="fallback">Forwarded verbatim to <see cref="Render"/>.</param>
     /// <returns>The engine's warnings. Empty, never null.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
-    /// <exception cref="ArgumentException"><paramref name="fonts"/> is empty, or the stream cannot be written to.</exception>
+    /// <exception cref="ArgumentException">The stream cannot be written to, or <paramref name="fallback"/> is not a member of <see cref="FaceFallback"/>.</exception>
     /// <exception cref="FolioRenderException">The engine aborted with a coded diagnostic.</exception>
     /// <exception cref="InvalidOperationException">The engine aborted without one.</exception>
-    public static IList<Diagnostic> RenderTo(Stream destination, Template template, Data data, Params parameters, FontSet fonts)
+    public static IList<Diagnostic> RenderTo(Stream destination, Template template, Data data, Params parameters, FontSet fonts, FaceFallback fallback = FaceFallback.Strict)
     {
         if (destination == null)
         {
@@ -101,7 +114,7 @@ public static class Folio8
         {
             throw new ArgumentException("folio8: destination is not writable", "destination");
         }
-        RenderResult result = Render(template, data, parameters, fonts);
+        RenderResult result = Render(template, data, parameters, fonts, fallback);
         destination.Write(result.Bytes, 0, result.Bytes.Length);
         return result.Diagnostics;
     }
@@ -120,19 +133,25 @@ public static class Folio8
     /// <param name="template">The raw <c>.folio</c> bytes. Required.</param>
     /// <param name="data">The JSON report data. Required.</param>
     /// <param name="parameters">The runtime params, or null for none.</param>
-    /// <param name="fonts">The faces the template may use. Required, and never empty.</param>
+    /// <param name="fonts">The faces the template may use. Required, and may be empty.</param>
+    /// <param name="fallback">
+    /// The same selector <see cref="Render"/> takes. Pass the one the render
+    /// will use: a prediction made under a different selector is not a
+    /// prediction of that render.
+    /// </param>
     /// <returns>The engine's diagnostics, in its order. Empty, never null.</returns>
     /// <exception cref="ArgumentNullException">A required argument is null.</exception>
-    /// <exception cref="ArgumentException"><paramref name="fonts"/> is empty.</exception>
+    /// <exception cref="ArgumentException"><paramref name="fallback"/> is not a member of <see cref="FaceFallback"/>.</exception>
     /// <exception cref="FolioRenderException">The engine aborted with a coded diagnostic — which is where it reports an absent binding, rather than in the returned list.</exception>
     /// <exception cref="InvalidOperationException">The engine aborted without one.</exception>
-    public static IList<Diagnostic> Validate(byte[] template, Data data, Params parameters, FontSet fonts)
+    public static IList<Diagnostic> Validate(byte[] template, Data data, Params parameters, FontSet fonts, FaceFallback fallback = FaceFallback.Strict)
     {
         if (template == null)
         {
             throw new ArgumentNullException("template");
         }
         byte[] fontBuffer = CheckDataAndFonts(data, fonts);
+        int mode = CheckFallback(fallback);
         byte[] tpl = new byte[template.Length];
         Buffer.BlockCopy(template, 0, tpl, 0, template.Length);
         byte[] payload = data.Bytes;
@@ -143,6 +162,7 @@ public static class Folio8
                 payload, payload.Length,
                 parameterBytes, parameterBytes == null ? 0 : parameterBytes.Length,
                 fontBuffer, fontBuffer.Length,
+                mode,
                 out token, out result, out length));
         return RenderResult.Readonly(frame.Diagnostics);
     }
@@ -176,12 +196,40 @@ public static class Folio8
         {
             throw new ArgumentNullException("fonts");
         }
-        if (fonts.Count == 0)
-        {
-            // There is no default font set and no ambient lookup. Omitting
-            // fonts is a caller error, not a fallback.
-            throw new ArgumentException("folio8: fonts must name at least one face; there is no default font set", "fonts");
-        }
+        // AN EMPTY SET IS NOT AN ERROR, AND THE NULL CHECK ABOVE IS A
+        // SEPARATE CONCERN THAT STAYS.
+        //
+        // There is still no default font set and no ambient lookup — the
+        // engine never goes looking for fonts on the machine it runs on. What
+        // changed is that supplying none stopped being a CALLER error when
+        // the document needs none: a template whose every chain entry
+        // resolves to a face the document itself carries has nothing for a
+        // font set to contribute, and this binding used to refuse such a
+        // render before the engine had attempted to resolve anything. An
+        // entry that genuinely cannot be resolved still fails, as
+        // TEXT_FACE_ABSENT, from the engine, located at the element.
         return Native.EncodeFonts(fonts);
+    }
+
+    /// <summary>
+    /// Refuses a <see cref="FaceFallback"/> outside the enum's closed set and
+    /// returns the ABI value for one inside it.
+    /// </summary>
+    /// <remarks>
+    /// C# permits <c>(FaceFallback)99</c>, and casting it straight through
+    /// would surface as an <see cref="InvalidOperationException"/> from the
+    /// native side — where Go returns a named error and the JavaScript
+    /// binding throws a <c>TypeError</c>. The three libraries ship the same
+    /// behaviour, and the error contract is part of the behaviour, so the
+    /// refusal happens here, as an <see cref="ArgumentException"/> naming the
+    /// argument.
+    /// </remarks>
+    private static int CheckFallback(FaceFallback fallback)
+    {
+        if (fallback != FaceFallback.Strict && fallback != FaceFallback.Substitute)
+        {
+            throw new ArgumentException("folio8: fallback is not a member of FaceFallback", "fallback");
+        }
+        return (int)fallback;
     }
 }

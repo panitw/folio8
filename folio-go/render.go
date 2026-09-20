@@ -1419,6 +1419,20 @@ type fontCache struct {
 	// chainName is the DOCUMENT CHAIN this view of the cache is being
 	// consulted through, or "" for an unscoped one. See forChain.
 	chainName string
+	// substitution memoizes the pool and the per-rune answer derived from
+	// it. A POINTER, because forChain hands out struct COPIES that share
+	// the maps by reference: a plain field would be rebuilt once per
+	// chain view, which is once per table column.
+	substitution *substitutionMemo
+	// fallback is the caller's resolution mode, and it RIDES THE CACHE
+	// rather than shapeSegments' signature. The cache already knows
+	// which faces the renderer holds — its two arms in get, embedded
+	// then supplied, ARE the substitution pool's two arms and their
+	// order — and it already reaches every site that resolves a rune to
+	// a face, so nothing else had to widen. The ZERO VALUE is
+	// FaceFallbackStrict, which is what newFontCache (test fixtures)
+	// and every pre-selector caller get.
+	fallback FaceFallback
 }
 
 // forChain returns a view of this cache scoped to one document chain, and
@@ -1475,16 +1489,26 @@ func newFontCache() *fontCache {
 		byName:         map[string]*fontset.Font{},
 		embedded:       embeddedFaceIndex{},
 		failedEmbedded: map[string]error{},
+		substitution:   newSubstitutionMemo(),
 	}
 }
 
 // newDocumentFontCache is newFontCache plus the document's own carried
-// faces (Story 8.4).
-func newDocumentFontCache(t *Template) *fontCache {
+// faces (Story 8.4) and the caller's FaceFallback selector.
+//
+// THE SELECTOR IS A CONSTRUCTOR PARAMETER, NOT A FIELD SET AFTERWARDS,
+// so a site that builds a cache cannot forget to state which mode it is
+// in — the two production sites answer the question in opposite ways
+// (predictDocument forwards the caller's; addCanvasTextPaint pins
+// FaceFallbackStrict and says why), and a default would have made the
+// canvas's answer invisible.
+func newDocumentFontCache(t *Template, fallback FaceFallback) *fontCache {
 	return &fontCache{
 		byName:         map[string]*fontset.Font{},
 		embedded:       newEmbeddedFaceIndex(t),
 		failedEmbedded: map[string]error{},
+		substitution:   newSubstitutionMemo(),
+		fallback:       fallback,
 	}
 }
 
@@ -1810,6 +1834,131 @@ func resolveRuneFace(chain []string, r rune, fs FontSet, cache *fontCache) (inde
 	return 0, false, absentNames, nil
 }
 
+// substitutionMemo is the per-render answer to "what can this renderer
+// paint with", computed once.
+//
+// WHY IT IS MEMOIZED AT ALL. Both consumers are inside loops: the pool
+// is consulted once per UNCOVERED RUNE OCCURRENCE inside shapeSegments,
+// and once per shaped element — which, for a table, is once per column
+// PER ROW — from chainLineMetrics. Rebuilding and re-sorting it there
+// makes a five-hundred-row table over a substituting chain pay the sort
+// and the coverage walk five hundred times for an answer that cannot
+// have changed.
+//
+// IT IS A PURE FUNCTION OF (embedded, fs), AND BOTH ARE FIXED FOR A
+// RENDER. The embedded index is built at cache construction and never
+// written again; the FontSet is the caller's map, which the engine only
+// ever reads. So one answer per cache is one answer per render, and the
+// memo cannot go stale — there is no mutation for it to miss.
+type substitutionMemo struct {
+	pool  []string
+	built bool
+	// painted is the per-rune answer: the face substituteFace chose, or
+	// "" when the renderer holds nothing that draws the rune. A map,
+	// because it is only ever LOOKED UP BY KEY and never ranged — AD-1
+	// forbids map ITERATION where order can reach an output, and nothing
+	// here iterates.
+	painted map[rune]string
+}
+
+func newSubstitutionMemo() *substitutionMemo {
+	return &substitutionMemo{painted: map[rune]string{}}
+}
+
+// substitutionPool is D2's candidate list: every face this renderer was
+// actually GIVEN, in the one order the whole capability's determinism
+// rests on.
+//
+// THE POOL IS WHAT THE RENDERER HOLDS, NEVER "THE SHIPPED SET". Package
+// folio8 deliberately never imports folio-go/fonts — reversing that
+// one-directional import would drag ~14.8 MB of faces into every
+// consumer — so the ENGINE OWNS NO FACES and can only paint with what
+// the caller handed it, plus what the document carries. A host passing
+// fonts.Shipped() gets the eleven; a host passing nothing gets nothing
+// to substitute from, and the render refuses exactly as it always did.
+// This is what keeps AD-8's "pure lookup against the supplied FontSet,
+// never a host font query" intact through a capability that looks, from
+// the outside, like a font fallback.
+//
+// THE ORDER IS EMBEDDED FIRST, THEN SUPPLIED, EACH BY FACE NAME (D2).
+// The two arms are fontCache.get's own two arms, in get's own
+// precedence, reused rather than re-invented: an embedded face was
+// chosen deliberately by the author of THIS document and is likelier to
+// match their intent than a face the host happened to have lying about.
+//
+// ⚠ THE EMBEDDED ARM SORTS BY THE FACE NAME A PERSON READS, NOT BY THE
+// MINTED ONE. A carried face's resolution name is "asset:" plus the
+// asset key's 64 hex characters (AD-8/D-8.4.1: the key decides), so
+// sorting those would order embedded candidates BY CONTENT HASH — which
+// is deterministic but is not what D2 says, is not what any doc comment
+// in three languages promises, and is not predictable to an author
+// looking at their own document. The sort key is displayName, with the
+// minted name as the tie-break so two carried faces declaring the same
+// family still have one fixed order.
+//
+// A SLICE, BUILT BY SORTING, NEVER A RANGE OVER A MAP (AD-1): this
+// order reaches the OUTPUT BYTES, so map iteration here would make two
+// renders of one document on one machine disagree.
+//
+// Computed ONCE per render and memoized — see substitutionMemo.
+func (c *fontCache) substitutionPool(fs FontSet) []string {
+	if c.substitution.built {
+		return c.substitution.pool
+	}
+	embedded := slices.Sorted(maps.Keys(c.embedded))
+	slices.SortStableFunc(embedded, func(a, b string) int {
+		as, _ := c.embedded.source(a)
+		bs, _ := c.embedded.source(b)
+		if d := strings.Compare(as.displayName(), bs.displayName()); d != 0 {
+			return d
+		}
+		return strings.Compare(a, b)
+	})
+	c.substitution.pool = append(embedded, slices.Sorted(maps.Keys(fs))...)
+	c.substitution.built = true
+	return c.substitution.pool
+}
+
+// substituteFace is the coverage-resolved answer to "what else could
+// draw this rune": the FIRST face in substitutionPool's order that
+// carries a glyph for r, or ("", false) when the renderer holds nothing
+// that does.
+//
+// PER RUNE, NEVER PER ELEMENT AND NEVER PER DOCUMENT. A fixed
+// substitute — or the chain's own first entry — cannot be relied on to
+// draw the script it replaced, and a fallback that renders tofu has
+// substituted nothing. A Thai document whose brand face is missing must
+// come out IN THAI against a pool that holds a Thai face.
+//
+// PER RUNE, AND ANSWERED ONCE PER RUNE. The walk is memoized on the
+// cache, so the thousandth 'a' in a table costs a map lookup rather
+// than a second walk of the pool.
+//
+// AN UNPARSEABLE CANDIDATE IS SKIPPED, NOT RAISED ON. The caller's own
+// broken face is not this rune's fault, and the rune's real outcome —
+// painted, or refused for want of any candidate — must not turn on a
+// face the document never named. The error is not swallowed for good:
+// anything that actually DRAWS with that face still fails through
+// fontCache.get at the point of use, located.
+func (c *fontCache) substituteFace(r rune, fs FontSet) (string, bool) {
+	if name, memoized := c.substitution.painted[r]; memoized {
+		return name, name != ""
+	}
+	painted := ""
+	for _, name := range c.substitutionPool(fs) {
+		f, err := c.get(name, fs)
+		if err != nil {
+			continue
+		}
+		if f.HasGlyph(r) {
+			painted = name
+			break
+		}
+	}
+	c.substitution.painted[r] = painted
+	return painted, painted != ""
+}
+
 // formatFontChain renders chain as AD-8's Rule names it for a human
 // reader — "[Noto Sans, Noto Sans Thai]" — so a missing-glyph
 // Diagnostic's message tells its reader not just what is wrong but
@@ -1916,9 +2065,17 @@ func faceAbsentMessage(elementID string, r rune, faces []string, chain []string,
 	)
 }
 
-// coalesceStyleFaceDiags appends src to dst, dropping any AC3
-// style-fallback Warning already recorded in seen and recording the ones
-// it keeps.
+// coalesceFaceDiags appends src to dst, dropping any per-(element,
+// distinct rune) FACE Warning already recorded in seen and recording
+// the ones it keeps.
+//
+// IT CARRIES TWO CODES: AC3's style-variant fallback
+// (TEXT_STYLE_FACE_UNDECLARED) and this story's substitution
+// (TEXT_FACE_SUBSTITUTED). Both state the same rule — one Warning per
+// (element, distinct rune) — and both are safe through one memo because
+// the identity compared is the WHOLE Diagnostic: two Diagnostics
+// carrying different codes are never equal, so neither code can silence
+// the other. It was named coalesceStyleFaceDiags while it carried one.
 //
 // WHY IT EXISTS: shapeSegments coalesces to one Diagnostic per (element,
 // distinct rune) WITHIN ONE CALL, which is the whole story for a text
@@ -1942,9 +2099,9 @@ func faceAbsentMessage(elementID string, r rune, faces []string, chain []string,
 // cover it would change a shipped diagnostic's output, which is the
 // adjacent-bug fix this story's scope fence rules out; it is registered
 // instead.
-func coalesceStyleFaceDiags(dst, src []Diagnostic, seen *[]Diagnostic) []Diagnostic {
+func coalesceFaceDiags(dst, src []Diagnostic, seen *[]Diagnostic) []Diagnostic {
 	for _, d := range src {
-		if d.Code == DiagCodeTextStyleFaceUndeclared {
+		if d.Code == DiagCodeTextStyleFaceUndeclared || d.Code == DiagCodeTextFaceSubstituted {
 			already := false
 			for _, s := range *seen {
 				if s == d {
@@ -1982,6 +2139,44 @@ func styleFaceUndeclaredMessage(elementID string, r rune, face string, cache *fo
 			"so the rune is drawn in that entry's own base face %s — no bold or oblique is synthesized, and no other entry "+
 			"in the chain is substituted for it (FR57, AD-8)",
 		r, r, elementID, faceDisplayName(face, cache),
+	)
+}
+
+// faceSubstitutedMessage is the one construction site for
+// DiagCodeTextFaceSubstituted's message, and it is shaped after
+// styleFaceUndeclaredMessage above rather than invented: the element,
+// the rune as BOTH its U+XXXX form and its literal character, and the
+// face — one face, named, not the chain.
+//
+// IT NAMES FOUR THINGS BECAUSE THE SPEC REQUIRES FOUR: the element, the
+// rune, THE FACE REQUESTED and THE FACE PAINTED. Naming only the
+// painted face would tell a reader their page is wrong without telling
+// them what to go and supply; naming only the requested one would not
+// say what came out instead.
+//
+// THE REQUESTED FACES ARE THE ABSENT CHAIN MEMBERS, ALL OF THEM, for
+// exactly faceAbsentMessage's reason: the engine cannot know which of
+// several absent faces would have covered the rune, and naming one
+// sends the author to supply a face that may have nothing to do with
+// the script in question.
+func faceSubstitutedMessage(elementID string, r rune, requested []string, painted string, chain []string, cache *fontCache) string {
+	where := "element " + elementID
+	if elementID == "" {
+		where = "the document"
+	}
+	quoted := make([]string, len(requested))
+	for i, f := range requested {
+		quoted[i] = fmt.Sprintf("%q", f)
+	}
+	subject := "face " + quoted[0] + " is"
+	if len(quoted) > 1 {
+		subject = "faces " + strings.Join(quoted, ", ") + " are"
+	}
+	return fmt.Sprintf(
+		"%s not present in the supplied FontSet, and no present face in chain %s covers %U (%c) in %s — "+
+			"the rune is painted in %s instead, which is a face this renderer was given, because the caller asked for "+
+			"FaceFallbackSubstitute; supply the named face to render the document as it was authored",
+		subject, formatFontChain(chain, cache), r, r, where, faceDisplayName(painted, cache),
 	)
 }
 
@@ -2083,6 +2278,12 @@ func shapeSegments(elementID string, chain, styled []string, elementText string,
 	// conditions are different Diagnostics about different runes, and one
 	// shared slice would let a dropped rune silence a mis-weighted one.
 	var seenStyleFallbackRunes []rune
+	// seenSubstitutedRunes is this story's coalescing, a third slice for
+	// the third condition and for the identical reason the second one is
+	// separate: a substituted rune and a mis-weighted one are different
+	// Diagnostics about different facts, and one shared slice would let
+	// either silence the other.
+	var seenSubstitutedRunes []rune
 	for _, r := range elementText {
 		index, found, absentFaces, err := resolveRuneFace(chain, r, fs, cache)
 		if err != nil {
@@ -2196,6 +2397,95 @@ func shapeSegments(elementID string, chain, styled []string, elementText string,
 				// which is why this is a second condition here rather
 				// than a widening of the guard above.
 				if len(absentFaces) > 0 && !unicode.IsControl(r) {
+					// THE LENIENT ARM, AND ITS GUARD IS THE
+					// REFUSAL'S — THE SAME `if`, not a second
+					// condition that resembles it. It fires exactly
+					// where TEXT_FACE_ABSENT would have fired and
+					// nowhere else, which is what keeps
+					// TEXT_MISSING_GLYPH — a chain every member of
+					// which WAS supplied — untouched under either
+					// selector: that condition never reaches this
+					// block at all.
+					//
+					// THE THREE OUTCOMES ARE ONE RULE. Strict
+					// refuses. Lenient with a covering candidate
+					// paints and warns. Lenient with NO candidate
+					// falls through to the same refusal strict
+					// takes, because a renderer holding nothing
+					// that draws the rune has nothing to
+					// substitute — the selector asks for a
+					// substitute, not for the rune to be dropped.
+					if cache.fallback == FaceFallbackSubstitute {
+						if painted, ok := cache.substituteFace(r, fs); ok {
+							alreadySeen := false
+							for _, sr := range seenSubstitutedRunes {
+								if sr == r {
+									alreadySeen = true
+									break
+								}
+							}
+							if !alreadySeen {
+								seenSubstitutedRunes = append(seenSubstitutedRunes, r)
+								diags = append(diags, Diagnostic{
+									Severity:  SeverityWarning,
+									Code:      DiagCodeTextFaceSubstituted,
+									ElementID: elementID,
+									Message:   faceSubstitutedMessage(elementID, r, absentFaces, painted, chain, cache),
+								})
+							}
+							// AND THE REQUESTED WEIGHT IS GONE
+							// TOO, SO IT GOES ON THE RECORD.
+							// styled != nil means this element
+							// asked for bold, italic or both, and
+							// the styled list is indexed by CHAIN
+							// ENTRY — a pool face is not a chain
+							// entry, so there is no declared
+							// variant for it and none may be
+							// inferred (FR57: a face name is never
+							// guessed at). That is exactly Story
+							// 11.2's absence condition one level
+							// out, so it reuses that condition's
+							// own Warning rather than inventing a
+							// second one: the rune is drawn in the
+							// substitute's OWN base face, at the
+							// wrong weight, and a reader who saw
+							// only the substitution Warning would
+							// be told the typeface changed and not
+							// that the weight was dropped.
+							if styled != nil {
+								alreadyStyled := false
+								for _, sr := range seenStyleFallbackRunes {
+									if sr == r {
+										alreadyStyled = true
+										break
+									}
+								}
+								if !alreadyStyled {
+									seenStyleFallbackRunes = append(seenStyleFallbackRunes, r)
+									diags = append(diags, Diagnostic{
+										Severity:  SeverityWarning,
+										Code:      DiagCodeTextStyleFaceUndeclared,
+										ElementID: elementID,
+										Message:   styleFaceUndeclaredMessage(elementID, r, painted, cache),
+									})
+								}
+							}
+							// THE SEGMENT IS AN ORDINARY ONE. A
+							// substituted rune is DRAWN, so it
+							// joins the run of whatever face draws
+							// it exactly as a covered rune does —
+							// there is no third segment kind and
+							// nothing downstream learns that this
+							// face came from the pool rather than
+							// from the chain.
+							if n := len(segments); n > 0 && !segments[n-1].missing && segments[n-1].face == painted {
+								segments[n-1].runes = append(segments[n-1].runes, r)
+							} else {
+								segments = append(segments, segment{face: painted, runes: []rune{r}})
+							}
+							continue
+						}
+					}
 					return nil, nil, newRenderError(
 						DiagCodeTextFaceAbsent, elementID, fontFamilyDataPath,
 						errors.New(faceAbsentMessage(elementID, r, absentFaces, chain, cache)),
@@ -2387,12 +2677,12 @@ func positionSegments(segs []faceSegment, from, to int, x, y, fontSize, baseline
 // story's review asked, so a future restructure changes it
 // KNOWINGLY rather than as an unnoticed by-product of where a phase
 // boundary happens to fall — not so a caller can depend on it.
-func renderDocument(t *Template, data, params bind.Value, fs FontSet) ([]byte, []Diagnostic, error) {
+func renderDocument(t *Template, data, params bind.Value, fs FontSet, fallback ...FaceFallback) ([]byte, []Diagnostic, error) {
 	date, derr := resolveDocumentDate(params)
 	if derr != nil {
 		return nil, nil, derr
 	}
-	pages, embedded, pdfImages, diags, err := buildPageModel(t, data, params, fs)
+	pages, embedded, pdfImages, diags, err := buildPageModel(t, data, params, fs, fallback...)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -2464,8 +2754,8 @@ const documentDateParamKey = "documentDate"
 // never reaches buildPageModel OR renderDocument OR internal/pdf: the
 // three ways this module's render pipeline can ever produce document
 // bytes.
-func buildPageModel(t *Template, data, params bind.Value, fs FontSet) ([]pagemodel.Page, map[string]pdf.EmbeddedFace, map[string]pdf.ImageXObject, []Diagnostic, error) {
-	return predictDocument(t, data, params, fs)
+func buildPageModel(t *Template, data, params bind.Value, fs FontSet, fallback ...FaceFallback) ([]pagemodel.Page, map[string]pdf.EmbeddedFace, map[string]pdf.ImageXObject, []Diagnostic, error) {
+	return predictDocument(t, data, params, fs, fallback...)
 }
 
 // predictDocument is buildPageModel's actual body (AC1, Story 3.5's
@@ -2483,7 +2773,16 @@ func buildPageModel(t *Template, data, params bind.Value, fs FontSet) ([]pagemod
 // predicts Render" (D-3.7.1) true by construction rather than by two
 // independently-maintained implementations agreeing by coincidence
 // (D-000.42).
-func predictDocument(t *Template, data, params bind.Value, fs FontSet) ([]pagemodel.Page, map[string]pdf.EmbeddedFace, map[string]pdf.ImageXObject, []Diagnostic, error) {
+func predictDocument(t *Template, data, params bind.Value, fs FontSet, fallback ...FaceFallback) ([]pagemodel.Page, map[string]pdf.EmbeddedFace, map[string]pdf.ImageXObject, []Diagnostic, error) {
+	// THE VARIADIC BECOMES A VALUE HERE, THROUGH THE SAME DOOR THE
+	// PUBLIC PATH USES. An internal seam that took fallback[len-1] and
+	// validated nothing would silently clamp what Render refuses, and
+	// the next internal caller would diverge from the public contract
+	// without anything saying so.
+	mode, ferr := resolveFaceFallback(fallback)
+	if ferr != nil {
+		return nil, nil, nil, nil, ferr
+	}
 	// cache is shared between collection (coverage checks, AC4) and
 	// embedding (subsetting) below, so a face is ever parsed at most
 	// once per render regardless of how many chain members or runes
@@ -2495,7 +2794,7 @@ func predictDocument(t *Template, data, params bind.Value, fs FontSet) ([]pagemo
 	// construction: folio8.Validate calls predictDocument directly, so
 	// every check reached from here is a check Validate reaches too —
 	// there is no second rule system to keep in step.
-	cache := newDocumentFontCache(t)
+	cache := newDocumentFontCache(t, mode)
 
 	bands, bandsErr := documentBands(t)
 	if bandsErr != nil {

@@ -31,7 +31,7 @@ import (
 // (predictDocument at render.go, addCanvasTextPaint at page_setup.go) — and if
 // the canvas's were built without the document, every assertion below would
 // fail while the PDF stayed perfect. That is the mutation this test is
-// red-proved against: replace newDocumentFontCache(t) with newFontCache() in
+// red-proved against: replace newDocumentFontCache(t, FaceFallbackStrict) with newFontCache() in
 // page_setup.go and this reddens on its own.
 //
 // WHAT IS NOT CLAIMED HERE. The canvas MEASURES with the embedded face; the
@@ -65,7 +65,7 @@ func TestCanvasMeasuresWithTheEmbeddedFace(t *testing.T) {
 	}
 
 	data := emptyBindValue(t)
-	runs, err := collectTextRuns(tpl, data, data, fs, newDocumentFontCache(tpl))
+	runs, err := collectTextRuns(tpl, data, data, fs, newDocumentFontCache(tpl, FaceFallbackStrict))
 	if err != nil {
 		t.Fatalf("shipping run collection: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestCanvasMeasuresWithTheEmbeddedFace(t *testing.T) {
 	// The comparison is canvas_text_paint_test.go's own — term for term, not a
 	// looser restatement of it — so the two tests cannot drift into asserting
 	// different strengths of the same claim.
-	cache := newDocumentFontCache(tpl)
+	cache := newDocumentFontCache(tpl, FaceFallbackStrict)
 	compared := 0
 	for _, component := range projection.Components {
 		if component.Type != "text" || component.TextPaint == nil {
@@ -169,7 +169,7 @@ func TestCanvasVerticalModelUsesTheEmbeddedFacesOwnMetrics(t *testing.T) {
 	chain := []string{"Noto Sans", embeddedFaceName(embeddedFontAssetKey())}
 	const fontSize = geom.Length(12_000)
 
-	withCarried, err := chainVerticalModel(chain, fontSize, defaultLineSpacing, fs, newDocumentFontCache(tpl))
+	withCarried, err := chainVerticalModel(chain, fontSize, defaultLineSpacing, fs, newDocumentFontCache(tpl, FaceFallbackStrict))
 	if err != nil {
 		t.Fatalf("vertical model over the carried chain: %v", err)
 	}
@@ -539,7 +539,7 @@ func TestACarriedFaceFailureIsStampedOnEveryConsultationIncludingTheMemo(t *test
 			if err != nil {
 				t.Fatalf("the document must LOAD: %v", err)
 			}
-			cache := newDocumentFontCache(tpl).forChain("body")
+			cache := newDocumentFontCache(tpl, FaceFallbackStrict).forChain("body")
 			name := embeddedFaceName(tc.assetKey)
 			fs := testShippedFontSet()
 

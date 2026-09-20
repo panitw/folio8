@@ -86,7 +86,28 @@ internal static class Program
 
 **The same calls are executed, not illustrated.** The package's consumer programs make exactly these calls — `Template` parse, `Fonts.Shipped`, `Folio8.Render` — against a corpus fixture from every supported process shape on both target framework families, and compare the PDF's SHA-256 against the committed expected hash. They differ from the program above only in taking the fixture from the command line and in holding the font set inside the `try` rather than in a static field, so that a load failure is reported rather than buried in a type initializer.
 
-**Fonts are an explicit argument, always.** There is no default font set and no lookup on the machine the render runs on. `Fonts.Shipped` is a convenience that returns the eleven faces embedded in the managed assembly — the same faces, byte for byte, that Go's `fonts.Shipped` returns. Build your own `FontSet` instead whenever you want a different set. Omitting fonts is a caller error, not a fallback.
+**Fonts are an explicit argument, always.** There is no default font set and no lookup on the machine the render runs on. `Fonts.Shipped` is a convenience that returns the eleven faces embedded in the managed assembly — the same faces, byte for byte, that Go's `fonts.Shipped` returns. Build your own `FontSet` instead whenever you want a different set.
+
+**The set may be empty.** A template that carries every face it names — one saved with embedding on — has nothing for a font set to contribute, so `new FontSet()` is a legitimate call and not a caller error. Nothing is refused before the engine has tried to resolve the chains; an entry that genuinely cannot be resolved still fails with `TEXT_FACE_ABSENT`, located at the element. Passing `null` is still an `ArgumentNullException`.
+
+**When a face is missing, choose what happens.** `Folio8.Render`, `Folio8.RenderTo` and `Folio8.Validate` take an optional trailing `FaceFallback`:
+
+| Value | Behaviour |
+|---|---|
+| `FaceFallback.Strict` | The default, and what every call made before this argument existed does: a character covered by no present face of its chain, where some face that chain declares was never supplied, throws `FolioRenderException` with the code `TEXT_FACE_ABSENT`. |
+| `FaceFallback.Substitute` | The character is painted in a face this renderer actually holds — the document's own embedded assets first, then your `FontSet`, each searched in face-name order, the first face that covers the character winning — and the warning `TEXT_FACE_SUBSTITUTED` names the element, the character, the face requested and the face painted. A renderer holding nothing that covers the character still throws `TEXT_FACE_ABSENT`. |
+
+```csharp
+RenderResult result = Folio8.Render(template, data, null, fonts, FaceFallback.Substitute);
+foreach (Diagnostic d in result.Diagnostics)
+{
+    if (d.Code == "TEXT_FACE_SUBSTITUTED") Console.Error.WriteLine(d.Message);
+}
+```
+
+The choice is deterministic: the same inputs produce the same bytes on any machine. A value outside the enum is an `ArgumentException` from the binding, never a silent default.
+
+**A lenient render may space its lines differently.** Under substitution any face the renderer holds may end up painted into an element whose chain has an unsupplied member, so such an element is given a line box tall enough for the tallest of them — the alternative is a substituted character overflowing its box with nothing reported. The leading of those elements therefore differs from the same document rendered strictly. An element whose chain is fully supplied is unaffected, and a strict render is unchanged in every case.
 
 **Call `Fonts.Shipped` once and hold what it gives you**, as the program above does with a static field. The faces are read once for the life of the process, but every call allocates its own `FontSet` of about 14 MB so that mutating what you are handed cannot change what the next caller gets. A font set is immutable as far as the engine is concerned and is safe to share across calls and across threads.
 

@@ -18,9 +18,9 @@ returns a `Promise` — `await parseTemplate(…)`, `await render(…)` — over
 | --- | --- | --- | --- |
 | `ParseTemplate(b []byte) (*Template, error)` | `parseTemplate(bytes)` | `Template.Parse(byte[])` | The primary constructor. Bytes in, template out. |
 | `LoadTemplate(path string) (*Template, error)` | `loadTemplate(path)` | `Template.Load(string)` | Convenience over the filesystem. The only API in either library that touches disk on the caller's behalf. |
-| `Render(t, d, p, f) (Result, error)` | `render(tpl, data, params, fonts)` | `Folio8.Render(Template, Data, Params, FontSet)` | Returns bytes plus warnings. |
-| `RenderTo(w io.Writer, t, d, p, f) ([]Diagnostic, error)` | `renderTo(writable, tpl, data, params, fonts)` — a Node `Writable` | `Folio8.RenderTo(Stream, …)` | For HTTP responses and large documents. Streams rather than materialising. |
-| `Validate(b []byte, d, p, f) ([]Diagnostic, error)` | `validate(bytes, data, params, fonts)` | `Folio8.Validate(byte[], …)` | Takes raw template bytes, not a parsed `Template`, matching Go. |
+| `Render(t, d, p, f, fallback ...FaceFallback) (Result, error)` | `render(tpl, data, params, fonts, fallback?)` | `Folio8.Render(Template, Data, Params, FontSet, FaceFallback)` | Returns bytes plus warnings. `fallback` is optional and defaults to strict. |
+| `RenderTo(w io.Writer, t, d, p, f, fallback ...FaceFallback) ([]Diagnostic, error)` | `renderTo(writable, tpl, data, params, fonts, fallback?)` — a Node `Writable` | `Folio8.RenderTo(Stream, …, FaceFallback)` | For HTTP responses and large documents. Streams rather than materialising. `fallback` is forwarded verbatim. |
+| `Validate(b []byte, d, p, f, fallback ...FaceFallback) ([]Diagnostic, error)` | `validate(bytes, data, params, fonts, fallback?)` | `Folio8.Validate(byte[], …, FaceFallback)` | Takes raw template bytes, not a parsed `Template`, matching Go. It takes the same `fallback`, because a prediction made under a different selector is not a prediction of that render. |
 | `ParameterReferences(tpl) ([]string, error)` | `parameterReferences(tpl)` | `Template.ParameterReferences()` | Which params a template expects — needed to build a params object without reading the template by hand. |
 
 ## Value types
@@ -44,8 +44,19 @@ returns a `Promise` — `await parseTemplate(…)`, `await render(…)` — over
 2. **`code` is the contract, `message` is not.** Callers dispatch on `code`;
    message text is for humans and carries no stability promise beyond matching
    Go's for the same condition.
-3. **Fonts are an explicit argument.** There is no default font set and no
-   ambient lookup. Omitting fonts is a caller error, not a fallback.
+3. **Fonts are an explicit argument, and the argument may be empty.** There is
+   no default font set and no ambient lookup — the engine never goes looking
+   for fonts on the machine it runs on. But a document that carries every face
+   it names has nothing for a font set to contribute, so **no binding may
+   refuse an empty set before resolution has been attempted**; an entry that
+   genuinely cannot be resolved still fails as `TEXT_FACE_ABSENT`. Passing
+   `null` where the language has one is still a caller error.
+   - **The fallback selector is the same closed set in all three.** Strict
+     (the default, and the value a caller who passes nothing gets) refuses;
+     substitute paints a face the renderer holds and warns with
+     `TEXT_FACE_SUBSTITUTED`. A value outside the set is **refused by the
+     binding** — Go a named error, JS a `TypeError`, .NET an
+     `ArgumentException` — never clamped.
 4. **Nothing reads the clock, the environment, or the network.** `documentDate`
    arrives through `Params` or it is absent. `SOURCE_DATE_EPOCH` is a CLI
    behaviour and is not honoured by either library.

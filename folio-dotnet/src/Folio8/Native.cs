@@ -62,7 +62,7 @@ internal static class Native
     /// The ABI shape this assembly was built against. Checked once, before
     /// the first real call.
     /// </summary>
-    internal const int ExpectedAbiVersion = 1;
+    internal const int ExpectedAbiVersion = 2;
 
     // Status codes. Keep in step with folio-go/cshared/README.md.
     internal const int StatusOk = 0;
@@ -101,6 +101,7 @@ internal static class Native
         byte[] data, int dataLength,
         byte[] parameters, int parametersLength,
         byte[] fonts, int fontsLength,
+        int fallback,
         out ulong token, out IntPtr result, out int length);
 
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
@@ -109,6 +110,7 @@ internal static class Native
         byte[] data, int dataLength,
         byte[] parameters, int parametersLength,
         byte[] fonts, int fontsLength,
+        int fallback,
         out ulong token, out IntPtr result, out int length);
 
     private static readonly object AbiGate = new object();

@@ -84,7 +84,11 @@ type (
 // first call, so a managed assembly paired with a native library from a
 // different build refuses to start rather than decoding garbage. Bump it for
 // any change a caller would have to be recompiled for.
-const abiVersion = 1
+// Moved 1 -> 2 by spec-font-sources-and-embedding: folio8_render and
+// folio8_validate gained a trailing int32 face-fallback selector before
+// their out-parameters, which is a signature a caller must be recompiled
+// against.
+const abiVersion = 2
 
 // maxFrame is the largest result buffer the ABI can describe: the length is
 // an int32, so a frame beyond this cannot be reported at all. A document that
@@ -299,6 +303,31 @@ func fontSet(p unsafe.Pointer, n C.int32_t) (folio8.FontSet, error) {
 	return set, nil
 }
 
+// faceFallback decodes the selector's one int32. The two values are the
+// ABI's own spelling of folio8.FaceFallback, kept in step with README.md
+// and with the managed FaceFallback enum in
+// folio-dotnet/src/Folio8/FaceFallback.cs.
+//
+// AN UNKNOWN VALUE IS FOLIO8_ERROR_ARGUMENT, never a clamp to strict: a
+// caller who computed a value outside the set has a bug, and rendering
+// something plausible for them hides it. Go returns a named error for
+// the same input and the JS binding throws; this is the third spelling
+// of one contract.
+//
+// 0 IS STRICT, so a caller that writes a zero — including one porting
+// from the pre-ABI-2 signature — gets the behaviour every pre-selector
+// call had.
+func faceFallback(v C.int32_t) (folio8.FaceFallback, error) {
+	switch int32(v) {
+	case 0:
+		return folio8.FaceFallbackStrict, nil
+	case 1:
+		return folio8.FaceFallbackSubstitute, nil
+	default:
+		return folio8.FaceFallbackStrict, errArgs
+	}
+}
+
 func takeBlob(raw []byte) (blob, rest []byte, ok bool) {
 	if len(raw) < 4 {
 		return nil, nil, false
@@ -407,6 +436,7 @@ func folio8_render(
 	data unsafe.Pointer, dataLen C.int32_t,
 	params unsafe.Pointer, paramsLen C.int32_t,
 	fonts unsafe.Pointer, fontsLen C.int32_t,
+	fallback C.int32_t,
 	outToken *C.uint64_t, outResult *unsafe.Pointer, outLen *C.int32_t,
 ) C.int32_t {
 	return call(outToken, outResult, outLen, func() (int32, []byte) {
@@ -414,11 +444,15 @@ func folio8_render(
 		if err != nil {
 			return statusErrorArgument, nil
 		}
+		mode, err := faceFallback(fallback)
+		if err != nil {
+			return statusErrorArgument, nil
+		}
 		parsed, err := folio8.ParseTemplate(tplBytes)
 		if err != nil {
 			return failure(err)
 		}
-		res, err := folio8.Render(parsed, d, p, set)
+		res, err := folio8.Render(parsed, d, p, set, mode)
 		if err != nil {
 			return failure(err)
 		}
@@ -435,6 +469,7 @@ func folio8_validate(
 	data unsafe.Pointer, dataLen C.int32_t,
 	params unsafe.Pointer, paramsLen C.int32_t,
 	fonts unsafe.Pointer, fontsLen C.int32_t,
+	fallback C.int32_t,
 	outToken *C.uint64_t, outResult *unsafe.Pointer, outLen *C.int32_t,
 ) C.int32_t {
 	return call(outToken, outResult, outLen, func() (int32, []byte) {
@@ -442,7 +477,11 @@ func folio8_validate(
 		if err != nil {
 			return statusErrorArgument, nil
 		}
-		found, err := folio8.Validate(tplBytes, d, p, set)
+		mode, err := faceFallback(fallback)
+		if err != nil {
+			return statusErrorArgument, nil
+		}
+		found, err := folio8.Validate(tplBytes, d, p, set, mode)
 		if err != nil {
 			return failure(err)
 		}

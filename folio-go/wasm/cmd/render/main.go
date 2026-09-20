@@ -64,25 +64,33 @@ func main() {
 			}
 			return reply(envelope{OK: true}, canonical, "bytes")
 		}),
-		// render(template, data, params|null, fontNames, fontBytes) -> { envelope, bytes: pdf }
+		// render(template, data, params|null, fontNames, fontBytes, fallback|null) -> { envelope, bytes: pdf }
 		"render": guarded(func(args []js.Value) any {
-			tpl, err := parse(args, 5)
+			tpl, err := parse(args, 6)
 			if err != nil {
 				return reply(fail(err), nil, "")
 			}
-			res, err := folio8.Render(tpl, folio8.Data(bytesArg(args[1])), params(args[2]), fontSet(args[3], args[4]))
+			mode, err := faceFallback(args[5])
+			if err != nil {
+				return reply(fail(err), nil, "")
+			}
+			res, err := folio8.Render(tpl, folio8.Data(bytesArg(args[1])), params(args[2]), fontSet(args[3], args[4]), mode)
 			if err != nil {
 				return reply(fail(err), nil, "")
 			}
 			diags := convert(res.Diagnostics)
 			return reply(envelope{OK: true, Diagnostics: &diags}, res.Bytes, "bytes")
 		}),
-		// validate(templateBytes, data, params|null, fontNames, fontBytes) -> { envelope }
+		// validate(templateBytes, data, params|null, fontNames, fontBytes, fallback|null) -> { envelope }
 		"validate": guarded(func(args []js.Value) any {
-			if len(args) != 5 {
+			if len(args) != 6 {
 				return reply(fail(errArity), nil, "")
 			}
-			found, err := folio8.Validate(bytesArg(args[0]), folio8.Data(bytesArg(args[1])), params(args[2]), fontSet(args[3], args[4]))
+			mode, err := faceFallback(args[5])
+			if err != nil {
+				return reply(fail(err), nil, "")
+			}
+			found, err := folio8.Validate(bytesArg(args[0]), folio8.Data(bytesArg(args[1])), params(args[2]), fontSet(args[3], args[4]), mode)
 			if err != nil {
 				return reply(fail(err), nil, "")
 			}
@@ -145,6 +153,37 @@ func params(v js.Value) folio8.Params {
 		return nil
 	}
 	return folio8.Params(bytesArg(v))
+}
+
+// errFallback names a sixth argument this host cannot read as a
+// selector.
+var errFallback = errors.New("folio8 render host: the face-fallback argument must be null, undefined or a number")
+
+// faceFallback maps the host's sixth argument onto the engine's
+// selector. null and undefined are STRICT, so a caller that passes
+// nothing keeps the behaviour every call had before the argument
+// existed.
+//
+// ⚠ THE TYPE IS CHECKED BEFORE .Int() IS CALLED. js.Value.Int() PANICS
+// on a value that is not a number, and a panic here is recovered into
+// an opaque "panic:" envelope instead of the binding's own error — a
+// caller passing a string would be told the engine crashed rather than
+// that their argument is wrong.
+func faceFallback(v js.Value) (folio8.FaceFallback, error) {
+	if v.IsNull() || v.IsUndefined() {
+		return folio8.FaceFallbackStrict, nil
+	}
+	if v.Type() != js.TypeNumber {
+		return folio8.FaceFallbackStrict, errFallback
+	}
+	switch v.Int() {
+	case 0:
+		return folio8.FaceFallbackStrict, nil
+	case 1:
+		return folio8.FaceFallbackSubstitute, nil
+	default:
+		return folio8.FaceFallbackStrict, errFallback
+	}
 }
 
 func fontSet(names, faces js.Value) folio8.FontSet {

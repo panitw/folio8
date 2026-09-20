@@ -34,6 +34,15 @@ import (
 // and two public entry points covering one FR is exactly the surface
 // growth those decisions exist to prevent.
 //
+// f MAY BE EMPTY, OR NIL, exactly as it may be for Render, and for the
+// same reason: Validate predicts Render, so an argument check here that
+// Render does not make would predict a refusal Render would not
+// produce. fallback is Render's optional FaceFallback, and it belongs
+// on this entry point precisely BECAUSE Validate is a predictor — a
+// lenient render and a strict validation of the same inputs disagree
+// about whether the document renders at all, which is the one thing
+// D-3.7.1 exists to stop.
+//
 // THE USABILITY TRAP (D-3.7.1's own guardrail, AC2). Validate predicts
 // Render FOR THE INPUTS GIVEN. A caller that passes an empty Data (or
 // one missing the paths a template's placeholders bind to) gets
@@ -49,7 +58,7 @@ import (
 // story's review: this comment previously named a test,
 // TestValidatePredictsRenderIncludingEmptyDataCaveat, that does not
 // exist anywhere in the repo.)
-func Validate(b []byte, d Data, p Params, f FontSet) ([]Diagnostic, error) {
+func Validate(b []byte, d Data, p Params, f FontSet, fallback ...FaceFallback) ([]Diagnostic, error) {
 	t, err := ParseTemplate(b)
 	if err != nil {
 		return nil, err
@@ -65,7 +74,7 @@ func Validate(b []byte, d Data, p Params, f FontSet) ([]Diagnostic, error) {
 	if _, derr := resolveDocumentDate(params); derr != nil {
 		return nil, derr
 	}
-	_, _, _, diags, perr := predictDocument(t, data, params, f)
+	_, _, _, diags, perr := predictDocument(t, data, params, f, fallback...)
 	if perr != nil {
 		return nil, perr
 	}
