@@ -322,6 +322,9 @@ func applyComponentCommand(t *Template, command []byte, fonts ...FontSet) (desig
 		return applyTableColumnCommand(t, raw, setTableMinHeight)
 	case "updateTableRules":
 		return applyTableColumnCommand(t, raw, updateTableRules)
+	case unitCommandKind:
+		// Several commands, one undoable unit. See unitCommandKind.
+		return applyCommandUnit(t, raw, command, fonts...)
 	default:
 		return designer.CanvasProjection{}, fmt.Errorf("folio8: unknown component command")
 	}
@@ -342,6 +345,174 @@ func applyTableColumnCommand(t *Template, raw map[string]json.RawMessage, apply 
 	}
 	if _, err := apply(working, raw); err != nil {
 		return designer.CanvasProjection{}, err
+	}
+	canonical, err := SerializeTemplate(working)
+	if err != nil {
+		return designer.CanvasProjection{}, err
+	}
+	installed, err := ParseTemplate(canonical)
+	if err != nil {
+		return designer.CanvasProjection{}, err
+	}
+	projection, err := canvas(installed)
+	if err != nil {
+		return designer.CanvasProjection{}, err
+	}
+	t.doc, t.derivedFooters = installed.doc, installed.derivedFooters
+	return projection, nil
+}
+
+// unitCommandKind names the ONE command that carries other commands, and its
+// whole purpose is the undo entry: a unit of commands is applied as a single
+// undoable unit, so an author action that genuinely needs two commands costs
+// one undo step instead of two.
+//
+// WHAT THIS DOES NOT CHANGE. It is not a reversal of any two-commands
+// separation. Embedding a face and setting a property remain two ordinary
+// commands, decided and refused on their own terms; a member is unaware it is
+// in a group and keeps its own version, its own arity check and its own
+// located refusal. The only thing a unit changes is how many undo entries a
+// unit of them produces. That is the owner's decision recorded in
+// _bmad-output/specs/spec-install-all-face-cuts/.memlog.md as "Story 2 Q-undo
+// (OWNER)" — "pressing B is ONE undo step, delivered by a GENERAL TRANSACTION
+// MECHANISM in the engine rather than a purpose-built fused command". CITED BY
+// ITS LABEL AND ITS WORDS, never by a line ordinal into an append-only file:
+// this story exists because a citation went wrong once already. It is NOT
+// D-16.5, which rules on variable-only families and browser-side instancing and
+// says nothing about command fusion or undo entries.
+//
+// COMPONENT COMMANDS ONLY, DELIBERATELY. A unit is one case in this package's
+// closed component switch, so wasm.Engine.Apply's two-way dispatch is untouched
+// and a `pageSetup` member falls through to the switch's own default —
+// "folio8: unknown component command". The limit is a choice, not an oversight:
+// nothing foreseeable fuses page setup with a component change. THE EXTENSION
+// PATH, if something ever does: move the unit up into
+// internal/wasm/engine.go, where it can replicate that two-way dispatch per
+// member; the wire shape below does not have to change to get there.
+const unitCommandKind = "applyCommands"
+
+// unitCommandPath is the DataPath the unit's OWN refusals carry — the bounds,
+// the nesting rule and an unreadable member list. A member's refusal is passed
+// through verbatim and keeps the member's own path. The unit names no element,
+// so ElementID stays empty, exactly as the font-chain and page-setup refusals
+// do. It is a constant: nothing from the wire is interpolated into it, so it
+// cannot reach the host's 256-byte DataPath cut.
+const unitCommandPath = componentCommandPath + ".commands"
+
+// minUnitCommands and maxUnitCommands bound the member list. The maximum
+// matches maxCanvasFontChainEntries, its nearest neighbour, rather than being
+// left implicit in the 8 MiB request envelope — an unstated bound is a bound
+// nobody can be refused against. The minimum is one, not two: a unit of one is
+// admitted so a caller assembling a list whose length it does not know in
+// advance needs no special case, and an empty `commands` array is refused
+// because it asks for nothing.
+const (
+	minUnitCommands = 1
+	maxUnitCommands = 64
+)
+
+// carriedCommands answers the ONE question "what commands does this command
+// carry", and it is the SOLE reader of a unit's member list in this repository.
+// A unit carries its members in order; every other command carries itself, and
+// so does anything that does not decode as a command object at all — so one
+// command and a unit of commands read the same way and a caller needs no
+// knowledge of the unit's shape.
+//
+// THAT IS THE POINT, NOT A CONVENIENCE. internal/wasm's staleness fence has to
+// see a moveComponents inside a unit, and it reaches this answer through
+// internal/designer's function-variable bridge rather than decoding `commands`
+// itself. If a second parser for a unit's members ever appears anywhere, the
+// fence and the applier can disagree about what a unit contains — and a fence
+// that disagrees with the applier is a fence that is not there.
+//
+// unit reports whether command IS a unit, which is how the nesting refusal
+// below asks its question — and how internal/wasm's fence knows whether a
+// member it cannot decode is its business or the door's — without either
+// re-deriving the structure. IT AGREES WITH THE DOOR ABOUT WHAT COUNTS AS A
+// UNIT: the door reads `version` before `kind` and refuses anything that is not
+// version 1 as an unknown command, so a `version: 2` object naming this kind is
+// NOT a unit here either. Deciding unit-ness on `kind` alone would let the
+// fence speak about a command the door was about to refuse for another reason.
+//
+// A non-nil error is a unit whose member list cannot be read at all — missing,
+// or not an array. Those two are worded apart because they are different
+// mistakes, and the wording lives HERE rather than at the door for the same
+// reason the parsing does: one place knows a unit's member list.
+func carriedCommands(command []byte) (members [][]byte, unit bool, err error) {
+	var raw map[string]json.RawMessage
+	if json.Unmarshal(command, &raw) != nil {
+		return [][]byte{command}, false, nil
+	}
+	var kind string
+	if !equalNumber(raw["version"], "1") || json.Unmarshal(raw["kind"], &kind) != nil || kind != unitCommandKind {
+		return [][]byte{command}, false, nil
+	}
+	list, declared := raw["commands"]
+	if !declared {
+		return nil, true, componentFailure("", unitCommandPath, "a unit of commands must declare a commands field")
+	}
+	var carried []json.RawMessage
+	if json.Unmarshal(list, &carried) != nil {
+		return nil, true, componentFailure("", unitCommandPath, "a unit of commands must carry an array of commands")
+	}
+	out := make([][]byte, 0, len(carried))
+	for _, member := range carried {
+		out = append(out, member)
+	}
+	return out, true, nil
+}
+
+// applyCommandUnit applies a unit's members to ONE candidate document, in
+// order, each member seeing the previous member's effect, and commits them all
+// or none of them.
+//
+// It wears applyTableColumnCommand's serialize/reparse/copy-back shape for the
+// same reason that one does: this is the PUBLIC seam, called directly by more
+// than twenty test files and by anything holding a *Template, and members may
+// mutate their own candidate before refusing. Atomicity has to be
+// re-established here, not only in wasm.Engine.Apply.
+//
+// A member is applied by RE-ENTERING the command door, which is what makes it
+// literally an ordinary command: it gets the duplicate-key guard, the arity
+// check, the version check and the closed switch, with no per-kind
+// special-casing here and nothing in this function that has to be kept in step
+// with the vocabulary. Nesting is refused before any member runs, so the
+// re-entry is exactly one level deep.
+func applyCommandUnit(t *Template, raw map[string]json.RawMessage, command []byte, fonts ...FontSet) (designer.CanvasProjection, error) {
+	if err := componentFields(raw, 3); err != nil {
+		return designer.CanvasProjection{}, err
+	}
+	members, _, err := carriedCommands(command)
+	if err != nil {
+		return designer.CanvasProjection{}, err
+	}
+	if len(members) < minUnitCommands {
+		return designer.CanvasProjection{}, componentFailure("", unitCommandPath, fmt.Sprintf("a unit of commands must carry at least %d command", minUnitCommands))
+	}
+	if len(members) > maxUnitCommands {
+		return designer.CanvasProjection{}, componentFailure("", unitCommandPath, fmt.Sprintf("a unit of commands carries at most %d commands and this one carries %d", maxUnitCommands, len(members)))
+	}
+	for _, member := range members {
+		if _, nested, _ := carriedCommands(member); nested {
+			return designer.CanvasProjection{}, componentFailure("", unitCommandPath, "a unit of commands must not carry another unit of commands; a flat list is exactly as expressive")
+		}
+	}
+	before, err := SerializeTemplate(t)
+	if err != nil {
+		return designer.CanvasProjection{}, err
+	}
+	working, err := ParseTemplate(before)
+	if err != nil {
+		return designer.CanvasProjection{}, err
+	}
+	for _, member := range members {
+		// The member's refusal travels out verbatim — same ElementID, same
+		// DataPath, same Message — because nothing here wraps it. A caller
+		// must be able to read a refused unit the way it reads a refused
+		// command.
+		if _, err := applyComponentCommand(working, member, fonts...); err != nil {
+			return designer.CanvasProjection{}, err
+		}
 	}
 	canonical, err := SerializeTemplate(working)
 	if err != nil {

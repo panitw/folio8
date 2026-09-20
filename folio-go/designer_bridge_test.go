@@ -28,6 +28,7 @@ func designerBridge() map[string]bool {
 		"PreviewIdentity":       designer.PreviewIdentity != nil,
 		"AssetBytes":            designer.AssetBytes != nil,
 		"StandInData":           designer.StandInData != nil,
+		"CarriedCommands":       designer.CarriedCommands != nil,
 	}
 }
 
@@ -129,5 +130,67 @@ func TestDesignerBridgeReachesTheEngine(t *testing.T) {
 	var nilTemplate *folio8.Template
 	if _, err := designer.StandInData(nilTemplate); err == nil {
 		t.Fatal("a nil *folio8.Template produced stand-in data without error")
+	}
+}
+
+// TestDesignerBridgeCarriedCommandsAnswersForEveryShape exercises the bridge
+// wrapper's own branches rather than only its non-nilness. The unreadable-list
+// branch in particular is the one that decides whether internal/wasm's fence
+// reports a refusal that belongs to the command door, so "it is assigned" is
+// not enough to know it is right.
+func TestDesignerBridgeCarriedCommandsAnswersForEveryShape(t *testing.T) {
+	for _, row := range []struct {
+		name    string
+		command string
+		members []string
+		unit    bool
+	}{
+		{
+			name:    "an ordinary command carries itself",
+			command: `{"kind":"addFontChain","version":1,"name":"caption","entries":["Noto Sans"]}`,
+			members: []string{`{"kind":"addFontChain","version":1,"name":"caption","entries":["Noto Sans"]}`},
+		},
+		{
+			name:    "bytes that do not decode carry themselves",
+			command: `not json`,
+			members: []string{`not json`},
+		},
+		{
+			name:    "a unit carries its members in order",
+			command: `{"kind":"applyCommands","version":1,"commands":[{"kind":"a"},{"kind":"b"}]}`,
+			members: []string{`{"kind":"a"}`, `{"kind":"b"}`},
+			unit:    true,
+		},
+		{
+			name:    "a unit whose member list cannot be read carries nothing, but is still a unit",
+			command: `{"kind":"applyCommands","version":1,"commands":7}`,
+			unit:    true,
+		},
+		{
+			name:    "a unit whose member list is absent carries nothing, but is still a unit",
+			command: `{"kind":"applyCommands","version":1,"atomic":true}`,
+			unit:    true,
+		},
+		{
+			// The door refuses anything that is not version 1 as an unknown
+			// command, so this is not a unit here either.
+			name:    "a version the door does not know is not a unit",
+			command: `{"kind":"applyCommands","version":2,"commands":[{"kind":"a"}]}`,
+			members: []string{`{"kind":"applyCommands","version":2,"commands":[{"kind":"a"}]}`},
+		},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			members, unit := designer.CarriedCommands([]byte(row.command))
+			if unit != row.unit {
+				t.Errorf("unit = %v, want %v", unit, row.unit)
+			}
+			got := make([]string, 0, len(members))
+			for _, member := range members {
+				got = append(got, string(member))
+			}
+			if strings.Join(got, "|") != strings.Join(row.members, "|") {
+				t.Errorf("members = %v, want %v", got, row.members)
+			}
+		})
 	}
 }

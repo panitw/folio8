@@ -92,18 +92,30 @@ holds a family's whole face set with a real cut name in each record's `style`, a
    - *My read:* **B.** The dispatch note frames this as "extends `embedFontFamily`", but the measured
      tree says a new kind is the cheaper and more idiomatic change here. Flagging the divergence.
 
-2. **How many undo entries is one press of B?** D-16.5 ruled a pick's embed and its property commit
-   are two commands with two undo entries, never fused, and there is **no compound, batch or
-   transaction command anywhere in the repo** — `Apply` decodes exactly one command object.
-   - **A. Two entries (follow D-16.5).** One undo turns bold off and leaves the face embedded and the
-     cut declared; a second undo removes it. An author who undoes once has a document carrying a face
-     nothing currently uses — it stays *referenced* by the entry, so it is not an orphan, and
-     prune-on-save is already refused.
-   - **B. One fused entry.** Requires a new compound Go command kind — a materially larger change
-     than this story, and it reopens a ruling D-16.5 made deliberately.
-   - *My read:* **A.** This is SPEC.md's open question *"Does undoing it remove the asset from the
-     document, or leave an unreferenced face behind?"* — the answer under A is: two undos remove it,
-     one undo leaves it referenced but unused.
+2. **How many undo entries is one press of B?** **SETTLED — see the correction below.**
+
+   **CORRECTION (ruled at story 6's Open Questions gate, D-6.5).** This question was originally
+   framed as "D-16.5 ruled a pick's embed and its property commit are two commands with two undo
+   entries, never fused". **That premise is false.** Measured: D-16.5
+   (`_bmad-output/implementation-artifacts/epic-8-15-decision-log.md:3692`, summarised
+   `epic-16-decision-log.md:20`) rules on variable-only families, on deriving the cuts worth having,
+   and on refusing browser-side instancing. It says nothing about command fusion or undo entries.
+   The claim originated here and travelled from here into story 6's dispatch note; it is corrected
+   in both places and **not** annotated at the three real D-16.5 citation sites, where a note would
+   make the record less true.
+
+   The measured half of the original framing was correct at the time: there was **no compound, batch
+   or transaction command anywhere in the repo** — `Apply` decoded exactly one command object.
+
+   **The owner's actual decision is at `.memlog.md:82`:** pressing **B** is **ONE undo step**,
+   delivered by a **general transaction mechanism** in the engine rather than a purpose-built fused
+   command — chosen over accepting two undo steps and over a scoped exception. Story 6 ships that
+   mechanism (a unit of ordinary commands applied as one undoable unit), sequenced before this
+   story. Embedding and property-setting remain two separate commands; only the number of undo
+   entries a *unit* of them produces changes.
+
+   This also answers SPEC.md's open question *"Does undoing it remove the asset from the document,
+   or leave an unreferenced face behind?"* — with one undoable unit, the single undo removes both.
 
 3. **A cut available only at a mismatched upstream vintage** (SPEC.md's own question, verbatim: *"The
    freeze rule says a later cut is taken at the embedded Regular's vintage where available. When it is

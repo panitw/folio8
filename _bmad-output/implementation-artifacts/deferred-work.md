@@ -13920,3 +13920,19 @@ name that attributes it to Story 6.7, and the audit trail for 6.7 quietly descri
 - source_spec: `_bmad-output/specs/spec-deferred-offline-cache/stories/5-take-the-cjk-face-out-of-the-designers-engine.md`
   summary: A document needing two or more absent faces can never recover, because EngineClient retries at most once per request.
   evidence: Unreachable today — only the CJK face is deferred — but nothing in the code or tests states that precondition, and canvasFaceAssets is the candidate set for every face in the release. If a second face is ever deferred, the second refusal exhausts the retry.
+
+- source_spec: `_bmad-output/specs/spec-install-all-face-cuts/stories/6-apply-several-commands-as-one-undoable-unit.md`
+  summary: Decide whether one unit of commands may carry more than one `moveComponents`, since every carried move is compared against the same pre-unit revision.
+  evidence: Maybe-false, and medium if true. `checkMoveRevision` compares each carried move's `expectedRevision` to `e.revision`, which does not advance mid-unit, so a second move applies on top of the first's effect. That may be exactly what a unit means — the author composed both against the same revision knowing the order — or it may be the staleness hazard the fence exists to stop. Nothing sends units today, so it is unreachable. Settled by an owner ruling once a consumer exists, or by a measured case where the compounded displacement is wrong.
+
+- source_spec: `_bmad-output/specs/spec-install-all-face-cuts/stories/6-apply-several-commands-as-one-undoable-unit.md`
+  summary: A unit of commands cannot be assembled from the designer's existing command builders, because every builder returns an encoded `ArrayBuffer` rather than a composable JSON fragment.
+  evidence: `folio-designer/src/command-json.ts` is the single command-JSON authority and `commandBytes` returns `ArrayBuffer`; `jsonArray`/`jsonObject` compose fragments, not encoded buffers. So `applyCommands` is currently unreachable from the designer without decoding bytes back to text. Story 6 deliberately ships no TS builder (no consumer), but story 2 is the first consumer and will meet this on day one — it needs either a fragment-returning variant of each builder it fuses, or a builder that takes fragments.
+
+- source_spec: `_bmad-output/specs/spec-install-all-face-cuts/stories/6-apply-several-commands-as-one-undoable-unit.md`
+  summary: Story 2's Open Question 1 still carries its pre-transaction reasoning and is due a re-ask now that story 6 has landed.
+  evidence: `_bmad-output/specs/spec-install-all-face-cuts/.memlog.md:84` records that story 2's command-shape question is SUPERSEDED by the transaction decision and must be re-asked after story 6 lands, because transactions may make minting `embedFontCut` the obvious answer rather than a trade-off against a 13-field mode switch. Story 6 corrected only the D-16.5 premise at that file's line 95, as ruled; re-opening the command-shape question is story 2's planning work, not story 6's code.
+
+- source_spec: `_bmad-output/specs/spec-install-all-face-cuts/stories/6-apply-several-commands-as-one-undoable-unit.md`
+  summary: A unit of commands is bounded by member count, not by work; a full 64-member unit costs roughly 65 serialize/parse/canvas round trips.
+  evidence: Each member re-enters `applyComponentCommand`, and `applyFontChainCommand` and `applyTableColumnCommand` each perform their own SerializeTemplate → ParseTemplate → apply → SerializeTemplate → ParseTemplate → canvas and discard the projection; `applyCommandUnit` wraps one more and `Engine.Apply` adds a parse, a serialize and a CanvasWithTextPaint. `Engine.Apply` runs about every 200 ms while typing. Unreachable today — the only planned consumer sends two members — and the remedy is a redesign of the per-command round trip rather than a correction, so it is recorded rather than fixed.

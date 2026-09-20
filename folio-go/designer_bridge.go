@@ -37,6 +37,17 @@ func init() {
 	designer.StandInData = func(tpl any) ([]byte, error) {
 		return standInData(designerTemplate(tpl))
 	}
+	designer.CarriedCommands = func(command []byte) ([][]byte, bool) {
+		members, unit, err := carriedCommands(command)
+		if err != nil {
+			// A unit whose member list cannot be read carries no members a
+			// caller can inspect — but it is still a unit, and saying so is
+			// what stops the caller reporting the door's refusal in its own
+			// words.
+			return nil, true
+		}
+		return members, unit
+	}
 }
 
 // designerTemplate recovers the *Template a designer caller holds. A nil

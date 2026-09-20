@@ -138,16 +138,44 @@ func (e *Engine) GroupMovePreview(command []byte) (GroupMoveResult, error) {
 	return GroupMoveResult{Revision: e.revision, DX: move.DX, DY: move.DY}, nil
 }
 
+// checkMoveRevision is the ONLY place a moveComponents' expectedRevision is
+// compared to the revision it was drafted against. group_movement.go requires
+// the field to be present and bounded but never asks whether it is current, so
+// a move that slips past this function is a move applied to a document the
+// author was not looking at.
+//
+// IT WALKS THE COMMANDS THE COMMAND CARRIES, not the command it was handed. A
+// move inside a unit of commands meets exactly this fence, with exactly this
+// wording, because the alternative — a fence that only sees a bare move — would
+// admit a stale move simply for travelling inside a unit. What a command
+// carries is folio8's question to answer, asked through the designer bridge:
+// this package must never learn to decode a unit's member list itself, or the
+// two can disagree. A command that carries nothing else carries itself, so the
+// bare-move case is the same code path and needs no branch.
+//
+// IT RUNS BEFORE THE COMMAND DOOR HAS JUDGED ANYTHING, which is why a member it
+// cannot decode is NOT its to report. Refusing here would put this package's
+// unlocated "command is malformed" in front of the member's own located
+// refusal, at the only seam the browser ever sees — so a unit's undecodable
+// member is skipped and left to the door. Only a command that carries ITSELF
+// and does not decode is this function's own malformed-input case, and it
+// answers exactly as it always has.
 func (e *Engine) checkMoveRevision(command []byte) error {
-	var intent struct {
-		Kind             string  `json:"kind"`
-		ExpectedRevision *uint64 `json:"expectedRevision"`
-	}
-	if err := json.Unmarshal(command, &intent); err != nil {
-		return fmt.Errorf("folio8 wasm: command is malformed")
-	}
-	if intent.Kind == "moveComponents" && (intent.ExpectedRevision == nil || *intent.ExpectedRevision != e.revision) {
-		return fmt.Errorf("folio8 wasm: group move refers to an outdated revision")
+	carried, unit := designer.CarriedCommands(command)
+	for _, member := range carried {
+		var intent struct {
+			Kind             string  `json:"kind"`
+			ExpectedRevision *uint64 `json:"expectedRevision"`
+		}
+		if err := json.Unmarshal(member, &intent); err != nil {
+			if unit {
+				continue
+			}
+			return fmt.Errorf("folio8 wasm: command is malformed")
+		}
+		if intent.Kind == "moveComponents" && (intent.ExpectedRevision == nil || *intent.ExpectedRevision != e.revision) {
+			return fmt.Errorf("folio8 wasm: group move refers to an outdated revision")
+		}
 	}
 	return nil
 }

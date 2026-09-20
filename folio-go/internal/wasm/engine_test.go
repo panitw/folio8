@@ -1581,3 +1581,308 @@ func TestEngineClearDerivedAggregateBindingRefusesUntilSourceIsExplicit(t *testi
 		})
 	}
 }
+
+// commandUnitJSON assembles the wire object a unit of commands travels in. It
+// is spelled out here rather than imported so this package states the shape it
+// expects of the engine, in its own file, the way every other command in these
+// tests is spelled out.
+func commandUnitJSON(members ...string) []byte {
+	return []byte(`{"kind":"applyCommands","version":1,"commands":[` + strings.Join(members, ",") + `]}`)
+}
+
+// TestEngineCommandUnitIsOneRevisionOneUndoAndOneRedo is the story's whole
+// point, and the undo assertion is the load-bearing half: the document must
+// come back byte-identical to the state BEFORE the unit, never to a state
+// between its members.
+func TestEngineCommandUnitIsOneRevisionOneUndoAndOneRedo(t *testing.T) {
+	engine := fontChainEngine(t)
+	before := engine.Snapshot()
+	original, _, err := engine.Serialize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	unit := commandUnitJSON(
+		`{"kind":"addFontChain","version":1,"name":"caption","entries":["Noto Sans"]}`,
+		`{"kind":"updateComponentProperties","version":1,"ids":["e7"],"changes":{"fontFamily":{"op":"set","value":"caption"}}}`,
+	)
+	applied, err := engine.Apply(unit)
+	if err != nil {
+		t.Fatalf("unit refused: %v", err)
+	}
+	if applied.Revision != before.Revision+1 {
+		t.Fatalf("revision = %d, want exactly one past %d — a unit is ONE committed mutation", applied.Revision, before.Revision)
+	}
+	if !applied.CanUndo || applied.CanRedo {
+		t.Fatalf("history after the unit = %#v", applied)
+	}
+	committed, _, err := engine.Serialize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(committed, []byte(`"caption"`)) || !bytes.Contains(committed, []byte(`"fontFamily": "caption"`)) {
+		t.Fatal("both members' effects are not present in the committed bytes")
+	}
+
+	undone, err := engine.Undo()
+	if err != nil {
+		t.Fatal(err)
+	}
+	restored, _, err := engine.Serialize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(restored, original) {
+		t.Fatal("one undo did not return the document to before BOTH members")
+	}
+	if undone.CanUndo {
+		t.Fatalf("a unit left more than one undo entry: %#v", undone)
+	}
+	if undone.Revision != applied.Revision+1 {
+		t.Fatalf("revision = %d, want monotonic past %d", undone.Revision, applied.Revision)
+	}
+
+	redone, err := engine.Redo()
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayed, _, err := engine.Serialize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(replayed, committed) {
+		t.Fatal("one redo did not reapply the whole unit")
+	}
+	if redone.CanRedo || redone.Revision != undone.Revision+1 {
+		t.Fatalf("history after redo = %#v", redone)
+	}
+}
+
+// TestEngineRefusedCommandUnitRefusesExactlyAsTheDoorDoes is the all-or-nothing
+// claim at the Engine seam AND the wording claim with it.
+//
+// COMPARING BYTES, REVISION AND HISTORY IS NOT ENOUGH, and an earlier version
+// of this test that did only that let a real defect ship green: the staleness
+// fence ran before the command door and answered for a member it could not
+// decode, so `folio8 wasm: command is malformed` reached the browser where the
+// member's own located refusal should have. The spec's "a member's refusal
+// propagates verbatim" is a claim about the ONLY seam that ships, so the
+// refusal VALUE is measured here too — against what the public door says about
+// the same bytes, never against a string copied into this file.
+//
+// Each row names the bytes the door is asked about: the offending member alone
+// where the unit is well-formed, or the unit itself where the unit is what is
+// wrong.
+func TestEngineRefusedCommandUnitRefusesExactlyAsTheDoorDoes(t *testing.T) {
+	engine := fontChainEngine(t)
+	committed, err := engine.Apply([]byte(`{"kind":"addFontChain","version":1,"name":"aside","entries":["Noto Sans"]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, _, err := engine.Serialize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// door reports what applyComponentCommand says about command, applied to a
+	// fresh parse of the engine's current bytes — the same document the engine
+	// would have applied it to.
+	door := func(t *testing.T, command string) error {
+		t.Helper()
+		tpl, err := folio8.ParseTemplate(before)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = designer.ApplyComponentCommand(tpl, []byte(command), fonts.Shipped())
+		if err == nil {
+			t.Fatalf("the public door admitted %s; the row proves nothing", command)
+		}
+		return err
+	}
+	good := `{"kind":"addFontChain","version":1,"name":"caption","entries":["Noto Sans"]}`
+	for _, row := range []struct {
+		name string
+		unit string
+		// asked is the bytes the public door is asked about. Empty means the
+		// unit itself.
+		asked string
+	}{
+		{
+			name:  "a later member names a missing element",
+			unit:  string(commandUnitJSON(good, `{"kind":"updateComponentProperties","version":1,"ids":["ezmissing"],"changes":{"fontSize":{"op":"set","value":10}}}`)),
+			asked: `{"kind":"updateComponentProperties","version":1,"ids":["ezmissing"],"changes":{"fontSize":{"op":"set","value":10}}}`,
+		},
+		{
+			name:  "a member outside the closed vocabulary",
+			unit:  string(commandUnitJSON(good, `{"kind":"notACommand","version":1}`)),
+			asked: `{"kind":"notACommand","version":1}`,
+		},
+		{
+			// THE ROW THE DEFECT LIVED IN. A member that is not an object at
+			// all is the door's to refuse, in the door's words.
+			name:  "a member that is not a command object",
+			unit:  string(commandUnitJSON(good, `7`)),
+			asked: `7`,
+		},
+		{
+			name: "a unit inside a unit",
+			unit: string(commandUnitJSON(good, string(commandUnitJSON(good)))),
+		},
+		{
+			name: "a unit carrying nothing",
+			unit: string(commandUnitJSON()),
+		},
+		{
+			// THE SECOND ROW THE DEFECT LIVED IN. A version the door does not
+			// know is an unknown command, so the fence must not have an opinion
+			// about the stale move inside it.
+			name: "a version the door does not know, carrying a stale move",
+			unit: `{"kind":"applyCommands","version":2,"commands":[{"kind":"moveComponents","version":1,"ids":["e7","e2"],"referenceId":"e7","dx":1,"dy":0,"snap":false,"expectedRevision":0}]}`,
+		},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			applied, err := engine.Apply([]byte(row.unit))
+			if err == nil {
+				t.Fatalf("%s unexpectedly succeeded: %#v", row.unit, applied)
+			}
+			asked := row.asked
+			if asked == "" {
+				asked = row.unit
+			}
+			want := door(t, asked)
+			if err.Error() != want.Error() {
+				t.Fatalf("the Engine refuses with %q; the door refuses the same bytes with %q — the browser sees only the Engine", err.Error(), want.Error())
+			}
+			var got, expected *designer.ComponentCommandError
+			if errors.As(want, &expected) {
+				if !errors.As(err, &got) {
+					t.Fatalf("the door's refusal is located and the Engine's is %T", err)
+				}
+				if got.ElementID != expected.ElementID || got.DataPath != expected.DataPath || got.Message != expected.Message {
+					t.Fatalf("located refusal = %q/%q/%q, want %q/%q/%q", got.ElementID, got.DataPath, got.Message, expected.ElementID, expected.DataPath, expected.Message)
+				}
+			}
+			after, snapshot, err := engine.Serialize()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(before, after) || snapshot.Revision != committed.Revision || snapshot.CanUndo != committed.CanUndo || snapshot.CanRedo != committed.CanRedo {
+				t.Fatalf("%s changed engine state: %#v", row.unit, snapshot)
+			}
+		})
+	}
+}
+
+// TestEngineNetNoOpCommandUnitCommitsNothing: the existing no-op rule still
+// governs a unit. Its members individually change the working copy, so this
+// would fail on any implementation that judged "did anything happen" per
+// member rather than on the unit's net canonical bytes.
+func TestEngineNetNoOpCommandUnitCommitsNothing(t *testing.T) {
+	engine := fontChainEngine(t)
+	committed, err := engine.Apply([]byte(`{"kind":"addFontChain","version":1,"name":"aside","entries":["Noto Sans"]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, _, err := engine.Serialize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stable, err := engine.Apply(commandUnitJSON(
+		`{"kind":"addFontChain","version":1,"name":"caption","entries":["Noto Sans"]}`,
+		`{"kind":"deleteFontChain","version":1,"name":"caption"}`,
+	))
+	if err != nil {
+		t.Fatalf("a net no-op unit was refused: %v", err)
+	}
+	after, _, err := engine.Serialize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(before, after) || stable.Revision != committed.Revision || stable.CanUndo != committed.CanUndo || stable.CanRedo != committed.CanRedo {
+		t.Fatalf("a net no-op unit changed engine state: %#v", stable)
+	}
+}
+
+// TestEngineCommandUnitMeetsTheSameGroupMoveRevisionFence is D-6.2, proved
+// rather than asserted. The two halves are a pair on purpose: the stale half
+// alone would pass on a fence that refused every unit, and the current half
+// alone would pass on a fence that had been deleted.
+func TestEngineCommandUnitMeetsTheSameGroupMoveRevisionFence(t *testing.T) {
+	input, err := os.ReadFile("../../testdata/template/golden/worked-example.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine := NewEngine(testClock(), fonts.Shipped())
+	if _, err := engine.Load(input); err != nil {
+		t.Fatal(err)
+	}
+	ids := []string{}
+	for _, position := range []string{"12.125", "84.375"} {
+		before := engine.Snapshot()
+		added, err := engine.Apply([]byte(`{"kind":"createComponent","version":1,"type":"rect","band":"content","x":` + position + `,"y":12.225,"width":24,"height":12,"snap":false}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		known := map[string]bool{}
+		for _, component := range before.Canvas.Components {
+			known[component.ID] = true
+		}
+		for _, component := range added.Canvas.Components {
+			if !known[component.ID] {
+				ids = append(ids, component.ID)
+			}
+		}
+	}
+	move := func(revision uint64) string {
+		return fmt.Sprintf(`{"kind":"moveComponents","version":1,"ids":[%q,%q],"referenceId":%q,"dx":2.125,"dy":0,"snap":false,"expectedRevision":%d}`, ids[0], ids[1], ids[0], revision)
+	}
+	current := engine.Snapshot()
+	original, _, err := engine.Serialize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := commandUnitJSON(
+		`{"kind":"createComponent","version":1,"type":"rect","band":"content","x":120,"y":12.225,"width":24,"height":12,"snap":false}`,
+		move(current.Revision-1),
+	)
+	if _, err := engine.Apply(stale); err == nil || err.Error() != "folio8 wasm: group move refers to an outdated revision" {
+		t.Fatalf("a stale move inside a unit = %v, want the same fence and wording a bare stale move meets", err)
+	}
+	untouched, snapshot, err := engine.Serialize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(original, untouched) || !reflect.DeepEqual(snapshot, current) {
+		t.Fatalf("a refused unit changed bytes or history: %#v", snapshot)
+	}
+	admitted, err := engine.Apply(commandUnitJSON(
+		`{"kind":"createComponent","version":1,"type":"rect","band":"content","x":120,"y":12.225,"width":24,"height":12,"snap":false}`,
+		move(current.Revision),
+	))
+	if err != nil {
+		t.Fatalf("a current move inside a unit was refused: %v", err)
+	}
+	if admitted.Revision != current.Revision+1 {
+		t.Fatalf("revision = %d, want exactly one past %d", admitted.Revision, current.Revision)
+	}
+	moved, _, err := engine.Serialize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(original, moved) {
+		t.Fatal("the admitted unit changed nothing; the fence's accepting half proves nothing")
+	}
+}
+
+// TestEngineMalformedCommandStillReportsItselfMalformed pins the behaviour the
+// staleness fence had before it learned to walk a unit's members: bytes that do
+// not decode as a command object are still the fence's own malformed refusal,
+// not a unit question.
+func TestEngineMalformedCommandStillReportsItselfMalformed(t *testing.T) {
+	engine := fontChainEngine(t)
+	before := engine.Snapshot()
+	if _, err := engine.Apply([]byte(`not json`)); err == nil || err.Error() != "folio8 wasm: command is malformed" {
+		t.Fatalf("malformed command = %v, want the unchanged malformed refusal", err)
+	}
+	if engine.Snapshot() != before {
+		t.Fatal("a malformed command changed engine state")
+	}
+}

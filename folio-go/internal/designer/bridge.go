@@ -42,4 +42,23 @@ var (
 	AssetBytes func(tpl any, key string) ([]byte, string, error)
 	// StandInData returns a stand-in data document for tpl.
 	StandInData func(tpl any) ([]byte, error)
+	// CarriedCommands reports the commands one command applies, in order, and
+	// whether the command is a unit that carries others. A unit reports its
+	// members; every other command — and anything that does not decode as a
+	// command object at all — reports itself, so one command and a unit of
+	// commands read the same way.
+	//
+	// IT EXISTS SO THAT NOTHING OUTSIDE folio8 HAS TO KNOW A UNIT'S SHAPE.
+	// internal/wasm's moveComponents staleness fence must see a move inside a
+	// unit; it asks this question and then applies its own unchanged per-command
+	// rule to each answer. A second parser for a unit's member list anywhere is
+	// the defect this variable prevents: the fence and the applier would then be
+	// free to disagree about what a unit contains.
+	//
+	// THE unit FLAG IS WHAT KEEPS A CALLER FROM SPEAKING OUT OF TURN. A member
+	// a caller cannot decode is the unit door's to refuse, in the member's own
+	// words; only a command that carries ITSELF and does not decode is the
+	// caller's own malformed-input case. A unit whose member list cannot be read
+	// reports no members and unit true, because the door states that refusal.
+	CarriedCommands func(command []byte) (members [][]byte, unit bool)
 )
