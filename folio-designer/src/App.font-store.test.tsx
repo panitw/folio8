@@ -819,7 +819,11 @@ describe('a fetched face stays on this machine', () => {
     expect(stored['licenceText']).toBe(kanitLicence)
     expect(stored['copyright']).toBe('Copyright 2020 The Kanit Project Authors')
     expect(String(stored['source'])).toContain('ofl/kanit/Kanit-Regular.ttf')
-    expect(Object.keys(stored)).toHaveLength(12)
+    // A CATALOGUE FACE OUT OF THE MACHINE STORE ACKNOWLEDGES NOTHING: the key
+    // is on the wire because the arity counts it, and it is `false`, so the
+    // document records no acknowledgement at all.
+    expect(stored['authorAcknowledged']).toBe(false)
+    expect(Object.keys(stored)).toHaveLength(13)
 
     // TWO COMMANDS, IN THIS ORDER, AND TWO UNDO ENTRIES. `canvas.fontFamilies`
     // is the closed set `style.fontFamily` may name, so the property command is
@@ -2162,6 +2166,7 @@ describe('a cut the machine holds reaches the document on first use', () => {
       licence: 'OFL-1.1', licenceText: kanitLicence,
       copyright: 'Copyright 2020 The Kanit Project Authors',
       source: 'google/fonts — ofl/kanit/Kanit-Bold.ttf, fetched 2026-09-20',
+      authorAcknowledged: false,
       mediaType: 'font/ttf',
       // THE BYTES ARE THE HELD ONES, read out of the store rather than fetched.
       data: base64Of(kanitBoldBytes),

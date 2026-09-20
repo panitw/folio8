@@ -112,9 +112,20 @@ import (
 // optional `sectionBreak` key. Additive and extending no closed set, so a
 // MINOR; a 4.0 reader would ignore the key and draw a growing table over
 // the section below it. Only a document carrying a break declares it.
+// A THIRD MAJOR, 5.0, was added by spec-font-sources-and-embedding: the
+// `authorAcknowledged` key on an `assets[k].font` record a chain names.
+// The `font` record's key set is OPEN, so a 4.x reader carries the key
+// through — and then refuses the document at requireEmbeddedFaceLicence
+// for blank terms, on exactly the terms the key exists to excuse. That is
+// D-7.3.1's REFUSE case, which is what MAJOR is for. Only a document that
+// carries an acknowledged record a chain names declares it.
+//
+// ⚠ `SupportedMajor` MOVES 4 → 5 EXACTLY ONCE. spec-loop-section opens the
+// same 5.0 for the `loop` element and `$.` paths; whichever story lands
+// first makes this edit and the other finds it done. Neither re-raises it.
 const (
-	SupportedMajor   = 4
-	SupportedVersion = "4.1"
+	SupportedMajor   = 5
+	SupportedVersion = "5.0"
 )
 
 // TextNumberExpressionVersion is the version a document requires when a
@@ -182,6 +193,13 @@ const (
 	// sectionBreakVersion is the version introduced by the content band's
 	// `sectionBreak` key — an additive key, so a MINOR on 4.
 	sectionBreakVersion = "4.1"
+	// acknowledgedFaceVersion is the version introduced by the
+	// `authorAcknowledged` key on the `font` record of an asset a chain
+	// names — a MAJOR, because the key changes what a reader must ACCEPT
+	// rather than what a writer emits. See SupportedMajor's note, and
+	// contrast `embedFonts`, which governs what a save writes and
+	// therefore has no ladder row at all.
+	acknowledgedFaceVersion = "5.0"
 )
 
 // parseVersion splits a "MAJOR.MINOR" string into its two integer
@@ -353,6 +371,28 @@ func versionRequiredByContent(d *Document) string {
 	if fontsRequireMajor(d.Fonts) && rankMajorFeature > highest {
 		highest = rankMajorFeature
 	}
+	// spec-font-sources-and-embedding CAP-6: the acknowledgement, probed
+	// HERE for the fonts probe's own reason — `fonts` and `assets` are
+	// document-level maps and hang off no element, so a fonts-only
+	// document must still declare what it carries.
+	//
+	// THE TRIGGER IS THE FLAG ITSELF, not "blank terms" and not "a
+	// copyleft binary" (D2). An acknowledged record whose terms happen to
+	// be filled in would in fact load on a 4.x reader — but the
+	// document's correctness then depends on the flag being HONOURED, and
+	// the flag's presence is the honest declaration of that dependency. A
+	// trigger computed from the symptom would be more precise and far
+	// more fragile.
+	//
+	// AND IT IS THE ENTRY THAT REACHES THE RECORD, NOT THE ASSET
+	// (D-1.4.13, the fonts probe's rule applied unchanged). An
+	// acknowledged font asset that no chain names is ordinary
+	// passthrough: nothing draws with it, requireEmbeddedFaceLicence is
+	// never asked about it, so no reader is harmed and the document keeps
+	// its version.
+	if fontsRequireAcknowledgedFace(d.Fonts, d.Assets) && rankAcknowledgedFace > highest {
+		highest = rankAcknowledgedFace
+	}
 	// spec-section-break: a band-level key, probed beside the fonts probe
 	// for the same reason — it hangs off no element, so a break over an
 	// empty content band still requires 4.1.
@@ -436,6 +476,9 @@ const (
 	rankColumnHeaderAlign
 	rankBarcode
 	rankSectionBreak
+	// APPENDED, NEVER INSERTED (D-7.7.2). Inserting a rank renumbers every
+	// rank above it, and versionForRank is indexed by the iota.
+	rankAcknowledgedFace
 )
 
 // versionForRank maps a rank back to the version string it names.
@@ -457,6 +500,7 @@ var versionForRank = [...]string{
 	rankColumnHeaderAlign: columnHeaderAlignVersion,
 	rankBarcode:           barcodeVersion,
 	rankSectionBreak:      sectionBreakVersion,
+	rankAcknowledgedFace:  acknowledgedFaceVersion,
 }
 
 // styleVersionRank is the lowest version that can express ONE style
@@ -512,6 +556,41 @@ func fontsRequireMajor(f Fonts) bool {
 		for _, entry := range f[name] {
 			if entry.SerialisesAsObject() {
 				return true
+			}
+		}
+	}
+	return false
+}
+
+// fontsRequireAcknowledgedFace reports whether any chain NAMES an asset
+// whose `font` record carries the author's acknowledgement (CAP-6).
+//
+// It is fontsRequireMajor's sibling and walks the same enumeration in the
+// same order — every chain, every entry — with one difference it must
+// have: it DOES look at d.Assets, because the record that carries the
+// acknowledgement hangs off the asset and the thing that makes it matter
+// is an entry naming it. That is the same "the trigger is the entry, not
+// the asset" rule, reached from the other end; an acknowledged asset no
+// chain names raises nothing.
+//
+// EmbeddedAssetKeys is what does the reaching, so the base key AND every
+// declared style-variant sibling are consulted through the one function
+// that already enumerates them. A chain whose regular is an ordinary
+// catalogue face and whose BOLD is the author's own acknowledged cut
+// still requires 5.0 — the load door will be asked about that sibling
+// too (parse.go's variant arm), so a probe that looked only at the base
+// would stamp a version that lies.
+// It does NOT sort the chain names, and fontsRequireMajor's sort is not
+// copied: this is an any-match returning a bool, so no order it could walk
+// changes the answer, and a sorted walk would only buy a slice allocation.
+// (fontsRequireMajor's own sort predates this and is left alone.)
+func fontsRequireAcknowledgedFace(f Fonts, assets map[string]Asset) bool {
+	for name := range f {
+		for _, entry := range f[name] {
+			for _, key := range entry.EmbeddedAssetKeys() {
+				if assets[key].FaceAcknowledged() {
+					return true
+				}
 			}
 		}
 	}

@@ -2606,10 +2606,13 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
   // index publishes no licence field — so this refusal is necessarily post-pick,
   // and it is surfaced at the control the author acted on.
   //
-  // THE COMMAND IS UNTOUCHED, AT TWELVE FIELDS. `embedFontFamilyCommand` already
-  // demands exactly what a `.folio` requires and Go refuses the pick without it,
-  // so changing the SOURCE of those values while leaving that guard in place is
-  // what keeps this story from reaching the format.
+  // THE COMMAND WAS UNTOUCHED BY STORY 16.1, AT TWELVE FIELDS.
+  // `embedFontFamilyCommand` already demands exactly what a `.folio` requires
+  // and Go refuses the pick without it, so changing the SOURCE of those values
+  // while leaving that guard in place is what kept THAT story from reaching the
+  // format. (spec-font-sources-and-embedding story 5 has since taken it to
+  // THIRTEEN, adding `authorAcknowledged`; the reasoning above is about story
+  // 16.1's change and is left as the record of it.)
   //
   // THE PROPOSED TAIL IS COMPUTED HERE and is a PROPOSAL, not a rule: the
   // shipped faces for the scripts the picked face does not cover, in the order
@@ -2709,7 +2712,17 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
    */
   const dispatchEmbed = async (face: ResolvedFace, responseGeneration: number, selectionKey: string, announce: 'panel' | 'caller'): Promise<string | undefined> => {
     const tail = proposedFallbackTail(face.scripts)
-    return sendFontChain(embedFontFamilyCommand({ chain: face.family, family: face.family, style: face.style, licence: face.licence, licenceText: face.licenceText, copyright: face.copyright, source: face.source, mediaType: face.mediaType, bytes: face.bytes, tail }), { action: 'embed' }, responseGeneration, selectionKey, announce)
+    // TODO(story 6): `authorAcknowledged` is hard-coded `false` here because
+    // this path serves the CATALOGUE tier, for which `false` is the right and
+    // permanent answer. It is wrong for an author-supplied face: story 3 writes
+    // imported faces into the same `font-store` as catalogue ones and
+    // `StoredFace` carries no acknowledgement field, so a face the author
+    // imported and acknowledged reaches this line as `false` and is refused by
+    // the engine with no explanation. Story 6 must carry the acknowledgement
+    // from `font-import.ts`'s `acknowledgedFace` through the store and into
+    // this argument — ONE source of truth about one face (D3), never a second
+    // inference from `source`.
+    return sendFontChain(embedFontFamilyCommand({ chain: face.family, family: face.family, style: face.style, licence: face.licence, licenceText: face.licenceText, copyright: face.copyright, source: face.source, authorAcknowledged: false, mediaType: face.mediaType, bytes: face.bytes, tail }), { action: 'embed' }, responseGeneration, selectionKey, announce)
   }
 
   /**
@@ -3265,10 +3278,13 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
           // must record ONE vocabulary whichever tier served the bytes, and the
           // store's is the one every existing `.folio` already carries. See
           // `CATALOGUE_CUT_STYLES`.
+          // TODO(story 6): `false` is correct for this catalogue row and wrong
+          // for an author-supplied face — see `dispatchEmbed`'s TODO for what
+          // must replace it.
           members.push(embedFontCutFragment({
             chain: plan.chain, index: plan.index, cut: plan.cut,
             family: plan.face.family, style: ribbiCutOf(plan.cut), licence: plan.face.licence, licenceText: plan.face.licenceText,
-            copyright: plan.face.copyright, source: plan.face.source, mediaType: 'font/ttf', bytes,
+            copyright: plan.face.copyright, source: plan.face.source, authorAcknowledged: false, mediaType: 'font/ttf', bytes,
           }))
           continue
         }
@@ -3308,10 +3324,13 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
         // is a listing row and carries every field; the read is what carries
         // the BYTES, and taking the terms from the same object as the bytes is
         // what stops a record and a binary ever being paired from two reads.
+        // TODO(story 6): the record travels from the store, and the store does
+        // not yet hold an acknowledgement — see `dispatchEmbed`'s TODO. `false`
+        // is right for every catalogue face this path serves today.
         members.push(embedFontCutFragment({
           chain: plan.chain, index: plan.index, cut: plan.cut,
           family: held.family, style: held.style, licence: held.licence, licenceText: held.licenceText,
-          copyright: held.copyright, source: held.source, mediaType: held.mediaType, bytes: held.bytes,
+          copyright: held.copyright, source: held.source, authorAcknowledged: false, mediaType: held.mediaType, bytes: held.bytes,
         }))
       }
       members.push(updateComponentPropertiesFragment(ids, intent))

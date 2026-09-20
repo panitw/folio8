@@ -20,7 +20,7 @@
 // THE FIELD COUNT IS PART OF THE CONTRACT. componentFields(raw, N) counts
 // every top-level key, `kind` and `version` included, and refuses anything
 // else: add 4, rename 4, delete 3, addEntry 5, moveEntry 5, removeEntry 4,
-// embedFontFamily 12. An extra field is not ignored, it is a refusal — which
+// embedFontFamily 13. An extra field is not ignored, it is a refusal — which
 // is why every builder below still lists its own fields, in order, at the
 // call site.
 //
@@ -28,15 +28,22 @@
 // `entries` and `embedFontFamily`'s `tail` used to be arrays of strings and
 // are now arrays of `FontChainEntryAsk` — the format's own chain-entry shape,
 // so a pick can DECLARE the cuts a family has instead of writing a chain that
-// can never bold. Both arities are exactly what they were.
+// can never bold. Both arities were exactly what they were.
+//
+// spec-font-sources-and-embedding STORY 5 THEN MOVED BOTH EMBED ARITIES BY
+// ONE: `authorAcknowledged` joins `embedFontFamily` (12 → 13) and
+// `embedFontCut` (13 → 14). Every other builder here is untouched.
 import type { JsonField } from './command-json'
-import { commandBytes, commandFragment, jsonArray, jsonNumber, jsonObject, jsonString } from './command-json'
+import { commandBytes, commandFragment, jsonArray, jsonBoolean, jsonNumber, jsonObject, jsonString } from './command-json'
 
 const quote = jsonString
 // Go reads these with commandInt, which requires an integer literal. They are
 // browser-derived list positions, never author text, and they are still
 // encoded rather than spliced so this module has exactly one encoder.
 const index = jsonNumber
+// The acknowledgement is a JSON boolean and Go reads it with commandBool: a
+// string `"true"` is refused, so it is encoded here rather than spliced.
+const boolean = jsonBoolean
 
 /**
  * A CHAIN ENTRY AS A COMMAND MAY ASK FOR IT — the FORMAT'S OWN chain-entry
@@ -124,6 +131,17 @@ export function removeFontChainEntryCommand(name: string, at: number): ArrayBuff
 // the same reason setComponentAssetCommand does it: the command is one opaque
 // JSON document on one protocol, and a second framing for one command kind
 // would be a second protocol.
+//
+// `authorAcknowledged` IS ALWAYS ON THE WIRE, NEVER CONDITIONAL, and a
+// catalogue pick sends `false`. The engine counts every top-level key
+// (`componentFields`), so a key the designer sometimes omitted would be an
+// arity refusal on whichever path was not the one under test — the exact
+// drift `embedFontCutFields` exists to prevent. Go records it only when it is
+// `true`, so a `false` costs a catalogue document no bytes.
+//
+// It is the ONE field on this command about which this module still knows
+// nothing: whether the author acknowledged is decided where the face was
+// imported, and Go decides what the acknowledgement admits.
 export function embedFontFamilyCommand(face: {
   chain: string
   family: string
@@ -132,6 +150,7 @@ export function embedFontFamilyCommand(face: {
   licenceText: string
   copyright: string
   source: string
+  authorAcknowledged: boolean
   mediaType: string
   bytes: ArrayBuffer
   tail: ReadonlyArray<FontChainEntryAsk>
@@ -141,6 +160,7 @@ export function embedFontFamilyCommand(face: {
     ['family', quote(face.family)], ['style', quote(face.style)],
     ['licence', quote(face.licence)], ['licenceText', quote(face.licenceText)],
     ['copyright', quote(face.copyright)], ['source', quote(face.source)],
+    ['authorAcknowledged', boolean(face.authorAcknowledged)],
     ['mediaType', quote(face.mediaType)], ['data', quote(base64(face.bytes))],
     ['tail', jsonArray(face.tail.map(chainEntry))],
   ])
@@ -176,6 +196,7 @@ export type FontCutAsk = Readonly<{
   licenceText: string
   copyright: string
   source: string
+  authorAcknowledged: boolean
   mediaType: string
   bytes: ArrayBuffer
 }>
@@ -186,13 +207,16 @@ export type FontCutAsk = Readonly<{
 // each listing 11 fields is a pair that can drift by one key — into an arity
 // refusal the author sees only on whichever path was not the one under test.
 //
-// THIRTEEN FIELDS ON THE WIRE: these eleven plus `kind` and `version`, which
-// the envelope adds. `componentFields(raw, 13)` counts every top-level key.
+// FOURTEEN FIELDS ON THE WIRE: these twelve plus `kind` and `version`, which
+// the envelope adds. `componentFields(raw, 14)` counts every top-level key.
+// The twelfth is `authorAcknowledged` — see `embedFontFamilyCommand` for why
+// it is always written and never conditional.
 const embedFontCutFields = (cut: FontCutAsk): ReadonlyArray<JsonField> => [
   ['name', quote(cut.chain)], ['index', index(cut.index)], ['cut', quote(cut.cut)],
   ['family', quote(cut.family)], ['style', quote(cut.style)],
   ['licence', quote(cut.licence)], ['licenceText', quote(cut.licenceText)],
   ['copyright', quote(cut.copyright)], ['source', quote(cut.source)],
+  ['authorAcknowledged', boolean(cut.authorAcknowledged)],
   ['mediaType', quote(cut.mediaType)], ['data', quote(base64(cut.bytes))],
 ]
 

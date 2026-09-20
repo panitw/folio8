@@ -744,11 +744,69 @@ type FontRecord struct {
 	Copyright Presence[string]
 	Source    Presence[string]
 
+	// AuthorAcknowledged is the author's acknowledgement, recorded on the
+	// face it admitted (spec-font-sources-and-embedding CAP-6): the author
+	// said, at import, that they hold the right to use and redistribute
+	// this face. It rides ON THE RECORD rather than beside it because the
+	// gesture is made in the designer and the two doors that ask the
+	// licence question are inside the engine — so the only way it reaches
+	// them is in the document. ONE FIELD, BOTH JOBS (D3): what the
+	// document records is what the engine reads, and there is no second
+	// origin discriminant that could disagree with it.
+	//
+	// WHAT IT EXCUSES, AND ONLY THAT (D4). On a record carrying it, blank
+	// `licence`, `licenceText` and `copyright` are legal — at the command
+	// door and at requireEmbeddedFaceLicence — and
+	// fontset.RefuseContradictedLicence is not asked about the face at
+	// all. `family`, `style` and `source` are untouched: they are
+	// IDENTITY, not terms, and the acknowledgement says nothing about
+	// them. Nothing in refuseLicenceSignatures, the admit table or the
+	// silence-admits rule moves; this decides whether the question is put
+	// about a given face, never what the answer is.
+	//
+	// ⚠ IT ASSERTS, AND IT DOES NOT PROVE. The file cannot say who made
+	// the acknowledgement or whether it was true, and anyone hand-writing
+	// a `.folio` can set it. That is accepted deliberately — it is the
+	// same position the product already takes on the author's own
+	// responsibility for the faces they license — and it is written HERE,
+	// where the field is defined, rather than left for a reader of the
+	// format to deduce from the doors it opens.
+	//
+	// THE CATALOGUE TIER NEVER WRITES ONE. A face Folio distributes
+	// carries real terms and passes its own build-time licence gate; a
+	// catalogue record arriving with this key is a defect, not a
+	// shortcut, and TestACatalogueFaceNeverCarriesAnAcknowledgement says
+	// so.
+	//
+	// Presence, like every other key here: absence and an explicit
+	// `null` must round-trip distinctly, and only `true` acknowledges —
+	// `false` and `null` are records that acknowledge nothing and are
+	// held to every refusal an absent key is.
+	AuthorAcknowledged Presence[bool]
+
 	// Extra carries unknown keys on assets[k].font opaquely (AC8,
 	// D-1.4.9 OWNER) — the same passthrough every other object level in
 	// this model has. NOT the same as FontChainEntry, which deliberately
 	// has none: there the object IS the discriminant.
 	Extra []Field
+}
+
+// Acknowledged is THE ONE PREDICATE every door asks, so that "carrying
+// the acknowledgement" has exactly one spelling across the command door,
+// the load door and the version probe. Three-valued, like every other
+// key on this record: only a present, non-null `true` acknowledges.
+// `false` and `null` are records that acknowledge nothing, and they are
+// held to every refusal an absent key is held to.
+func (r FontRecord) Acknowledged() bool {
+	return r.AuthorAcknowledged.Set && !r.AuthorAcknowledged.Null && r.AuthorAcknowledged.Value
+}
+
+// FaceAcknowledged lifts FontRecord.Acknowledged to the asset, so a
+// caller holding an Asset never has to restate the "record present, not
+// null" preamble — an asset with no `font` record, or an explicit
+// `"font": null`, acknowledges nothing.
+func (a Asset) FaceAcknowledged() bool {
+	return a.Font.Set && !a.Font.Null && a.Font.Value.Acknowledged()
 }
 
 // Asset is one embedded binary asset.

@@ -2,7 +2,7 @@
 
 This is the canonical reference for the `.folio` template format: what every field is called, what
 it means, which values are legal, and what the library does when a file breaks a rule. Format
-version **4.1** is the highest version this library supports.
+version **5.0** is the highest version this library supports.
 
 The format is a public contract, not an implementation detail. A person or a program can write or
 edit a template by hand, without the designer, and a hand-written template renders exactly as a
@@ -97,14 +97,14 @@ instead of accepting it and ignoring it.
 
 ## Versions
 
-`version` is `"MAJOR.MINOR"`. This library supports every version up to and including **4.1**.
+`version` is `"MAJOR.MINOR"`. This library supports every version up to and including **5.0**.
 
 **Loading.**
 
-- A document whose `MAJOR` is higher than the library's (`4`) is a load error
+- A document whose `MAJOR` is higher than the library's (`5`) is a load error
   (`TEMPLATE_MALFORMED`), never a best-effort render. So is a `version` that is not of the form
   `MAJOR.MINOR`.
-- A document with a supported `MAJOR` and a higher `MINOR` (say `4.7`) loads. Keys the library does
+- A document with a supported `MAJOR` and a higher `MINOR` (say `5.7`) loads. Keys the library does
   not know are carried through verbatim and written back on save.
 
 **The ladder.** A file declares the lowest version its own content requires. The first matching row,
@@ -112,6 +112,7 @@ from the top, decides:
 
 | Version | Required when the document… |
 |---|---|
+| `5.0` | names, from any chain in `fonts`, an asset whose `font` record carries `authorAcknowledged: true` — as the entry's own `asset` value **or** as one of its `bold`/`italic`/`boldItalic` style variants (see [*A font asset*](#a-font-asset)) |
 | `4.1` | lists `pages` (see [*Designed pages*](#designed-pages)), or a content band or page declares `sectionBreak` or `sectionBreakAnchor` (see [*Pagination*](#pagination)) |
 | `4.0` | has any element whose `type` is `barcode` or `qrcode` |
 | `3.3` | has a text expression (a text element's `value` or a column's `bind`) statically known to be able to return a number (see [*Expressions*](#expressions)) |
@@ -980,6 +981,67 @@ rule.**
 These required keys add no version trigger. They can only be required on an asset a chain names by
 `{"asset": key}` (or as an embedded variant), and that entry shape already requires `2.0`; they are a
 record *about* the asset and reach no output byte.
+
+#### `authorAcknowledged`
+
+*Optional. A boolean.* The author's acknowledgement, recorded on the face it admitted: the person who
+authored the document stated, when they imported this face from their own machine, that they hold the
+right to use and redistribute it.
+
+`true` — and only a present, non-`null` `true` — **excuses `licence`, `licenceText` and `copyright`
+from the rule above**: on an acknowledged record all three may be absent, `null` or empty, and the
+document still loads. A face an author supplies off their own disk carries whatever its binary's
+`name` table happens to say, which is very often nothing, and the acknowledgement is what stands in
+place of the terms it cannot state. It is honoured at **both** doors that ask a licence question: the
+load rule above, and the writer's own refusal to embed a face whose `name` table names a copyleft or
+share-alike licence. It excuses **nothing else** — `family`, `style` and `source` are identity, not
+terms, and the acknowledgement says nothing about them.
+
+`false` and `null` acknowledge nothing and are held to every rule an absent key is held to. The key
+is written only when it is `true`, so a face that carries no acknowledgement carries no key either. Any
+other value — a string, a number, an object — is a **load error** (`TEMPLATE_FIELD_INVALID`) located
+at `assets.<key>.font.authorAcknowledged`. It is refused where it is written, not carried through as
+an unknown key: the three-way distinction between absent, `null` and set is the whole of what this
+key means, and a spelling outside it says nothing a reader could act on.
+
+```json
+"assets": {
+  "3f1c8ab27d4e5069b1a3c7e0d582f46b9c0e13a7d4b6f28e05c9a71d3b4e6f80": {
+    "data": ["AAEAAAAP…"],
+    "font": {
+      "authorAcknowledged": true,
+      "family": "Brand Grotesk",
+      "source": "imported from the author's own machine, acknowledged 2026-09-21",
+      "style": "Regular"
+    },
+    "mediaType": "font/otf"
+  }
+}
+```
+
+> ⚠ **It asserts; it does not prove.** The file cannot say who made the acknowledgement or whether it
+> was true, and anyone hand-writing a `.folio` can set it. That is accepted deliberately: holding the
+> right licence for a font the author loads is the author's responsibility, not this format's. A
+> reader must not treat this key as evidence of anything beyond the assertion having been recorded.
+
+A face this library's **own catalogue** distributes never carries one: such a face passes a build-time
+licence gate and states real terms, so an acknowledgement on a catalogue face is a defect rather than
+a shortcut.
+
+Because a `4.x` reader carries this key through — the `font` record's key set is open — and then
+refuses the document on exactly the terms the key exists to excuse, a document whose chain names an
+acknowledged asset requires `5.0`. An acknowledged asset **no chain names** raises nothing, on the
+same rule as every other font asset: the trigger is the entry, not the asset. A **style variant** naming an acknowledged asset
+— `{"asset": "<regular>", "bold": "<the author's own cut>"}` — triggers it exactly as the entry's own
+`asset` value does, because the load rule above is asked about that sibling too.
+
+**And it says nothing about [`embedFonts`](#document).** The two keys never meet: this one lives on
+an embedded asset's record, and `embedFonts: false` is a document that carries no font assets at all,
+so there is nowhere for an acknowledgement to sit and the `5.0` row cannot apply. Turning embedding
+off strips the faces and their records together — the acknowledgement goes with the bytes it was
+about, because it was never a statement about the document. (`version` is never lowered on save, so a
+document that once carried an acknowledged face keeps whatever version it was last written with.)
+Neither key implies, permits or refuses the other.
 
 **`mediaType` is an OPEN set for fonts exactly as it is for images.** It is not one of the closed
 sets listed in [*Closed sets*](#closed-sets) and it never will be: a closed set can only be extended by

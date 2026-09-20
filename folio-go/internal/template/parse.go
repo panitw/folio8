@@ -776,6 +776,17 @@ func decodeFontChainEntry(raw json.RawMessage, field string, assets map[string]A
 // whoever adds that signature. folio-go/v1.0.0 shipped with this door still
 // open.
 //
+// ⚠ AND WHEN THAT SECOND DOOR IS OPENED, IT MUST SKIP AN ACKNOWLEDGED RECORD —
+// this is a REQUIREMENT ON THE PERSON WHO OPENS IT, not a note (CAP-6, and the
+// two call sites in `component_commands.go` already do it). An author-supplied
+// face is admitted on the author's own word precisely because its binary may
+// name terms this product takes no position on, copyleft included. A load-time
+// contradiction check that did not exempt `authorAcknowledged` would make every
+// acknowledged copyleft face saved before that day UNOPENABLE the day it lands —
+// a compatibility break arriving as a refusal on the one class of document the
+// key exists to admit, and one no version bump would announce, because those
+// files already declare 5.0.
+//
 // AND THE ONE DOOR THAT DOES EXIST MUST STAY PROVABLY PRESENT: Story 16.1b's
 // test that a contradiction is refused at the command may not be deleted on the
 // reasoning that the load path covers it. It does not.
@@ -787,6 +798,28 @@ func requireEmbeddedFaceLicence(asset Asset, key, entryField string) error {
 	}
 	if !asset.Font.Set || asset.Font.Null {
 		return missing("licence")
+	}
+	// THE ACKNOWLEDGEMENT EXCUSES THE THREE TERMS FIELDS, AND NOTHING ELSE
+	// (spec-font-sources-and-embedding CAP-6, D4). A face the author
+	// supplied off their own disk arrives with whatever its binary's name
+	// table happens to say, which is very often nothing — the import
+	// transcribes name IDs 0/13/14 verbatim and never composes a value
+	// nobody read — so the record this function exists to demand is the
+	// record such a face cannot produce. The author's acknowledgement is
+	// what stands in place of it: they said they hold the right to use and
+	// redistribute this face, and the product takes no further position.
+	//
+	// It is asked BEFORE the three checks and AFTER the record-present one,
+	// deliberately. A record that is absent or null carries no
+	// acknowledgement to read, so that refusal is untouched; and the
+	// acknowledgement cannot reach `family`, `style` or `source`, which
+	// this function never asked about anyway.
+	//
+	// The corresponding relaxation at the command door is
+	// embeddedFontRecord's; a guard honoured at one door only is a document
+	// that saves and will not reopen, or one the author cannot create.
+	if asset.Font.Value.Acknowledged() {
+		return nil
 	}
 	for _, required := range []struct {
 		name  string
@@ -995,6 +1028,27 @@ func decodeAssetFont(aObj map[string]json.RawMessage, consumed map[string]bool, 
 			return absent[FontRecord](), newLoadError(field+"."+kv.key, "", string(v), "must be a string: "+serr.Error())
 		}
 		*kv.dst = present(sv)
+	}
+	// THE ACKNOWLEDGEMENT (spec-font-sources-and-embedding CAP-6). Decoded
+	// beside the six strings rather than with them because it is the one
+	// key here that is not a string, and a boolean read through
+	// decodeStringRaw would be refused as a wrong type rather than read.
+	//
+	// AN EXPLICIT NULL IS NOT ABSENCE, exactly as above: `null` round-trips
+	// as `null` and acknowledges nothing (FontRecord.Acknowledged), so a
+	// record spelling it is still held to every refusal an absent key is.
+	if v, declared := obj["authorAcknowledged"]; declared {
+		inner["authorAcknowledged"] = true
+		if rawIsNull(v) {
+			rec.AuthorAcknowledged = presentNull[bool]()
+		} else {
+			bv, berr := decodeBoolRaw(v)
+			if berr != nil {
+				return absent[FontRecord](), newLoadError(field+".authorAcknowledged", "", string(v),
+					"must be a boolean: "+berr.Error())
+			}
+			rec.AuthorAcknowledged = present(bv)
+		}
 	}
 	extra, err := extraFields(obj, inner)
 	if err != nil {

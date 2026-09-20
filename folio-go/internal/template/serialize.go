@@ -345,7 +345,20 @@ func writeFontChain(dst []byte, depth int, chain []FontChainEntry) []byte {
 // explicit null round-trips as null, rather than the two collapsing into
 // one spelling on the way out.
 func writeFontRecord(dst []byte, depth int, r FontRecord) []byte {
-	fields := make([]kv, 0, 6+len(r.Extra))
+	fields := make([]kv, 0, 7+len(r.Extra))
+	// The acknowledgement (CAP-6), emitted on the SAME terms as the six
+	// strings: only when SET, so a record that never carried one writes
+	// exactly the bytes it wrote before this key existed, and an explicit
+	// `null` round-trips as `null` rather than collapsing into absence.
+	// writeObject sorts, so it lands first whatever order this is written
+	// in.
+	if r.AuthorAcknowledged.Set {
+		if r.AuthorAcknowledged.Null {
+			fields = append(fields, kv{"authorAcknowledged", writeNull()})
+		} else {
+			fields = append(fields, kv{"authorAcknowledged", writeBool(r.AuthorAcknowledged.Value)})
+		}
+	}
 	for _, f := range []struct {
 		key string
 		val Presence[string]

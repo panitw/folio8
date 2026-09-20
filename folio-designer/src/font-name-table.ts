@@ -23,7 +23,7 @@
 // hand below.
 //
 // THIS MODULE ANSWERS A DIFFERENT QUESTION FROM GO'S READER, and the duplication
-// is forced rather than chosen. `copyright` is one of `embedFontFamily`'s twelve
+// is forced rather than chosen. `copyright` is one of `embedFontFamily`'s thirteen
 // wire fields, so Go cannot supply an input to itself; Go reads the name table
 // again, from the same bytes, for its own question (Story 16.1b's licence tie).
 // Two readers answering two questions is correct here — one reader would be a

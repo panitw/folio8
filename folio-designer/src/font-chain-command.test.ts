@@ -13,10 +13,10 @@ const parsed = (payload: ArrayBuffer): Record<string, unknown> => JSON.parse(tex
 const awkward = 'a"b\\c'
 const controlled = 'a\u0001b'
 
-// The twelve fields `embedFontFamily` requires, minus the one under test. The
+// The thirteen fields `embedFontFamily` requires, minus the one under test. The
 // bytes are one byte of nothing: this file asserts the WIRE, and Go is what
 // decides whether a face is readable.
-const pick = { chain: 'Inter', family: 'Inter', style: 'Regular', licence: 'OFL-1.1', licenceText: 'terms', copyright: 'c', source: 'https://example.invalid', mediaType: 'font/ttf', bytes: new Uint8Array([0]).buffer, tail: [] as ReadonlyArray<string> }
+const pick = { chain: 'Inter', family: 'Inter', style: 'Regular', licence: 'OFL-1.1', licenceText: 'terms', copyright: 'c', source: 'https://example.invalid', authorAcknowledged: false, mediaType: 'font/ttf', bytes: new Uint8Array([0]).buffer, tail: [] as ReadonlyArray<string> }
 
 describe('the six font chain commands are exactly the payloads the engine reads', () => {
   it('encodes every kind with its exact field arity', () => {
@@ -49,7 +49,7 @@ describe('the six font chain commands are exactly the payloads the engine reads'
       // THE SAME COUNT AND THE SAME KEYS with an object entry. A row that only
       // ever passed bare strings could not see route C move an arity.
       [addFontChainCommand('heading', [{ face: 'Roboto', bold: 'Roboto Bold' }]), 4, ['kind', 'version', 'name', 'entries']],
-      [embedFontFamilyCommand({ ...pick, tail: [{ face: 'Noto Sans Thai', bold: 'Noto Sans Thai Bold' }] }), 12, ['kind', 'version', 'name', 'family', 'style', 'licence', 'licenceText', 'copyright', 'source', 'mediaType', 'data', 'tail']],
+      [embedFontFamilyCommand({ ...pick, tail: [{ face: 'Noto Sans Thai', bold: 'Noto Sans Thai Bold' }] }), 13, ['kind', 'version', 'name', 'family', 'style', 'licence', 'licenceText', 'copyright', 'source', 'authorAcknowledged', 'mediaType', 'data', 'tail']],
       [renameFontChainCommand('body', 'text'), 4, ['kind', 'version', 'name', 'to']],
       [deleteFontChainCommand('body'), 3, ['kind', 'version', 'name']],
       [addFontChainEntryCommand('body', 0, 'Noto Sans'), 5, ['kind', 'version', 'name', 'index', 'face']],
@@ -118,14 +118,17 @@ describe('the embed command carries everything the document must record', () => 
     licenceText: 'Copyright (c) 2020 The Inter Project Authors\n\nThis Font Software is licensed under the SIL Open Font License, Version 1.1.',
     copyright: 'Copyright (c) 2020 The Inter Project Authors',
     source: 'folio-designer/public/fonts/inter/Inter-Regular.ttf',
+    // A CATALOGUE PICK, so the acknowledgement is `false` — and it is still on
+    // the wire, because the arity counts it either way.
+    authorAcknowledged: false,
     mediaType: 'font/ttf',
     bytes: new Uint8Array([0x00, 0x01, 0x00, 0x00, 0xff]).buffer,
     tail: ['Noto Sans Thai', 'Noto Sans SC'],
   }
 
-  it('sends twelve fields, the face as base64, and the proposed tail verbatim', () => {
+  it('sends thirteen fields, the face as base64, and the proposed tail verbatim', () => {
     const command = parsed(embedFontFamilyCommand(face))
-    expect(Object.keys(command)).toHaveLength(12)
+    expect(Object.keys(command)).toHaveLength(13)
     expect(command).toEqual({
       kind: 'embedFontFamily',
       version: 1,
@@ -136,6 +139,7 @@ describe('the embed command carries everything the document must record', () => 
       licenceText: face.licenceText,
       copyright: face.copyright,
       source: face.source,
+      authorAcknowledged: false,
       mediaType: 'font/ttf',
       data: 'AAEAAP8=',
       tail: ['Noto Sans Thai', 'Noto Sans SC'],
@@ -172,13 +176,25 @@ describe('the embed command carries everything the document must record', () => 
     expect(text(embedFontFamilyCommand({ ...face, licenceText: awkward }))).toContain('\\u0001')
   })
 
+  // THE `true` PATH. Every other case in this file sends `false`, so a builder
+  // that encoded the flag as the STRING `"true"` — which Go refuses with
+  // `commandBool`, and which `quote` would have produced had the field been
+  // added beside the six string rows — would be caught only by the engine, on a
+  // path no designer test walks. It is a JSON boolean here or an author's
+  // import is refused with a sentence about a field they never saw.
+  it('encodes an acknowledged face as a JSON boolean', () => {
+    expect(text(embedFontFamilyCommand({ ...face, authorAcknowledged: true }))).toContain('"authorAcknowledged":true')
+    expect(text(embedFontFamilyCommand({ ...face, authorAcknowledged: true }))).not.toContain('"authorAcknowledged":"true"')
+    expect(parsed(embedFontFamilyCommand({ ...face, authorAcknowledged: true }))['authorAcknowledged']).toBe(true)
+  })
+
   it('sends an empty tail as an empty array rather than omitting the field', () => {
     // A face that covers every script the document renders needs no fallback
     // behind it — but the field is still counted by componentFields, so
     // omitting it would be an arity refusal rather than an empty chain tail.
     const command = parsed(embedFontFamilyCommand({ ...face, tail: [] }))
     expect(command['tail']).toEqual([])
-    expect(Object.keys(command)).toHaveLength(12)
+    expect(Object.keys(command)).toHaveLength(13)
   })
 })
 
@@ -200,14 +216,15 @@ describe('the cut command attaches one variant asset key and carries its own ter
     licenceText: 'This Font Software is licensed under the SIL Open Font License, Version 1.1.',
     copyright: 'Copyright 2018 The Sarabun Project Authors',
     source: 'google/fonts — ofl/sarabun/Sarabun-Bold.ttf, fetched 2026-09-20',
+    authorAcknowledged: false,
     mediaType: 'font/ttf',
     bytes: new Uint8Array([0x00, 0x01, 0x00, 0x00, 0xff]).buffer,
   }
 
-  it('sends thirteen fields, in order, with the face as base64', () => {
+  it('sends fourteen fields, in order, with the face as base64', () => {
     const command = parsed(embedFontCutCommand(cut))
-    expect(Object.keys(command)).toEqual(['kind', 'version', 'name', 'index', 'cut', 'family', 'style', 'licence', 'licenceText', 'copyright', 'source', 'mediaType', 'data'])
-    expect(Object.keys(command)).toHaveLength(13)
+    expect(Object.keys(command)).toEqual(['kind', 'version', 'name', 'index', 'cut', 'family', 'style', 'licence', 'licenceText', 'copyright', 'source', 'authorAcknowledged', 'mediaType', 'data'])
+    expect(Object.keys(command)).toHaveLength(14)
     expect(command).toEqual({
       kind: 'embedFontCut',
       version: 1,
@@ -220,10 +237,23 @@ describe('the cut command attaches one variant asset key and carries its own ter
       licenceText: cut.licenceText,
       copyright: cut.copyright,
       source: cut.source,
+      authorAcknowledged: false,
       mediaType: 'font/ttf',
       // base64 of 00 01 00 00 ff — the same encoder the pick uses.
       data: 'AAEAAP8=',
     })
+  })
+
+  // THE `true` PATH AT THE CUT DOOR — see the pick's twin for why it is worth
+  // its own case.
+  it('encodes an acknowledged cut as a JSON boolean', () => {
+    expect(text(embedFontCutCommand({ ...cut, authorAcknowledged: true }))).toContain('"authorAcknowledged":true')
+    expect(text(embedFontCutCommand({ ...cut, authorAcknowledged: true }))).not.toContain('"authorAcknowledged":"true"')
+    expect(parsed(embedFontCutCommand({ ...cut, authorAcknowledged: true }))['authorAcknowledged']).toBe(true)
+    // AND THE FRAGMENT IS THE SAME BYTES, which is the property the shared
+    // field list exists for — a command sent alone and the same command sent
+    // inside a unit must not differ by this field either.
+    expect(embedFontCutFragment({ ...cut, authorAcknowledged: true })).toBe(text(embedFontCutCommand({ ...cut, authorAcknowledged: true })))
   })
 
   it('carries the index as a JSON number, never as a string', () => {

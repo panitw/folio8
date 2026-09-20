@@ -44,7 +44,7 @@ Points rather than raw millipoints because a hand-editor writes `"x": 36`, not `
 
 | Field | Meaning |
 |---|---|
-| `version` | `"MAJOR.MINOR"`. A higher `MAJOR` than the library supports is a load error, never a best-effort render (FR13). **It describes the document, not the writer**: a file declares the lowest version its own content requires — `4.1` if the document lists `pages` (see *Designed pages*) or a content band or page declares `sectionBreak` or `sectionBreakAnchor` (see *Pagination*), else `4.0` if any element is a `barcode` or a `qrcode`, else `3.3` if any text expression (a text element's `value` or a column's `bind`) is statically known to be able to return a number (see *Expressions*), else `3.2` if any table column declares `headerAlign`, else `3.1` if a table declares `rules` or `minHeight`, else `3.0` if a table declares a total `width` with proportional columns, else `2.0` if any style sets `align: "justify"` (which only a **non-table** element's `style` can, see *Alignment is four closed sets* below) **or any expression container uses formula syntax or boolean/null literals** (see *Expressions*) **or any chain in `fonts` declares an entry that serialises as an OBJECT** — an embedded face, or a face carrying style variants (see *`fonts`* below), else `1.2` if any element sets `keepTogether`, else `1.1` if any style sets `lineSpacing` or `color`, else `1.0` — and the rule is applied **on save**, in terms of what the document SERIALISES to: saving raises the version to the **highest** requirement the document's own written form actually carries, never lowers it, and never stamps the library's own ceiling on a document that does not need it. (So `{"face": "X"}` with no variants, which canonicalises back to the bare string `"X"`, raises nothing.) They coexist: a document using none of those keys still declares `1.0` however new the library that wrote it. |
+| `version` | `"MAJOR.MINOR"`. A higher `MAJOR` than the library supports is a load error, never a best-effort render (FR13). **It describes the document, not the writer**: a file declares the lowest version its own content requires — `5.0` if any chain in `fonts` names an asset whose `font` record carries `authorAcknowledged: true` — as an entry's own `asset` value or as one of its `bold`/`italic`/`boldItalic` style variants (see *A font asset* below), else `4.1` if the document lists `pages` (see *Designed pages*) or a content band or page declares `sectionBreak` or `sectionBreakAnchor` (see *Pagination*), else `4.0` if any element is a `barcode` or a `qrcode`, else `3.3` if any text expression (a text element's `value` or a column's `bind`) is statically known to be able to return a number (see *Expressions*), else `3.2` if any table column declares `headerAlign`, else `3.1` if a table declares `rules` or `minHeight`, else `3.0` if a table declares a total `width` with proportional columns, else `2.0` if any style sets `align: "justify"` (which only a **non-table** element's `style` can, see *Alignment is four closed sets* below) **or any expression container uses formula syntax or boolean/null literals** (see *Expressions*) **or any chain in `fonts` declares an entry that serialises as an OBJECT** — an embedded face, or a face carrying style variants (see *`fonts`* below), else `1.2` if any element sets `keepTogether`, else `1.1` if any style sets `lineSpacing` or `color`, else `1.0` — and the rule is applied **on save**, in terms of what the document SERIALISES to: saving raises the version to the **highest** requirement the document's own written form actually carries, never lowers it, and never stamps the library's own ceiling on a document that does not need it. (So `{"face": "X"}` with no variants, which canonicalises back to the bare string `"X"`, raises nothing.) They coexist: a document using none of those keys still declares `1.0` however new the library that wrote it. |
 | `locale` | One tag from the closed set `en`, `th`, `zh-Hans`, `ja`. An unlisted tag is a load error (AD-12). |
 | `utcOffset` | Fixed offset, `±HH:MM`. The engine reads no host time zone. |
 | `page` | Page setup (below). |
@@ -917,6 +917,46 @@ rule.**
   passed on by itself must still carry its own terms, which a single document-level notice block
   would not survive.
 
+```json
+"assets": {
+  "3f1c8ab27d4e5069b1a3c7e0d582f46b9c0e13a7d4b6f28e05c9a71d3b4e6f80": {
+    "data": ["AAEAAAAP…"],
+    "font": {
+      "authorAcknowledged": true,
+      "family": "Brand Grotesk",
+      "source": "imported from the author's own machine, acknowledged 2026-09-21",
+      "style": "Regular"
+    },
+    "mediaType": "font/otf"
+  }
+}
+```
+
+**`authorAcknowledged`** (*optional, boolean*, spec-font-sources-and-embedding CAP-6) is the
+author's acknowledgement, recorded on the face it admitted: the author stated, when they imported
+this face from their own machine, that they hold the right to use and redistribute it. A present,
+non-`null` `true` — and nothing else — **excuses `licence`, `licenceText` and `copyright` from the
+rule above**, so all three may be absent, `null` or empty on an acknowledged record and the
+document still loads. It is honoured at **both** doors that ask a licence question: the load rule
+above, and the writer's refusal to embed a face whose own `name` table names a copyleft or
+share-alike licence. It excuses **nothing else** — `family`, `style` and `source` are identity, not
+terms. `false` and `null` acknowledge nothing. The key is written only when `true`, so a face that
+carries no acknowledgement carries no key. A catalogue face never carries one. Any other value — a
+string, a number, an object — is a load error located at `assets.<key>.font.authorAcknowledged`,
+refused where it is written rather than carried through as an unknown key: the three-way
+distinction between absent, `null` and set is the whole of what this key means.
+
+**It says nothing about `embedFonts`.** The two keys never meet: this one lives on an embedded
+asset's record, and `embedFonts: false` is a document that carries no font assets at all, so there
+is nowhere for an acknowledgement to sit and the `5.0` trigger cannot apply. Turning embedding off
+strips the faces and their records together. (`version` is never lowered on save.) Neither key
+implies, permits or refuses the other.
+
+> ⚠ **It asserts; it does not prove.** The file cannot say who made the acknowledgement or whether
+> it was true, and anyone hand-writing a `.folio` can set it. That is accepted deliberately: holding
+> the right licence for a font the author loads is the author's responsibility, not this format's. A
+> reader must not treat this key as evidence of anything beyond the assertion having been recorded.
+
 > **THE VERSION TRIGGER AND `SupportedMajor` DO NOT MOVE, and the derivation is here rather than
 > asserted.** `version` describes the document (D-1.4.13) and a file declares the lowest version its
 > own content requires (above). D-7.3.1's test is: *would a pre-`2.0` reader refuse this file, or
@@ -929,6 +969,18 @@ rule.**
 > asset and reach no output byte, so no pre-`2.0` reader could render such a file wrong — it refuses
 > it first, on the entry shape.
 >
+> **AMENDED BY spec-font-sources-and-embedding (2026-09-21): the `authorAcknowledged` key IS a new
+> trigger, and `SupportedMajor` DOES move — to `5`.** The two rulings are consistent, and the
+> difference is what the key changes. The three required keys above are a record *about* the asset
+> and reach no reader's decision; `authorAcknowledged` changes what a reader must **ACCEPT**. A
+> `4.x` reader carries the key through — the `font` record's key set is open — and then refuses the
+> document for blank terms, on exactly the grounds the key exists to excuse. That is D-7.3.1's
+> *refuse* case. So a document whose chain names an acknowledged asset declares `5.0` — whether the
+> entry names it as its own `asset` or as a `bold`/`italic`/`boldItalic` style variant, since the
+> load rule is asked about that sibling too — and this library's ceiling moves 4 → 5. Only a
+> document carrying the construct declares it; an acknowledged asset no chain names raises
+> nothing.
+
 > **`SupportedMajor` stays `2`.** Making the reader stricter about `2.0` documents is not a version
 > trigger: a document has no way to declare "I am missing licence text", so this is reader
 > strictness, and version describes the document, never the writer. Normally that tension would

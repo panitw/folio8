@@ -2274,7 +2274,7 @@ func embedCommandDeclaring(t *testing.T, chain string, face []byte, tail string,
 		`,"family":"Noto Sans Thai","style":"Regular","licence":` + quoteForCommand(t, licence) +
 		`,"licenceText":"This Font Software is licensed under the SIL Open Font License, Version 1.1."` +
 		`,"copyright":"Copyright 2022 The Noto Project Authors","source":"catalogue"` +
-		`,"mediaType":"font/ttf","data":"` + base64.StdEncoding.EncodeToString(face) + `","tail":` + tail + `}`
+		`,"authorAcknowledged":false,"mediaType":"font/ttf","data":"` + base64.StdEncoding.EncodeToString(face) + `","tail":` + tail + `}`
 }
 
 func quoteForCommand(t *testing.T, value string) string {
@@ -3223,14 +3223,14 @@ func TestRouteCWidenedAFieldsShapeAndNoDoorsVERDICT(t *testing.T) {
 	long := strings.Repeat("f", maxCanvasPropertyString+1)
 	// ARITY, ON AN EXISTING FIELD SET AND IN BOTH DIRECTIONS. componentFields
 	// counts an exact arity and route C moved no constant: addFontChain is
-	// still 4 and embedFontFamily still 12. These refusals are UNLOCATED — the
+	// still 4 and embedFontFamily still 13. These refusals are UNLOCATED — the
 	// count is checked before any field is read, so there is no chain name to
 	// name — which is why they are asserted here rather than through
 	// fontChainRefusal.
 	for _, command := range []string{
 		`{"kind":"addFontChain","version":1,"name":"caption","entries":["Noto Sans"],"extra":1}`,
 		`{"kind":"addFontChain","version":1,"name":"caption"}`,
-		`{"kind":"embedFontFamily","version":1,"name":"c","family":"F","style":"Regular","licence":"OFL-1.1","licenceText":"t","copyright":"c","mediaType":"font/ttf","data":"AA==","tail":[]}`,
+		`{"kind":"embedFontFamily","version":1,"name":"c","family":"F","style":"Regular","licence":"OFL-1.1","licenceText":"t","copyright":"c","authorAcknowledged":false,"mediaType":"font/ttf","data":"AA==","tail":[]}`,
 	} {
 		tpl := fontChainTemplate(t)
 		before, err := SerializeTemplate(tpl)
@@ -3358,7 +3358,7 @@ func TestACommandMayNotWriteAnAssetSiblingOrAnUnknownKey(t *testing.T) {
 		// AND THE TAIL TAKES EVERY ONE OF THE SAME RULES, because it is the same
 		// decoder. `data` is one byte of nothing, which never gets read: the
 		// tail is refused before the face is decoded.
-		{`{"kind":"embedFontFamily","version":1,"name":"c","family":"F","style":"Regular","licence":"OFL-1.1","licenceText":"t","copyright":"c","source":"s","mediaType":"font/ttf","data":"AA==","tail":[{"asset":"9f86d0"}]}`, "never an assets key", true},
+		{`{"kind":"embedFontFamily","version":1,"name":"c","family":"F","style":"Regular","licence":"OFL-1.1","licenceText":"t","copyright":"c","source":"s","authorAcknowledged":false,"mediaType":"font/ttf","data":"AA==","tail":[{"asset":"9f86d0"}]}`, "never an assets key", true},
 	} {
 		failure := fontChainRefusal(t, fontChainTemplate(t), probe.command)
 		if !strings.Contains(failure.Message, probe.mustSay) {
@@ -3433,7 +3433,7 @@ func TestTheCommandDoorRefusesEveryNULLShapedHoleInAnEntryObject(t *testing.T) {
 		},
 		{
 			"and the tail takes the same rules, because it is the same decoder",
-			`{"kind":"embedFontFamily","version":1,"name":"c","family":"F","style":"Regular","licence":"OFL-1.1","licenceText":"t","copyright":"c","source":"s","mediaType":"font/ttf","data":"AA==","tail":[{"face":"Noto Sans Thai","bold":null}]}`,
+			`{"kind":"embedFontFamily","version":1,"name":"c","family":"F","style":"Regular","licence":"OFL-1.1","licenceText":"t","copyright":"c","source":"s","authorAcknowledged":false,"mediaType":"font/ttf","data":"AA==","tail":[{"face":"Noto Sans Thai","bold":null}]}`,
 			`"bold" is present and null`,
 		},
 	} {
@@ -3483,7 +3483,7 @@ func TestARepeatedKeyInsideAChainEntryIsRefusedAtTheDoor(t *testing.T) {
 	for _, probe := range []struct{ command, at string }{
 		{`{"kind":"addFontChain","version":1,"name":"caption","entries":[{"face":"A","bold":"B","bold":"C"}]}`, "$.entries[0]"},
 		{`{"kind":"addFontChain","version":1,"name":"caption","entries":["Noto Sans",{"face":"A","face":"B"}]}`, "$.entries[1]"},
-		{`{"kind":"embedFontFamily","version":1,"name":"c","family":"F","style":"Regular","licence":"OFL-1.1","licenceText":"t","copyright":"c","source":"s","mediaType":"font/ttf","data":"AA==","tail":[{"face":"A","italic":"B","italic":"C"}]}`, "$.tail[0]"},
+		{`{"kind":"embedFontFamily","version":1,"name":"c","family":"F","style":"Regular","licence":"OFL-1.1","licenceText":"t","copyright":"c","source":"s","authorAcknowledged":false,"mediaType":"font/ttf","data":"AA==","tail":[{"face":"A","italic":"B","italic":"C"}]}`, "$.tail[0]"},
 	} {
 		tpl := fontChainTemplate(t)
 		_, err := applyComponentCommand(tpl, []byte(probe.command))
@@ -3509,7 +3509,7 @@ func TestARepeatedKeyInsideAChainEntryIsRefusedAtTheDoor(t *testing.T) {
 func TestASelfReferentialVariantThroughTheCOMMANDDoorIsRefused(t *testing.T) {
 	for _, probe := range []struct{ name, command string }{
 		{"entries", `{"kind":"addFontChain","version":1,"name":"caption","entries":[{"face":"Roboto","bold":"Roboto"}]}`},
-		{"a tail entry", `{"kind":"embedFontFamily","version":1,"name":"c","family":"F","style":"Regular","licence":"OFL-1.1","licenceText":"t","copyright":"c","source":"s","mediaType":"font/ttf","data":"AA==","tail":[{"face":"Noto Sans Thai","italic":"Noto Sans Thai"}]}`},
+		{"a tail entry", `{"kind":"embedFontFamily","version":1,"name":"c","family":"F","style":"Regular","licence":"OFL-1.1","licenceText":"t","copyright":"c","source":"s","authorAcknowledged":false,"mediaType":"font/ttf","data":"AA==","tail":[{"face":"Noto Sans Thai","italic":"Noto Sans Thai"}]}`},
 	} {
 		t.Run(probe.name, func(t *testing.T) {
 			failure := fontChainRefusal(t, fontChainTemplate(t), probe.command)
@@ -3595,7 +3595,7 @@ func TestTheCommandDoorsCutSetIsTheFormatsCutSet(t *testing.T) {
 // does not have. `subject` is the fix; this is the test that it is wired up.
 func TestAMalformedTailIsReportedAsTheTailAndNotAsEntries(t *testing.T) {
 	embed := func(tail string) string {
-		return `{"kind":"embedFontFamily","version":1,"name":"c","family":"F","style":"Regular","licence":"OFL-1.1","licenceText":"t","copyright":"c","source":"s","mediaType":"font/ttf","data":"AA==","tail":` + tail + `}`
+		return `{"kind":"embedFontFamily","version":1,"name":"c","family":"F","style":"Regular","licence":"OFL-1.1","licenceText":"t","copyright":"c","source":"s","authorAcknowledged":false,"mediaType":"font/ttf","data":"AA==","tail":` + tail + `}`
 	}
 	// ⚠ `null` is in this table because it was NOT refused when the table was
 	// first written: encoding/json decodes null into a slice as a no-op, so a
@@ -4320,7 +4320,7 @@ func TestClearTableColumnBindingKeepsAggregateSourceValidation(t *testing.T) {
 
 // embedCutCommand builds the command the designer sends when the author
 // presses B on a family whose bold is held. Written out in full for
-// embedCommand's reason — componentFields(raw, 13) counts kind and version
+// embedCommand's reason — componentFields(raw, 14) counts kind and version
 // too, so a builder that quietly dropped a key would move the refusal a test
 // is measuring — and the style/licence are parameters because the two admission
 // gates below read them.
@@ -4337,7 +4337,7 @@ func embedCutCommandDeclaring(t *testing.T, chain string, index int, cut string,
 		`,"licence":` + quoteForCommand(t, licence) +
 		`,"licenceText":"This Font Software is licensed under the SIL Open Font License, Version 1.1."` +
 		`,"copyright":"Copyright 2022 The Noto Project Authors","source":"catalogue"` +
-		`,"mediaType":"font/ttf","data":"` + base64.StdEncoding.EncodeToString(face) + `"}`
+		`,"authorAcknowledged":false,"mediaType":"font/ttf","data":"` + base64.StdEncoding.EncodeToString(face) + `"}`
 }
 
 // embeddedChainTemplate is the precondition every test below shares: a chain
@@ -4608,11 +4608,11 @@ func TestEmbedFontCutClearsTheSameBarAsTheBase(t *testing.T) {
 	})
 }
 
-// TestEmbedFontCutCountsThirteenFields keeps the arity part of the contract.
+// TestEmbedFontCutCountsFourteenFields keeps the arity part of the contract.
 // componentFields is an exact count, so this is the refusal a designer builder
 // that gained or lost a key would earn — unlocated, like every other arity
 // refusal, because nothing has been read yet.
-func TestEmbedFontCutCountsThirteenFields(t *testing.T) {
+func TestEmbedFontCutCountsFourteenFields(t *testing.T) {
 	tpl, _, _ := embeddedChainTemplate(t)
 	full := embedCutCommand(t, "Noto Sans Thai", 0, "bold", testShippedNotoSans)
 	for _, command := range []string{

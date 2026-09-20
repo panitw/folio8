@@ -2057,12 +2057,44 @@ func componentFields(raw map[string]json.RawMessage, want int) error {
 }
 
 func commandString(raw map[string]json.RawMessage, name string) (string, error) {
+	return commandStringField(raw, name, false)
+}
+
+// commandStringField is the ONE body commandString and commandFontRecordString
+// share. They differ in a single bit — whether an empty value is legal — and a
+// second copy of the read would mean a later tightening of commandString (a
+// length cap, a control-character refusal) silently not applying to an
+// acknowledged record's terms fields, which is the one place it would matter
+// least to notice and most to miss.
+//
+// ⚠ NULL IS REFUSED EXPLICITLY, and it has to be: json.Unmarshal of `null`
+// into a string is a NO-OP that leaves the zero value and returns no error, so
+// without this branch `"licence": null` would be recorded as a present empty
+// string. The load path keeps absent, null and empty distinct (presence.go)
+// and this record is three-valued everywhere else; a command door that
+// silently collapsed two of them would hand the loader a document saying
+// something the author did not write.
+func commandStringField(raw map[string]json.RawMessage, name string, blankLegal bool) (string, error) {
 	v, ok := raw[name]
 	if !ok {
 		return "", fmt.Errorf("folio8: %s is required", name)
 	}
+	if commandValueIsNull(v) {
+		if blankLegal {
+			// The acknowledged arm says what to write instead, because here
+			// the empty string IS legal and null is the only spelling refused.
+			return "", fmt.Errorf("folio8: %s must be a string — write \"\" for a record that states nothing, never null", name)
+		}
+		return "", fmt.Errorf("folio8: %s must be a non-empty string", name)
+	}
 	var out string
-	if json.Unmarshal(v, &out) != nil || out == "" {
+	if json.Unmarshal(v, &out) != nil {
+		if blankLegal {
+			return "", fmt.Errorf("folio8: %s must be a string", name)
+		}
+		return "", fmt.Errorf("folio8: %s must be a non-empty string", name)
+	}
+	if !blankLegal && out == "" {
 		return "", fmt.Errorf("folio8: %s must be a non-empty string", name)
 	}
 	return out, nil
@@ -2073,11 +2105,25 @@ func commandBool(raw map[string]json.RawMessage, name string) (bool, error) {
 	if !ok {
 		return false, fmt.Errorf("folio8: %s is required", name)
 	}
+	// NULL IS NOT FALSE. Unmarshalling `null` into a bool is a no-op that
+	// returns no error, so without this branch every boolean command field —
+	// `snap`, `pageBreak`, `anchor`, `embedFonts`, `authorAcknowledged` —
+	// would read an explicit null as the OFF value the author never chose.
+	if commandValueIsNull(v) {
+		return false, fmt.Errorf("folio8: %s must be a boolean", name)
+	}
 	var out bool
 	if json.Unmarshal(v, &out) != nil {
 		return false, fmt.Errorf("folio8: %s must be a boolean", name)
 	}
 	return out, nil
+}
+
+// commandValueIsNull is the JSON null test these two readers share. It trims,
+// because a raw message carries whatever whitespace the encoder left around
+// the token.
+func commandValueIsNull(raw json.RawMessage) bool {
+	return string(bytes.TrimSpace(raw)) == "null"
 }
 
 func componentLength(raw map[string]json.RawMessage, name string, snap bool) (geom.Length, error) {
@@ -4600,7 +4646,7 @@ func dropUnnamedFontAssets(t *Template, removed ...template.FontChainEntry) {
 // unlocated "font chains did not pass format validation": correct, and useless
 // to whoever has to fix it.
 func embedFontFamily(t *Template, raw map[string]json.RawMessage) error {
-	if err := componentFields(raw, 12); err != nil {
+	if err := componentFields(raw, 13); err != nil {
 		return err
 	}
 	name, err := fontChainName(raw, "name")
@@ -4686,8 +4732,20 @@ func embedFontFamily(t *Template, raw map[string]json.RawMessage) error {
 	// a check over them proves nothing).
 	//
 	// Beside the two gates above and BEFORE anything reaches t.doc.Assets.
-	if lerr := fontset.RefuseContradictedLicence(name, record.Licence.Value, decoded); lerr != nil {
-		return componentFailure("", fontChainPath(name), lerr.Error())
+	//
+	// ⚠ AND NOT ASKED AT ALL ABOUT AN ACKNOWLEDGED FACE (CAP-6). The guard's
+	// refuse half consults every face regardless of what is declared for it,
+	// which is exactly right for a face Folio distributes and exactly wrong
+	// for one the author supplied: the owner has ruled that holding the right
+	// licence for a font the author loads is the author's responsibility, so
+	// a binary whose own name table names GPL is theirs to judge. NOTHING
+	// INSIDE THE GUARD MOVES — not refuseLicenceSignatures, not the admit
+	// table, not silence-admits — this decides only whether the question is
+	// put about this face.
+	if !record.Acknowledged() {
+		if lerr := fontset.RefuseContradictedLicence(name, record.Licence.Value, decoded); lerr != nil {
+			return componentFailure("", fontChainPath(name), lerr.Error())
+		}
 	}
 
 	// DEDUPE BY CONTENT HASH (AC2). If ANY chain already names this key the
@@ -4700,6 +4758,14 @@ func embedFontFamily(t *Template, raw map[string]json.RawMessage) error {
 	// embeddedBaseKeyReferenced: asking the variant-aware safety walk here
 	// would make a base pick whose Regular bytes equal another family's
 	// declared bold silently create no chain.
+	// ⚠ BEFORE THE DEDUPE, AND THAT ORDER IS THE POINT. The short-circuit
+	// below says "this pick is already in the document"; a pick that disagrees
+	// with the held record about the acknowledgement is NOT already in the
+	// document, and letting it fall through would answer the author with a
+	// silent no-op over a record that says the opposite of what they asked.
+	if aerr := refuseAcknowledgementMismatch(t, key, record, fontChainPath(name)); aerr != nil {
+		return aerr
+	}
 	if embeddedBaseKeyReferenced(t, key) {
 		return nil
 	}
@@ -4803,7 +4869,7 @@ func embedFontFamily(t *Template, raw map[string]json.RawMessage) error {
 // entry's own AssetKey — so the self-reference rule D-11.2.11 states at load
 // is checked here for free, with no second wire field carrying the base key.
 func embedFontCut(t *Template, raw map[string]json.RawMessage) error {
-	if err := componentFields(raw, 13); err != nil {
+	if err := componentFields(raw, 14); err != nil {
 		return err
 	}
 	name, chain, err := declaredFontChain(t, raw)
@@ -4855,8 +4921,13 @@ func embedFontCut(t *Template, raw map[string]json.RawMessage) error {
 	if verr := fontset.RefuseVariableFace(name, decoded); verr != nil {
 		return componentFailure("", at, verr.Error())
 	}
-	if lerr := fontset.RefuseContradictedLicence(name, record.Licence.Value, decoded); lerr != nil {
-		return componentFailure("", at, lerr.Error())
+	// Skipped for an acknowledged face on embedFontFamily's terms and for its
+	// reasons — read that one; a cut is an embedded face in its own right
+	// (AD-26 / I-7) and nothing about being a bold changes the answer.
+	if !record.Acknowledged() {
+		if lerr := fontset.RefuseContradictedLicence(name, record.Licence.Value, decoded); lerr != nil {
+			return componentFailure("", at, lerr.Error())
+		}
 	}
 	// D-11.2.11 / DW-241 AT THE COMMAND DOOR, exactly as commandFontChainEntries
 	// already checks it for a tail entry. The loader is the authority and would
@@ -4866,6 +4937,15 @@ func embedFontCut(t *Template, raw map[string]json.RawMessage) error {
 	// regular's is no bold at all.
 	if key == entry.AssetKey {
 		return componentFailure("", at, selfReferentialCutReason())
+	}
+	// THE RECORD IS AS FROZEN AS THE BYTES — embedFontFamily's check, at this
+	// door for the same reason. The insert below is "only if absent", so a cut
+	// whose bytes the document already holds keeps the HELD record: without
+	// this, a catalogue cut over an acknowledged face would inherit an
+	// acknowledgement nobody made, and an acknowledged cut over a catalogue
+	// face would have the author's acknowledgement silently dropped.
+	if aerr := refuseAcknowledgementMismatch(t, key, record, at); aerr != nil {
+		return aerr
 	}
 	declared := cut.field(&entry)
 	if *declared == key {
@@ -4939,15 +5019,44 @@ func fontChainEntryPath(name string, index int) string {
 	return truncateAtRuneBoundary("fonts."+name, maxComponentDataPathBytes-len(suffix)) + suffix
 }
 
-// embeddedFontRecord reads the six keys the document will record about the
+// embeddedFontRecord reads the seven keys the document will record about the
 // face. Three of them — licence, licenceText, copyright — are what parse.go
 // REQUIRES of an asset a chain names; family, style and source are display and
 // provenance and are required HERE for a different reason: this command is the
 // designer's only door into the assets map, and a catalogue row that cannot
 // say what the face is or where it came from is a row that should not ship a
 // face into anybody's document.
+//
+// The seventh is the author's acknowledgement (CAP-6), which is a statement
+// about TERMS and excuses exactly the first three — see below.
+//
+// EMITTED ONLY WHEN TRUE, so a catalogue pick's bytes do not move.
 func embeddedFontRecord(raw map[string]json.RawMessage, name string) (template.FontRecord, error) {
 	var record template.FontRecord
+	// THE ACKNOWLEDGEMENT IS READ FIRST, because it decides what the loop
+	// below may admit. It is ALWAYS on the wire — the arity is exact, so
+	// the catalogue tier sends `false` rather than omitting the key, and
+	// there is no shape in which a caller forgets it. Only `true` is
+	// RECORDED: `false` leaves the field absent, so a catalogue pick
+	// writes exactly the bytes it wrote before this key existed and a
+	// catalogue face never carries an acknowledgement in a document
+	// (spec: a catalogue face that arrives carrying one is a defect).
+	acknowledged, err := commandBool(raw, "authorAcknowledged")
+	if err != nil {
+		return template.FontRecord{}, componentFailure("", fontChainPath(name), err.Error())
+	}
+	if acknowledged {
+		record.AuthorAcknowledged = template.Presence[bool]{Set: true, Value: true}
+	}
+	// THE THREE TERMS FIELDS, AND ONLY THOSE, GO BLANK-LEGAL ON AN
+	// ACKNOWLEDGED RECORD (D4) — the same three parse.go's
+	// requireEmbeddedFaceLicence excuses, because the two gates must
+	// admit the same documents or the author gets one that saves and will
+	// not reopen. `family`, `style` and `source` are IDENTITY and stay
+	// required and non-blank whatever was acknowledged: a record that
+	// cannot name its own family is not an acknowledged face, it is a
+	// broken one.
+	terms := map[string]bool{"licence": true, "licenceText": true, "copyright": true}
 	for _, field := range []struct {
 		key string
 		dst *template.Presence[string]
@@ -4959,7 +5068,14 @@ func embeddedFontRecord(raw map[string]json.RawMessage, name string) (template.F
 		{"copyright", &record.Copyright},
 		{"source", &record.Source},
 	} {
-		value, err := commandString(raw, field.key)
+		blankLegal := acknowledged && terms[field.key]
+		// THE KEY IS STILL REQUIRED, AND STILL A STRING, whatever was
+		// acknowledged: what the acknowledgement excuses is an EMPTY value,
+		// never a missing or mistyped one. An acknowledged record therefore
+		// still carries all six keys and still refuses `"licence": 3`, which
+		// is what keeps the arity and the wire shape one thing rather than
+		// two.
+		value, err := commandFontRecordString(raw, field.key, blankLegal)
 		if err != nil {
 			return template.FontRecord{}, componentFailure("", fontChainPath(name), err.Error())
 		}
@@ -4969,7 +5085,12 @@ func embeddedFontRecord(raw map[string]json.RawMessage, name string) (template.F
 		// document its own parser rejects — a correct refusal, arriving as the
 		// unlocated "font chains did not pass format validation". commandString
 		// refuses "" and stops there, so the trim is this function's.
-		if strings.TrimSpace(value) == "" {
+		//
+		// ON AN ACKNOWLEDGED RECORD the three terms fields skip this, because
+		// the load gate skips it too — an author-supplied binary whose name
+		// table says nothing transcribes to three empty strings, which is
+		// precisely the record this command exists to admit now.
+		if !blankLegal && strings.TrimSpace(value) == "" {
 			return template.FontRecord{}, componentFailure("", fontChainPath(name), "folio8: "+field.key+" must be a non-empty string")
 		}
 		// The licence TEXT is the one field with no small legal value, so it
@@ -4982,6 +5103,51 @@ func embeddedFontRecord(raw map[string]json.RawMessage, name string) (template.F
 		*field.dst = template.Presence[string]{Set: true, Value: value}
 	}
 	return record, nil
+}
+
+// refuseAcknowledgementMismatch keeps an embedded face's RECORD as frozen as
+// its bytes are (CAP-6).
+//
+// An assets key IS the content hash, so both embed doors write a face only if
+// its key is absent and otherwise keep the record the document already holds.
+// That is right for every field the two picks agree on and wrong for the one
+// they can disagree about: the acknowledgement is a statement the AUTHOR made
+// about a face, not a property of the bytes, so byte-identical faces can
+// legitimately arrive with and without one. Reachable in one gesture — a
+// commercial foundry face an author imports, and the same file later published
+// under terms that put it in the catalogue tier.
+//
+// Either way round is a silent falsehood. Inheriting one would put an
+// acknowledgement nobody made on a catalogue face, which is exactly the defect
+// the spec names; dropping one would lose the author's assertion and, with it,
+// the 5.0 the document needs to be reopened at all.
+//
+// SO IT IS REFUSED, on the freeze rule this file already applies to a cut
+// declared over different bytes: the author is told what the document holds
+// and what they asked for, and nothing is rewritten under them.
+func refuseAcknowledgementMismatch(t *Template, key string, record template.FontRecord, at string) error {
+	held, exists := t.doc.Assets[key]
+	if !exists {
+		return nil
+	}
+	if held.FaceAcknowledged() == record.Acknowledged() {
+		return nil
+	}
+	if record.Acknowledged() {
+		return componentFailure("", at, "the document already carries these exact bytes as a face that was embedded without an acknowledgement, and an embedded face's record is never rewritten; remove that face first if this one is the author's own")
+	}
+	return componentFailure("", at, "the document already carries these exact bytes as a face the author acknowledged, and an embedded face's record is never rewritten; an acknowledgement is not dropped by embedding the same bytes again")
+}
+
+// commandFontRecordString is commandString with the empty check made
+// conditional. It is a NAME for the relaxation rather than a second reader:
+// both spellings go through commandStringField, so every rule commandString
+// enforces now or later applies to an acknowledged record's terms fields too.
+// `blankLegal` is exactly CAP-6's relaxation — the key is still required, still
+// must be a string and still may not be null, but an acknowledged record may
+// state nothing in its three terms fields.
+func commandFontRecordString(raw map[string]json.RawMessage, name string, blankLegal bool) (string, error) {
+	return commandStringField(raw, name, blankLegal)
 }
 
 // embeddedFaceBytes decodes and bounds the face, exactly as setComponentAsset

@@ -449,3 +449,82 @@ is recorded rather than quietly dropped.
 
 **One thing it does mean:** the investigation's blast-radius list is an upper bound over all designs,
 not a checklist for the chosen one. Worth remembering for stories 5 and 6, which also add fields.
+
+## Story 5 — decisions taken while planning
+
+### A-26 — Story 5 IS 5.0, story 4 was no version at all, and the two are consistent
+
+**Decision:** the acknowledgement field moves `SupportedMajor` 4 → 5 and `SupportedVersion` to
+`"5.0"`, triggered by the presence of an acknowledgement on a font record a chain names.
+
+**Why the opposite answer to story 4, on the same machinery:** the ladder asks what the content
+*requires of a reader*, not how new a key is. Story 4's key changed what a **save** writes — an
+older reader ignored it, rendered the same page set, preserved it, and was never harmed. This key
+changes what a reader must **accept**. A `4.x` reader carries it through (the `font` record's key
+set is open, `parse.go:998`) and then refuses the document at `requireEmbeddedFaceLicence` for
+blank terms, or at `RefuseContradictedLicence` for a copyleft binary — on exactly the terms the key
+exists to excuse. That is D-7.3.1's **refuse** case, which is what MAJOR is for.
+
+**Why the trigger is the flag and not the symptom:** an acknowledged record whose terms happen to
+be non-blank and non-copyleft would in fact load on a `4.x` reader. Triggering on "blank terms or
+copyleft" would be more precise and much more fragile — the document's correctness depends on the
+flag being *honoured*, so the flag's presence is the honest declaration.
+
+### A-27 — The acknowledgement excuses terms, not identity
+
+**Decision:** blank `licence`, `licenceText` and `copyright` become legal on an acknowledged record.
+`family`, `style` and `source` stay required and non-blank at the command door.
+
+**Reasoning:** the two gates are not the same gate, and the difference is the point. The command
+requires six fields non-blank (`component_commands.go:4955-4960`); the load path requires only the
+three terms fields (`parse.go:782-805`). The acknowledgement is a statement about *terms* — the
+author saying the licence is theirs to hold. It says nothing about who the face is. A record that
+cannot name its own family is not an acknowledged face, it is a broken one.
+
+### A-28 — `SupportedMajor` moves once, shared with spec-loop-section
+
+**Decision:** append a rank rather than renumbering (D-7.7.2), and ADD a trigger to the `5.0` ladder
+row rather than rewriting it. Whichever spec's story lands first makes the `SupportedMajor` edit;
+the other finds it done and must not repeat or re-raise it.
+
+**Reasoning:** recorded in SPEC.md as a constraint already, but it is the kind of thing that reads
+as a merge accident from inside either story. `spec-loop-section` opens the same `5.0` for the
+`loop` element and `$.` paths; two specs, one major, one edit.
+
+### A-29 — An acknowledged record may declare terms its own binary contradicts, and nothing refuses it
+
+**Decision:** accepted. Skipping `RefuseContradictedLicence` for an acknowledged record skips its
+ADMIT half as well as its REFUSE half, so an acknowledged face declaring `OFL-1.1` while its name
+table says GPL is refused by no door.
+
+**Reasoning:** this is the owner's ruling applied consistently rather than a hole in it. Folio takes
+no position on the terms of a face the author supplies — and *"the id you declared does not match
+what your binary says"* is a position. The guard exists for the D-8.6.5 threat: a face travelling
+under another project's terms inside the **catalogue** tier, which Folio distributes and is
+therefore answerable for. An acknowledged face is not distributed by Folio; it is carried on the
+author's assertion, and the acknowledgement is precisely the thing that replaced the assertion Folio
+would otherwise have had to make.
+
+**What this does not touch:** the catalogue tier's build-time allowlist, its fail-the-build gate,
+and `refuseLicenceSignatures` itself, all unchanged for every unacknowledged face.
+
+### A-30 — The feature is not yet reachable from the product, and story 6 must close that
+
+**Finding:** all three designer call sites hardcode `authorAcknowledged: false`, and `StoredFace`
+carries no acknowledgement field at all — so the assertion an author makes at import in story 3 is
+lost before the embed, and a face with blank terms is still refused. The engine honours an
+acknowledgement no designer path can produce.
+
+**Decision:** deferred to story 6, not patched here. Story 5's own Boundaries fence designer wiring
+out explicitly, and the review's verification-gap layer reached the same disposition independently.
+
+**What story 6 must carry, so this is not lost:**
+1. An acknowledgement field on `StoredFace`, written by story 3's import path.
+2. The three `App.tsx` call sites deriving the flag from the face rather than passing a literal.
+3. A **pinning test**: a stored-tier embed of a blank-terms author-supplied face asserting
+   `authorAcknowledged: true` on the wire. Without it the gap is invisible in CI and visible only
+   in a story file, which is how it would survive.
+
+**Why this is worth flagging to the owner rather than just scheduling:** until story 6 lands, stories
+3 and 5 are each complete and the product still cannot do the thing the spec exists for. That is the
+normal shape of a sliced epic, but it means neither story alone is demonstrable end to end.

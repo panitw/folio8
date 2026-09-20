@@ -40,7 +40,7 @@ func embedFontCommand(chain string, face []byte) []byte {
 		`,"family":"Noto Sans Thai","style":"Regular","licence":"OFL-1.1"` +
 		`,"licenceText":"This Font Software is licensed under the SIL Open Font License, Version 1.1."` +
 		`,"copyright":"Copyright 2022 The Noto Project Authors","source":"catalogue"` +
-		`,"mediaType":"font/ttf","data":"` + base64.StdEncoding.EncodeToString(face) + `","tail":["Noto Sans"]}`)
+		`,"authorAcknowledged":false,"mediaType":"font/ttf","data":"` + base64.StdEncoding.EncodeToString(face) + `","tail":["Noto Sans"]}`)
 }
 
 func loadedWorkedExample(t *testing.T) *Engine {
@@ -171,7 +171,7 @@ func embedCutCommandBytes(chain string, index int, cut string, face []byte) []by
 		`,"family":"Noto Sans Thai","style":"Bold","licence":"OFL-1.1"` +
 		`,"licenceText":"This Font Software is licensed under the SIL Open Font License, Version 1.1."` +
 		`,"copyright":"Copyright 2022 The Noto Project Authors","source":"catalogue"` +
-		`,"mediaType":"font/ttf","data":"` + base64.StdEncoding.EncodeToString(face) + `"}`)
+		`,"authorAcknowledged":false,"mediaType":"font/ttf","data":"` + base64.StdEncoding.EncodeToString(face) + `"}`)
 }
 
 // TestEngineApplyCutEmbedAndPropertyIsOneUndoEntry is D-owner-1 end to end, and
