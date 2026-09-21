@@ -7093,6 +7093,51 @@ dozens of documents per run, so the exposure is new.
 or disable xunit's parallelism for the collections that render and see whether it recurs. If it is a
 genuine concurrency defect, the documented thread-safety claim must be narrowed in the same change.
 
+#### 2026-09-21, during the 1.1.0 release: measured, narrowed, and NO LONGER unexplained
+
+The loop this entry asked for was run. **It is not a flake, it is not a concurrency defect in the
+ABI, and it does not affect anything this repository ships.** What it is: a native crash confined to
+a `libfolio8_native.so` **built against a modern glibc**, on **linux/amd64**, inside a .NET host.
+
+**The error has a name now:** `Internal CLR error. (0x80131506)` — `COR_E_EXECUTIONENGINE`. Not an
+assertion, not an ordinary exception: the CLR's execution engine reporting its own state as
+unrecoverable. The abort lands after a DIFFERENT number of tests every time — 18, 72, 99 observed —
+so no single test is responsible, which is why looking for one has never produced anything.
+
+**The measurements, all on real hardware except where noted:**
+
+| Native, and where it ran | Result |
+|---|---|
+| **shipped `linux-x64`** (built in the pinned AlmaLinux 8 image, glibc 2.28), ubuntu-24.04 amd64 | **0 crashes / 11 runs** |
+| `host` (built by `build-native.sh host` on the runner, glibc 2.39), ubuntu-24.04 amd64 | **crashed in 2 of 4** runs |
+| both natives, linux/arm64 (containers, native execution) | 0 crashes, many runs |
+| Windows `win-x64`, modern .NET and .NET Framework 4.8 | **0 crashes / 10 runs each** (owner-run) |
+| either native, amd64 UNDER QEMU EMULATION | crashes constantly — **disregard**, see below |
+
+**Two wrong turns are recorded because both were nearly acted on.** (1) The first three CI runs made
+it look like the *build* glibc was the variable; a qemu-emulated experiment then showed the shipped
+native crashing 5 times in 6 and appeared to refute that. It refuted nothing: qemu translates Go's
+threading and signal handling and is not sound evidence in either direction. The emulated result was
+set aside, and the 10-run tally on real hardware then supported the original reading after all. (2)
+`folio-dotnet-host` passed on two of four runs, so any single green run "clearing" this is worthless.
+
+**The remaining hypothesis, explicitly NOT confirmed.** Go's `-buildmode=c-shared` runtime installs
+`SIGSEGV` handlers for stack growth; the CLR needs the same signal for GC write barriers and null
+checks. If the chain breaks, the CLR sees corruption and reports exactly `COR_E_EXECUTIONENGINE`.
+That fits every observation — Windows unaffected (no POSIX signals), nondeterministic, no stack —
+and glibc 2.34's merge of libpthread into libc is a plausible reason the newer build behaves
+differently. **Nobody has read a stack trace yet, so this stays a lead.**
+
+**What it means for the release:** nothing shipped is implicated. Consumers receive the
+AlmaLinux-built natives, which are 0-for-11, and the Windows natives, which are 0-for-20. The
+crashing binary is one no consumer can obtain — `host` is a development aid that
+`build-native.sh`'s own header says is never packaged.
+
+**What would settle it now:** core dumps on a real amd64 Linux box with the `host` native, read the
+stack, and confirm or kill the signal-handler hypothesis. Until then `folio-dotnet-host` cannot be
+relied on as a gate, because it fails roughly half the time for reasons unrelated to the change
+under test.
+
 ### DW-148 — comments that describe a sibling's behaviour go stale silently; four instances this run
 
 - **Deferred by:** the **Epic 10 reconstruction** (finding 8, ruled at D-10.R.8, 2026-09-02) — raised under
@@ -8981,6 +9026,33 @@ test does not discharge it** — that converts an unverified guarantee into an u
 
 **Related:** [[DW-193]] (the suite never runs in CI, which is why this was invisible), and the Epic 16
 boundary gate, which carried it rather than repairing it.
+
+#### 2026-09-21, during the 1.1.0 release: it is INTERMITTENT now, not a reliable hang
+
+The measurements above — FAIL at 300 s, FAIL at 1500 s five times over — describe a test that never
+finished. That is no longer what it does, and the entry would mislead its next owner if the change
+were not recorded beside them.
+
+| where | result |
+|---|---|
+| CI, four consecutive runs of `folio-designer-e2e` | failed, **failed**, **PASSED**, failed |
+| locally (macOS, arm64), the single spec | **PASSED in 3.5 minutes** |
+
+So it now **completes, and quickly, some of the time**. The failure mode has also changed shape: it
+is no longer an unbounded hang but a bounded 60-second `toBeVisible` timeout inside the preview
+admission step, surfacing as `Preview was not admitted; worker evidence: …` with the expected
+`Current exact local produ…` image never appearing.
+
+**This is progress on the entry's own terms, not a new problem.** DW-208 says discharge requires
+"a fix with the blocking action named, or a measurement showing the hang is environmental". A test
+that passes in 3.5 minutes locally and on one CI run in four is evidence pointing at the second, and
+the blocking action is now localised to preview admission rather than to somewhere in two documents
+of authoring. Whoever picks this up starts much closer than the original entry implies.
+
+**It still does not discharge it.** Intermittent is not fixed, and this remains the only test proving
+the browser and the native binary agree on a human-authored document — so roughly half the time,
+that guarantee still goes unchecked. Its redness also cannot be read as a signal about the change
+under test, which is the practical cost while it stands.
 
 ---
 
