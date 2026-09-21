@@ -684,24 +684,14 @@ jobs:
       # pass, and the GLIBC FLOOR is the thing a consumer feels and no other
       # step can see. Asserted here, where it is cheap, rather than
       # discovered by a customer on RHEL 8.
+      # The check is a SCRIPT, not a run: block. Its first version lived here
+      # inline, matched readelf's machine field case-sensitively against
+      # `x86-64` — readelf prints `Advanced Micro Devices X86-64` — and
+      # reddened this job on two perfectly correct natives. An inline check
+      # can only be tested by pushing, which is how a wrong check survives to
+      # fail a release; verify-linux-natives.sh runs anywhere readelf does.
       - name: assert both natives exist, are the right machine, and keep the glibc floor
-        run: |
-          set -euo pipefail
-          for rid in linux-x64:x86-64 linux-arm64:aarch64; do
-            path="folio-dotnet/build/native/${rid%%:*}/libfolio8_native.so"
-            test -f "$path" || { echo "::error::$path was not produced"; exit 1; }
-            readelf -h "$path" | grep -q "${rid##*:}" || {
-              echo "::error::$path is not ${rid##*:}"; readelf -h "$path"; exit 1; }
-            floor=$(objdump -T "$path" | grep -oE 'GLIBC_[0-9.]+' | sort -Vu | tail -1)
-            echo "$path -> machine ${rid##*:}, glibc floor $floor"
-            # 2.28 is AlmaLinux 8's own glibc and therefore the highest this
-            # build can possibly require. A jump above it means the pinned
-            # image moved, which is the drift the pin exists to prevent.
-            case "$floor" in
-              GLIBC_2.1[0-9]|GLIBC_2.2|GLIBC_2.2[0-8]|GLIBC_2.[0-9]|GLIBC_2.[0-9].*) ;;
-              *) echo "::error::$path requires $floor, above the AlmaLinux 8 floor — the pinned build image has moved"; exit 1 ;;
-            esac
-          done
+        run: ./folio-dotnet/build/verify-linux-natives.sh
       # THE TESTS RUN AGAINST THE SHIPPED NATIVE, NOT A HOST BUILD. The test
       # project stages build/native/host/libfolio8_native.so on non-Windows,
       # and `build-native.sh host` would fill that with a library built
