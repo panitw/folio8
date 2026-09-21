@@ -577,10 +577,18 @@ decisions are in `_bmad-output/implementation-artifacts/ga-decision-log.md`.
 `vite build` runs inside the image's build stage. A variable added to the
 running service arrives after the bytes are already fixed and changes nothing.
 
-**Where the operator sets it:** as a Railway **build** variable on the designer
-service, `VITE_GA_CONTAINER_ID=GTM-NQZRC9V4`. The `Dockerfile` declares the
-matching `ARG`/`ENV` pair. A rebuild is required for a change to take effect;
-redeploying the existing image will not pick up a new value.
+**Where the operator sets it:** as an ordinary service variable on the
+`folio-designer` service, `VITE_GA_CONTAINER_ID=GTM-NQZRC9V4`, in each
+environment that should report (`production`, `staging`, or both — they are
+separate). Railway has NO separate "build variable" type: service variables are
+exposed to a Dockerfile build only for the names the Dockerfile itself declares
+as `ARG`, which is why the `ARG`/`ENV` pair exists in the build stage and why
+adding the variable alone is not enough — the two go together.
+
+A REBUILD IS REQUIRED, not a redeploy. The value is substituted into the bundle
+by Vite, so redeploying the existing image cannot pick up a new value; Railway
+rebuilds on a variable change, but if a deploy is restarted or rolled back to an
+older image it carries whatever that image was built with.
 
 **Unset is a supported, silent state, and it is the default.** With no value —
 a local `docker build`, `npm run dev`, Vitest, Playwright — no script is
