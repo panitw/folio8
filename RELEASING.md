@@ -219,124 +219,41 @@ run is recorded in the release notes as its URL and the commit SHA it ran on.
 It cannot be recorded in the repository, because the run only exists after the
 commit does.
 
-#### Exception, v1.1.0 only: `folio-designer-e2e`'s `browser-native-roundtrip`
+#### v1.1.0: an exception was prepared for DW-208, and proved unnecessary
 
-**This exception covers ONE release and expires with it.** It is written here,
-in the procedure it suspends, rather than applied silently — and it is
-deliberately not a quarantine: no job is marked `continue-on-error`, no test is
-skipped, and nothing about what a green badge means on this repository changes
-after 1.1.0.
+Kept as a record of a judgement, not as a standing allowance. **No exception
+was used to cut v1.1.0** — `ci.yml` and `matrix.yml` were both green on the
+tagged commit `d176ed3`, so the rule above was met on its own terms.
 
-**What is red.** `folio-designer-e2e` reports **1 failed, 136 passed**. The one
-is `e2e/browser-native-roundtrip.spec.ts` — **[[DW-208]]**, open since
-2026-09-05 at HIGH, long predating this release. Across the five release
-candidates it failed four times and passed once.
+**What happened.** `folio-designer-e2e`'s `browser-native-roundtrip`
+(**[[DW-208]]**, open since 2026-09-05 at HIGH) fails intermittently — four
+failures in the first five release candidates, passing on the sixth and
+seventh. With the gate unsatisfiable by re-running honestly, a dated
+single-release exception was drafted and approved. The next run then came back
+green and it was never invoked.
 
-**Why it is not evidence about this release.** It fails inside
-`savePreviewAndCapture`, on a 60-second `toBeVisible` timeout for a preview
-`<img>` that never appears. **It never reaches its byte comparison.** No hash
-was compared and none mismatched; the failure is the designer's preview UI not
-becoming visible in time, and the designer is not part of this release.
+**Why it was drafted rather than the job quarantined.** `folio-go-known-red`'s
+pattern does not fit an intermittent failure: it works by *asserting* the red
+and inverting the exit code, which is impossible for a test that passes half
+the time. Quarantining these would have needed `continue-on-error` — forbidden
+everywhere else in `ci.yml`, for the reason stated there — and DW-208 itself
+says skipping the test "converts an unverified guarantee into an unstated one"
+and does not discharge it.
 
-**And the guarantee it protects WAS verified, on this exact engine.** The test
-passed on `f8bdffe`, and `git diff f8bdffe..<release commit>` touches only
-`ci.yml`, `RELEASING.md`, `deferred-work.md`, `folio-dotnet/README.md`,
-`Folio8.csproj` and `PackagingTests.cs`. **Every source under `folio-go/`,
-`folio-js/src/` and `folio-designer/src/` is byte-identical between the commit
-where it passed and the commit being tagged.** So the browser-and-native
-agreement on a human-authored document is not being taken on trust for this
-release — it was measured, on the same engine, and the run is on record.
+**What the exception would have rested on, had it been needed.** Not the luck
+of a green run: `browser-native-roundtrip` had already PASSED on `f8bdffe`,
+and `git diff f8bdffe..d176ed3` touches only `ci.yml`, this file,
+`deferred-work.md`, `folio-dotnet/README.md`, `Folio8.csproj` and
+`PackagingTests.cs`. Every source under `folio-go/`, `folio-js/src/` and
+`folio-designer/src/` was byte-identical between the commit where it passed
+and the commit tagged — so the browser-and-native agreement on a
+human-authored document was measured on these exact sources.
 
-**What still gates the tag, unchanged and green:** `matrix.yml` (cross-target
-byte identity, green on four consecutive release candidates) and every other
-`ci.yml` job — `folio-go`, `folio-go-matrix`, `lint`, `hashmatrix`,
-`folio-designer`, all six `folio-js` legs, and `folio-dotnet` including its
-pack and seven consumer shapes.
-
-**What would remove the need for this next time:** DW-208 discharged — the
-blocking action in preview admission named and fixed, or a measurement showing
-the timeout is environmental and which environments it does not reproduce in.
-Until then the next release has to make this judgement again, on its own
-evidence. **That is the point of dating it rather than quarantining it.**
-
-Run from the repository root, on `main`, with the release commit at `HEAD` and
-everything above done. **Pushing the tag is irreversible for anyone who
-fetches it; do not run this without the owner's explicit go-ahead.**
-
-```sh
-SHA=$(git rev-parse HEAD)             # the release commit; use it for every step below
-git push origin main                  # ci.yml and matrix.yml run on the release commit
-git fetch origin && test "$(git rev-parse origin/main)" = "$SHA"   # what was pushed is what gets tagged
-
-# Look up each workflow's push run for exactly this commit; each must list one run.
-gh run list --workflow ci.yml     --commit "$SHA" --event push --limit 1
-gh run list --workflow matrix.yml --commit "$SHA" --event push --limit 1
-gh run watch <ci run id>     --exit-status   # non-zero exit on a red run: stop
-gh run watch <matrix run id> --exit-status   # all four targets must be green
-
-git tag -a folio-go/v1.1.0 "$SHA" -m "folio-go v1.1.0"
-git push origin folio-go/v1.1.0
-gh release create folio-go/v1.1.0 lint/MANIFEST.md --title "folio-go v1.1.0" --notes-file <notes>
-
-# Confirm the module proxy serves the tag.
-GOPROXY=https://proxy.golang.org go list -m github.com/panitw/folio8/folio-go@v1.1.0
-```
-
-The tag is pushed only after both runs are green, so a failing run needs no
-tag deletion: fix forward on `main` and start again. **A published tag is never
-moved or deleted.** A bad release is fixed forward with a new patch version,
-adding a `retract` directive to `folio-go/go.mod` for the bad one if needed. The tag is
-directory-prefixed (AD-22) because the module lives in `folio-go/`; Go resolves
-`go get github.com/panitw/folio8/folio-go@v1.1.0` from it.
-
-## Publishing `folio8` to npm
-
-The npm package `folio8`, built in `folio-js/`, is a separate release line from
-`folio-go`, published by hand.
-**`npm publish` is never run by a script, a lifecycle hook or a CI job**: no
-workflow in this repository holds an npm token, and none should. It is the
-owner's command, typed at the owner's terminal, on the owner's explicit
-go-ahead.
-
-### What the package promises
-
-The tarball is **self-contained**: a prebuilt `.wasm`, `wasm_exec.js`, the
-compiled `dist/`, all eleven `fonts.Shipped()` faces with their OFL text and
-notices, `README.md` and `LICENSE`. It declares **no dependencies** and **no
-install scripts**, so `npm install` on a machine with no Go, no C compiler and
-no network after the fetch produces a package that renders (CAP-6).
-
-`prepack` is what keeps that true. It rebuilds the wasm, re-copies the fonts
-from `folio-go/fonts/` and recompiles `dist/`, then runs
-`scripts/package-check.mjs`, which refuses the pack — naming what is wrong —
-if anything the `files` allowlist promises is absent, or if a packaged face's
-bytes differ from the Go source. A publish therefore cannot ship an incomplete
-tarball, and cannot ship a font set that has drifted from the engine's.
-
-### Version and engine stamp
-
-The npm package's `version` is its own; it is not tied to `folio-go`'s. What ties
-them is `package.json`'s **`folio8EngineVersion`**, which records the engine
-version the packaged wasm was built from and must equal `src/version.ts`'s
-`version` — `test/package.test.ts` fails if they disagree. Bump both in the
-release commit when the package is rebuilt against a newer engine tag.
-
-Both bindings build against the **`folio-go/v1.1.0` tag, never `main`**.
-
-### Before publishing
-
-1. `cd folio-js && npm ci && npm run build && npm run lint && npm test` is
-   green on the release commit. The suite packs the tarball, installs it into
-   a temp project **with the network refused and install scripts ignored**,
-   runs the README's own first-PDF snippet in a child process and compares the
-   PDF's SHA-256 with a corpus fixture's committed `expected.json`. That is
-   the substance of CAP-6 checked by machine, so nothing below re-checks the
-   package's *contents* by hand.
-2. `npm pack --dry-run` lists `dist/`, `wasm/`, eleven `.ttf` files with a
-   `LICENSE-OFL.txt` and a `NOTICE.md` beside each, `LICENSE` and `README.md`
-   — and no source, test or lockfile.
-3. `ci.yml` is green on that exact commit (its `folio-js` job runs the same
-   commands).
+**For the next release:** this is not precedent to lean on. If DW-208 is still
+red then, the judgement is made again, on that release's own evidence. What
+would remove the question entirely is discharging DW-208 — naming and fixing
+the blocking action in preview admission, or measuring the timeout as
+environmental and saying which environments it does not reproduce in.
 
 ### The commands
 
@@ -562,14 +479,34 @@ Run from the repository root, on `main`, with the release commit at `HEAD`.
 **Publishing to NuGet is irreversible for anyone who installs it; do not run
 this without the owner's explicit go-ahead.**
 
-```sh
-# The version is READ from the project, never retyped: Folio8.csproj's
+**POWERSHELL, NOT `sh`, AND THAT IS NOT A STYLE CHOICE.** Step 1 above can
+only run on Windows — `build-native.ps1` needs a mingw-w64 gcc per
+architecture — so every command here runs on a Windows machine. This block was
+written in `sh` until v1.1.0, with `ls`, `basename`, `sed` and `unzip`, and
+cost the owner time mid-release when `unzip` was not found. The shell now
+matches the machine the procedure requires.
+
+```powershell
+# The version is READ from the packed file, never retyped: Folio8.csproj's
 # <Version> is the one place it is declared, and the consumer suite takes it
 # from the packed file name for the same reason.
-dotnet pack folio-dotnet/src/Folio8/Folio8.csproj -c Release -o ./artifacts/nupkg
-PKG=$(ls ./artifacts/nupkg/folio8.*.nupkg)
-V=$(basename "$PKG" .nupkg | sed 's/^folio8\.//')
-unzip -l "$PKG"                                  # last look at exactly what would be sent
+dotnet pack folio-dotnet\src\Folio8\Folio8.csproj -c Release -o .\artifacts\nupkg
+$pkg = (Get-ChildItem .\artifacts\nupkg\folio8.*.nupkg).FullName
+$v   = [IO.Path]::GetFileNameWithoutExtension($pkg) -replace '^folio8\.', ''
+
+# LAST LOOK AT EXACTLY WHAT WOULD BE SENT. Expect TWO runtimes/ entries, both
+# win-*, and ZERO runtimes/linux* — the Linux RIDs are withdrawn (DW-396), and
+# this listing is where a mistaken re-add would be caught before it ships.
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$zip = [IO.Compression.ZipFile]::OpenRead($pkg)
+try {
+  $zip.Entries | ForEach-Object { "{0,12}  {1}" -f $_.Length, $_.FullName }
+  $rids  = @($zip.Entries.FullName -like 'runtimes/*')
+  $linux = @($zip.Entries.FullName -like 'runtimes/linux*')
+  if ($rids.Count -ne 2 -or $linux.Count -ne 0) {
+    throw "expected exactly two win-* runtimes entries and no linux ones; got: $($rids -join ', ')"
+  }
+} finally { $zip.Dispose() }
 
 # TAG FIRST, so a published version always maps back to a commit. The tag is
 # directory-prefixed (AD-22), like the engine's and the npm package's, because
@@ -577,14 +514,24 @@ unzip -l "$PKG"                                  # last look at exactly what wou
 # published package id, so it stays `folio-dotnet/v…` even though the package
 # publishes as `folio8`. Push it before publishing: an unpublished tag is
 # cheap to live with, an unattributable NuGet version is not.
-git tag -a "folio-dotnet/v$V" -m "folio-dotnet v$V" && git push origin "folio-dotnet/v$V"
+git tag -a "folio-dotnet/v$v" -m "folio-dotnet v$v"; git push origin "folio-dotnet/v$v"
 
-# The irreversible step. The API key is the owner's. Put it in the shell's
-# environment for this one command — `read -rs NUGET_API_KEY` keeps it off the
-# screen and out of the shell history — and never into a file in this
-# repository.
-dotnet nuget push "$PKG" --source https://api.nuget.org/v3/index.json --api-key "$NUGET_API_KEY"
+# The irreversible step. The API key is the owner's: read it into the session
+# for this one command and clear it after, and never put it into a file in
+# this repository.
+$env:NUGET_API_KEY = Read-Host "NuGet API key"
+dotnet nuget push $pkg --source https://api.nuget.org/v3/index.json --api-key $env:NUGET_API_KEY
+Remove-Item Env:\NUGET_API_KEY
 ```
+
+**Then wait for it to be queryable before calling it done.** nuget.org
+validates and indexes a new package after the push returns, so
+`https://api.nuget.org/v3-flatcontainer/folio8/index.json` keeps listing only
+the previous versions for a few minutes. A package still in flight shows as
+**Validating** at <https://www.nuget.org/account/Packages>; a rejected one
+shows **Failed validation** and sends mail. **`dotnet nuget push` returning
+success is not the same as the package being available**, and v1.1.0's push
+was reported done while the index still showed 1.0.1.
 
 A published version is never unlisted-and-reused or overwritten, and a pushed
 tag is never moved or deleted; a bad release is fixed forward with a new patch
