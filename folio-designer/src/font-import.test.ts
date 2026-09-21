@@ -1,3 +1,4 @@
+import nodeFs from 'node:fs'
 import { describe, expect, it, vi } from 'vitest'
 import { FileAccessCancelled, type LocalFileHandle } from './file/file-access'
 import { FileSystemFontAccess, InputFontAccess, type FontPicker } from './font-file'
@@ -106,7 +107,7 @@ describe('reading font files the author picked', () => {
     // the extension settles the first without reading a byte, and the container
     // guard settles the second over the bytes themselves.
     expect(outcome.refused[0].reason).toContain('does not end in .ttf or .otf')
-    expect(outcome.refused[1].reason).toContain('not a static TrueType sfnt')
+    expect(outcome.refused[1].reason).toContain('not a single-face sfnt')
   })
 
   it('imports a face whose copyright, licence and licence-text records are ALL absent, with empty strings and no throw', () => {
@@ -319,5 +320,64 @@ describe('local font-file boundary', () => {
     }
     await expect(selectFontFileAccess(explicitBrowser).openFonts()).rejects.toBeInstanceOf(FileAccessCancelled)
     expect(receivers).toEqual([explicitBrowser])
+  })
+})
+
+/**
+ * A REAL `.otf`, WHICH IS TO SAY A REAL CFF FONT.
+ *
+ * THE PICKER HAS ALWAYS OFFERED `.otf` AND THE IMPORT ALWAYS REFUSED IT. Every
+ * `.otf` in the wild is CFF-flavoured (`OTTO`), and the container guard admitted
+ * TrueType outlines alone, so an author who picked one was told
+ * `not a static TrueType sfnt: version 0x4f54544f` — a hex tag, about a file the
+ * renderer would have drawn. `fontasset.go` has always admitted `OTTO` and
+ * `fontdir` has always read `.otf` off a host's disk; only the designer
+ * disagreed.
+ *
+ * ⚠ IT IS THE OPERATING SYSTEM'S OWN FONTS, NOT A FIXTURE, AND THAT IS THE
+ * POINT. A synthesised `OTTO` header proves the version check and nothing else;
+ * this suite's claim is that a WHOLE REAL CFF FONT survives the walk — family,
+ * subfamily, licence transcription and the weight read — which is the thing a
+ * fabricated four-byte tag cannot demonstrate. Skipped where the fonts are not
+ * present, so the suite stays honest off macOS rather than asserting nothing.
+ */
+describe('importing a real CFF .otf', () => {
+  const candidates = [
+    '/System/Library/Fonts/Supplemental/STIXGeneral.otf',
+    '/System/Library/Fonts/Supplemental/NotoSansJavanese-Regular.otf',
+    '/System/Library/Fonts/LastResort.otf',
+  ]
+  const present = candidates.filter((p) => nodeFs.existsSync(p))
+
+  it.runIf(present.length > 0)('reads one as a face rather than refusing it', () => {
+    const file = present[0]
+    const held = nodeFs.readFileSync(file)
+    const bytes = held.buffer.slice(held.byteOffset, held.byteOffset + held.byteLength) as ArrayBuffer
+    // The tag is asserted rather than assumed: if a future macOS ships these as
+    // TrueType the suite would otherwise pass while testing nothing.
+    expect(new DataView(bytes).getUint32(0), `${file} must be CFF-flavoured for this suite to mean anything`).toBe(0x4f54544f)
+
+    // `mediaType` is the picker's own field and the import re-derives its
+    // record from the EXTENSION regardless (see `readPickedFace`), so the
+    // browser's guess is supplied here as the picker would supply it.
+    const out = importFontFiles([{ name: file.slice(file.lastIndexOf('/') + 1), bytes, mediaType: 'font/otf' }])
+    expect(out.refused, 'a real .otf must not be refused').toEqual([])
+    expect(out.families).toHaveLength(1)
+    expect(out.families[0].family.length).toBeGreaterThan(0)
+    expect(out.families[0].faces).toHaveLength(1)
+    expect(out.families[0].faces[0].mediaType).toBe('font/otf')
+  })
+
+  it.runIf(present.length > 0)('reads its declared weight, the same as it would from a .ttf', () => {
+    const held = nodeFs.readFileSync(present[0])
+    const bytes = held.buffer.slice(held.byteOffset, held.byteOffset + held.byteLength) as ArrayBuffer
+    const out = importFontFiles([{ name: 'face.otf', bytes, mediaType: 'font/otf' }])
+    const weight = out.families[0]?.faces[0]?.weight
+    // Absent is legal — a face may decline to state one — but a number must be
+    // on OpenType's own scale rather than whatever the bytes happened to hold.
+    if (weight !== undefined) {
+      expect(weight).toBeGreaterThanOrEqual(1)
+      expect(weight).toBeLessThanOrEqual(1000)
+    }
   })
 })

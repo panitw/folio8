@@ -775,7 +775,7 @@ export async function fetchWebFamily(family: string, fetcher: Fetcher = timedFet
     //
     // AND AN UNPARSABLE FACE IS REFUSED BEFORE EITHER LOOKUP, by the container
     // guard both readers share: a 200 carrying an error page throws out of
-    // `requireStaticTrueTypeTables` and is stated in those words. Go answers
+    // `requireSingleFaceSfntTables` and is stated in those words. Go answers
     // `nil` for the same bytes. That divergence is deliberate and is asserted on
     // purpose in `src/font-variable-face-tie.test.ts`.
     //
@@ -792,7 +792,7 @@ export async function fetchWebFamily(family: string, fetcher: Fetcher = timedFet
       copyright = faceCopyright(bytes)
     } catch (error) {
       // ⚠ A BODY THAT WILL NOT PARSE IS TRANSIENT, WHICH LOOKS WRONG AND IS NOT.
-      // `requireStaticTrueTypeTables` throws for "this is not a font", and the
+      // `requireSingleFaceSfntTables` throws for "this is not a font", and the
       // commonest real producer of those bytes is not a broken upstream face —
       // it is a 200 carrying a captive portal's HTML login page, which is the
       // most transient failure in the whole set. The default rule decides it:

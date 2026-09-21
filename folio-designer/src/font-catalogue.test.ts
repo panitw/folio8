@@ -13,7 +13,7 @@ import { catalogueFaces as generatedFaces } from './generated/font-catalogue'
 // its own `DataView` walk, byte-identical to a second copy in
 // `scripts/build-wasm.mjs`; Story 16.1 needed a THIRD at runtime, over bytes
 // fetched from a third party, and extracted the walk here instead of adding one.
-import { nameTableString, requireStaticTrueTypeTables, type SfntTable } from './font-name-table'
+import { nameTableString, requireSingleFaceSfntTables, type SfntTable } from './font-name-table'
 
 // STORY 8.5 — THE CATALOGUE, HELD TO ITS OWN RECORD.
 //
@@ -157,7 +157,7 @@ function fontView(file: string): DataView {
   return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
 }
 
-const sfntTables = (view: DataView): Readonly<Record<string, SfntTable>> => requireStaticTrueTypeTables(view)
+const sfntTables = (view: DataView): Readonly<Record<string, SfntTable>> => requireSingleFaceSfntTables(view)
 
 /** Everything AC6 asks a face about itself, read from its own bytes. */
 function instanceOfFile(file: string) {

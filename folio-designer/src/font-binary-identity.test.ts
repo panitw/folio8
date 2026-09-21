@@ -573,7 +573,7 @@ function sfntTables(view: DataView): Readonly<Record<string, SfntTable>> {
   // 'ttcf' collection or an 'OTTO' CFF font is neither of the two things this
   // repository commits, and reading one as if it were is how a guard goes
   // quietly wrong rather than loudly.
-  if (version !== 0x00010000 && version !== 0x74727565) throw new Error(`not a static TrueType sfnt: version 0x${version.toString(16).padStart(8, '0')}`)
+  if (version !== 0x00010000 && version !== 0x74727565) throw new Error(`not a single-face sfnt: version 0x${version.toString(16).padStart(8, '0')}`)
   const tables: Record<string, SfntTable> = {}
   const count = view.getUint16(4)
   for (let index = 0; index < count; index++) {

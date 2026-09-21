@@ -355,7 +355,7 @@ describe('fetching a family from the web tier', () => {
     ['a cut a proxy refuses', { [`${base}/ofl/kanit/Kanit-Italic.ttf`]: { status: 403 } }, /responded 403/, 'transient'],
     // AND A BODY THAT WILL NOT PARSE, which is what a captive portal's 200 HTML
     // login page looks like from here.
-    ['a cut whose body is not a font', { [`${base}/ofl/kanit/Kanit-Italic.ttf`]: { body: new TextEncoder().encode('<!doctype html><title>Sign in</title>').buffer as ArrayBuffer } }, /not a static TrueType sfnt/, 'transient'],
+    ['a cut whose body is not a font', { [`${base}/ofl/kanit/Kanit-Italic.ttf`]: { body: new TextEncoder().encode('<!doctype html><title>Sign in</title>').buffer as ArrayBuffer } }, /not a single-face sfnt/, 'transient'],
   ]
   it.each(badCut)('installs the family without %s, and records why and whether it is settled', async (_case, overrides, reason, permanence) => {
     const { fetcher } = stub(kanitUpstream(overrides))
@@ -596,18 +596,26 @@ describe('fetching a family from the web tier', () => {
 
   // THE CONTAINER IS CHECKED BEFORE THE WALK, AND THIS IS THE UNTRUSTED CALLER
   // THAT MAKES THAT MATTER. These bytes arrived from a third party seconds
-  // earlier: an `OTTO`/CFF or WOFF wrapper has a table directory at the same
-  // offsets meaning something else, and a 200 carrying an error page has none at
-  // all. Both are refused in the version's own words rather than walked into a
-  // plausible-looking copyright.
-  it('refuses a fetched body that is not a static TrueType container, rather than walking it', async () => {
+  // earlier: a WOFF wrapper has a table directory at the same offsets meaning
+  // something else, a collection holds several faces where one was asked for,
+  // and a 200 carrying an error page has no directory at all. All are refused in
+  // the version's own words rather than walked into a plausible-looking
+  // copyright.
+  //
+  // ⚠ `OTTO` USED TO STAND HERE AS THE WRAPPER EXAMPLE AND NO LONGER DOES. CFF
+  // is a flavour this product embeds — `fontasset.go` admits it and `fontdir`
+  // reads `.otf` — so refusing it was a defect rather than this guard working.
+  // A wrapper and a non-font are what the guard is actually for, and they are
+  // what is asserted.
+  it('refuses a fetched body that is not a single-face sfnt, rather than walking it', async () => {
     const notAFont = new TextEncoder().encode('<!doctype html><title>404: Not Found</title>').buffer as ArrayBuffer
-    for (const body of [sfntWithNames([{ platform: 3, nameID: 0, value: 'Copyright someone else' }], { sfntVersion: 0x4f54544f }), notAFont]) {
+    const wrapped = (version: number) => sfntWithNames([{ platform: 3, nameID: 0, value: 'Copyright someone else' }], { sfntVersion: version })
+    for (const body of [wrapped(0x774f4646), wrapped(0x74746366), notAFont]) {
       const { fetcher } = stub(kanitUpstream({ [`${base}/ofl/kanit/Kanit-Regular.ttf`]: { body } }))
       const outcome = await fetchWebFamily('Kanit', fetcher)
       expect(outcome.ok).toBe(false)
       if (outcome.ok) continue
-      expect(outcome.reason).toMatch(/not a static TrueType sfnt/)
+      expect(outcome.reason).toMatch(/not a single-face sfnt/)
     }
   })
 

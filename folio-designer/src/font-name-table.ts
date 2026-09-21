@@ -34,7 +34,7 @@ export type SfntTable = Readonly<{ offset: number; length: number }>
 /**
  * The table directory: every four-character tag the file declares, with the
  * offset and length it declares for it. No version check — some callers want
- * one and some do not, so it is `requireStaticTrueTypeTables` that refuses.
+ * one and some do not, so it is `requireSingleFaceSfntTables` that refuses.
  */
 export function sfntTableDirectory(view: DataView): Readonly<Record<string, SfntTable>> {
   const tables: Record<string, SfntTable> = {}
@@ -49,19 +49,51 @@ export function sfntTableDirectory(view: DataView): Readonly<Record<string, Sfnt
 }
 
 /**
- * The same directory, but only for a file whose sfnt version says it is a
- * static TrueType outline font — `0x00010000` or the older `true`. An
- * OpenType/CFF (`OTTO`) or WOFF wrapper is refused here rather than being read
- * as if its offsets meant the same thing.
+ * THE VERSION TAGS A SINGLE-FACE sfnt MAY OPEN WITH — the same three
+ * `folio-go/internal/template/fontasset.go`'s `sfntVersions` admits, and that
+ * agreement is the point rather than a coincidence.
+ *
+ * ⚠ `OTTO` WAS MISSING HERE AND THE ENGINE ACCEPTED IT ALL ALONG, which made
+ * the designer refuse what the renderer draws. Every real `.otf` is
+ * CFF-flavoured, so an author who picked one — the picker offers `.otf`, and
+ * `fontdir` reads `.otf` off a host's disk — was told
+ * `not a static TrueType sfnt: version 0x4f54544f`: a hex tag, about a file
+ * that would have rendered. The engine is the authority on what may be
+ * embedded, so this list is ITS list.
+ *
+ * `ttcf` IS DELIBERATELY ABSENT, for the reason Go states at the same spot: a
+ * COLLECTION is a structurally valid sfnt and a legal thing to embed, but it is
+ * not what `font/ttf` or `font/otf` describe (RFC 8081 gives a collection its
+ * own type), and those two are the only media types that reach here.
  */
-export function requireStaticTrueTypeTables(view: DataView): Readonly<Record<string, SfntTable>> {
+const singleFaceSfntVersions: ReadonlySet<number> = new Set([
+  0x00010000, // TrueType outlines
+  0x74727565, // 'true', the legacy Apple spelling of the same
+  0x4f54544f, // 'OTTO', CFF outlines
+])
+
+/**
+ * The same directory, but only for a file whose sfnt version says it is a
+ * single-face font this product can actually embed. A WOFF wrapper, a
+ * collection, or a 200 that is not a font at all is refused here rather than
+ * being read as if its offsets meant the same thing.
+ *
+ * ⚠ IT IS A CONTAINER CHECK AND NOT A VARIABILITY ONE. "Static" is
+ * `faceIsVariable`'s question, asked separately over the same bytes and
+ * answered from the `fvar` TAG; this function only decides whether the table
+ * directory can be believed. The two were once conflated in this function's
+ * name, which is what let the CFF gap hide: a reader called
+ * `requireStaticTrueTypeTables` looked like it was enforcing the variable-font
+ * rule, so the outline flavour in it read as incidental.
+ */
+export function requireSingleFaceSfntTables(view: DataView): Readonly<Record<string, SfntTable>> {
   // TOO SHORT TO HOLD A TABLE DIRECTORY IS THE SAME ANSWER, said in the same
   // words. A 200 carrying an error page — or two bytes — is not a font, and
   // reading its first four bytes as a version would be a `RangeError` from
   // inside the walk rather than a statement about the file.
-  if (view.byteLength < 12) throw new Error(`not a static TrueType sfnt: ${view.byteLength} bytes is too short to carry a table directory`)
+  if (view.byteLength < 12) throw new Error(`not a single-face sfnt: ${view.byteLength} bytes is too short to carry a table directory`)
   const version = view.getUint32(0)
-  if (version !== 0x00010000 && version !== 0x74727565) throw new Error(`not a static TrueType sfnt: version 0x${version.toString(16).padStart(8, '0')}`)
+  if (!singleFaceSfntVersions.has(version)) throw new Error(`not a single-face sfnt: version 0x${version.toString(16).padStart(8, '0')}`)
   return sfntTableDirectory(view)
 }
 
@@ -141,7 +173,7 @@ export function fontView(bytes: ArrayBuffer | ArrayBufferView): DataView {
  *
  * THE CONTAINER IS CHECKED FIRST, BECAUSE THIS READER'S HOTTEST CALLER IS AN
  * UNTRUSTED ONE. `src/font-source.ts` calls this on bytes fetched from a third
- * party moments earlier, so the version guard `requireStaticTrueTypeTables`
+ * party moments earlier, so the version guard `requireSingleFaceSfntTables`
  * carries is exactly the guard those bytes need: an `OTTO`/CFF or WOFF wrapper,
  * or a 200 that is not a font at all, is REFUSED here rather than walked as if
  * its offsets meant the same thing. The other two callers read the committed
@@ -150,7 +182,7 @@ export function fontView(bytes: ArrayBuffer | ArrayBufferView): DataView {
  */
 export function faceCopyright(bytes: ArrayBuffer | ArrayBufferView): string {
   const view = fontView(bytes)
-  const copyright = nameTableString(view, requireStaticTrueTypeTables(view), 0)?.trim()
+  const copyright = nameTableString(view, requireSingleFaceSfntTables(view), 0)?.trim()
   if (!copyright) throw new Error('this face declares no copyright in its own `name` table (nameID 0); a face embedded into a document must state whose it is, and the engine refuses to load a document that does not')
   return copyright
 }
@@ -188,7 +220,7 @@ export function faceCopyright(bytes: ArrayBuffer | ArrayBufferView): string {
  * sixteen bytes per record, no glyph parsing, no new dependency.
  *
  * THE CONTAINER GUARD RUNS FIRST, AND THE DIVERGENCE FROM GO IS DELIBERATE.
- * `requireStaticTrueTypeTables` THROWS for a 200 that is not a font, so an
+ * `requireSingleFaceSfntTables` THROWS for a 200 that is not a font, so an
  * unparsable face never reaches the `fvar` lookup at all; Go's
  * `RefuseVariableFace` returns `nil` for those same bytes, because it answers
  * exactly one question and an unparsable face is not a variable one. The two
@@ -196,7 +228,7 @@ export function faceCopyright(bytes: ArrayBuffer | ArrayBufferView): string {
  * asserts that on purpose, and neither is to be widened to match the other.
  */
 export function faceIsVariable(bytes: ArrayBuffer | ArrayBufferView): boolean {
-  return 'fvar' in requireStaticTrueTypeTables(fontView(bytes))
+  return 'fvar' in requireSingleFaceSfntTables(fontView(bytes))
 }
 
 /**
@@ -226,7 +258,7 @@ export function faceIsVariable(bytes: ArrayBuffer | ArrayBufferView): boolean {
  *
  * NO CONTAINER GUARD, for the reason the readers below give: the import path
  * has already run `faceIsVariable` over these same bytes, and that carries
- * `requireStaticTrueTypeTables` inside it.
+ * `requireSingleFaceSfntTables` inside it.
  */
 export function faceWeightClass(bytes: ArrayBuffer | ArrayBufferView): number | undefined {
   const view = fontView(bytes)
@@ -267,7 +299,7 @@ export function faceWeightClass(bytes: ArrayBuffer | ArrayBufferView): number | 
  *
  * NO CONTAINER GUARD, UNLIKE `faceCopyright`. Both callers of these readers
  * have already run `faceIsVariable` over the same bytes, which carries
- * `requireStaticTrueTypeTables` inside it, so an unparsable container has
+ * `requireSingleFaceSfntTables` inside it, so an unparsable container has
  * already been refused by the time a name is asked for. Running the guard again
  * would be a second walk of the same directory answering a question already
  * settled — but the table directory IS still read through the guard rather than
@@ -276,13 +308,13 @@ export function faceWeightClass(bytes: ArrayBuffer | ArrayBufferView): number | 
  */
 export function faceFamilyName(bytes: ArrayBuffer | ArrayBufferView): string {
   const view = fontView(bytes)
-  return nameTableString(view, requireStaticTrueTypeTables(view), 1)?.trim() ?? ''
+  return nameTableString(view, requireSingleFaceSfntTables(view), 1)?.trim() ?? ''
 }
 
 /** nameID 2 — the subfamily, trimmed. See `faceFamilyName` for why the pair is one contract. */
 export function faceSubfamilyName(bytes: ArrayBuffer | ArrayBufferView): string {
   const view = fontView(bytes)
-  return nameTableString(view, requireStaticTrueTypeTables(view), 2)?.trim() ?? ''
+  return nameTableString(view, requireSingleFaceSfntTables(view), 2)?.trim() ?? ''
 }
 
 /**
@@ -304,17 +336,17 @@ export function faceSubfamilyName(bytes: ArrayBuffer | ArrayBufferView): string 
  */
 export function faceDeclaredCopyright(bytes: ArrayBuffer | ArrayBufferView): string {
   const view = fontView(bytes)
-  return nameTableString(view, requireStaticTrueTypeTables(view), 0) ?? ''
+  return nameTableString(view, requireSingleFaceSfntTables(view), 0) ?? ''
 }
 
 /** nameID 13 — the licence text the binary carries, verbatim. See `faceDeclaredCopyright`. */
 export function faceDeclaredLicenceText(bytes: ArrayBuffer | ArrayBufferView): string {
   const view = fontView(bytes)
-  return nameTableString(view, requireStaticTrueTypeTables(view), 13) ?? ''
+  return nameTableString(view, requireSingleFaceSfntTables(view), 13) ?? ''
 }
 
 /** nameID 14 — the licence the binary names, verbatim. See `faceDeclaredCopyright`. */
 export function faceDeclaredLicence(bytes: ArrayBuffer | ArrayBufferView): string {
   const view = fontView(bytes)
-  return nameTableString(view, requireStaticTrueTypeTables(view), 14) ?? ''
+  return nameTableString(view, requireSingleFaceSfntTables(view), 14) ?? ''
 }

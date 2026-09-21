@@ -166,7 +166,7 @@ const isControl = (value: string): boolean => {
  *
  * THE ORDER IS `fetchCut`'s ORDER, AND FOR ITS REASONS. The media type costs
  * nothing and is settled by the file's own name. The `fvar` filter runs next,
- * carrying `requireStaticTrueTypeTables` inside it — so a `.png` somebody
+ * carrying `requireSingleFaceSfntTables` inside it — so a `.png` somebody
  * renamed `.ttf`, a `.woff` in disguise and a truncated download are all
  * refused by the container guard before any name record is asked for, in the
  * guard's own words. The name records are read last, over bytes already known

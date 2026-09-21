@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { faceIsVariable, requireStaticTrueTypeTables, fontView } from './font-name-table'
+import { faceIsVariable, requireSingleFaceSfntTables, fontView } from './font-name-table'
 
 // STORY 16.5 — THE INSTALL-TIME `fvar` FILTER, TIED TO GO'S REFUSAL OVER THE
 // SAME BYTES.
@@ -72,7 +72,7 @@ describe('the install-time fvar filter, over the bytes Go embeds', () => {
     // NON-VACUITY FIRST: the file really is a static-TrueType-shaped container
     // that really does declare `fvar`. Without this a truncated or swapped
     // fixture would make the assertion below pass for the wrong reason.
-    const tables = requireStaticTrueTypeTables(fontView(bytes))
+    const tables = requireSingleFaceSfntTables(fontView(bytes))
     expect(Object.keys(tables), 'the variable fixture must actually declare an fvar table').toContain('fvar')
     expect(faceIsVariable(bytes)).toBe(true)
   })
@@ -84,7 +84,7 @@ describe('the install-time fvar filter, over the bytes Go embeds', () => {
   // uses, and it must install.
   it('admits the static fixture, so a refuse-everything filter cannot pass this file', () => {
     const bytes = readFixture(staticFixture)
-    const tables = requireStaticTrueTypeTables(fontView(bytes))
+    const tables = requireSingleFaceSfntTables(fontView(bytes))
     expect(Object.keys(tables), 'the static fixture must not declare an fvar table').not.toContain('fvar')
     expect(faceIsVariable(bytes)).toBe(false)
   })
@@ -95,7 +95,7 @@ describe('the install-time fvar filter, over the bytes Go embeds', () => {
   // differently. `fontset.RefuseVariableFace` returns `nil` — it answers exactly
   // one question and an unparsable face is not a variable one, and `fontset.New`
   // reports the parse failure in its own sentence. The designer THROWS EARLIER,
-  // out of `requireStaticTrueTypeTables`, because its caller is holding a 200
+  // out of `requireSingleFaceSfntTables`, because its caller is holding a 200
   // from a third party and "this is not a font" is the refusal that response
   // needs.
   //
@@ -103,9 +103,18 @@ describe('the install-time fvar filter, over the bytes Go embeds', () => {
   // WIDENED TO MATCH THE OTHER: widening Go would make `RefuseVariableFace` a
   // second, partial copy of `New`'s admission rules; widening the designer would
   // make it answer a question it is not the authority on.
+  //
+  // ⚠ THE DIVERGENCE IS ABOUT NON-FONTS, NOT ABOUT OUTLINE FLAVOUR, and the
+  // distinction cost a real bug. `requireSingleFaceSfntTables` used to refuse
+  // CFF (`OTTO`) too, under the name `requireStaticTrueTypeTables` — so the
+  // designer refused every real `.otf` while the engine embedded them happily.
+  // That was never this asymmetry; it was the container whitelist disagreeing
+  // with `fontasset.go`'s, which is a defect and not a deliberate split. The
+  // whitelists now match. What stays asserted below is the thing that IS
+  // deliberate: bytes that are not a font in any flavour.
   it('throws on bytes that are not a font, where Go returns nil, and that asymmetry is deliberate', () => {
     const notAFont = new TextEncoder().encode('<!doctype html><title>404</title>').buffer
-    expect(() => faceIsVariable(notAFont)).toThrow(/not a static TrueType sfnt/)
+    expect(() => faceIsVariable(notAFont)).toThrow(/not a single-face sfnt/)
     // Two bytes is the same answer in the same words, so the refusal is about
     // the container and not about a length that happens to reach a version field.
     expect(() => faceIsVariable(new Uint8Array([0, 1]).buffer)).toThrow(/too short to carry a table directory/)

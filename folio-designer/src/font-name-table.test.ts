@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { faceCopyright, faceDeclaredCopyright, faceDeclaredLicence, faceDeclaredLicenceText, faceFamilyName, faceSubfamilyName, faceWeightClass, fontView, nameTableString, requireStaticTrueTypeTables, sfntTableDirectory } from './font-name-table'
+import { faceCopyright, faceDeclaredCopyright, faceDeclaredLicence, faceDeclaredLicenceText, faceFamilyName, faceSubfamilyName, faceWeightClass, fontView, nameTableString, requireSingleFaceSfntTables, sfntTableDirectory } from './font-name-table'
 import { sfntWithCopyright, sfntWithNames } from './test/sfnt-fixture'
 import { blankComments } from '../scripts/forbidden-font-hosts.mjs'
 
@@ -47,17 +47,32 @@ describe('the shared sfnt name-table reader', () => {
   it('reads the family and licence-description records the same walk reaches', () => {
     const face = manifest[0]
     const view = fontView(fs.readFileSync(path.join(fontsRoot, face.directory, face.file)))
-    const tables = requireStaticTrueTypeTables(view)
+    const tables = requireSingleFaceSfntTables(view)
     expect(Object.keys(tables)).toContain('name')
     expect(nameTableString(view, tables, 1) ?? nameTableString(view, tables, 16)).toBeTruthy()
   })
 
-  it('refuses a container whose sfnt version is not a static TrueType outline font', () => {
-    // `OTTO`, and a WOFF wrapper. Both have a table directory at the same
-    // offsets and mean something different, so reading one as the other would
-    // produce plausible garbage rather than an error.
-    for (const version of [0x4f54544f, 0x774f4646, 0x774f4632]) {
-      expect(() => requireStaticTrueTypeTables(fontView(sfntWithNames([{ platform: 3, nameID: 0, value: 'x' }], { sfntVersion: version })))).toThrow(/not a static TrueType sfnt/)
+  it('refuses a container that is not a single face this product can embed', () => {
+    // A WOFF or WOFF2 WRAPPER, and a COLLECTION. A wrapper has a table
+    // directory at the same offsets and means something different, so reading
+    // one as the other would produce plausible garbage rather than an error; a
+    // collection (`ttcf`) is a valid sfnt holding SEVERAL faces, which is not
+    // what `font/ttf` or `font/otf` describe — `fontasset.go` leaves it out of
+    // its own whitelist for the same reason and in the same words.
+    for (const version of [0x774f4646, 0x774f4632, 0x74746366]) {
+      expect(() => requireSingleFaceSfntTables(fontView(sfntWithNames([{ platform: 3, nameID: 0, value: 'x' }], { sfntVersion: version })))).toThrow(/not a single-face sfnt/)
+    }
+  })
+
+  it('admits CFF outlines, because the engine embeds them', () => {
+    // ⚠ `OTTO` USED TO BE REFUSED HERE AND THAT WAS THE DEFECT. The engine's
+    // `sfntVersions` has always admitted CFF and `fontdir` has always read
+    // `.otf` off a host's disk, so the designer was refusing files the renderer
+    // draws — every real `.otf` is CFF-flavoured. The two whitelists are one
+    // list now, and this is the arm that says so.
+    for (const version of [0x00010000, 0x74727565, 0x4f54544f]) {
+      const tables = requireSingleFaceSfntTables(fontView(sfntWithNames([{ platform: 3, nameID: 1, value: 'Brand Grotesk' }], { sfntVersion: version })))
+      expect(Object.keys(tables)).toContain('name')
     }
   })
 
@@ -105,20 +120,25 @@ describe('the shared sfnt name-table reader', () => {
 
   // THE UNTRUSTED CALLER GETS THE VERSION GUARD TOO. `faceCopyright`'s hottest
   // caller is `font-source.ts`, over bytes fetched from a third party seconds
-  // earlier, so it reads the directory through `requireStaticTrueTypeTables`
-  // rather than through the unchecked walk: an `OTTO`/CFF or WOFF container has
-  // a directory at the same offsets and means something else, and a 200 that is
-  // not a font at all has no directory to walk. Both are REFUSED, in the version
-  // message, rather than producing a plausible string.
-  it('refuses a container that is not a static TrueType sfnt rather than walking it', () => {
-    for (const version of [0x4f54544f, 0x774f4646, 0x774f4632]) {
+  // earlier, so it reads the directory through `requireSingleFaceSfntTables`
+  // rather than through the unchecked walk: a WOFF wrapper has a directory at
+  // the same offsets and means something else, and a 200 that is not a font at
+  // all has no directory to walk. Both are REFUSED, in the version message,
+  // rather than producing a plausible string.
+  //
+  // `OTTO` IS NO LONGER IN THIS LIST, and its absence is the fix rather than a
+  // hole: CFF is a flavour this product embeds, so refusing it was never this
+  // guard's job. What the guard is for — a wrapper, and a non-font — is
+  // untouched.
+  it('refuses a container that is not a single-face sfnt rather than walking it', () => {
+    for (const version of [0x774f4646, 0x774f4632, 0x74746366]) {
       const wrapped = sfntWithNames([{ platform: 3, nameID: 0, value: 'Copyright someone else' }], { sfntVersion: version })
-      expect(() => faceCopyright(wrapped)).toThrow(/not a static TrueType sfnt/)
+      expect(() => faceCopyright(wrapped)).toThrow(/not a single-face sfnt/)
     }
     // A plain 200 that is not a font — an error page, a redirect notice — is the
     // same answer in the same words, and never a `RangeError` from the walk.
-    expect(() => faceCopyright(new TextEncoder().encode('<!doctype html><title>404: Not Found</title>'))).toThrow(/not a static TrueType sfnt/)
-    expect(() => faceCopyright(new Uint8Array([0x00, 0x01]))).toThrow(/not a static TrueType sfnt/)
+    expect(() => faceCopyright(new TextEncoder().encode('<!doctype html><title>404: Not Found</title>'))).toThrow(/not a single-face sfnt/)
+    expect(() => faceCopyright(new Uint8Array([0x00, 0x01]))).toThrow(/not a single-face sfnt/)
   })
 
   // A TRUNCATED OR HOSTILE `name` TABLE YIELDS ABSENCE, NOT GARBAGE. The record
@@ -128,11 +148,11 @@ describe('the shared sfnt name-table reader', () => {
   it('reads no record that points past the name table the file declares', () => {
     const bytes = new Uint8Array(sfntWithCopyright('Copyright 2026 Someone'))
     const view = fontView(bytes)
-    const name = requireStaticTrueTypeTables(view)['name']
+    const name = requireSingleFaceSfntTables(view)['name']
     // The record's string offset, moved far beyond the end of the table.
     const record = name.offset + 6
     new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).setUint16(record + 10, 0xfff0)
-    expect(nameTableString(fontView(bytes), requireStaticTrueTypeTables(fontView(bytes)), 0)).toBeUndefined()
+    expect(nameTableString(fontView(bytes), requireSingleFaceSfntTables(fontView(bytes)), 0)).toBeUndefined()
     expect(() => faceCopyright(bytes)).toThrow(/declares no copyright in its own `name` table \(nameID 0\)/)
   })
 
@@ -217,10 +237,10 @@ describe('the name records an author-supplied face is keyed and described by', (
     expect(faceDeclaredLicence(bytes)).toBe('')
   })
 
-  it('still refuses a container that is not a static TrueType sfnt, through the guard both readers share', () => {
+  it('still refuses a container that is not a single-face sfnt, through the guard both readers share', () => {
     const notAFont = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0, 0, 0, 0, 0, 0, 0, 0, 0]).buffer
-    expect(() => faceFamilyName(notAFont)).toThrow(/not a static TrueType sfnt/)
-    expect(() => faceDeclaredCopyright(notAFont)).toThrow(/not a static TrueType sfnt/)
+    expect(() => faceFamilyName(notAFont)).toThrow(/not a single-face sfnt/)
+    expect(() => faceDeclaredCopyright(notAFont)).toThrow(/not a single-face sfnt/)
   })
 })
 

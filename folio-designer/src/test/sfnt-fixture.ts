@@ -30,7 +30,7 @@ const isUnicodePlatform = (platform: number) => platform === 3 || platform === 0
 /**
  * `withFvar` ADDS THE TABLE BY TAG AND NOTHING ELSE, which is exactly what the
  * predicate under test reads. `faceIsVariable` asks `'fvar' in
- * requireStaticTrueTypeTables(...)` — the TAG's presence in the directory, never
+ * requireSingleFaceSfntTables(...)` — the TAG's presence in the directory, never
  * the axis records behind it — so a well-formed but empty `fvar` is the honest
  * fixture for "this face declares itself variable". Building real axis records
  * would be building a second, richer claim than the code makes.
