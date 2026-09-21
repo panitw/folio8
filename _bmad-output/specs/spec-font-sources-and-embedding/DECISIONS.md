@@ -390,6 +390,12 @@ different act from the one A-20 refused. That would shorten every imported font'
 needs and hand the first baseline back to the author's own face. It needs its own story: it changes
 what a pick writes into a document, so it touches the chain the `.folio` carries.
 
+**OWNER RULING, 2026-09-21: DEFERRED, NOT REJECTED.** Both this and the vertical model's
+envelope-over-the-whole-chain shape were put to the owner with the measurements above and left
+alone for now. Neither is a defect: an imported face renders correctly, and the envelope is a
+deliberate trade for data-independent line heights. They are recorded here so the next reader finds
+a decision rather than an oversight, and does not re-derive the same two findings from scratch.
+
 ### A-21 — A family-name collision is refused at import, not made to work
 
 **Decision:** accepted the implementer's deviation. An imported face whose binary declares a family
