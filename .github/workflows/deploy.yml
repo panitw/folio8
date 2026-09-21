@@ -35,8 +35,34 @@ jobs:
           # Deploy exactly the commit CI verified, not whatever main is now.
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
+      # RETRIED, BECAUSE THIS STEP FETCHES A BINARY OVER THE NETWORK. The
+      # @railway/cli package's postinstall downloads its release tarball from
+      # GitHub Releases, and a 504 there fails the whole deploy — measured on
+      # 2026-09-21, when the first deploy to survive CI in a day died on
+      # `Failed fetching the binary (504 Gateway Time-out)` without ever
+      # reaching `railway up`.
+      #
+      # THE FAILURE IS SILENT IN PRACTICE, which is why it is worth guarding:
+      # this workflow only fires when "Build, vet, and guardrails" concludes
+      # success, nobody watches it on a green run, and a skipped deploy looks
+      # exactly like no push at all. The retry matches ci.yml's own handling
+      # of network-fetched toolchains (the dotnet-install.ps1 step, three
+      # attempts with a sleep).
+      #
+      # It retries the FETCH, not a deploy: `railway up` is a separate step
+      # below and is never re-attempted here, so this cannot turn one intended
+      # deploy into several.
       - name: Install Railway CLI
-        run: npm install --global @railway/cli@5.57.1
+        run: |
+          for attempt in 1 2 3; do
+            if npm install --global @railway/cli@5.57.1; then
+              exit 0
+            fi
+            echo "::warning::Railway CLI install failed (attempt $attempt of 3)"
+            sleep 15
+          done
+          echo "::error::Railway CLI install failed three times; the deploy did not run"
+          exit 1
 
       - name: railway up
         env:
