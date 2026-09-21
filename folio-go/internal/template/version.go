@@ -580,12 +580,15 @@ func fontsRequireMajor(f Fonts) bool {
 // still requires 5.0 — the load door will be asked about that sibling
 // too (parse.go's variant arm), so a probe that looked only at the base
 // would stamp a version that lies.
-// It does NOT sort the chain names, and fontsRequireMajor's sort is not
-// copied: this is an any-match returning a bool, so no order it could walk
-// changes the answer, and a sorted walk would only buy a slice allocation.
-// (fontsRequireMajor's own sort predates this and is left alone.)
+// It walks the chain names SORTED, exactly as fontsRequireMajor does.
+// The answer does not depend on the order — this is an any-match
+// returning a bool — but D-1.3.5/AD-1 forbids ranging a map value
+// outright rather than case by case, and lint's map-range scan is a
+// whole-module gate that does not take "the order cannot matter here"
+// for an answer. An earlier revision of this comment argued the
+// allocation was not worth it; the rule is not a cost question.
 func fontsRequireAcknowledgedFace(f Fonts, assets map[string]Asset) bool {
-	for name := range f {
+	for _, name := range slices.Sorted(maps.Keys(f)) {
 		for _, entry := range f[name] {
 			for _, key := range entry.EmbeddedAssetKeys() {
 				if assets[key].FaceAcknowledged() {
