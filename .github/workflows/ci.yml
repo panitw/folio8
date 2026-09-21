@@ -706,38 +706,26 @@ jobs:
           mkdir -p folio-dotnet/build/native/host
           cp folio-dotnet/build/native/linux-x64/libfolio8_native.so \
              folio-dotnet/build/native/host/libfolio8_native.so
-      - name: dotnet test (modern .NET, linux-x64)
-        run: dotnet test folio-dotnet/test/Folio8.Tests/Folio8.Tests.csproj -c Release
-      # The ten-run tally that stood here has been removed; it answered its
-      # question (0 crashes in 10, recorded in DW-396) and a release gate is
-      # not the place to keep a diagnostic running. DW-396 names what would
-      # settle the remaining unknown: core dumps against the `host` native.
-      # THE WINDOWS JOB PACKS THE PACKAGE, AND THE PACKAGE IS NOW FOUR
-      # PLATFORMS. `dotnet pack` refuses unless all four natives are present —
-      # correctly, since a package missing a platform is exactly what
-      # FolioPackageCheck exists to stop — so the two ELF natives have to
-      # reach the machine that packs. Handing them over as an artifact is what
-      # makes the consumer suite there test the REAL package rather than a
-      # Windows-only subset of it.
-      - uses: actions/upload-artifact@v4
-        with:
-          name: folio-dotnet-linux-natives
-          path: |
-            folio-dotnet/build/native/linux-x64/libfolio8_native.so
-            folio-dotnet/build/native/linux-arm64/libfolio8_native.so
-          retention-days: 7
-          if-no-files-found: error
+      # ⚠ THE SUITE IS NOT RUN HERE, AND THAT IS THE POINT OF DW-396.
+      #
+      # It used to be, and it passed — 154/154, then 0 crashes in a ten-run
+      # tally. Both were true and neither was evidence of much: entering the
+      # engine from a CLR thread-pool thread overflows that thread's
+      # sigaltstack and kills the process, and a run of passes cannot clear a
+      # marginal-size overflow. Run enough times on a real amd64 box, the
+      # SHIPPED native overflows too.
+      #
+      # So the two Linux RIDs are built and checked here and are NOT packed
+      # (see Folio8.csproj), and this job asserts what is still deterministic
+      # and still worth guarding: that both natives build in the pinned image,
+      # are the architecture they claim, and keep their glibc floor. Restoring
+      # the `dotnet test` step is part of what closes DW-396 — when it can pass
+      # for a reason rather than by luck.
 
   # No continue-on-error. Same reason as everywhere else in this file.
   folio-dotnet:
     runs-on: windows-2022
     timeout-minutes: 45
-    # FOR THE PACK STEP ONLY. Everything before it — both DLLs, the 4.6
-    # compile check, and all four corpus legs — depends on nothing Linux and
-    # would run happily in parallel. The dependency buys one thing: the
-    # consumer suite here packs and installs the REAL four-platform package
-    # instead of a Windows-only subset that no consumer will ever receive.
-    needs: folio-dotnet-linux
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -992,25 +980,6 @@ jobs:
       # files below are the evidence for the unit legs; without this the ONE
       # job that says anything about .NET Framework consumers would leave a
       # reader nothing but scrollback when it reds.
-      # The two ELF natives folio-dotnet-linux built in the pinned image.
-      # Downloaded rather than rebuilt: windows-2022 runs Windows containers,
-      # so it cannot build them, and rebuilding them anywhere else would
-      # defeat the glibc-floor pin.
-      - uses: actions/download-artifact@v4
-        with:
-          name: folio-dotnet-linux-natives
-          path: folio-dotnet/build/native
-      - name: the Linux natives arrived where the pack expects them
-        shell: pwsh
-        run: |
-          foreach ($rid in 'linux-x64', 'linux-arm64') {
-            $so = "folio-dotnet/build/native/$rid/libfolio8_native.so"
-            if (-not (Test-Path $so)) {
-              Write-Error "::error::$so did not arrive from folio-dotnet-linux; the pack below would refuse and the reason would be two steps away"
-              exit 1
-            }
-            "{0,12}  {1}" -f (Get-Item $so).Length, $so
-          }
       - name: pack, install into seven consumer shapes, render and force each failure mode (CAP-7, CAP-11)
         shell: pwsh
         run: |

@@ -7138,6 +7138,53 @@ stack, and confirm or kill the signal-handler hypothesis. Until then `folio-dotn
 relied on as a gate, because it fails roughly half the time for reasons unrelated to the change
 under test.
 
+#### 2026-09-21, later the same day: MECHANISM IDENTIFIED, and it affects the SHIPPED native too
+
+Run on a real amd64 Ubuntu 24.04 under WSL2 (native instructions, not emulation), the kernel names
+it outright:
+
+```
+signal: .NET TP Worker[31774] overflowed sigaltstack
+potentially unexpected fatal signal 11.
+```
+
+**A CLR THREAD-POOL WORKER'S ALTERNATE SIGNAL STACK IS TOO SMALL FOR GO'S SIGNAL HANDLER.** Go's
+runtime installs `SA_ONSTACK` handlers for stack growth and preemption. When the engine is entered
+from a thread the CLR created — which is every P/Invoke call from a `.NET TP Worker` — those
+handlers run on the CLR's `sigaltstack`, the frame does not fit, and the kernel converts the
+overflow into SIGSEGV. The CLR reports what it sees: `Internal CLR error (0x80131506)`.
+
+That accounts for every observation this entry has collected. It is nondeterministic because
+whether the frame fits depends on how deep the stack is when the signal lands. Windows is immune
+because it has no POSIX signals or `sigaltstack`. And the earlier glibc correlation was not
+coincidence after all: **glibc 2.34 changed `SIGSTKSZ` and `MINSIGSTKSZ` from compile-time
+constants into `sysconf()`-backed runtime values**, so a native built against 2.28 and one built
+against 2.39 do not agree about how large a signal stack is.
+
+**THE CORRECTION THAT MATTERS: the shipped native is NOT clear.** The 0-crashes-in-11 measured on CI
+was read here as evidence the pinned-image build was unaffected. It was not — it was a lower
+frequency. Staged into the same WSL2 loop, the **shipped `linux-x64` native overflowed sigaltstack
+and took two fatal signals**. The defect is in the Go/CLR boundary itself; the build's glibc only
+moves how often it fires. A marginal-size overflow cannot be cleared by a run of passes, and
+treating 11 of them as proof was the wrong inference.
+
+**Consequence: folio-dotnet 1.1.0 ships WINDOWS-ONLY.** The `linux-x64` and `linux-arm64` RIDs were
+built, verified and then withdrawn from the package before release rather than shipped — a
+nondeterministic hard crash inside a consumer's server process, with no mitigation available to
+them and no realistic chance of them diagnosing it, is not something to publish. The build tooling,
+the pinned-image glibc discipline, `verify-linux-natives.sh` and the `folio-dotnet-linux` CI job all
+remain on `main`: the RIDs are withdrawn, not the work.
+
+**What a fix probably looks like (1.2.0, not a patch):** have the binding marshal engine calls onto
+a thread it creates itself with an adequate `sigaltstack`, instead of letting arbitrary CLR
+thread-pool threads cross the C ABI. That is a real design change to `Native.cs` with its own
+thread-safety consequences, and `folio-go/cshared/README.md`'s thread-safety claim has to be
+re-examined in the same change. Worth checking first whether a newer Go runtime already changes the
+behaviour.
+
+**This entry is no longer "nothing explains it".** It is a specified bug with a known mechanism, a
+known blast radius, and a named reason it is not yet fixed.
+
 ### DW-148 — comments that describe a sibling's behaviour go stale silently; four instances this run
 
 - **Deferred by:** the **Epic 10 reconstruction** (finding 8, ruled at D-10.R.8, 2026-09-02) — raised under

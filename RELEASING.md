@@ -194,14 +194,9 @@ additions and the one behaviour change:
   `v1.0.0` call does today, so no existing call changes meaning;
 - **new** diagnostics `TEXT_FACE_ABSENT`'s companion
   `DiagCodeTextFaceSubstituted`, raised only under `Substitute`;
-- **folio-dotnet now runs on Linux** — `linux-x64` and `linux-arm64` join
-  `win-x64` and `win-x86`. The managed assembly is unchanged: `DllImport`
-  resolves `libfolio8_native.so` and the host picks the RID, so a Linux
-  consumer authors nothing. The natives are built in a digest-pinned
-  AlmaLinux 8 image and require no symbol above `GLIBC_2.17`, so RHEL 8+,
-  Ubuntu 18.04+ and Debian 10+ all satisfy them. **Alpine/musl remains
-  unsupported**, for the reason in the package-contents section — it is not a
-  missing build leg.
+- **folio-dotnet stays Windows-only.** Linux support was built for this
+  release and withdrawn before it: see DW-396 and the package-contents
+  section. Nothing about the Windows package changes.
 - **format `4.2`** — a document whose `fonts` chain names an asset carrying
   `authorAcknowledged: true` declares it. A `4.0`/`4.1` reader loads such a
   document and then refuses it on the licence terms the key exists to excuse;
@@ -352,20 +347,22 @@ written down — and reddens if one acquires it.
 lib/netstandard2.0/Folio8.dll          the one managed assembly, faces embedded
 runtimes/win-x64/native/folio8_native.dll
 runtimes/win-x86/native/folio8_native.dll
-runtimes/linux-x64/native/libfolio8_native.so
-runtimes/linux-arm64/native/libfolio8_native.so
 build/folio8.targets                   the .NET Framework delivery
 buildTransitive/folio8.targets
 README.md, LICENSE
 third-party-notices/fonts/**           each face's OFL text and notice
 ```
 
-**No `linux-musl-x64`, and that is a decision rather than a gap.** Go's
-`-buildmode=c-shared` emits initial-exec TLS relocations that musl's loader
-refuses under `dlopen`, which is exactly how P/Invoke loads the library;
-building the native *with* musl fails identically, measured on x86-64 and
-arm64. Shipping the RID would turn a clean install-time absence into a crash
-at the first render. `PackagingTests` reddens if the RID is ever added.
+**NO LINUX RID SHIPS, AND IT IS WITHDRAWN RATHER THAN UNATTEMPTED.**
+`linux-x64` and `linux-arm64` were built, verified and packed during 1.1.0's
+preparation, then taken out before release: entering the engine from a CLR
+thread-pool thread overflows that thread's `sigaltstack` and kills the
+process (**DW-396**). The pinned build image does not fix it — that was the
+first reading and it was wrong; the glibc the native is built against moves
+how OFTEN it fires, not whether. `PackagingTests` reddens if a `linux` RID is
+added back, and the tooling (`build-native.sh`'s linux targets,
+`verify-linux-natives.sh`, the ELF arm in `FolioPackageCheck`, the
+`folio-dotnet-linux` CI job) all remain in place for 1.2.0.
 
 It declares **no dependencies**, so `dotnet add package folio8` on a
 machine with no Go and no C compiler produces a project that renders — from
@@ -428,9 +425,12 @@ carries preinstalled, an owner's laptop has to be given.
 | Go | `go build -buildmode=c-shared` builds the engine |
 | mingw-w64 gcc, `x86_64` | cgo's C compiler for `win-x64` |
 | mingw-w64 gcc, `i686` | a SEPARATE toolchain, for `win-x86` |
-| Docker | the **Linux** natives — see below; needed on whichever machine builds them, which need not be this one |
+| Docker | only for the **Linux** natives, which **1.1.0 does not ship** — see below |
 
-**The Linux pair needs Docker and nothing else** — not a Go toolchain, not a
+**The Linux pair is not part of a release today (DW-396).** What follows
+describes tooling that still works and is still exercised by CI, kept because
+1.2.0 will need it. **Nothing in the publish procedure below builds or packs
+it.** The Linux pair needs Docker and nothing else — not a Go toolchain, not a
 cross-compiler. `build-native.sh linux-x64 linux-arm64` builds them inside a
 **digest-pinned AlmaLinux 8 image**, and the image is the point: a cgo library
 records the glibc symbol versions of the machine that built it, so building on
@@ -500,21 +500,22 @@ a standalone i686 mingw-w64 build unpacked there resolves with no code change.
      `folio-dotnet\build\build-native.ps1 win-x64 win-x86`. On a machine that
      has not built them before, satisfy *The build machine* above first — the
      script needs Go and a mingw-w64 gcc for each architecture.
-   - **Linux**, on any machine with Docker:
-     `./folio-dotnet/build/build-native.sh linux-x64 linux-arm64`. If that is
-     a different machine from the Windows one, copy
-     `folio-dotnet/build/native/linux-*/` across — and copy, never rebuild on
-     a host whose glibc is newer than the pinned image's.
+   - **Linux: nothing.** The package ships no Linux RID (DW-396), and
+     `Folio8.csproj` lists no Linux `FolioNative`, so the pack neither wants
+     nor checks one. Do not build them for a release; `folio-dotnet-linux`
+     builds and verifies them in CI, which is where they belong until 1.2.0.
 
-   All four must be present, or the pack refuses and names what is missing.
+   Both Windows natives must be present, or the pack refuses and names what is
+   missing.
 2. `dotnet test folio-dotnet/test/Folio8.Tests/Folio8.Tests.csproj -c Release`
    is green, and so is the 32-bit leg. `ci.yml`'s `folio-dotnet` job runs both
    plus the consumer suite — the pack, the install into all three process
    shapes on both target families, the corpus hash, and each forced CAP-11
    failure — so nothing below re-checks the package's *behaviour* by hand.
-   `ci.yml`'s `folio-dotnet-linux` job is the Linux half: it builds both ELF
-   natives in the pinned image, asserts their machine type and glibc floor,
-   and runs the suite against the shipped `linux-x64` native itself.
+   `ci.yml`'s `folio-dotnet-linux` job builds both ELF natives in the pinned
+   image and asserts their machine type and glibc floor. It deliberately does
+   NOT run the suite against them — DW-396 — and nothing it produces is
+   packed.
 3. `ci.yml` is green on that exact commit.
 
 ### The commands

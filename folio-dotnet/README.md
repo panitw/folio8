@@ -15,7 +15,7 @@ dotnet add package folio8
 ```
 
 Nothing else is needed. No Go, no C compiler, no build step, no configuration:
-all four native libraries and all eleven shipped font faces are in the
+both Windows native libraries and all eleven shipped font faces are in the
 package, and the right native is chosen for you at load time.
 
 ## Where templates come from
@@ -115,66 +115,46 @@ dependencies at all**.
 
 ## Supported platforms
 
-**Windows** on **x86** and **x64**, and **Linux** on **x64** and **arm64**:
-
-| Runtime identifier | Native |
-|---|---|
-| `win-x64`, `win-x86` | `folio8_native.dll` |
-| `linux-x64`, `linux-arm64` | `libfolio8_native.so` |
-
-The Linux natives are built against **glibc**, on a base old enough that they
-require no symbol newer than `GLIBC_2.17` — so RHEL 8+, Ubuntu 18.04+,
-Debian 10+ and Amazon Linux 2+ all satisfy them.
-
-There are **no macOS binaries**, and **Alpine (musl) is not supported** — see
-below. For those hosts use [folio8 for Node](https://www.npmjs.com/package/folio8),
-which is the same engine compiled to WebAssembly and runs wherever Node does.
+**Windows only**, on **x86** and **x64**. There are no Linux, macOS or ARM64
+native binaries in this package. For non-Windows hosts, use
+[folio8 for Node](https://www.npmjs.com/package/folio8), which is the same
+engine compiled to WebAssembly and runs wherever Node does.
 
 On an unsupported platform — or where the native library cannot be loaded for
 any other reason — the first call throws `FolioNativeLoadException`. There is
 no degraded mode: render and validate are the entire library, so there is
 nothing to fall back to.
 
-### Why Alpine / musl is not supported
+### Why there is no Linux build yet
 
-Not an oversight, and not something a `linux-musl-x64` build would fix. The
-engine is a Go library built with `-buildmode=c-shared`, which emits
-initial-exec TLS relocations; musl's dynamic loader refuses those under
-`dlopen`, and `dlopen` is exactly how P/Invoke loads a native library. A
-native built *with* musl fails the same way, on both x86-64 and arm64:
+Linux natives were built and tested for this release and then **withheld**,
+rather than never attempted. Entering the engine from a .NET thread-pool
+thread runs the Go runtime's signal handlers on that thread's alternate
+signal stack, which is too small for them; the process dies with
+`Internal CLR error (0x80131506)`, unpredictably and with no mitigation
+available to the calling application. Publishing that would put a random
+hard crash inside your service.
 
-```
-Error relocating libfolio8_native.so: free: initial-exec TLS
-resolves to dynamic definition in libfolio8_native.so
-```
-
-Shipping a `linux-musl-x64` asset anyway would turn a clear install-time
-absence into a crash at the first render, so the package deliberately carries
-none. On Alpine, use the Node package, or a glibc-based image
-(`mcr.microsoft.com/dotnet/runtime:9.0` is Debian-based by default).
+It is a solvable problem and the work is staged, so this is a "not yet"
+rather than a "no". Until then, Linux hosts are well served by the Node
+package, which runs the same engine as WebAssembly and shares none of this
+machinery.
 
 ### How the right native is chosen
 
-**On Linux, by the host.** Modern .NET resolves the `runtimes/<rid>/native/`
-asset for the platform it is running on, and `DllImport` loads it. Nothing in
-this package intervenes and there is nothing for you to configure.
-
-**On Windows, by process bitness, at load time.** A .NET Framework project is
+By **process bitness, at load time.** A .NET Framework project is
 AnyCPU by default, which runs as a 64-bit process on 64-bit Windows and as a
 32-bit one under `Prefer32Bit` or on a 32-bit host — so nothing at build time
 can know which native you will need. This package reads `IntPtr.Size` before
 the first call into the engine, picks `win-x64` or `win-x86`, and loads that
 file by full path.
 
-All three Windows process shapes work with no caller-authored load logic, on
-both target families:
+All three process shapes work with no caller-authored load logic, on both
+target families:
 
 - AnyCPU on 64-bit Windows → `win-x64`
 - AnyCPU with `Prefer32Bit` → `win-x86`
 - `PlatformTarget=x86` → `win-x86`
-
-There is no equivalent choice on Linux: .NET Framework does not run there, so
-the host's RID resolution is the whole mechanism.
 
 When it cannot load, `FolioNativeLoadException` names the detected process
 bitness, the runtime identifier and file name it sought, every path it

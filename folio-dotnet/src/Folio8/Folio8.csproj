@@ -64,7 +64,7 @@
     <Company>Panit Wechasil</Company>
     <Product>folio8</Product>
     <Copyright>Copyright (c) folio8 contributors</Copyright>
-    <Description>folio8 for .NET: render and validate .folio templates with the folio8 engine as a native library. Byte-identical to the Go engine, from .NET Framework 4.6 through modern .NET, on Windows (x86, x64) and Linux (x64, arm64). Ships all four natives and the eleven shipped font faces. Alpine/musl is not supported. Design templates at https://folio8.report.</Description>
+    <Description>folio8 for .NET: render and validate .folio templates with the folio8 engine as a native library. Byte-identical to the Go engine, from .NET Framework 4.6 through modern .NET, on Windows x86 and x64. Ships both native architectures and the eleven shipped font faces. Design templates at https://folio8.report.</Description>
     <PackageTags>pdf;reporting;folio8;rendering;documents;invoice;statement</PackageTags>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
     <PackageReadmeFile>README.md</PackageReadmeFile>
@@ -155,8 +155,30 @@
   <ItemGroup>
     <FolioNative Include="$(FolioNativeDir)/win-x64/folio8_native.dll"><Rid>win-x64</Rid></FolioNative>
     <FolioNative Include="$(FolioNativeDir)/win-x86/folio8_native.dll"><Rid>win-x86</Rid></FolioNative>
-    <FolioNative Include="$(FolioNativeDir)/linux-x64/libfolio8_native.so"><Rid>linux-x64</Rid></FolioNative>
-    <FolioNative Include="$(FolioNativeDir)/linux-arm64/libfolio8_native.so"><Rid>linux-arm64</Rid></FolioNative>
+
+    <!--
+      ⚠ THE TWO LINUX RIDs ARE BUILT AND VERIFIED, AND DELIBERATELY NOT
+      SHIPPED — withdrawn before 1.1.0 on the evidence in DW-396.
+
+      Entering the engine from a CLR thread-pool thread runs Go's SA_ONSTACK
+      signal handlers on that thread's alternate signal stack, which is too
+      small for them; the kernel reports `.NET TP Worker overflowed
+      sigaltstack` and turns it into SIGSEGV, which the CLR surfaces as
+      `Internal CLR error (0x80131506)`. It is nondeterministic, it has no
+      consumer-side mitigation, and it crashes the host process.
+
+      IT IS NOT FIXED BY THE PINNED BUILD IMAGE. That was the first reading —
+      the AlmaLinux 8 native went 11 runs clean on CI while the runner-built
+      one crashed — and it was wrong: the same native overflowed once it was
+      run enough times. The build's glibc moves the FREQUENCY, not the
+      defect, because glibc 2.34 turned SIGSTKSZ into a runtime value.
+
+      Restoring these two lines is most of what 1.2.0 needs, once the
+      binding stops crossing the ABI on arbitrary thread-pool threads.
+      Everything else is still here and still exercised: build-native.sh's
+      linux targets, verify-linux-natives.sh, the ELF arm in
+      FolioPackageCheck below, and ci.yml's folio-dotnet-linux job.
+    -->
 
     <None Include="@(FolioNative)" Pack="true" PackagePath="runtimes/%(Rid)/native/" Visible="false" />
   </ItemGroup>

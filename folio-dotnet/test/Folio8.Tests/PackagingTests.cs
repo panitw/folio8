@@ -64,19 +64,19 @@ namespace Folio8Tests
             Assert.Contains("PackagePath=\"runtimes/%(Rid)/native/\"", Project, StringComparison.Ordinal);
             Assert.Contains("win-x64/folio8_native.dll", Project, StringComparison.Ordinal);
             Assert.Contains("win-x86/folio8_native.dll", Project, StringComparison.Ordinal);
-            Assert.Contains("linux-x64/libfolio8_native.so", Project, StringComparison.Ordinal);
-            Assert.Contains("linux-arm64/libfolio8_native.so", Project, StringComparison.Ordinal);
-            // ALPINE IS AN ABSENCE THAT HAS TO STAY ONE. Go's c-shared TLS
-            // model cannot be dlopen'd by musl, so a linux-musl-x64 asset
-            // would crash at the first render instead of being cleanly
-            // missing. If someone adds the RID, this reddens and sends them
-            // to the reasoning beside the FolioNative items.
+            // NO LINUX RID SHIPS, AND THAT IS ENFORCED RATHER THAN ASSUMED.
+            // The two Linux natives were built and verified for 1.1.0 and
+            // then withdrawn: entering the engine from a CLR thread-pool
+            // thread overflows that thread's sigaltstack and kills the
+            // process (DW-396). Re-adding a RID here is precisely how that
+            // would reach consumers, so it reddens until the binding stops
+            // crossing the ABI on arbitrary thread-pool threads.
             //
-            // IT READS THE RID ELEMENTS, NOT THE FILE'S TEXT: the reasoning
-            // beside those items names linux-musl-x64 in order to rule it
+            // IT READS THE RID ELEMENTS, NOT THE FILE'S TEXT: the comment
+            // beside those items names the Linux RIDs in order to rule them
             // out, and a raw substring search cannot tell the prohibition
             // from the thing prohibited.
-            Assert.DoesNotContain(PackedRids(), rid => rid.StartsWith("linux-musl", StringComparison.Ordinal));
+            Assert.DoesNotContain(PackedRids(), rid => rid.StartsWith("linux", StringComparison.Ordinal));
             // The COLLIDING name, in any of the places the csproj could spell
             // it. `native/folio8.dll` could never match: the natives are named
             // by their source path, `.../win-x64/folio8.dll`, so the guard has
@@ -214,14 +214,11 @@ namespace Folio8Tests
         [InlineData(".NET Framework 4.6")]
         [InlineData("win-x86")]
         [InlineData("win-x64")]
-        [InlineData("linux-x64")]
-        [InlineData("linux-arm64")]
-        // The two absences an installer would otherwise discover by
-        // deploying: there is no macOS native, and Alpine is not merely
-        // unbuilt but unsupportable. Both are stated, with the musl reason.
-        [InlineData("no macOS binaries")]
-        [InlineData("Alpine (musl) is not supported")]
-        [InlineData("GLIBC_2.17")]
+        [InlineData("Windows only")]
+        // The Linux absence is STATED, with its reason, rather than left for
+        // an installer to discover by deploying. It is a withheld build, not
+        // an unattempted one, and the README says which.
+        [InlineData("Why there is no Linux build yet")]
         [InlineData("FolioNativeLoadException")]
         public void TheReadmeTellsAnInstallerWhatTheyCannotGuess(string text)
         {
