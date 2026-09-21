@@ -1496,6 +1496,15 @@ input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px
    Break and PAGE SETUP's embed box are one row shape, so they are one rule. */
 label.page-break-setting, label.embed-fonts-setting { display: flex; align-items: center; gap: var(--space-1); margin: 0; }
 label.page-break-setting input[type="checkbox"], label.embed-fonts-setting input[type="checkbox"] { width: 12px; min-height: 12px; flex: none; margin: 0; accent-color: var(--color-select); }
+/* AND THE EMBED ROW TAKES THE WHOLE GRID ROW, because it is a SENTENCE rather
+   than a field. `.property-grid` is two equal columns sized for the short
+   paired controls around it — Preset/Orientation, Locale/UTC offset, the four
+   margins — and this label is the one member of that grid that is prose. In a
+   half-width cell "Embed fonts in the document" wrapped to two lines with the
+   column beside it standing empty, which read as a layout fault rather than as
+   a checkbox. Page Break is NOT given this: it is a direct child of its
+   section, in no grid at all, so the property would be inert there. */
+.property-grid > label.embed-fonts-setting { grid-column: 1 / -1; }
 .page-dialog-backdrop { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; padding: var(--space-8); background: var(--tint-scrim); }
 .page-dialog { width: min(420px, calc(100vw - 48px)); padding: var(--space-6); border: var(--hairline) solid var(--color-line-strong); background: var(--color-panel); color: var(--color-ink-high); box-shadow: var(--shadow-page); }
 .page-dialog h2 { margin-top: 0; }
