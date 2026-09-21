@@ -112,20 +112,40 @@ import (
 // optional `sectionBreak` key. Additive and extending no closed set, so a
 // MINOR; a 4.0 reader would ignore the key and draw a growing table over
 // the section below it. Only a document carrying a break declares it.
-// A THIRD MAJOR, 5.0, was added by spec-font-sources-and-embedding: the
-// `authorAcknowledged` key on an `assets[k].font` record a chain names.
-// The `font` record's key set is OPEN, so a 4.x reader carries the key
-// through — and then refuses the document at requireEmbeddedFaceLicence
-// for blank terms, on exactly the terms the key exists to excuse. That is
-// D-7.3.1's REFUSE case, which is what MAJOR is for. Only a document that
-// carries an acknowledged record a chain names declares it.
 //
-// ⚠ `SupportedMajor` MOVES 4 → 5 EXACTLY ONCE. spec-loop-section opens the
-// same 5.0 for the `loop` element and `$.` paths; whichever story lands
-// first makes this edit and the other finds it done. Neither re-raises it.
+// A SEVENTH MINOR, 4.2, was added by spec-font-sources-and-embedding: the
+// `authorAcknowledged` key on an `assets[k].font` record a chain names.
+//
+// IT WAS BRIEFLY 5.0, AND THE OWNER REVERSED THAT ON 2026-09-21. The
+// reasoning for the MAJOR was D-7.3.1's REFUSE case: the `font` record's
+// key set is OPEN, so a 4.x reader carries the key through and then
+// refuses the document at requireEmbeddedFaceLicence for blank terms, on
+// exactly the terms the key exists to excuse.
+//
+// That is all true, and it is not what MAJOR buys. A 4.x reader refuses
+// such a document WHATEVER this row says, because a higher MINOR loads
+// and the key passes through opaquely either way (checkVersionLoadable
+// gates on MAJOR alone). So the MAJOR bought a cleaner ERROR MESSAGE on
+// already-published readers — a version refusal instead of a licence
+// refusal — and cost the 5.0 major itself, which spec-loop-section needs
+// for the `loop` element and `$.` paths and which must not be opened by
+// a feature that does not need it. Neither version can mis-render: the
+// key only ever EXCUSES a check, so a reader ignoring it is strictly
+// more conservative.
+//
+// It is therefore a MINOR, on the terms every other MINOR here is one:
+// the document says honestly what it needs, and `style.color` — which
+// shipped without moving the version and left colour-bearing documents
+// declaring 1.0 while requiring 1.1 — is the precedent for why that
+// matters even where nothing enforces it. Only a document that carries
+// an acknowledged record a chain names declares it.
+//
+// ⚠ `SupportedMajor` IS STILL 4, AND 5.0 IS STILL UNOPENED.
+// spec-loop-section opens it for the `loop` element and `$.` paths, and
+// that spec's stories are the only thing that may move this constant.
 const (
-	SupportedMajor   = 5
-	SupportedVersion = "5.0"
+	SupportedMajor   = 4
+	SupportedVersion = "4.2"
 )
 
 // TextNumberExpressionVersion is the version a document requires when a
@@ -195,11 +215,11 @@ const (
 	sectionBreakVersion = "4.1"
 	// acknowledgedFaceVersion is the version introduced by the
 	// `authorAcknowledged` key on the `font` record of an asset a chain
-	// names — a MAJOR, because the key changes what a reader must ACCEPT
-	// rather than what a writer emits. See SupportedMajor's note, and
-	// contrast `embedFonts`, which governs what a save writes and
-	// therefore has no ladder row at all.
-	acknowledgedFaceVersion = "5.0"
+	// names — an additive key extending no closed set, so a MINOR on 4.
+	// It was briefly a MAJOR; SupportedMajor's note records why that was
+	// reversed. Contrast `embedFonts`, which governs what a save writes
+	// and therefore has no ladder row at all.
+	acknowledgedFaceVersion = "4.2"
 )
 
 // parseVersion splits a "MAJOR.MINOR" string into its two integer
@@ -577,7 +597,7 @@ func fontsRequireMajor(f Fonts) bool {
 // declared style-variant sibling are consulted through the one function
 // that already enumerates them. A chain whose regular is an ordinary
 // catalogue face and whose BOLD is the author's own acknowledged cut
-// still requires 5.0 — the load door will be asked about that sibling
+// still requires 4.2 — the load door will be asked about that sibling
 // too (parse.go's variant arm), so a probe that looked only at the base
 // would stamp a version that lies.
 // It walks the chain names SORTED, exactly as fontsRequireMajor does.

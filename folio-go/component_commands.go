@@ -5120,7 +5120,7 @@ func embeddedFontRecord(raw map[string]json.RawMessage, name string) (template.F
 // Either way round is a silent falsehood. Inheriting one would put an
 // acknowledgement nobody made on a catalogue face, which is exactly the defect
 // the spec names; dropping one would lose the author's assertion and, with it,
-// the 5.0 the document needs to be reopened at all.
+// the 4.2 the document needs to be reopened at all.
 //
 // SO IT IS REFUSED, on the freeze rule this file already applies to a cut
 // declared over different bytes: the author is told what the document holds

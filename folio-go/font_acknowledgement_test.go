@@ -247,8 +247,8 @@ func TestAnAcknowledgedFaceEmbedsWithBlankTerms(t *testing.T) {
 	if !reopened.doc.Assets[embeddedKeyOf(face)].FaceAcknowledged() {
 		t.Fatal("the acknowledgement did not survive the save/open round trip")
 	}
-	if !strings.Contains(string(saved), `"version": "5.0"`) {
-		t.Fatalf("the saved document does not declare 5.0:\n%s", saved)
+	if !strings.Contains(string(saved), `"version": "4.2"`) {
+		t.Fatalf("the saved document does not declare 4.2:\n%s", saved)
 	}
 }
 
@@ -516,7 +516,7 @@ func TestAnAcknowledgedCutIsStillRefusedAVariableFace(t *testing.T) {
 // assets key IS the content, both doors write "only if absent", and whichever
 // record happened to arrive second would otherwise be silently discarded —
 // putting an acknowledgement nobody made on a catalogue face, or losing the
-// author's own and with it the 5.0 the document needs to reopen.
+// author's own and with it the 4.2 the document needs to reopen.
 func TestBytesAlreadyHeldUnderADifferentAcknowledgementAreRefused(t *testing.T) {
 	face := testShippedNotoSansThai
 

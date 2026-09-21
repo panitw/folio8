@@ -15,14 +15,15 @@ func withVersion(v string) []byte {
 // supported version, and no render is attempted.
 //
 // The barcode element raised the supported ceiling to 4.0, and the font
-// record's acknowledgement raised it to 5.0. This fixture stays one major
-// above it and must name both versions in the refusal.
+// record's acknowledgement raised it to 4.2 — a MINOR, so the MAJOR is
+// still 4. This fixture stays one major above it and must name both
+// versions in the refusal.
 func TestHigherMajorIsLoadError(t *testing.T) {
-	_, err := ParseDocument(withVersion("6.0"))
+	_, err := ParseDocument(withVersion("5.0"))
 	if err == nil {
 		t.Fatal("expected a load error for a higher MAJOR version")
 	}
-	if !strings.Contains(err.Error(), "6.0") || !strings.Contains(err.Error(), SupportedVersion) {
+	if !strings.Contains(err.Error(), "5.0") || !strings.Contains(err.Error(), SupportedVersion) {
 		t.Fatalf("error must name both the declared and supported version, got: %v", err)
 	}
 }

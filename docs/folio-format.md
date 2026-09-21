@@ -2,7 +2,7 @@
 
 This is the canonical reference for the `.folio` template format: what every field is called, what
 it means, which values are legal, and what the library does when a file breaks a rule. Format
-version **5.0** is the highest version this library supports.
+version **4.2** is the highest version this library supports.
 
 The format is a public contract, not an implementation detail. A person or a program can write or
 edit a template by hand, without the designer, and a hand-written template renders exactly as a
@@ -97,7 +97,7 @@ instead of accepting it and ignoring it.
 
 ## Versions
 
-`version` is `"MAJOR.MINOR"`. This library supports every version up to and including **5.0**.
+`version` is `"MAJOR.MINOR"`. This library supports every version up to and including **4.2**.
 
 **Loading.**
 
@@ -112,7 +112,7 @@ from the top, decides:
 
 | Version | Required when the document… |
 |---|---|
-| `5.0` | names, from any chain in `fonts`, an asset whose `font` record carries `authorAcknowledged: true` — as the entry's own `asset` value **or** as one of its `bold`/`italic`/`boldItalic` style variants (see [*A font asset*](#a-font-asset)) |
+| `4.2` | names, from any chain in `fonts`, an asset whose `font` record carries `authorAcknowledged: true` — as the entry's own `asset` value **or** as one of its `bold`/`italic`/`boldItalic` style variants (see [*A font asset*](#a-font-asset)) |
 | `4.1` | lists `pages` (see [*Designed pages*](#designed-pages)), or a content band or page declares `sectionBreak` or `sectionBreakAnchor` (see [*Pagination*](#pagination)) |
 | `4.0` | has any element whose `type` is `barcode` or `qrcode` |
 | `3.3` | has a text expression (a text element's `value` or a column's `bind`) statically known to be able to return a number (see [*Expressions*](#expressions)) |
@@ -1028,16 +1028,20 @@ A face this library's **own catalogue** distributes never carries one: such a fa
 licence gate and states real terms, so an acknowledgement on a catalogue face is a defect rather than
 a shortcut.
 
-Because a `4.x` reader carries this key through — the `font` record's key set is open — and then
-refuses the document on exactly the terms the key exists to excuse, a document whose chain names an
-acknowledged asset requires `5.0`. An acknowledged asset **no chain names** raises nothing, on the
+A document whose chain names an acknowledged asset requires `4.2`, and that row is an honest
+declaration rather than a gate. An older reader carries this key through — the `font` record's key
+set is open — and then refuses the document on exactly the terms the key exists to excuse. It does
+that whatever the document declares, because a higher MINOR loads; so the row does not change what
+any reader does, it states what the document needs in order to be rendered as written. The failure
+is always a refusal, never a wrong page: the key only ever *excuses* a check, so a reader that
+ignores it is strictly the stricter one. An acknowledged asset **no chain names** raises nothing, on the
 same rule as every other font asset: the trigger is the entry, not the asset. A **style variant** naming an acknowledged asset
 — `{"asset": "<regular>", "bold": "<the author's own cut>"}` — triggers it exactly as the entry's own
 `asset` value does, because the load rule above is asked about that sibling too.
 
 **And it says nothing about [`embedFonts`](#document).** The two keys never meet: this one lives on
 an embedded asset's record, and `embedFonts: false` is a document that carries no font assets at all,
-so there is nowhere for an acknowledgement to sit and the `5.0` row cannot apply. Turning embedding
+so there is nowhere for an acknowledgement to sit and the `4.2` row cannot apply. Turning embedding
 off strips the faces and their records together — the acknowledgement goes with the bytes it was
 about, because it was never a statement about the document. (`version` is never lowered on save, so a
 document that once carried an acknowledged face keeps whatever version it was last written with.)

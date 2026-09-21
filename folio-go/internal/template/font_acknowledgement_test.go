@@ -128,40 +128,40 @@ func TestAnAcknowledgedVariantCutLoads(t *testing.T) {
 }
 
 // MATRIX ROW 7 — THE VERSION TRIGGER. A document whose chain names an
-// acknowledged record declares 5.0, and the trigger is the FLAG, not the
-// symptom: this fixture's terms are perfectly good and it still declares 5.0,
+// acknowledged record declares 4.2, and the trigger is the FLAG, not the
+// symptom: this fixture's terms are perfectly good and it still declares 4.2,
 // because its correctness depends on the flag being honoured.
-func TestAnAcknowledgedRecordAChainNamesDeclaresFiveZero(t *testing.T) {
+func TestAnAcknowledgedRecordAChainNamesDeclaresFourTwo(t *testing.T) {
 	withTerms := strings.Replace(fontAssetBody, `"copyright":`, `"authorAcknowledged": true,
         "copyright":`, 1)
 	d, err := ParseDocument([]byte(embeddedFontDoc(withTerms, embeddedChain)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := versionRequiredByContent(d); got != "5.0" {
-		t.Fatalf("versionRequiredByContent = %q, want 5.0", got)
+	if got := versionRequiredByContent(d); got != "4.2" {
+		t.Fatalf("versionRequiredByContent = %q, want 4.2", got)
 	}
 	out, err := SerializeDocument(d)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(out), `"version": "5.0"`) {
-		t.Fatalf("the saved document does not declare 5.0:\n%s", out)
+	if !strings.Contains(string(out), `"version": "4.2"`) {
+		t.Fatalf("the saved document does not declare 4.2:\n%s", out)
 	}
 }
 
 // AND THE VARIANT REACHES IT TOO. A chain whose base is an ordinary catalogue
-// face and whose BOLD is the author's own acknowledged cut still requires 5.0
+// face and whose BOLD is the author's own acknowledged cut still requires 4.2
 // — the load door will be asked about that sibling, so a probe that looked
 // only at the base would stamp a version that lies.
-func TestAnAcknowledgedVariantCutAlsoDeclaresFiveZero(t *testing.T) {
+func TestAnAcknowledgedVariantCutAlsoDeclaresFourTwo(t *testing.T) {
 	d, err := ParseDocument([]byte(twoFontAssetDoc(fontAssetBody, acknowledgedSecondFontAssetBody,
 		`[{"asset": "`+embeddedFontKey+`", "bold": "`+secondFontKey+`"}]`)))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := versionRequiredByContent(d); got != "5.0" {
-		t.Fatalf("versionRequiredByContent = %q, want 5.0 — the probe does not reach a style-variant sibling", got)
+	if got := versionRequiredByContent(d); got != "4.2" {
+		t.Fatalf("versionRequiredByContent = %q, want 4.2 — the probe does not reach a style-variant sibling", got)
 	}
 }
 
@@ -192,7 +192,7 @@ func TestAnAcknowledgedAssetNoChainNamesRaisesNothing(t *testing.T) {
 	}
 	// EXACTLY the version this document's other content requires — its chain
 	// is one bare face name, so that is the floor — and not merely "some
-	// version that is not 5.0", which a probe returning any other wrong rank
+	// version that is not 4.2", which a probe returning any other wrong rank
 	// would satisfy.
 	if got := versionRequiredByContent(d); got != baseVersion {
 		t.Fatalf("versionRequiredByContent = %q, want %q — an acknowledged asset NO chain names raises nothing; the trigger is the entry, not the asset", got, baseVersion)
