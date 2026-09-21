@@ -708,6 +708,31 @@ jobs:
              folio-dotnet/build/native/host/libfolio8_native.so
       - name: dotnet test (modern .NET, linux-x64)
         run: dotnet test folio-dotnet/test/Folio8.Tests/Folio8.Tests.csproj -c Release
+      # ⚠ TEMPORARY DIAGNOSTIC — REMOVE BEFORE THE RELEASE IS TAGGED.
+      #
+      # folio-dotnet-host crashes this suite nondeterministically on this
+      # runner class with `Internal CLR error (0x80131506)` — after 18 tests
+      # on one run and 72 on another. The question this step exists to answer
+      # is the only one that gates the release: does the SHIPPED native do it
+      # too, or only the runner-built `host` one? A single green run cannot
+      # tell those apart, so this runs the suite ten times against the shipped
+      # linux-x64 native and reports the tally instead of failing.
+      #
+      # It must not gate anything while it is here: `|| true` on the whole
+      # loop, so a crash it OBSERVES does not redden a job whose real
+      # assertions already passed above.
+      - name: "DIAGNOSTIC (temporary): ten runs against the shipped native, tallied"
+        run: |
+          crashes=0
+          for i in $(seq 1 10); do
+            if dotnet test folio-dotnet/test/Folio8.Tests/Folio8.Tests.csproj -c Release 2>&1 | grep -q "crashed"; then
+              crashes=$((crashes + 1)); echo "run $i: CRASHED"
+            else
+              echo "run $i: ok"
+            fi
+          done
+          echo "::notice::shipped linux-x64 native: $crashes crash(es) in 10 runs"
+        continue-on-error: true
       # THE WINDOWS JOB PACKS THE PACKAGE, AND THE PACKAGE IS NOW FOUR
       # PLATFORMS. `dotnet pack` refuses unless all four natives are present —
       # correctly, since a package missing a platform is exactly what
