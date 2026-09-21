@@ -358,6 +358,38 @@ nobody vetted, which is exactly what this story's Boundaries forbid. The honest 
 author who filters by writing system loses sight of their own imported family. Recorded rather than
 patched because the alternative is worse than the symptom.
 
+**⚠ AMENDED 2026-09-21, AFTER A USER REPORT — THE DECISION STANDS AND THE COST WAS UNDERSTATED.**
+Both this entry and the story-3 review finding it came from (#15) reason about ONE consumer of
+`scripts`: the script badge and the writing-system filters, which are presentation. There is a
+second, and it bends geometry. `proposedFallbackTail` (`App.tsx`) appends a shipped fallback for
+every script the picked face does NOT cover, so `scripts: []` means "covers nothing" and the pick
+writes the MAXIMAL tail — `Noto Sans`, `Noto Sans Thai` and `Noto Sans SC` behind every imported
+face, whatever it actually covers.
+
+That chain is then what `verticalModel` walks, and it takes `max(hhea ascent)` over every present
+member. `Noto Sans SC` declares 1.160 em — the tallest face this build ships — so an imported
+font's first baseline is set by the CJK fallback rather than by the font the author chose, at
+1.160 em × font size. Two elements at different point sizes are therefore pushed apart in
+proportion to the size difference, and an author who imports a face that is small on the em (and so
+must be set larger to match) gets the largest divergence of all.
+
+**Measured, on the reporter's own document.** TH Sarabun New at 17pt beside Sarabun at 12pt, both
+elements at `y: 156`, both `valign: top`: baselines 5.80pt apart in the exported PDF, which is
+exactly `1.160 × (17 − 12)`. Trimming the imported family's chain to the face alone closes it to
+0.43pt. Rendered and measured through `cmd/folio8`, not predicted.
+
+**Why the decision still stands.** Appending every fallback when coverage is unknown is the SAFE
+direction: the imported face is first in the chain and wins every rune it covers, so no glyph is
+ever drawn by a fallback that should not have drawn it. The cost is geometric and tidy-ness, not
+correctness. And the original reasoning is untouched — classifying coverage IS inference, and story
+3's Boundaries forbid it.
+
+**What is genuinely open, and is not this story's.** The importer already parses the sfnt, so
+reading the `cmap` would make coverage an OBSERVATION rather than an inference, which is a
+different act from the one A-20 refused. That would shorten every imported font's chain to what it
+needs and hand the first baseline back to the author's own face. It needs its own story: it changes
+what a pick writes into a document, so it touches the chain the `.folio` carries.
+
 ### A-21 — A family-name collision is refused at import, not made to work
 
 **Decision:** accepted the implementer's deviation. An imported face whose binary declares a family
