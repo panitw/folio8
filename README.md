@@ -22,6 +22,17 @@ The designer is live at **<https://folio8.report>** — design a `.folio` templa
 there, then render it from Go, Node (`npm install folio8`) or .NET
 (`dotnet add package folio8`).
 
+**What the hosted designer sends, and what it never sends.** Your templates, your
+data and your rendered PDFs stay on your machine: the engine runs as WebAssembly
+in your browser, and there is no server, no account and no upload. The hosted
+build does load Google Tag Manager, which counts page loads and four fixed
+actions — open template, export, font import, preview — and nothing else. No file
+name, template name, font name or document value is ever part of an event; that
+is enforced in the code by a closed type, not by convention. Running the designer
+yourself sends nothing at all unless you set `VITE_GA_CONTAINER_ID` on your own
+build. The decision, and the bound it was allowed under, are recorded as AD-27 in
+the [architecture spine](_bmad-output/planning-artifacts/architecture/architecture-folio-2026-08-23/ARCHITECTURE-SPINE.md).
+
 ---
 
 ## Repository layout
@@ -31,7 +42,7 @@ there, then render it from Go, Node (`npm install folio8`) or .NET
 | [folio-go/](folio-go/) | The rendering engine and reference implementation — expression evaluation, layout, pagination, PDF output. A Go module: `github.com/panitw/folio8/folio-go`. See its [README](folio-go/README.md). |
 | [folio-go/cmd/folio8/](folio-go/cmd/folio8/) | The `folio8` CLI: `validate` and `render`, and nothing else. |
 | [folio-go/wasm/cmd/engine/](folio-go/wasm/cmd/engine/) | The designer's js/wasm entry point over the internal session engine in `folio-go/internal/wasm` — the same engine, compiled to wasm. Not public API. |
-| [folio-designer/](folio-designer/) | The visual designer: React + Vite, running the wasm engine in a worker. No server, no account, no upload — your templates, data and rendered PDFs never leave your machine. A deployed build may load Google Tag Manager to count page loads and four fixed actions (open template, export, font import, preview) and nothing else; it is off unless the build sets `VITE_GA_CONTAINER_ID`. See `ARCHITECTURE-SPINE.md` AD-27. |
+| [folio-designer/](folio-designer/) | The visual designer: React + Vite, running the wasm engine in a worker. No server, no account, no upload — your templates, data and rendered PDFs never leave your machine. On usage measurement in the hosted build, see above. |
 | [fixtures/](fixtures/) | The golden corpus — template, data, params and the expected PDF for each fixture document. These bytes are the contract every renderer conforms against. |
 | [lint/](lint/) | The guardrails that fail the build: architecture/import rules, the float ban, and the third-party licence check ([MANIFEST.md](lint/MANIFEST.md)). A separate Go module. |
 | [hashmatrix/](hashmatrix/) | A deliberately-broken floating-point probe, kept out of the guards' reach, that proves the cross-target matrix can actually *detect* divergence. See its [README](hashmatrix/README.md). |
