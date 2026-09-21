@@ -410,8 +410,17 @@ that did not exist while omitting thirteen that did.
 - **Rule:** a service worker precaches the app shell, the wasm module, the Thai dictionary, and
   the font assets under content-hashed URLs, and serves them cache-first. The S1 load screen's
   progress is driven by that install, which is why it can honestly promise it happens once.
-  Assets are served brotli-compressed with immutable long-lived cache headers. Nothing in the
-  designer performs a network request at render or preview time.
+  Assets are served brotli-compressed with immutable long-lived cache headers. ~~Nothing in the
+  designer performs a network request at render or preview time.~~
+  **AMENDED 2026-09-21 by OWNER DECISION (D-GA.1), recorded in full at AD-27.** The original
+  sentence is preserved above verbatim. **What still holds:** *rendering* and *preview* are wholly
+  local — the wasm engine, its faces and the PDF viewer are precached, and no template byte, sample
+  value or rendered PDF is sent anywhere, at render time or ever. **What changed:** a build
+  configured with `VITE_GA_CONTAINER_ID` loads **one** third-party script, Google Tag Manager, and
+  pushes four non-identifying action names to it — one of which (`enter_preview`) fires at the
+  moment preview is entered. So the designer *can* now perform a network request while previewing;
+  what it may never do is put anything of the author's into it. An unconfigured build — every dev
+  server, every Vitest run, every Playwright run — still satisfies the original sentence exactly.
 
 ### AD-20 — Local file access is two-tier and capability-detected
 
@@ -534,6 +543,31 @@ that did not exist while omitting thirteen that did.
   **Apache-2.0** and travels with its NOTICE. A third-party licence manifest is a release artifact,
   not a README paragraph.
 
+### AD-27 — Usage is measured through one third party, and it may carry no document
+
+- **Binds:** `designer` · NFR8 · **reverses the *no telemetry* clause of AD-19 and of Deployment**
+- **Prevents:** the two failures that sit either side of this decision. On one side, a product
+  whose owner cannot tell whether anyone opens a template, exports a PDF or ever reaches Preview,
+  and so prices every roadmap argument on taste. On the other — the reason this is an AD and not a
+  dependency bump — a designer that quietly grows an analytics pipeline until *"templates and data
+  never leave the user's machine"* is false while five documents still assert it. **The reversal is
+  recorded rather than performed silently**, which is the whole point of the entry.
+- **Rule:** exactly one third-party measurement tag may exist: **Google Tag Manager**, container
+  `GTM-NQZRC9V4`, loaded `async` from `src/analytics.ts` and from nowhere else. It is gated on the
+  build-time `VITE_GA_CONTAINER_ID`; **unset, empty or malformed means no script, no `dataLayer`
+  and no event**, so development, Vitest and Playwright transmit nothing. What may be reported is a
+  **closed TypeScript union of four action names** — `open_template`, `export_pdf`, `font_import`,
+  `enter_preview` — plus the pageview GTM seeds itself. **NFR8's substantive guarantee is
+  UNCHANGED and is now the harder half of this rule: no file name, template name, font family,
+  path, parameter value or document byte may ever become an event parameter**, and because the
+  parameter type is a union rather than a `string`, that is a compile-time property of every call
+  site rather than a convention. No GTM asset enters the service-worker precache or the offline
+  release manifest, and the app must behave identically when `googletagmanager.com` is unreachable.
+  No consent banner, no cookie UI, no GA4 `gtag.js` beside GTM, no server-side tagging. **The
+  accepted cost, stated plainly:** the designer is no longer a page that contacts nobody, and the
+  Preview bar's standing promise was narrowed to the guarantee that survives (D-GA.5) rather than
+  left standing as something untrue.
+
 ## Consistency Conventions
 
 | Concern | Convention |
@@ -613,7 +647,7 @@ There is no Folio-operated runtime. The operational envelope is three things and
 
 | Environment | What it is |
 | --- | --- |
-| Designer | Static files on any host. Brotli plus immutable content-hashed URLs are requirements, not tuning (AD-19). No backend, no database, no accounts, no telemetry. |
+| Designer | Static files on any host. Brotli plus immutable content-hashed URLs are requirements, not tuning (AD-19). No backend, no database, no accounts. ~~No telemetry.~~ **AMENDED 2026-09-21 by OWNER DECISION (D-GA.1) — see AD-27.** Still no backend, no database and no accounts: Folio operates no runtime and holds no user record. **What changed:** the *hosted* designer may carry **Google Tag Manager**, gated on a build-time env var, reporting page loads and four fixed action names. Folio still runs no server of its own; it delegates counting to one third party. |
 | Library | A Go module at `github.com/panitw/folio/folio-go`, fetched through the module proxy and compiled into someone else's binary. Folio operates nothing. |
 | CI | The four-target matrix of AD-21, plus the AD-1 lints. The only environment Folio itself runs. |
 

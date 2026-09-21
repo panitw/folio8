@@ -563,3 +563,33 @@ recalled from tabs that already took it.
 **Tabs notice within about 15 minutes**, and immediately on refocusing the tab
 or regaining network. A tab left open across a deploy no longer waits for the
 browser's own ~24h service-worker check.
+
+## Usage measurement in the deployed designer
+
+The designer reports page loads and four fixed action names — open template,
+export, font import, preview — through Google Tag Manager, container
+`GTM-NQZRC9V4`. The reversal of the old no-telemetry posture, and the bound it
+was allowed under, are recorded at `ARCHITECTURE-SPINE.md` **AD-27**; the
+decisions are in `_bmad-output/implementation-artifacts/ga-decision-log.md`.
+
+**It is a BUILD-time input, not a runtime one.** Vite substitutes
+`VITE_GA_CONTAINER_ID` into the bundle, so the value has to be present when
+`vite build` runs inside the image's build stage. A variable added to the
+running service arrives after the bytes are already fixed and changes nothing.
+
+**Where the operator sets it:** as a Railway **build** variable on the designer
+service, `VITE_GA_CONTAINER_ID=GTM-NQZRC9V4`. The `Dockerfile` declares the
+matching `ARG`/`ENV` pair. A rebuild is required for a change to take effect;
+redeploying the existing image will not pick up a new value.
+
+**Unset is a supported, silent state, and it is the default.** With no value —
+a local `docker build`, `npm run dev`, Vitest, Playwright — no script is
+loaded, `window.dataLayer` is never defined and no event is pushed. A
+malformed id is treated as unset rather than injected. To confirm a build went
+out configured, grep the deployed bundle:
+
+```bash
+grep -rc googletagmanager folio-designer/dist/assets/*.js
+```
+
+Zero on every file means the build was unconfigured.

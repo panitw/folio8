@@ -32,8 +32,14 @@ tool for paged documents demands pointer precision and screen area.
 
 **Delivery model:** the draw.io model. The user opens a URL, works on `.folio` files stored
 on their own machine, and never creates an account (FR8). Nothing is stored server-side.
-After first load the application is fully offline (FR36): no network is required and none is
-used.
+After first load the application is fully offline (FR36): ~~no network is required and none is
+used.~~ no network is required, and none is used for the user's work. **AMENDED 2026-09-21 by OWNER DECISION (D-GA.1), recorded at `ARCHITECTURE-SPINE.md` AD-27.** **What still
+holds:** the application is fully offline after first load — every byte it needs to open, edit,
+render and export is precached, and the user's templates, data and PDFs are never sent anywhere.
+**What changed:** a deployed build may load Google Tag Manager, which reports page loads and four
+fixed action names. It is `async` and non-blocking, so with it unreachable — offline, or blocked —
+nothing about the experience changes; and it is absent entirely from any build without
+`VITE_GA_CONTAINER_ID` set. See `ARCHITECTURE-SPINE.md` AD-27.
 
 **UI system:** none inherited. Folio defines its own tokens in DESIGN.md rather than
 extending shadcn, MUI, or a platform system. The register is a precision instrument in the

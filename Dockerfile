@@ -22,6 +22,19 @@ COPY folio-go/go.mod folio-go/go.sum folio-go/
 RUN cd folio-go && go mod download
 
 COPY . .
+
+# USAGE MEASUREMENT (spec-google-analytics, AD-27). The GTM container id is a
+# BUILD-TIME input — Vite substitutes it into the bundle — so it must reach
+# `vite build` as an environment variable of THIS stage; a runtime service
+# variable on the Caddy image arrives far too late and the deployed page would
+# be silently inert. Unset (the default) means no script, no dataLayer and no
+# event, which is exactly what a local `docker build` should produce.
+#
+# The operator sets it on the Railway service as a BUILD variable; see
+# RELEASING.md, "Usage measurement in the deployed designer".
+ARG VITE_GA_CONTAINER_ID=
+ENV VITE_GA_CONTAINER_ID=$VITE_GA_CONTAINER_ID
+
 # `npm run build` minus its first two steps. scan:font-hosts and scan:host-fonts
 # are source guardrails that populate from `git ls-files` and refuse to run
 # without a checkout — and neither a Railway upload nor this build context

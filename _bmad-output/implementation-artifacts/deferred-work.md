@@ -14071,3 +14071,19 @@ name that attributes it to Story 6.7, and the audit trail for 6.7 quietly descri
 - source_spec: `_bmad-output/specs/spec-font-sources-and-embedding/stories/1-resolve-once-and-need-no-font-set.md`
   summary: Unclear whether a chain whose every member is a carried asset with unparseable bytes reaches the substitution pool under FaceFallbackSubstitute, or refuses at verticalModel before consulting it.
   evidence: RESOLVED, NOT DEFERRED — kept for the record only. Review finding #33 was graded maybe-false, then checked directly rather than left open. It never reaches that refusal: with text, shapeSegments aborts first on the carried-face parse error (`required table "head" is absent`), byte-identically under both selectors, because `absent` is `!cache.declares(...)` and not `!present`; with no text, verticalModel's empty-metrics arm is not reached at all. Verified across {"", "Hi"} x {Strict, Substitute}. No work is outstanding.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-google-analytics.md`
+  summary: Decide who may administer the GTM container and what tags are permitted inside it, and record that a console-side change is an AD-27 amendment.
+  evidence: AD-27's privacy guarantee is enforced by the closed `AnalyticsAction` union, which constrains only what this repository pushes. A console-side Custom HTML tag could read the DOM, or add GA4 remarketing, with zero repo-side evidence and no test able to see it. This is the largest unstated hole in the privacy argument and needs an owner policy, not code.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-google-analytics.md`
+  summary: Decide the consent/cookie posture for the hosted designer and record the reasoning beside D-GA.6.
+  evidence: GTM/GA4 set cookies and transmit IP addresses. D-GA.6 forbids a consent banner and cookie UI without stating why, and AD-27's "accepted cost, stated plainly" names only the loss of the contacts-nobody property. Whatever the owner decides, a decision record this meticulous should carry the regulatory reasoning explicitly.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-google-analytics.md`
+  summary: Decide whether the hosted designer should disclose the third party in its own UI.
+  evidence: The sweep amended README, PRD, epics, EXPERIENCE and ARCHITECTURE-SPINE to disclose GTM, and narrowed the Preview assurance — but the product itself now tells a user less than any internal artifact does. No privacy note, no link, nothing in the interface.
+
+- source_spec: `_bmad-output/implementation-artifacts/spec-google-analytics.md`
+  summary: Guard the head-injection invariant at the built artifact, not only at the source page.
+  evidence: `src/index-head-injection.test.ts` proves `index.html` offers one injection site and leaks no text, and explicitly disclaims any statement about `dist/`. A Vite plugin emitting a second head, or a future generator change, would still ship a blank or text-leaking page with every gate green. The fix belongs in `verify-offline-release.mjs` (strip comments from `dist/index.html`, require the module script and bootstrap trio to survive), which this spec forbade changing.

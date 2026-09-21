@@ -222,6 +222,9 @@ test('centers navigation above the PDF and keeps the footer readable at narrow d
   expect(controls!.x + controls!.width / 2).toBeCloseTo(document!.x + document!.width / 2, 0)
   expect(controls!.y + controls!.height).toBeLessThanOrEqual(document!.y)
   await expect(navigation).toBeInViewport({ ratio: 1 })
+  // The product's standing promise, amended 2026-09-21 by D-GA.5 and still
+  // asserted: fully in the viewport AND in the wording the product commits to.
+  await expect(page.getByTestId('local-only-assurance')).toHaveText('local render · your data stays here')
   await expect(page.getByTestId('local-only-assurance')).toBeInViewport({ ratio: 1 })
   await expect(page.getByRole('contentinfo', { name: 'Status bar' }).getByRole('group', { name: 'PDF navigation' })).toHaveCount(0)
   await navigation.getByRole('textbox', { name: 'PDF zoom percentage' }).fill('133')

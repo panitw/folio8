@@ -1,4 +1,5 @@
 import './App.css'
+import { trackEvent } from './analytics'
 import { createPortal } from 'react-dom'
 import { createContext, useContext, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { isProducerRenderFailure, type EngineClient, type EngineResult } from './engine-client'
@@ -1599,6 +1600,12 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
     // from Preview with the DATA tab already open must re-evaluate this.
   }, [inspectorTab, documentGenerationValue, mode]) // eslint-disable-line react-hooks/exhaustive-deps
   const enterPreview = () => {
+    // USAGE MEASUREMENT (D-GA.2) — THE MODE SWITCH, not `runPreview`, which is
+    // debounced and would fire once per re-render. ⚠ AND ONLY A REAL SWITCH:
+    // this is the PREVIEW button's `onClick` and the keyboard shortcut's
+    // handler, both of which stay live in Preview, so an unguarded call would
+    // count every repeat press as a fresh entry.
+    if (modeRef.current !== 'preview') trackEvent('enter_preview')
     modeRef.current = 'preview'
     setMode('preview')
     void loadParameterReferences()
@@ -3790,6 +3797,9 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
       setFontImportMessage(['No face could be imported.', refusedFontFileReport(outcome.refused)].filter((line) => line !== '').join(' '))
       return
     }
+    // ⚠ NO USAGE MEASUREMENT HERE. This raises the acknowledgement, which the
+    // author can still decline; counting it would count declines as imports.
+    // The event fires in `completeFontImport`, once faces are actually kept.
     setFontImportRequest(outcome)
   }
 
@@ -3887,6 +3897,12 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
       // every face was refused reaches neither, and leaving the listing stale
       // would hide whatever DID land.
       await refreshStoredFaces()
+      // USAGE MEASUREMENT (spec-google-analytics, D-GA.2) — SUCCESS PATH ONLY,
+      // and success means a face is ON THIS MACHINE. Not the pick, not the
+      // acknowledgement being raised, and not a run whose every write was
+      // refused. ⚠ NO FAMILY NAME, no file name, no face count: `kept.size`
+      // decides WHETHER to report, never WHAT is reported.
+      if (kept.size > 0) trackEvent('font_import')
     } catch (error) {
       // ⚠ EVERY EXIT PRODUCES A SENTENCE. The two writers return their reasons
       // rather than throwing, so nothing here is expected to — which is exactly
@@ -4384,6 +4400,11 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
         throw error
       } finally { setFileBusy(false) }
       setStartupOpen(false)
+      // USAGE MEASUREMENT (spec-google-analytics, D-GA.2) — SUCCESS PATH ONLY.
+      // Reached only once the template and its sample are both installed; a
+      // failed fetch throws above and is never counted as an open. The example's
+      // name is deliberately NOT a parameter: the vocabulary is closed.
+      trackEvent('open_template')
       enterPreview()
     } catch (error) {
       setStartupError(startupRefusal(card.name, error))
@@ -4541,6 +4562,10 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
       const saved = await fileAccess.writeSave(acquired, { bytes: pdfBytes })
       const revision = `${qualifier.trim() ? `${qualifier.trim()} ` : ''}revision ${pdfRevision}`
       setFileStatus(saved.target ? `Saved PDF of ${revision} as ${saved.name}` : `Downloaded PDF of ${revision} as ${saved.name}`)
+      // USAGE MEASUREMENT (D-GA.2) — after the write returned, so a cancelled
+      // picker and a failed write are not exports. Neither the file name nor
+      // the revision may become a parameter.
+      trackEvent('export_pdf')
     } catch (error) {
       if (isFileAccessCancelled(error)) setFileStatus(undefined)
       else announceFailure(fileFailureSentence(error, 'Could not save the preview PDF'))
@@ -5284,11 +5309,28 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
         `polite`, never `assertive`: nothing here interrupts an edit.
 
         ⚠ AND IT IS FENCED ON DESIGN. In Preview the bar states the product's
-        standing promise — `no network · nothing left this machine` — and a
+        standing promise — `local render · your data stays here` — and a
         completion line fetching from upstream beside it would contradict it in
         the same twelve inches. The ~424 px budget these sentences are priced
         against is the DESIGN bar's; Preview additionally carries the 228 px
-        assurance and has no room for them. */}{mode === 'design' && completionStatus !== undefined && <span role="status" aria-live="polite" data-testid="font-completion-status">{completionStatus}</span>}<span role="status" aria-live="polite" aria-label="Offline availability" data-testid="offline-status" className={mode === 'preview' || completionStatus !== undefined ? 'sr-only' : undefined}>{offlineLabel}</span><code>{mode.toUpperCase()} MODE</code>{mode === 'preview' && <span data-testid="local-only-assurance">no network · nothing left this machine</span>}</footer>
+        assurance and has no room for them.
+
+        ⚠ THE PROMISE WAS AMENDED 2026-09-21 BY OWNER DECISION (D-GA.5), NOT
+        ABANDONED. It read `no network · nothing left this machine`, and the
+        first half of that stopped being true the day usage measurement landed
+        (`analytics.ts`, AD-27): a configured build loads one third-party
+        script. The half that is SUBSTANTIVE — and that NFR8 actually promises —
+        is that the author's template, sample data and rendered PDF stay on this
+        machine, and that is still exactly true: the render is local, the events
+        carry a closed vocabulary of four action names, and no document byte can
+        reach them. The new wording states the surviving guarantee and claims
+        nothing the page does not do. It is 35 characters against the old 38, so
+        it is still priced inside the 228 px this slot is budgeted for.
+
+        ⚠ IF YOU CHANGE THIS STRING, CHANGE IT IN FIVE PLACES. `App.test.tsx`
+        asserts it, `e2e/preview-navigation.spec.ts` fences its width, and
+        `epics.md` quotes it as the product's central promise (UX-DR23). A
+        promise stated in one place and asserted nowhere is not a promise. */}{mode === 'design' && completionStatus !== undefined && <span role="status" aria-live="polite" data-testid="font-completion-status">{completionStatus}</span>}<span role="status" aria-live="polite" aria-label="Offline availability" data-testid="offline-status" className={mode === 'preview' || completionStatus !== undefined ? 'sr-only' : undefined}>{offlineLabel}</span><code>{mode.toUpperCase()} MODE</code>{mode === 'preview' && <span data-testid="local-only-assurance">local render · your data stays here</span>}</footer>
   </div>
 }
 

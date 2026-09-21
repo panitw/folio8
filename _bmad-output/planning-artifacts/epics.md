@@ -149,7 +149,7 @@ NFR6: **Versioning.** Templates carry a format version; library ships as `folio-
 
 NFR7: **Font provisioning.** All fonts embedded and subsetted; subsetting byte-stable. Latin and Thai coverage is embedded in the engine; CJK coverage is fetched on first use and kept, so "fully offline" is a claim about what this browser has fetched. Measured budget: engine and font stack ~1.5 MB compressed, CJK face 4.72 MiB brotli (deferred, and no longer embedded in the engine wasm), Thai dictionary ~0.1 MB. Take the glyf/TrueType static build over CFF/OpenType. Accepted: ~10.82 MiB first load — the core tier only. Superseded by `specs/spec-deferred-offline-cache`, which tiers the release and takes the CJK face out of the engine wasm; the CJK face is fetched on first use, not embedded twice.
 
-NFR8: **Privacy posture.** The draw.io model plus WebAssembly preview means templates and data never leave the user's machine during design — a property to state and protect.
+NFR8: **Privacy posture.** The draw.io model plus WebAssembly preview means templates and data never leave the user's machine during design — a property to state and protect. **AMENDED 2026-09-21 by OWNER DECISION (D-GA.1), recorded at `ARCHITECTURE-SPINE.md` AD-27.** The guarantee above is UNCHANGED: templates, sample data and rendered PDFs still never leave the machine. What changed is that a deployed build may load Google Tag Manager and report page loads plus four fixed action names (`open_template`, `export_pdf`, `font_import`, `enter_preview`) and nothing else, gated on a build-time env var that is unset in development and in every test run. See `ARCHITECTURE-SPINE.md` AD-27.
 
 ### Additional Requirements
 
@@ -4632,7 +4632,8 @@ So that freshness is something I can see rather than something I have to remembe
 
 **Covers:** FR34 · AD-18 · UX-DR9, UX-DR14, UX-DR16, UX-DR21, UX-DR23
 **Design:** `_bmad-output/planning-artifacts/ux-designs/ux-folio-2026-08-23/mockups/Preview.dc.html`
-  — the status bar's "no network · nothing left this machine"
+  — the status bar's standing assurance (the mockup shows the original "no network · nothing
+  left this machine"; amended 2026-09-21 by D-GA.5 to "local render · your data stays here")
 **Design:** `_bmad-output/planning-artifacts/ux-designs/ux-folio-2026-08-23/mockups/Main.dc.html`
   — the document bar this replaces in Preview mode
 
@@ -4655,8 +4656,14 @@ to abandon a long render
 
 **Given** the application status bar
 **When** the author is in Preview
-**Then** it carries the design's standing assurance — *"no network · nothing left this machine"* —
-which is the product's central promise stated where it is always visible (UX-DR23)
+**Then** it carries the design's standing assurance — ~~*"no network · nothing left this machine"*~~
+*"local render · your data stays here"* — which is the product's central promise stated where it is
+always visible (UX-DR23). **AMENDED 2026-09-21 by OWNER DECISION (D-GA.5).** The original wording is
+preserved above verbatim. **What still holds:** the promise, its slot, its `local-only-assurance`
+hook and the assertions that pin it — it is narrowed, never dropped. **What changed:** D-GA.1 made
+*"no network"* false for a build configured with Google Tag Manager (AD-27), so the assurance now
+states the half that is substantive and still exactly true — the render is local and the author's
+data stays on the machine — rather than a claim the page no longer honours.
 
 **Given** a stale preview
 **When** the chrome is shown
@@ -4809,7 +4816,8 @@ zoom/fit tests encoding two measured regressions, including the one where Zoom o
 The AC's intent is unchanged and matters more than its original wording, because any vendored or adopted
 pdf.js viewer component that tracks `currentPageNumber` internally WOULD be a genuine second authority.
 
-**Given** the product promises "no network - nothing left this machine" and ships an offline release
+**Given** the product promises "no network - nothing left this machine" (amended 2026-09-21 by D-GA.5
+to "local render - your data stays here"; see NFR8 above and `ARCHITECTURE-SPINE.md` AD-27) and ships an offline release
 **When** the viewer bundle is added
 **Then** the release's size change is measured and recorded, not assumed - **at the boundary gate.**
 **AMENDED 2026-09-09: this AC's figures priced a route that was ruled out.** It quoted `pdf_viewer.mjs`

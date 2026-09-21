@@ -167,6 +167,16 @@ vi.mock('./preview/page-rail', async () => {
   }
 })
 
+// USAGE MEASUREMENT IS MOCKED, AND IT HAS TO BE (spec-google-analytics, AD-27).
+//
+// ⚠ ASSERTING ON `window.dataLayer` HERE WOULD PROVE NOTHING. Vitest runs with
+// `VITE_GA_CONTAINER_ID` unset, which is the whole point of D-GA.3 — so the
+// real `trackEvent` discards every call, `dataLayer` is never defined, and a
+// test written against it would be green whether the four call sites existed
+// or not. The spy is the only thing that can see them.
+const trackEventSpy = vi.hoisted(() => vi.fn())
+vi.mock('./analytics', () => ({ initAnalytics: () => false, trackEvent: trackEventSpy }))
+
 vi.mock('./preview/pdf-viewer', () => ({
   initialPDFPreviewViewState: { page: 1, scale: 1, ['scroll' + 'Top']: 0, ['scroll' + 'Left']: 0 },
   samePDFPreviewViewState: () => false,
@@ -10216,7 +10226,7 @@ describe('Story 13.5: the chrome tells the truth about the preview', () => {
   it('carries the standing local-only assurance in Preview and the two dropped items in Design', async () => {
     await showRenderedPreview(previewRequest())
     const bar = screen.getByLabelText('Status bar')
-    expect(within(bar).getByTestId('local-only-assurance')).toHaveTextContent('no network · nothing left this machine')
+    expect(within(bar).getByTestId('local-only-assurance')).toHaveTextContent('local render · your data stays here')
     expect(within(bar).queryByText('LOCAL SHELL')).toBeNull()
     expect(within(bar).queryByTestId('template-font-count')).toBeNull()
 
@@ -10279,6 +10289,10 @@ describe('Story 13.5: the chrome tells the truth about the preview', () => {
   it('adds nothing interactive and nothing announced to the status bar', async () => {
     await showRenderedPreview(previewRequest())
     const assurance = screen.getByTestId('local-only-assurance')
+    // AMENDED 2026-09-21 (D-GA.5): the promise is narrowed to the guarantee
+    // that survives usage measurement, and is still asserted here rather than
+    // dropped — the wording is the product's, so a silent edit must fail.
+    expect(assurance).toHaveTextContent('local render · your data stays here')
     expect(assurance.querySelectorAll('button, input, select, a')).toHaveLength(0)
     expect(assurance.tagName).toBe('SPAN')
     for (const attribute of ['role', 'aria-live', 'tabindex']) expect(assurance).not.toHaveAttribute(attribute)
@@ -12853,9 +12867,9 @@ describe("completing an opened document's families", () => {
     expect(completionStatus()).toHaveAttribute('role', 'status')
     expect(completionStatus()).toHaveAttribute('aria-live', 'polite')
     expect(screen.getByLabelText('Status bar')).toContainElement(completionStatus())
-    // AND IT IS A DESIGN-MODE LINE. In Preview the bar states `no network ·
-    // nothing left this machine`, which a line about fetching from upstream
-    // would contradict in the same twelve inches.
+    // AND IT IS A DESIGN-MODE LINE. In Preview the bar states `local render ·
+    // your data stays here` (amended 2026-09-21, D-GA.5), which a line about
+    // fetching from upstream would contradict in the same twelve inches.
     fireEvent.click(screen.getByRole('button', { name: 'PREVIEW' }))
     await waitFor(() => expect(screen.getByTestId('local-only-assurance')).toBeInTheDocument())
     expect(completionStatus()).toBeNull()
@@ -13389,5 +13403,130 @@ describe("completing an opened document's committed families", () => {
     await waitFor(() => expect(completionStatus()).toHaveTextContent('Font completion: 0 of 1 family completed, 1 short.'))
     expect(fetched).toEqual([withheld.url])
     expect(probeRuns()).toBe(1)
+  })
+})
+
+// THE FOUR MEASUREMENT CALL SITES, PINNED TO THE BRANCH EACH BELONGS ON.
+//
+// Before this suite, deleting any `trackEvent(...)` line in App.tsx left the
+// whole file green, and so did moving `export_pdf` ABOVE its
+// `await fileAccess.writeSave(...)` — which would count every cancelled picker
+// and every failed write as an export. Measurement wired to the wrong branch is
+// worse than none: it is a number nobody can tell is wrong.
+//
+// ⚠ EVERY CASE ASSERTS A NEGATIVE AS WELL AS A POSITIVE. A call-site test that
+// only checks "it fired" passes on a call moved to the top of the function,
+// which is the exact mutation these are here to catch.
+describe('usage measurement fires on the success branch and nowhere else', () => {
+  const actions = () => trackEventSpy.mock.calls.map(([action]) => action as string)
+  const countOf = (action: string) => actions().filter((entry) => entry === action).length
+
+  beforeEach(() => { trackEventSpy.mockClear() })
+
+  describe('export_pdf', () => {
+    it('reports exactly one export once the write has returned', async () => {
+      const tier = nativeSaveTier()
+      await showRenderedPreview(previewRequest(), tier.access)
+      expect(countOf('export_pdf'), 'nothing is exported by reaching Preview').toBe(0)
+      fireEvent.click(screen.getByRole('button', { name: 'Save PDF' }))
+      await waitFor(() => expect(screen.getByText('Saved PDF of revision 1 as statement.pdf')).toBeInTheDocument())
+      expect(countOf('export_pdf')).toBe(1)
+      // ⚠ AND THE PAYLOAD CARRIES NOTHING ELSE. `statement.pdf` is on screen in
+      // this very test; the call must not have taken it, or the file name is in
+      // the event and NFR8's surviving guarantee is gone.
+      expect(trackEventSpy).toHaveBeenCalledWith('export_pdf')
+      for (const call of trackEventSpy.mock.calls) expect(call).toHaveLength(1)
+    })
+
+    it('reports no export when the author cancels the picker', async () => {
+      const acquireSaveTarget = vi.fn(async () => { throw new FileAccessCancelled() })
+      const writeSave = vi.fn()
+      await showRenderedPreview(previewRequest(), { open: vi.fn(), acquireSaveTarget, writeSave })
+      fireEvent.click(screen.getByRole('button', { name: 'Save PDF' }))
+      await waitFor(() => expect(acquireSaveTarget).toHaveBeenCalledOnce())
+      await waitFor(() => expect(screen.queryByText(/Preparing PDF save/)).not.toBeInTheDocument())
+      expect(writeSave).not.toHaveBeenCalled()
+      expect(countOf('export_pdf'), 'a cancelled picker is not an export').toBe(0)
+    })
+
+    it('reports no export when the write fails', async () => {
+      const acquireSaveTarget = vi.fn(async (): Promise<AcquiredSaveTarget> => ({ name: 'held.pdf', format: pdfFileFormat }))
+      const writeSave = vi.fn(async (): Promise<SavedLocalFile> => { throw new Error('media removed') })
+      await showRenderedPreview(previewRequest(), { open: vi.fn(), acquireSaveTarget, writeSave })
+      fireEvent.click(screen.getByRole('button', { name: 'Save PDF' }))
+      await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Could not save the preview PDF'))
+      expect(countOf('export_pdf'), 'a failed write is not an export').toBe(0)
+    })
+  })
+
+  describe('open_template', () => {
+    const examples = ['invoice', 'bank-statement'].map((id) => ({ id, template: `/examples/${id}.folio`, sample: `/examples/${id}.sample.json`, thumbnail: `/examples/${id}.thumbnail.png` }))
+    const TEMPLATE = new Uint8Array([4, 5, 6]).buffer
+    const SAMPLE = '{"customer":{"name":"Ada"},"transactions":[{"amount":1}]}'
+    const answer = (body: ArrayBuffer, status = 200) => ({ ok: status >= 200 && status < 300, status, arrayBuffer: async () => body.slice(0) })
+    let restoreFetch: typeof globalThis.fetch
+
+    beforeEach(() => { restoreFetch = globalThis.fetch })
+    afterEach(() => { globalThis.fetch = restoreFetch })
+
+    const launch = () => {
+      const starter = { documentState: 'loaded' as const, revision: 1, byteLength: 3, canvas }
+      const opened = { documentState: 'loaded' as const, revision: 2, byteLength: 3, canvas }
+      let current: EngineSnapshot = starter
+      const request = vi.fn(async (operation: string) => {
+        if (operation === 'load') { current = opened; return { snapshot: opened } }
+        if (operation === 'serialize') return { snapshot: current, bytes: TEMPLATE }
+        if (operation === 'identity') return { snapshot: current, preview: { revision: current.revision, identity: 'c'.repeat(64) } }
+        if (operation === 'render') return { snapshot: current, bytes: new Uint8Array([9]).buffer, preview: { revision: current.revision, identity: 'c'.repeat(64), pdfSha256: PDF_FIXTURE_DIGEST, elapsedMs: RENDER_ELAPSED_MS, version: RENDER_ENGINE_VERSION, diagnostics: [] } }
+        return { snapshot: current }
+      })
+      render(<App engine={engine(request as never)} initialSnapshot={starter} blankBytes={bytes} examples={examples} />)
+      return request
+    }
+    const dialog = () => screen.getByRole('dialog', { name: 'New template' })
+    const open = (name: string) => {
+      fireEvent.click(within(dialog()).getByRole('button', { name }))
+      fireEvent.click(within(dialog()).getByRole('button', { name: 'Open example' }))
+    }
+
+    it('reports exactly one open once the template and its sample are installed', async () => {
+      globalThis.fetch = vi.fn(async (url: string) => url.endsWith('.json') ? answer(new TextEncoder().encode(SAMPLE).buffer) : answer(TEMPLATE)) as never
+      launch()
+      open('Bank Statement')
+      await waitFor(() => expect(screen.queryByRole('dialog', { name: 'New template' })).not.toBeInTheDocument())
+      expect(countOf('open_template')).toBe(1)
+      // ⚠ NOT THE EXAMPLE'S NAME. `Bank Statement` is on screen; the call must
+      // carry the fixed action name and nothing derived from the template.
+      expect(trackEventSpy).toHaveBeenCalledWith('open_template')
+    })
+
+    it('reports no open when the bundled template cannot be fetched', async () => {
+      globalThis.fetch = vi.fn(async (url: string) => url.includes('bank-statement') ? answer(new ArrayBuffer(0), 404) : answer(TEMPLATE)) as never
+      launch()
+      open('Bank Statement')
+      await within(dialog()).findByRole('alert')
+      expect(countOf('open_template'), 'a template that never opened is not an open').toBe(0)
+    })
+  })
+
+  describe('enter_preview', () => {
+    // ⚠ THE PREVIEW BUTTON STAYS LIVE IN PREVIEW. It is never disabled, and the
+    // keyboard shortcut is not either, so an unguarded call would count every
+    // repeat press — and Preview is where authors sit and re-press things.
+    it('reports one entry on the mode switch and none on a second press', async () => {
+      render(<App engine={engine(previewRequest())} initialSnapshot={snapshot(1)} initialSampleData={sample} />)
+      expect(countOf('enter_preview'), 'mounting in Design mode is not an entry').toBe(0)
+      fireEvent.click(screen.getByRole('button', { name: 'PREVIEW' }))
+      await waitFor(() => expect(screen.getByRole('button', { name: 'PREVIEW' })).toHaveAttribute('aria-pressed', 'true'))
+      expect(countOf('enter_preview')).toBe(1)
+      fireEvent.click(screen.getByRole('button', { name: 'PREVIEW' }))
+      fireEvent.click(screen.getByRole('button', { name: 'PREVIEW' }))
+      expect(countOf('enter_preview'), 'a press while already in Preview is not an entry').toBe(1)
+      // AND A REAL RETURN TRIP COUNTS AGAIN, or the guard would have turned the
+      // event into a once-per-session flag.
+      fireEvent.click(screen.getByRole('button', { name: 'DESIGN' }))
+      fireEvent.click(screen.getByRole('button', { name: 'PREVIEW' }))
+      await waitFor(() => expect(countOf('enter_preview')).toBe(2))
+    })
   })
 })

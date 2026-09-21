@@ -473,6 +473,16 @@ The draw.io model plus WebAssembly preview means templates and data never leave 
 machine during design. This is a property to state and protect, not an accident of the
 architecture.
 
+**AMENDED 2026-09-21 by OWNER DECISION (D-GA.1), recorded at `ARCHITECTURE-SPINE.md` AD-27.** **What still holds — and it is the
+whole of NFR8's substance:** templates, sample data, runtime parameters and rendered PDFs
+**never leave the user's machine**, during design or at any other time. Rendering and preview
+remain wholly local. **What changed:** a deployed build may load **Google Tag Manager** and
+report page loads plus four fixed action names — `open_template`, `export_pdf`, `font_import`,
+`enter_preview` — and nothing else. The tag is gated on a build-time env var, so an
+unconfigured build (development, Vitest, Playwright) transmits nothing at all. The enforcement
+is structural, not a promise: the event parameter is a closed TypeScript union, so no file
+name, template name, font family or document value can reach it from any call site.
+
 ---
 
 ## 9. Success Criteria

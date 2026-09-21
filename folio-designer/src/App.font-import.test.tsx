@@ -21,6 +21,14 @@ import { sfntWithNames } from './test/sfnt-fixture'
 // fetch, no font service and no URL — so a case that passed only with a
 // reachable upstream would be asserting the wrong product.
 
+// USAGE MEASUREMENT IS MOCKED (spec-google-analytics, AD-27). Vitest runs with
+// `VITE_GA_CONTAINER_ID` unset, so the real `trackEvent` discards every call
+// and `window.dataLayer` is never defined — an assertion on it would be green
+// whether the call site existed or not. The spy is the only observer that can
+// see which branch the event is wired to.
+const trackEventSpy = vi.hoisted(() => vi.fn())
+vi.mock('./analytics', () => ({ initAnalytics: () => false, trackEvent: trackEventSpy }))
+
 const face = (name: string) => ({ face: name, assetKey: '', family: '', style: '', bold: '', italic: '', boldItalic: '' })
 const canvas = { width: 595276, height: 841890, orientation: 'portrait' as const, preset: 'A4' as const, locale: 'en' as const, utcOffset: '+00:00', embedFonts: true, marginTop: 36000, marginRight: 36000, marginBottom: 36000, marginLeft: 36000, gridIncrement: 6000, commandWidth: 595276, commandHeight: 841890, fontFamilies: ['body'], fontChains: [{ name: 'body', entries: [face('Noto Sans')] }], defaultFontSize: 12000, defaultLineSpacing: 1000, contentWindowHeight: 729890, contentWindowCount: 1, contentWindowOrigins: [0], contentWindowPages: [0], contentWindowCountIsExact: true, bands: [{ name: 'pageHeader' as const, x: 36000, y: 36000, width: 523276, height: 20000 }, { name: 'content' as const, x: 36000, y: 56000, width: 523276, height: 729890 }, { name: 'pageFooter' as const, x: 36000, y: 785890, width: 523276, height: 20000 }], components: [] }
 const textComponent = { id: 'e1', type: 'text' as const, band: 'content' as const, x: 0, y: 0, width: 72_000, height: 24_000, resizable: true, value: 'Hello' }
@@ -332,5 +340,58 @@ describe('importing font files from the author\'s own machine', () => {
     fireEvent.focus(screen.getByRole('combobox', { name: 'Font family' }))
     fireEvent.click(screen.getByRole('button', { name: /^Add fonts…/ }))
     expect(screen.queryByText(/now on this machine\./), 'a report about a finished act must not outlive the screen it was made on').toBeNull()
+  })
+})
+
+// THE MEASUREMENT CALL SITE, PINNED TO THE BRANCH IT BELONGS ON.
+//
+// It was originally wired to STEP ONE — beside `setFontImportRequest`, which
+// merely RAISES the acknowledgement the author can still decline — so every
+// decline was counted as an import. Nothing in this file could see that: the
+// store assertions already prove a decline stores nothing, and they stayed
+// green with the event firing anyway.
+describe('usage measurement for the font import', () => {
+  const countOf = (action: string) => trackEventSpy.mock.calls.filter(([entry]) => entry === action).length
+
+  beforeEach(() => { trackEventSpy.mockClear() })
+
+  it('reports exactly one import once the acknowledgement is accepted and a face is on this machine', async () => {
+    openFontBrowser(pickerYielding(ttf('whatever.ttf', brandFace('Brand Grotesk', 'Regular'))))
+    pressImport()
+    const dialog = await screen.findByRole('dialog', { name: /Import Brand Grotesk/ })
+    // ⚠ NOTHING IS COUNTED WHILE THE QUESTION IS STILL OPEN.
+    expect(countOf('font_import'), 'raising the acknowledgement is not an import').toBe(0)
+    fireEvent.click(within(dialog).getByRole('button', { name: /I hold the right/ }))
+    await waitFor(async () => expect((await facesOnThisMachine()).map((entry) => entry.family)).toEqual(['Brand Grotesk']))
+    await waitFor(() => expect(countOf('font_import')).toBe(1))
+    // ⚠ AND NOT THE FAMILY NAME. `Brand Grotesk` is the author's own typeface;
+    // the call must carry the fixed action name and nothing else.
+    expect(trackEventSpy).toHaveBeenCalledWith('font_import')
+    for (const call of trackEventSpy.mock.calls) expect(call).toHaveLength(1)
+  })
+
+  it('reports no import when the acknowledgement is declined', async () => {
+    openFontBrowser(pickerYielding(ttf('1.ttf', brandFace('Brand Grotesk', 'Regular'))))
+    pressImport()
+    const dialog = await screen.findByRole('dialog', { name: /Import Brand Grotesk/ })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /Import Brand Grotesk/ })).toBeNull())
+    expect(await facesOnThisMachine()).toEqual([])
+    expect(countOf('font_import'), 'a declined acknowledgement is not an import').toBe(0)
+  })
+
+  it('reports no import when every picked file is refused, so nothing is ever asked', async () => {
+    openFontBrowser(pickerYielding(ttf('logo.png', new Uint8Array([1, 2, 3, 4]).buffer)))
+    pressImport()
+    expect(await screen.findByText(/No face could be imported\./)).toBeInTheDocument()
+    expect(countOf('font_import'), 'a pick with nothing importable in it is not an import').toBe(0)
+  })
+
+  it('reports no import when the picker is dismissed with no file', async () => {
+    const access = pickerCancelled()
+    openFontBrowser(access)
+    pressImport()
+    await waitFor(() => expect(access.openFonts).toHaveBeenCalled())
+    expect(countOf('font_import'), 'a cancelled picker is not an import').toBe(0)
   })
 })

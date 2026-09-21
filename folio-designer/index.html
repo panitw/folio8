@@ -4,6 +4,36 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Folio8 Designer</title>
+    <!-- USAGE MEASUREMENT IS DELIBERATELY NOT PASTED HERE (spec-google-analytics,
+         D-GA.7). Google Tag Manager's copy-paste instructions put the container
+         in this file, which would fire it on every `npm run dev` and every
+         Playwright run. `src/analytics.ts` injects the identical snippet at
+         runtime, and only when VITE_GA_CONTAINER_ID holds a valid container id,
+         so an unconfigured build carries no tag at all. The noscript iframe is
+         omitted with it (D-GA.6): the designer renders nothing without
+         JavaScript, so there is no no-JS visitor for it to measure.
+
+         Nothing static goes in this head for the tag. A preconnect or a preload
+         would put a third-party host in dist/index.html unconditionally —
+         exactly the thing the env gate exists to prevent.
+
+         WHY THIS COMMENT NAMES NO MARKUP, AND MUST NOT START. Two tokens are
+         load-bearing in this file and neither may be spelled anywhere above the
+         place it belongs: the closing head tag, and the comment terminator.
+         Vite injects the bundle, and generate-offline-release.mjs:168 then
+         injects the release-bootstrap trio, each by replacing the FIRST closing
+         head tag in the file with a plain String.replace. Spell it in a comment
+         and both injections land inside that comment, and the page ships with
+         no executable script: a blank designer. Spell a terminator and this
+         comment ends early, and the prose below it renders as visible text
+         above the app.
+
+         BOTH HAVE ALREADY HAPPENED HERE, one day apart, and every gate stayed
+         green through each: build:offline still found a tag to replace, and
+         verify:offline still matched the bootstrap by regex without asking
+         whether the match was commented out or whether the head it sat in was
+         still the head. src/index-head-injection.test.ts now parses this file
+         and fails on either shape. -->
   </head>
   <body>
     <div id="root"></div>

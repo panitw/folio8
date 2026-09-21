@@ -13,6 +13,7 @@ import { runtimeAssetUrls } from './generated/offline-assets.ts'
 import { exampleAssets } from './generated/example-assets.ts'
 import { loadStarterAfterEngineReady } from './startup-sequence.ts'
 import { selectFileAccess, selectFontFileAccess, selectImageFileAccess, selectSampleFileAccess } from './file/capability.ts'
+import { initAnalytics } from './analytics.ts'
 
 const root = createRoot(document.getElementById('root')!)
 let lifecycle: OfflineLifecycle = { state: 'checking', cacheReady: false, verifiedAssetUrls: [] }
@@ -66,4 +67,15 @@ async function startObservation() {
     render()
   } finally { observationInFlight = false }
 }
+// USAGE MEASUREMENT, BEFORE THE FIRST RENDER (spec-google-analytics, D-GA.2)
+// so the pageview is seeded before any action can be taken. It is a no-op
+// unless VITE_GA_CONTAINER_ID holds a valid container id, which is why there is
+// no dev/test guard here — the module IS the guard (D-GA.3), and a second one
+// would only be a second thing to get out of step with it.
+// ⚠ AND IT CAN NEVER TAKE STARTUP DOWN. This runs at module scope in the
+// entry module: an exception here aborts the module before `startObservation`
+// is ever called, and the designer is a blank page. A fault in third-party
+// USAGE MEASUREMENT must never cost the author their tool, so it is contained
+// here — the only place a throw from it could reach.
+try { initAnalytics() } catch { /* measurement is optional; the designer is not */ }
 void startObservation()
