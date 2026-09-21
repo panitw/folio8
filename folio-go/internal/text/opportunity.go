@@ -51,8 +51,12 @@ const (
 //
 // A line that breaks here ends at LineEnd and the next line begins at
 // NextStart. The two differ only where the break CONSUMES text — today
-// exactly one case, a run of whitespace, which is drawn on neither
-// line. For every other break the two are equal.
+// whitespace, which is drawn on neither line. For every other break the
+// two are equal.
+//
+// A MANDATORY break consumes the line feed and whatever whitespace
+// precedes it, but NOT the whitespace that follows it: that is an
+// authored indent, not break debris. See rule 1 in Opportunities.
 //
 // Modelling the consumed range explicitly is what keeps "the trailing
 // space does not count toward the line's width" a property of the break
@@ -167,10 +171,23 @@ func Opportunities(dict *BytesTrie, s string, atomic []Span) []Opportunity {
 	// paragraph gap becomes expressible (D-7.1.2). The guard's own text
 	// is unchanged and still governs every inferred whitespace break.
 	//
-	// The run is consumed at its OUTER EDGES either way (D-7.1.6 /
-	// AC5): only the NUMBER of breaks changes. "a \n b" therefore
-	// renders as "a" / "b", with neither space drawn — exactly as
-	// "a b" would if it broke there.
+	// CONSUMPTION IS ASYMMETRIC AROUND A MANDATORY BREAK, and that is
+	// the whole of issue #2 (superseding D-7.1.6, which consumed the
+	// run at BOTH outer edges). Whitespace BEFORE the first line feed
+	// is consumed — it is trailing whitespace, and measuring it into
+	// the previous line is the polarity error D-7.1.6 was written to
+	// avoid. Whitespace AFTER the last line feed is NOT consumed: it is
+	// an INDENT the author typed, it is the only way a .folio value can
+	// express one, and dropping it moves the run on the page while
+	// leaving every character of the decoded text intact — a defect no
+	// text-reading assertion can see. So "a \n b" renders as "a" /
+	// " b": the space before the break is drawn on neither line, the
+	// space after it opens the second.
+	//
+	// An OPTIONAL whitespace break is unchanged and still consumes its
+	// whole run. Nobody typed that break, so no run around it is an
+	// authored indent; "a b" wrapping at the space still draws neither
+	// side of it.
 	for i := 0; i < n; {
 		if !unicode.IsSpace(runes[i]) {
 			i++
@@ -192,15 +209,23 @@ func Opportunities(dict *BytesTrie, s string, atomic []Span) []Opportunity {
 			// "a \n\n b"): break m ends the previous line at the run's
 			// START when m is the first, and at line feed m otherwise;
 			// it begins the next line at line feed m+1 when one
-			// follows, and at the run's END when m is the last. k
+			// follows, and JUST PAST line feed m when m is the last. k
 			// breaks therefore yield k+1 lines, with k-1 empty ones
 			// between them — mandatory breaks are SEPARATORS.
+			//
+			// "Just past the last line feed" rather than "the run's
+			// end" is the indent fix. Every interior break is unmoved:
+			// its NextStart is the next line feed, and the whitespace
+			// it skips over is trailing whitespace of an empty line.
+			// Only the final break changes, and only when the run has
+			// whitespace after its last line feed — which is exactly
+			// an authored indent and nothing else.
 			for m, f := range feeds {
 				lineEnd := f
 				if m == 0 {
 					lineEnd = i
 				}
-				nextStart := j
+				nextStart := f + 1
 				if m+1 < len(feeds) {
 					nextStart = feeds[m+1]
 				}

@@ -359,22 +359,45 @@ func TestMandatoryBreaksComeFromLineFeedsTheCallerSupplied(t *testing.T) {
 			want: []Opportunity{{LineEnd: 1, NextStart: 2, Kind: BreakOptional}},
 		},
 		{
-			// D-7.1.6 / AC5: the whole run is consumed at its OUTER
-			// edges, exactly as an optional whitespace break consumes
-			// its run. Neither space is drawn on either line.
-			name: "spaces adjacent to the break are consumed with it",
+			// ISSUE #2, superseding D-7.1.6's symmetric consumption.
+			// The space BEFORE the break is still consumed (trailing
+			// whitespace must not be measured into line 1); the space
+			// AFTER it is an authored indent and opens line 2, so
+			// NextStart is 3 — just past the line feed — not 4.
+			name: "the space before the break is consumed, the space after it is an indent",
 			text: "a \n b",
-			want: []Opportunity{{LineEnd: 1, NextStart: 4, Kind: BreakMandatory}},
+			want: []Opportunity{{LineEnd: 1, NextStart: 3, Kind: BreakMandatory}},
 		},
 		{
-			// The Design Notes' worked partition, verbatim:
-			// a(0) sp(1) \n(2) \n(3) sp(4) b(5); run [1,5).
+			// THE REPORTED SHAPE, reduced: a run of spaces after the
+			// break positions the second line. A NextStart of 12 would
+			// be the defect — every character still present, the indent
+			// silently gone.
+			name: "a multi-space indent after the break survives whole",
+			text: "a\n           b",
+			want: []Opportunity{{LineEnd: 1, NextStart: 2, Kind: BreakMandatory}},
+		},
+		{
+			// The Design Notes' worked partition, with the final
+			// break's NextStart moved by the fix above:
+			// a(0) sp(1) \n(2) \n(3) sp(4) b(5); run [1,5). The
+			// INTERIOR break is unmoved at {1,3} — only the last one
+			// changes, from 5 to 4.
 			name: "worked partition of a run holding two line feeds",
 			text: "a \n\n b",
 			want: []Opportunity{
 				{LineEnd: 1, NextStart: 3, Kind: BreakMandatory},
-				{LineEnd: 3, NextStart: 5, Kind: BreakMandatory},
+				{LineEnd: 3, NextStart: 4, Kind: BreakMandatory},
 			},
+		},
+		{
+			// THE NEGATIVE CONTROL. An OPTIONAL whitespace break is
+			// untouched: nobody typed it, so the run around it is break
+			// debris rather than an indent and the whole run is still
+			// consumed.
+			name: "an optional whitespace break still consumes its whole run",
+			text: "a    b",
+			want: []Opportunity{{LineEnd: 1, NextStart: 5, Kind: BreakOptional}},
 		},
 	}
 

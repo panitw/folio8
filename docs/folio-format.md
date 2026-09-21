@@ -1120,8 +1120,18 @@ Where a line *must* end: a `U+000A` line feed in an element's text, or in a valu
   does — and can therefore move a page break.
 - **`\r\n` is one break, never two.** A carriage return carries no line feed of its own; a lone `\r`
   is ordinary whitespace and stays an inferred break.
-- **The whole whitespace run around the break is consumed**, exactly as an inferred whitespace break
-  consumes its run: `"a \n b"` is `a` / `b`, with neither space drawn on either line.
+- **Whitespace *before* the break is consumed; whitespace *after* it is an indent and is drawn.**
+  `"a \n b"` is `"a"` / `" b"`: the space before the break is drawn on neither line — trailing
+  whitespace never widens the line it ends, which matters for `right` and `justify` alignment — while
+  the space after it opens the second line. So a run of spaces at the start of a line is the way to
+  indent that line inside a single element:
+
+  ```jsonc
+  { "type": "text", "x": 101.08, "value": "{{approval.requesterName}}\n           {{approval.requestDate}}" }
+  ```
+
+  An **inferred** whitespace break, by contrast, still consumes its whole run in both directions —
+  nobody typed it, so no run beside it is an authored indent.
 - **A mandatory break is not affected by `unbreakableValues`** — see
   [*Values that must never be split*](#values-that-must-never-be-split).
 

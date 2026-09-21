@@ -7,6 +7,7 @@ import (
 	"github.com/panitw/folio8/folio-go/internal/bind"
 
 	"github.com/panitw/folio8/folio-go/internal/geom"
+	"github.com/panitw/folio8/folio-go/internal/pagemodel"
 	"github.com/panitw/folio8/folio-go/internal/text"
 )
 
@@ -864,7 +865,14 @@ func TestPackLinesTreatsMandatoryBreaksAsSeparators(t *testing.T) {
 		{"leading break", "\nClause 1.", []string{"", "Clause 1."}},
 		{"break only", "\n", []string{"", ""}},
 		{"CRLF is one break", "one\r\ntwo", []string{"one", "two"}},
-		{"space adjacent to the break is consumed with it", "one \n two", []string{"one", "two"}},
+		{"the space before the break is consumed, the one after it is an indent", "one \n two", []string{"one", " two"}},
+		// ISSUE #2's own shape at the packer: an indented second line
+		// must arrive at the drawing site WITH its indent. The buggy
+		// packing produced ["Requester", "2026-09-20"], which decodes
+		// to the same characters in the same order and differs only in
+		// where the run is drawn — invisible to every assertion that
+		// reads text rather than geometry.
+		{"an authored indent opens the next line", "Requester\n     2026-09-20", []string{"Requester", "     2026-09-20"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1269,4 +1277,80 @@ func TestPackLinesTakesEveryTypedBreakAtEveryBoxWidth(t *testing.T) {
 		t.Fatalf("vacuity: compared %d combinations, want %d", compared, len(subjects)*len(boxes))
 	}
 	t.Logf("%d (input, box width) combinations: every line feed produced exactly one mandatory-ended line", compared)
+}
+
+// TestAuthoredIndentAfterABreakReachesThePage is GitHub issue #2, at the
+// only altitude that can see it: GEOMETRY, not text.
+//
+// The reporter's nine test cases all asserted decoded text and all
+// passed, because the defect changed nothing a text reader can observe —
+// "Requester\n           2026-09-20" and "Requester\n2026-09-20" decode
+// to the same characters, in the same order, from the same element. Only
+// the pen position of the second line differed, and only a human looking
+// at the PDF caught it. So this test compares the indented document
+// against the unindented control and asserts the one quantity that
+// separates them: the date's first glyph is drawn further right.
+func TestAuthoredIndentAfterABreakReachesThePage(t *testing.T) {
+	const indent = 11
+	doc := func(value string) string {
+		return `{"version":"1.0","page":{"size":"A4","orientation":"portrait","margin":{"top":36,"right":36,"bottom":36,"left":36}},"bands":{"pageHeader":{"height":20,"elements":[]},"content":{"elements":[{"id":"e1","type":"text","x":100,"y":0,"width":400,"height":60,"value":"` + value + `","style":{"fontFamily":"body","fontSize":12}}]},"pageFooter":{"height":20,"elements":[]}},"fonts":{"body":["Roboto-Regular"]},"locale":"en","utcOffset":"+00:00","assets":{},"nextId":2}`
+	}
+	linesOf := func(value string) []pagemodel.TextRun {
+		t.Helper()
+		pages := boxPages(t, doc(value))
+		if len(pages) != 1 {
+			t.Fatalf("%q rendered %d pages, want 1", value, len(pages))
+		}
+		if len(pages[0].Runs) != 2 {
+			t.Fatalf("%q produced %d runs, want 2 — one per line", value, len(pages[0].Runs))
+		}
+		return pages[0].Runs
+	}
+
+	indented := linesOf(`Requester\n           2026-09-20`)
+	control := linesOf(`Requester\n2026-09-20`)
+
+	// The two documents start their second line at the SAME element
+	// origin — the indent is inside the run, not a different X. That is
+	// why the defect was invisible: X alone says nothing.
+	if indented[1].X != control[1].X {
+		t.Fatalf("second line origins differ (%d vs %d) — this test compares glyph advances and needs a shared origin", indented[1].X, control[1].X)
+	}
+
+	if got, want := len(indented[1].Glyphs), len(control[1].Glyphs)+indent; got != want {
+		t.Fatalf("indented second line carries %d glyphs, want %d — the authored indent was dropped before shaping", got, want)
+	}
+
+	// THE ASSERTION. The pen has travelled a positive distance before
+	// the date's first glyph, so the date is drawn to the RIGHT of where
+	// the unindented control draws it. A zero here is the reported
+	// defect, and every text-reading assertion in the suite stays green
+	// while it holds.
+	var penBeforeDate int64
+	for _, g := range indented[1].Glyphs[:indent] {
+		penBeforeDate += g.XAdvance
+	}
+	if penBeforeDate <= 0 {
+		t.Fatalf("the %d-space indent advances the pen by %d, want > 0 — the date draws on top of its own label", indent, penBeforeDate)
+	}
+
+	// ...and the date itself is untouched: same advances, same order,
+	// just further along the line. ADVANCES, NOT CIDs: a CID is a
+	// SUBSET glyph id (DW-16), and the indented document's subset
+	// carries one more glyph, so the two documents number the same
+	// glyph differently by construction.
+	tail := indented[1].Glyphs[indent:]
+	for i := range control[1].Glyphs {
+		if tail[i].XAdvance != control[1].Glyphs[i].XAdvance || tail[i].XOffset != control[1].Glyphs[i].XOffset {
+			t.Fatalf("glyph %d after the indent advances %+v, want %+v — the indent must move the value, not change it", i, tail[i], control[1].Glyphs[i])
+		}
+	}
+
+	// THE NEGATIVE CONTROL, and it is the half of D-7.1.6 that survives:
+	// whitespace BEFORE the break is still consumed, so the first line
+	// is not widened by a trailing space no reader would ever see.
+	trailing := linesOf(`Requester   \n2026-09-20`)
+	if len(trailing[0].Glyphs) != len(control[0].Glyphs) {
+		t.Errorf("a trailing space before the break added %d glyph(s) to the first line — trailing whitespace must not be measured into it", len(trailing[0].Glyphs)-len(control[0].Glyphs))
+	}
 }
