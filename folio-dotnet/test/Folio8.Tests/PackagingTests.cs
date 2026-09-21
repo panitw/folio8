@@ -64,12 +64,58 @@ namespace Folio8Tests
             Assert.Contains("PackagePath=\"runtimes/%(Rid)/native/\"", Project, StringComparison.Ordinal);
             Assert.Contains("win-x64/folio8_native.dll", Project, StringComparison.Ordinal);
             Assert.Contains("win-x86/folio8_native.dll", Project, StringComparison.Ordinal);
+            Assert.Contains("linux-x64/libfolio8_native.so", Project, StringComparison.Ordinal);
+            Assert.Contains("linux-arm64/libfolio8_native.so", Project, StringComparison.Ordinal);
+            // ALPINE IS AN ABSENCE THAT HAS TO STAY ONE. Go's c-shared TLS
+            // model cannot be dlopen'd by musl, so a linux-musl-x64 asset
+            // would crash at the first render instead of being cleanly
+            // missing. If someone adds the RID, this reddens and sends them
+            // to the reasoning beside the FolioNative items.
+            //
+            // IT READS THE RID ELEMENTS, NOT THE FILE'S TEXT: the reasoning
+            // beside those items names linux-musl-x64 in order to rule it
+            // out, and a raw substring search cannot tell the prohibition
+            // from the thing prohibited.
+            Assert.DoesNotContain(PackedRids(), rid => rid.StartsWith("linux-musl", StringComparison.Ordinal));
             // The COLLIDING name, in any of the places the csproj could spell
             // it. `native/folio8.dll` could never match: the natives are named
             // by their source path, `.../win-x64/folio8.dll`, so the guard has
             // to look for the file name after any separator.
             Assert.DoesNotContain("/folio8.dll", Project, StringComparison.Ordinal);
             Assert.DoesNotContain(@"\folio8.dll", Project, StringComparison.Ordinal);
+        }
+
+        /// <summary>
+        /// EVERY PACKED RID IS KNOWN TO THE PACK CHECK. FolioPackageCheck
+        /// validates each native's machine type against the RID it is filed
+        /// under, and it can only do that for RIDs it has an arm for. Adding
+        /// a FolioNative item without adding the arm would ship that native
+        /// unverified — which is the one thing the check exists to prevent —
+        /// so the two lists are held equal here rather than by eye.
+        /// </summary>
+        /// <summary>
+        /// The RIDs the csproj actually files a native under — read from the
+        /// <c>&lt;Rid&gt;</c> metadata rather than from the file's prose, so
+        /// that commentary about a RID is never mistaken for shipping one.
+        /// </summary>
+        private static List<string> PackedRids()
+        {
+            var rids = new List<string>();
+            foreach (Match m in Regex.Matches(Project, @"<Rid>([^<]+)</Rid>"))
+            {
+                rids.Add(m.Groups[1].Value);
+            }
+            Assert.NotEmpty(rids);
+            return rids;
+        }
+
+        [Fact]
+        public void EveryPackedRidHasAnArchitectureArmInThePackCheck()
+        {
+            foreach (string rid in PackedRids())
+            {
+                Assert.Contains("rid == \"" + rid + "\"", Project, StringComparison.Ordinal);
+            }
         }
 
         /// <summary>
@@ -166,9 +212,16 @@ namespace Folio8Tests
         [InlineData("dotnet add package folio8")]
         [InlineData("Fonts.Shipped()")]
         [InlineData(".NET Framework 4.6")]
-        [InlineData("Windows only")]
         [InlineData("win-x86")]
         [InlineData("win-x64")]
+        [InlineData("linux-x64")]
+        [InlineData("linux-arm64")]
+        // The two absences an installer would otherwise discover by
+        // deploying: there is no macOS native, and Alpine is not merely
+        // unbuilt but unsupportable. Both are stated, with the musl reason.
+        [InlineData("no macOS binaries")]
+        [InlineData("Alpine (musl) is not supported")]
+        [InlineData("GLIBC_2.17")]
         [InlineData("FolioNativeLoadException")]
         public void TheReadmeTellsAnInstallerWhatTheyCannotGuess(string text)
         {

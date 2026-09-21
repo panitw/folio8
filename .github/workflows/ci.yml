@@ -638,6 +638,87 @@ jobs:
   # modern .NET, matching the committed golden hashes and the recorded Go
   # diagnostics.
   #
+  # folio-dotnet-linux: the OTHER half of the .NET binding's platform claim.
+  #
+  # A SEPARATE JOB, not a matrix leg on folio-dotnet, for the reason
+  # folio-go-known-red is a job: the two ask different questions and a reader
+  # is entitled to both answers on a run where one is red. The Windows job
+  # also carries .NET Framework, mingw and the x86 legs, none of which exist
+  # here, so a matrix would be mostly `if:`.
+  #
+  # WHAT ONLY THIS JOB CAN SEE: that the SHIPPED ELF natives load and render.
+  # The managed assembly is the same netstandard2.0 build either way, so
+  # nothing about the C# is under test here — the shipped artifact is.
+  #
+  # NOT A DUPLICATE OF folio-dotnet-host, which also runs dotnet test on
+  # ubuntu. That job proves the DEVELOPER's path — `build-native.sh host` and
+  # the script's own Linux branch — against a library built with the runner's
+  # glibc and thrown away. This job proves the RELEASE's path: the pinned
+  # image, the RID layout, the glibc floor, and the exact bytes a consumer
+  # installs. Either can break while the other stays green.
+  #
+  # The natives are built in the PINNED CONTAINER build-native.sh uses, not
+  # against the runner's own glibc, because the runner is Ubuntu 24.04
+  # (glibc 2.39) and a native built there would demand GLIBC_2.39 from every
+  # consumer. Building them here the same way the release does is the only
+  # way this job tests what ships. linux-arm64 needs binfmt/qemu to build
+  # under emulation; it is built and machine-checked, not executed.
+  #
+  # No continue-on-error. Same reason as everywhere else in this file.
+  folio-dotnet-linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      # qemu, so the linux-arm64 leg can be built on an x86 runner. The
+      # linux-x64 leg needs none of this.
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - name: build the linux-x64 and linux-arm64 natives (pinned image)
+        run: ./folio-dotnet/build/build-native.sh linux-x64 linux-arm64
+      # A build that "succeeded" without producing both artifacts is not a
+      # pass, and the GLIBC FLOOR is the thing a consumer feels and no other
+      # step can see. Asserted here, where it is cheap, rather than
+      # discovered by a customer on RHEL 8.
+      - name: assert both natives exist, are the right machine, and keep the glibc floor
+        run: |
+          set -euo pipefail
+          for rid in linux-x64:x86-64 linux-arm64:aarch64; do
+            path="folio-dotnet/build/native/${rid%%:*}/libfolio8_native.so"
+            test -f "$path" || { echo "::error::$path was not produced"; exit 1; }
+            readelf -h "$path" | grep -q "${rid##*:}" || {
+              echo "::error::$path is not ${rid##*:}"; readelf -h "$path"; exit 1; }
+            floor=$(objdump -T "$path" | grep -oE 'GLIBC_[0-9.]+' | sort -Vu | tail -1)
+            echo "$path -> machine ${rid##*:}, glibc floor $floor"
+            # 2.28 is AlmaLinux 8's own glibc and therefore the highest this
+            # build can possibly require. A jump above it means the pinned
+            # image moved, which is the drift the pin exists to prevent.
+            case "$floor" in
+              GLIBC_2.1[0-9]|GLIBC_2.2|GLIBC_2.2[0-8]|GLIBC_2.[0-9]|GLIBC_2.[0-9].*) ;;
+              *) echo "::error::$path requires $floor, above the AlmaLinux 8 floor — the pinned build image has moved"; exit 1 ;;
+            esac
+          done
+      # THE TESTS RUN AGAINST THE SHIPPED NATIVE, NOT A HOST BUILD. The test
+      # project stages build/native/host/libfolio8_native.so on non-Windows,
+      # and `build-native.sh host` would fill that with a library built
+      # against the runner's own glibc 2.39 — which loads here and proves
+      # nothing about the artifact that ships. Putting the linux-x64 native
+      # there instead means every render assertion below is made against the
+      # exact bytes a consumer gets. The runner is x86-64 and glibc 2.39
+      # satisfies a 2.28-floor library, so it simply loads.
+      - name: stage the shipped linux-x64 native as the test native
+        run: |
+          set -euo pipefail
+          mkdir -p folio-dotnet/build/native/host
+          cp folio-dotnet/build/native/linux-x64/libfolio8_native.so \
+             folio-dotnet/build/native/host/libfolio8_native.so
+      - name: dotnet test (modern .NET, linux-x64)
+        run: dotnet test folio-dotnet/test/Folio8.Tests/Folio8.Tests.csproj -c Release
+
   # No continue-on-error. Same reason as everywhere else in this file.
   folio-dotnet:
     runs-on: windows-2022

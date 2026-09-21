@@ -194,6 +194,14 @@ additions and the one behaviour change:
   `v1.0.0` call does today, so no existing call changes meaning;
 - **new** diagnostics `TEXT_FACE_ABSENT`'s companion
   `DiagCodeTextFaceSubstituted`, raised only under `Substitute`;
+- **folio-dotnet now runs on Linux** — `linux-x64` and `linux-arm64` join
+  `win-x64` and `win-x86`. The managed assembly is unchanged: `DllImport`
+  resolves `libfolio8_native.so` and the host picks the RID, so a Linux
+  consumer authors nothing. The natives are built in a digest-pinned
+  AlmaLinux 8 image and require no symbol above `GLIBC_2.17`, so RHEL 8+,
+  Ubuntu 18.04+ and Debian 10+ all satisfy them. **Alpine/musl remains
+  unsupported**, for the reason in the package-contents section — it is not a
+  missing build leg.
 - **format `4.2`** — a document whose `fonts` chain names an asset carrying
   `authorAcknowledged: true` declares it. A `4.0`/`4.1` reader loads such a
   document and then refuses it on the licence terms the key exists to excuse;
@@ -344,11 +352,20 @@ written down — and reddens if one acquires it.
 lib/netstandard2.0/Folio8.dll          the one managed assembly, faces embedded
 runtimes/win-x64/native/folio8_native.dll
 runtimes/win-x86/native/folio8_native.dll
+runtimes/linux-x64/native/libfolio8_native.so
+runtimes/linux-arm64/native/libfolio8_native.so
 build/folio8.targets                   the .NET Framework delivery
 buildTransitive/folio8.targets
 README.md, LICENSE
 third-party-notices/fonts/**           each face's OFL text and notice
 ```
+
+**No `linux-musl-x64`, and that is a decision rather than a gap.** Go's
+`-buildmode=c-shared` emits initial-exec TLS relocations that musl's loader
+refuses under `dlopen`, which is exactly how P/Invoke loads the library;
+building the native *with* musl fails identically, measured on x86-64 and
+arm64. Shipping the RID would turn a clean install-time absence into a crash
+at the first render. `PackagingTests` reddens if the RID is ever added.
 
 It declares **no dependencies**, so `dotnet add package folio8` on a
 machine with no Go and no C compiler produces a project that renders — from
@@ -383,6 +400,22 @@ and it holds only because the release commit is the tagged one. Cut the
 package from the commit the engine tag points at, or from a descendant whose
 engine sources are unchanged; nothing in the build enforces it for you.
 
+⚠ **AND THE FOUR NATIVES CAN NOW DISAGREE WITH EACH OTHER.** The Windows pair
+is built on Windows and the Linux pair in a container, at different times and
+possibly from different working trees — and `FolioPackageCheck` verifies each
+native's *architecture*, never its *provenance*, so a pack with stale natives
+of one platform succeeds silently. This is not hypothetical: during the 1.1.0
+preparation a `dotnet pack` produced a package whose Linux natives were at
+`HEAD` and whose Windows natives were three days old, predating a rendering
+change — an internally inconsistent package that no guard in this repository
+refused.
+
+**So: delete `folio-dotnet/build/native/` before a release pack, and rebuild
+all four from the release commit.** `PackagingTests` catches the specific case
+where the loaded native's reported engine version disagrees with
+`FolioEngineVersion`, but only for the native it can load — the host's — so it
+cannot speak for the other three.
+
 ### The build machine
 
 Everything below runs anywhere, but **step 1 does not**: `build-native.ps1`
@@ -395,6 +428,21 @@ carries preinstalled, an owner's laptop has to be given.
 | Go | `go build -buildmode=c-shared` builds the engine |
 | mingw-w64 gcc, `x86_64` | cgo's C compiler for `win-x64` |
 | mingw-w64 gcc, `i686` | a SEPARATE toolchain, for `win-x86` |
+| Docker | the **Linux** natives — see below; needed on whichever machine builds them, which need not be this one |
+
+**The Linux pair needs Docker and nothing else** — not a Go toolchain, not a
+cross-compiler. `build-native.sh linux-x64 linux-arm64` builds them inside a
+**digest-pinned AlmaLinux 8 image**, and the image is the point: a cgo library
+records the glibc symbol versions of the machine that built it, so building on
+a modern host silently raises the consumer's minimum glibc. The same sources
+built on Debian bookworm demand `GLIBC_2.34` and will not load on RHEL 8 or
+Ubuntu 20.04; built in the pinned image they demand no more than `GLIBC_2.17`.
+Never build a shipped Linux native outside that image, and never substitute
+the `host` target for it.
+
+`linux-arm64` builds under emulation on an x86 machine (and `linux-x64` under
+emulation on Apple Silicon); Docker Desktop supplies it, and CI uses
+`docker/setup-qemu-action`. It is slow and correct.
 
 The Go version does not matter beyond the module's floor. The script pins
 `GOTOOLCHAIN = 'go1.26.0'`, so whichever Go is installed fetches and builds with
@@ -443,15 +491,30 @@ a standalone i686 mingw-w64 build unpacked there resolves with no code change.
 
 ### Before publishing
 
-1. The natives are built from the release commit, on Windows, with the pinned
-   toolchain: `folio-dotnet\build\build-native.ps1 win-x64 win-x86`. On a
-   machine that has not built them before, satisfy *The build machine* above
-   first — the script needs Go and a mingw-w64 gcc for each architecture.
+0. **`rm -rf folio-dotnet/build/native/`.** All four natives are rebuilt from
+   the release commit, and nothing in the pack checks that they came from the
+   same one — see the warning above. Starting from empty is what makes the
+   claim true.
+1. The natives are built from the release commit:
+   - **Windows**, on Windows, with the pinned toolchain:
+     `folio-dotnet\build\build-native.ps1 win-x64 win-x86`. On a machine that
+     has not built them before, satisfy *The build machine* above first — the
+     script needs Go and a mingw-w64 gcc for each architecture.
+   - **Linux**, on any machine with Docker:
+     `./folio-dotnet/build/build-native.sh linux-x64 linux-arm64`. If that is
+     a different machine from the Windows one, copy
+     `folio-dotnet/build/native/linux-*/` across — and copy, never rebuild on
+     a host whose glibc is newer than the pinned image's.
+
+   All four must be present, or the pack refuses and names what is missing.
 2. `dotnet test folio-dotnet/test/Folio8.Tests/Folio8.Tests.csproj -c Release`
    is green, and so is the 32-bit leg. `ci.yml`'s `folio-dotnet` job runs both
    plus the consumer suite — the pack, the install into all three process
    shapes on both target families, the corpus hash, and each forced CAP-11
    failure — so nothing below re-checks the package's *behaviour* by hand.
+   `ci.yml`'s `folio-dotnet-linux` job is the Linux half: it builds both ELF
+   natives in the pinned image, asserts their machine type and glibc floor,
+   and runs the suite against the shipped `linux-x64` native itself.
 3. `ci.yml` is green on that exact commit.
 
 ### The commands

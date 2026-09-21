@@ -64,7 +64,7 @@
     <Company>Panit Wechasil</Company>
     <Product>folio8</Product>
     <Copyright>Copyright (c) folio8 contributors</Copyright>
-    <Description>folio8 for .NET: render and validate .folio templates with the folio8 engine as a native library. Byte-identical to the Go engine, from .NET Framework 4.6 through modern .NET, on Windows x86 and x64. Ships both native architectures and the eleven shipped font faces. Design templates at https://folio8.report.</Description>
+    <Description>folio8 for .NET: render and validate .folio templates with the folio8 engine as a native library. Byte-identical to the Go engine, from .NET Framework 4.6 through modern .NET, on Windows (x86, x64) and Linux (x64, arm64). Ships all four natives and the eleven shipped font faces. Alpine/musl is not supported. Design templates at https://folio8.report.</Description>
     <PackageTags>pdf;reporting;folio8;rendering;documents;invoice;statement</PackageTags>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
     <PackageReadmeFile>README.md</PackageReadmeFile>
@@ -133,12 +133,30 @@
   </ItemGroup>
 
   <!--
-    THE TWO WINDOWS NATIVES, in the RID layout modern .NET resolves natively.
+    THE FOUR SHIPPED NATIVES, in the RID layout modern .NET resolves natively.
     build/build-native.{sh,ps1} produce them; they are never committed.
+
+    WINDOWS NEEDS BOTH BITNESSES because a .NET Framework project is AnyCPU
+    and chooses at load time (see folio-dotnet.targets). LINUX NEEDS BOTH
+    ARCHITECTURES because ARM servers and containers are ordinary now; the
+    host resolves the RID, so nothing chooses at load time there.
+
+    NO linux-musl-x64, DELIBERATELY. Go's -buildmode=c-shared emits
+    initial-exec TLS relocations that musl's loader refuses under dlopen —
+    which is how P/Invoke loads this library — so an Alpine consumer gets
+    "initial-exec TLS resolves to dynamic definition" at the first render.
+    Building the native WITH musl does not fix it; it is a property of the
+    Go build mode, measured on x86-64 and arm64 alike. Shipping the RID
+    anyway would convert a clean install-time absence into a runtime crash,
+    so Alpine is documented as unsupported instead. Note that
+    linux-musl-x64 does NOT inherit linux-x64 assets in the RID graph, so an
+    Alpine consumer resolves no native from this package at all.
   -->
   <ItemGroup>
     <FolioNative Include="$(FolioNativeDir)/win-x64/folio8_native.dll"><Rid>win-x64</Rid></FolioNative>
     <FolioNative Include="$(FolioNativeDir)/win-x86/folio8_native.dll"><Rid>win-x86</Rid></FolioNative>
+    <FolioNative Include="$(FolioNativeDir)/linux-x64/libfolio8_native.so"><Rid>linux-x64</Rid></FolioNative>
+    <FolioNative Include="$(FolioNativeDir)/linux-arm64/libfolio8_native.so"><Rid>linux-arm64</Rid></FolioNative>
 
     <None Include="@(FolioNative)" Pack="true" PackagePath="runtimes/%(Rid)/native/" Visible="false" />
   </ItemGroup>
@@ -266,32 +284,72 @@
           string path = native.GetMetadata("FullPath");
           if (!File.Exists(path))
           {
-            Log.LogError("folio8 pack: the " + rid + " native library is missing at " + path + ". Run folio-dotnet/build/build-native.sh win-x64 win-x86 (or build-native.ps1 on Windows) before packing; a package with one architecture makes BadImageFormatException the normal first experience.");
+            Log.LogError("folio8 pack: the " + rid + " native library is missing at " + path + ". Run folio-dotnet/build/build-native.sh linux-x64 linux-arm64 and build-native.ps1 win-x64 win-x86 before packing; a package missing a platform makes DllNotFoundException (or BadImageFormatException) the normal first experience on it.");
             continue;
           }
+          // WINDOWS IS PE, LINUX IS ELF, and the check reads whichever the RID
+          // says it should be rather than sniffing. Reading the header is the
+          // point: a linux-arm64 folder holding the x64 build, or a win-x86
+          // folder holding the x64 DLL, is exactly the mistake that reaches a
+          // customer as a load failure and is invisible to every other check.
+          bool isWindows = rid.StartsWith("win-", StringComparison.Ordinal);
           int machine = -1;
           using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read))
           using (var reader = new BinaryReader(stream))
           {
-            if (stream.Length > 0x40)
+            if (isWindows)
             {
-              stream.Position = 0x3C;
-              long headerAt = reader.ReadUInt32();
-              if (headerAt > 0 && headerAt + 6 <= stream.Length)
+              if (stream.Length > 0x40)
               {
-                stream.Position = headerAt;
-                if (reader.ReadUInt32() == 0x00004550u) { machine = reader.ReadUInt16(); }
+                stream.Position = 0x3C;
+                long headerAt = reader.ReadUInt32();
+                if (headerAt > 0 && headerAt + 6 <= stream.Length)
+                {
+                  stream.Position = headerAt;
+                  if (reader.ReadUInt32() == 0x00004550u) { machine = reader.ReadUInt16(); }
+                }
+              }
+            }
+            else
+            {
+              // ELF: magic 0x7F 'E' 'L' 'F', then e_type at 0x10 and
+              // e_machine at 0x12, both little-endian on every target here.
+              // ET_DYN (3) is asserted too: a shared object, not an
+              // executable or a relocatable .o someone renamed.
+              if (stream.Length > 0x14)
+              {
+                if (reader.ReadUInt32() == 0x464C457Fu)
+                {
+                  stream.Position = 0x10;
+                  int type = reader.ReadUInt16();
+                  int m = reader.ReadUInt16();
+                  if (type == 3) { machine = m; }
+                  else
+                  {
+                    Log.LogError("folio8 pack: " + path + " is an ELF file of type " + type + ", not a shared object (ET_DYN = 3), so it cannot be the " + rid + " native library.");
+                    continue;
+                  }
+                }
               }
             }
           }
-          int wanted = rid == "win-x64" ? 0x8664 : 0x014C;
+          int wanted;
+          if (rid == "win-x64") { wanted = 0x8664; }
+          else if (rid == "win-x86") { wanted = 0x014C; }
+          else if (rid == "linux-x64") { wanted = 0x003E; }
+          else if (rid == "linux-arm64") { wanted = 0x00B7; }
+          else
+          {
+            Log.LogError("folio8 pack: no architecture is known for the RID '" + rid + "'. Add it here when the RID is added to FolioNative, or the native ships unchecked.");
+            continue;
+          }
           if (machine < 0)
           {
-            Log.LogError("folio8 pack: " + path + " is not a Windows PE file, so it cannot be the " + rid + " native library.");
+            Log.LogError("folio8 pack: " + path + " is not a " + (isWindows ? "Windows PE" : "Linux ELF") + " file, so it cannot be the " + rid + " native library.");
           }
           else if (machine != wanted)
           {
-            Log.LogError("folio8 pack: " + path + " has PE machine 0x" + machine.ToString("X4") + ", but " + rid + " needs 0x" + wanted.ToString("X4") + ". The two architectures have been swapped or one was built twice.");
+            Log.LogError("folio8 pack: " + path + " has " + (isWindows ? "PE" : "ELF") + " machine 0x" + machine.ToString("X4") + ", but " + rid + " needs 0x" + wanted.ToString("X4") + ". Two architectures have been swapped or one was built twice.");
           }
         }
       ]]></Code>
