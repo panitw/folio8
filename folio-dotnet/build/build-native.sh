@@ -76,7 +76,17 @@ export GOTOOLCHAIN=go1.26.0
 # The pinned Linux build base. AlmaLinux 8 is glibc 2.28 and is supported to
 # 2029; the Debian release with a comparable floor (bullseye) is archived, so
 # its repositories 404. Pinned by digest, not by tag.
-linux_image="almalinux@sha256:9f355ae942d6a6c0561f0771dc053a2cfae9580fc45fa4252756db7c7e80c09f"
+#
+# ONE DIGEST PER ARCHITECTURE, NOT THE INDEX DIGEST. A digest reference is
+# immutable, so Docker cannot hold two platform variants of the multi-arch
+# index under the one digest: pulling it for amd64 and then for arm64 fails
+# with `cannot overwrite digest`. A TAG can be repointed and so hides this —
+# which is why it only showed up in CI, where both legs run in one job on one
+# daemon. Pinning the per-platform digests removes the ambiguity entirely:
+# each leg names exactly the image it wants, and --platform then agrees with
+# it rather than resolving it.
+linux_image_amd64="almalinux@sha256:158fba66c3434c58d07fb48cb6f19e3da84a7d9494cb07774d5d36a746136dce"
+linux_image_arm64="almalinux@sha256:b1051979d28155201bd0991a9a539839ac6d124c381293a8703f4063978d4bca"
 go_version="1.26.0"
 
 # Expand `all` wherever it appears, not only first, and VALIDATE THE WHOLE
@@ -118,7 +128,7 @@ find_cc() {
 # cross-arch leg on an Apple Silicon machine emulates rather than silently
 # producing the host architecture under a linux-x64 name.
 build_linux() {
-  local target="$1" arch="$2" platform="$3" dir="$out/$1"
+  local target="$1" arch="$2" platform="$3" image="$4" dir="$out/$1"
   mkdir -p "$dir"
   rm -f "$dir/libfolio8_native.so" "$dir/libfolio8_native.h"
   if ! command -v docker >/dev/null 2>&1; then
@@ -129,7 +139,7 @@ build_linux() {
   docker run --rm --platform "$platform" \
     -v "$repo":/src -v "$dir":/out -w /src/folio-go \
     -e CGO_ENABLED=1 -e GOFLAGS=-buildvcs=false \
-    "$linux_image" sh -c "
+    "$image" sh -c "
       set -e
       dnf install -y -q gcc tar >/dev/null 2>&1
       curl -sSLo /tmp/go.tgz https://go.dev/dl/go${go_version}.linux-${arch}.tar.gz
@@ -179,10 +189,10 @@ for target in "${targets[@]}"; do
       GOOS=windows GOARCH=386 CC="$cc" build win-x86 folio8_native.dll
       ;;
     linux-x64)
-      build_linux linux-x64 amd64 linux/amd64
+      build_linux linux-x64 amd64 linux/amd64 "$linux_image_amd64"
       ;;
     linux-arm64)
-      build_linux linux-arm64 arm64 linux/arm64
+      build_linux linux-arm64 arm64 linux/arm64 "$linux_image_arm64"
       ;;
   esac
 done

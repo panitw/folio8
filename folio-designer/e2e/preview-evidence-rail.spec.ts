@@ -24,6 +24,24 @@ import { fileURLToPath } from 'node:url'
 // Two specs shipped without this and did exactly that the first time anyone ran
 // them.
 const template = readFileSync(path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../folio-go/testdata/example/first-pdf.folio'))
+
+// THE ENGINE VERSION IS READ FROM THE ENGINE, NOT TYPED HERE. This assertion
+// was `toContainText('1.0.0')`, which is a correct claim about the rail that
+// stops being true at every release — it reddened this suite on the 1.1.0
+// bump, in a job whose purpose is finding DESIGNER regressions. What the test
+// actually means is "the rail shows the version the engine reports", so it
+// reads `folio8.Version` from the one file that declares it and a bump moves
+// nothing here. The regex is anchored to the const declaration so a mention
+// of a version in a comment above it cannot be picked up instead.
+const engineVersion = (() => {
+  const source = readFileSync(
+    path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../folio-go/version.go'),
+    'utf8',
+  )
+  const match = /^const Version = "([^"]+)"$/m.exec(source)
+  if (!match) throw new Error('could not read folio8.Version from folio-go/version.go')
+  return match[1]
+})()
 const sampleData = Buffer.from('{"customer":{"name":"Ada"}}')
 
 // `--panel-width` in `tokens.css`, and `.workbench`'s third grid column. The
@@ -107,7 +125,7 @@ test('the evidence rail occupies the inspector column, with the whole hash wrapp
   const facts = page.getByLabel('Render facts')
   await expect(facts.locator('.rail-fact')).toHaveCount(5)
   await expect(facts).toContainText('engine')
-  await expect(facts).toContainText('1.0.0')
+  await expect(facts).toContainText(engineVersion)
   await expect(facts).toContainText('wasm · in browser')
   // ⚠ NON-ZERO, DELIBERATELY (review P6). `\d+ ms` matches `0 ms`, which is
   // also what the field reads when nothing measured it at all — and this is the
