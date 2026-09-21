@@ -9,11 +9,47 @@ published as `folio8` — the npm package built in `folio-js/` and the NuGet
 package built in `folio-dotnet/`.
 The designer's own version and force-upgrade policy are at the end.
 
-**Released version:** `folio-go/v1.0.0`
+**Released version:** `folio-go/v1.1.0`
 
 `TestVersionAgreesWithReleasingDoc` (`folio-go/version_test.go`) reads the line
 above and fails unless `folio8.Version` equals it, so the stamp in the code and
 the release this document names cannot drift apart.
+
+## `folio-go/v1.1.0`
+
+**A MINOR, not a major.** Everything added since `v1.0.0` is additive — no
+`v1.0.0` identifier moved, was renamed or was removed — so the frozen surface
+D-1.1.c fixes at the tag is intact and **no `/v2` import path is needed**. The
+census (`publicSurfacePins`) grew and never shrank; that is the machine-checked
+form of this claim.
+
+**Inside the release:**
+
+- **package `fontdir`** — a host-side font-directory loader (`fontdir.Set`,
+  `fontdir.Skipped`). Its own package so that a consumer who wants it does not
+  also take the `fonts` package's ~14.8 MB of embedded faces.
+- **`FaceFallback`** (`FaceFallbackStrict`, `FaceFallbackSubstitute`) — an
+  optional selector on `Render`, `RenderTo` and `Validate`. Absent is
+  `Strict`, which is what every call written against `v1.0.0` asks for, so
+  existing callers are unaffected.
+- **`DiagCodeTextFaceAbsent`** and **`DiagCodeTextFaceSubstituted`**.
+- **Format `4.2`** — the `authorAcknowledged` key on a `font` record a chain
+  names. A MINOR: `SupportedMajor` is still 4, and `5.0` stays unopened for
+  spec-loop-section. See `internal/template/version.go` for why the MAJOR this
+  briefly shipped as was reversed.
+- **A behaviour change in text layout** — whitespace *after* a mandatory line
+  break is now drawn as the author's indent instead of being consumed with the
+  break (GitHub issue #2, superseding D-7.1.6). Whitespace *before* the break
+  is still consumed, and an optional whitespace break is unchanged.
+  **This can move the rendered geometry of an existing document**: any value
+  carrying whitespace after a `\n` now indents that line rather than starting
+  it flush. No corpus fixture hash moved — `go-corpus.json` and
+  `go-parity.json` changed only in their `folio8Version` string — so no golden
+  in this repository exercised the old behaviour, but an integrator's own
+  template may.
+
+**Not in it:** the `loop` element and `$.` root paths (spec-loop-section,
+unbuilt), which are what `5.0` is reserved for.
 
 ## `folio-go/v1.0.0`
 
@@ -66,14 +102,23 @@ which has its own `go.mod` — not from the repo root).
 
 ### 2. The public API surface is deliberate
 
-**Obligation:** the exported surface of packages `folio8` and `fonts` is
-reviewed as a whole before it freezes, because D-1.1.c fixes it at the tag.
+**Obligation:** the exported surface of packages `folio8`, `fonts` and
+`fontdir` is reviewed as a whole before it freezes, because D-1.1.c fixes it
+at the tag.
 
 **Measured for v1.0.0: 60 items** — package `folio8` has 7 funcs, 8 types,
 32 consts (27 `DiagCode*`, `SeverityWarning`, `SeverityError`, `Version`,
 `LocaleTableVersion`, `MaxParameterReferenceNameLength`), 3 methods and
 9 struct fields; package `fonts` has `Shipped`. The surface was reviewed as a
 whole at story 1's spec checkpoint, which cut it from 287 items.
+
+**Measured for v1.1.0: 70 items** — package `folio8` grew to 7 funcs, 9 types
+(`FaceFallback`), 36 consts (29 `DiagCode*` including `DiagCodeTextFaceAbsent`
+and `DiagCodeTextFaceSubstituted`, plus `FaceFallbackStrict` and
+`FaceFallbackSubstitute`), 3 methods and 9 struct fields; package `fonts` still
+has `Shipped`; **package `fontdir` is new** with `Set`, `Skipped`,
+`Skipped.String` and two fields. **Ten additions, zero removals** — which is
+what makes this a MINOR and leaves the v1 import path intact.
 
 **The live trigger is `TestPublicSurfaceMatchesTheFrozenV1Census`**
 (`folio-go/public_surface_census_test.go`). It pins every exported identifier by
@@ -103,7 +148,7 @@ package `folio8`'s non-test sources found 41 methods under 41 distinct names.
 ### Version stamping
 
 `folio8.Version` (`folio-go/version.go`) is the release's version without the
-tag prefix: tag `folio-go/v1.0.0` ↔ `Version = "1.0.0"`. Bump it, and the
+tag prefix: tag `folio-go/v1.1.0` ↔ `Version = "1.1.0"`. Bump it, and the
 **Released version** line at the top of this document, in the release commit
 itself. Nothing else holds a copy: `TestVersionAgreesWithReleasingDoc` fails if
 `Version` and that line disagree, and `TestReleasingDocNamesTheGuardedManifest`
@@ -138,6 +183,30 @@ integrators on `@main` pseudo-versions would hit:
   narrower meaning: every declared face was supplied and none covers the
   character. There is no opt-in flag and no per-language leniency.
 
+For `v1.1.0` there is **no breaking API change** — the notes carry the
+additions and the one behaviour change:
+
+- **new** package `fontdir` (`Set`, `Skipped`), for loading a font set from a
+  directory on the host;
+- **new** `FaceFallback` with `FaceFallbackStrict` / `FaceFallbackSubstitute`,
+  an optional trailing argument to `Render`, `RenderTo` and `Validate` in all
+  three libraries. **Omitting it is `Strict`**, which is exactly what a
+  `v1.0.0` call does today, so no existing call changes meaning;
+- **new** diagnostics `TEXT_FACE_ABSENT`'s companion
+  `DiagCodeTextFaceSubstituted`, raised only under `Substitute`;
+- **format `4.2`** — a document whose `fonts` chain names an asset carrying
+  `authorAcknowledged: true` declares it. A `4.0`/`4.1` reader loads such a
+  document and then refuses it on the licence terms the key exists to excuse;
+  it never mis-renders one. `SupportedMajor` is unchanged at 4.
+- ⚠ **a text-layout behaviour change an integrator can see** (GitHub issue
+  #2): whitespace **after** a mandatory line break is now drawn as an indent
+  rather than consumed with the break. `"a \n b"` was two lines `a` / `b` and
+  is now `a` / ` b`. Whitespace **before** the break is still consumed, and
+  optional (wrapped) whitespace breaks are unchanged. A template that relies
+  on leading spaces after a `\n` renders differently — this is the fix for
+  indents silently vanishing, so the new output is the intended one. No golden
+  in this repository moved.
+
 ### The cross-target hash matrix
 
 A release commit is tagged only after both `ci.yml` (Build, vet, and
@@ -164,12 +233,12 @@ gh run list --workflow matrix.yml --commit "$SHA" --event push --limit 1
 gh run watch <ci run id>     --exit-status   # non-zero exit on a red run: stop
 gh run watch <matrix run id> --exit-status   # all four targets must be green
 
-git tag -a folio-go/v1.0.0 "$SHA" -m "folio-go v1.0.0"
-git push origin folio-go/v1.0.0
-gh release create folio-go/v1.0.0 lint/MANIFEST.md --title "folio-go v1.0.0" --notes-file <notes>
+git tag -a folio-go/v1.1.0 "$SHA" -m "folio-go v1.1.0"
+git push origin folio-go/v1.1.0
+gh release create folio-go/v1.1.0 lint/MANIFEST.md --title "folio-go v1.1.0" --notes-file <notes>
 
 # Confirm the module proxy serves the tag.
-GOPROXY=https://proxy.golang.org go list -m github.com/panitw/folio8/folio-go@v1.0.0
+GOPROXY=https://proxy.golang.org go list -m github.com/panitw/folio8/folio-go@v1.1.0
 ```
 
 The tag is pushed only after both runs are green, so a failing run needs no
@@ -177,7 +246,7 @@ tag deletion: fix forward on `main` and start again. **A published tag is never
 moved or deleted.** A bad release is fixed forward with a new patch version,
 adding a `retract` directive to `folio-go/go.mod` for the bad one if needed. The tag is
 directory-prefixed (AD-22) because the module lives in `folio-go/`; Go resolves
-`go get github.com/panitw/folio8/folio-go@v1.0.0` from it.
+`go get github.com/panitw/folio8/folio-go@v1.1.0` from it.
 
 ## Publishing `folio8` to npm
 
@@ -211,7 +280,7 @@ version the packaged wasm was built from and must equal `src/version.ts`'s
 `version` — `test/package.test.ts` fails if they disagree. Bump both in the
 release commit when the package is rebuilt against a newer engine tag.
 
-Both bindings build against the **`folio-go/v1.0.0` tag, never `main`**.
+Both bindings build against the **`folio-go/v1.1.0` tag, never `main`**.
 
 ### Before publishing
 
@@ -269,7 +338,7 @@ written down — and reddens if one acquires it.
 
 ### What the package promises
 
-`folio8.1.0.0.nupkg` is **self-contained**:
+`folio8.1.1.0.nupkg` is **self-contained**:
 
 ```
 lib/netstandard2.0/Folio8.dll          the one managed assembly, faces embedded
@@ -309,7 +378,7 @@ in the release commit when the package is rebuilt against a newer engine tag.
 **What the natives are actually built from is the working tree.**
 `build-native.{sh,ps1}` compile `folio-go/cshared/cmd/folio8` out of this
 repository, not out of a fetched module version — so "built against
-`folio-go/v1.0.0`" is a statement about the COMMIT the release is cut from,
+`folio-go/v1.1.0`" is a statement about the COMMIT the release is cut from,
 and it holds only because the release commit is the tagged one. Cut the
 package from the commit the engine tag points at, or from a descendant whose
 engine sources are unchanged; nothing in the build enforces it for you.
