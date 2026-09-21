@@ -219,7 +219,45 @@ run is recorded in the release notes as its URL and the commit SHA it ran on.
 It cannot be recorded in the repository, because the run only exists after the
 commit does.
 
-### The commands
+#### Exception, v1.1.0 only: `folio-designer-e2e`'s `browser-native-roundtrip`
+
+**This exception covers ONE release and expires with it.** It is written here,
+in the procedure it suspends, rather than applied silently — and it is
+deliberately not a quarantine: no job is marked `continue-on-error`, no test is
+skipped, and nothing about what a green badge means on this repository changes
+after 1.1.0.
+
+**What is red.** `folio-designer-e2e` reports **1 failed, 136 passed**. The one
+is `e2e/browser-native-roundtrip.spec.ts` — **[[DW-208]]**, open since
+2026-09-05 at HIGH, long predating this release. Across the five release
+candidates it failed four times and passed once.
+
+**Why it is not evidence about this release.** It fails inside
+`savePreviewAndCapture`, on a 60-second `toBeVisible` timeout for a preview
+`<img>` that never appears. **It never reaches its byte comparison.** No hash
+was compared and none mismatched; the failure is the designer's preview UI not
+becoming visible in time, and the designer is not part of this release.
+
+**And the guarantee it protects WAS verified, on this exact engine.** The test
+passed on `f8bdffe`, and `git diff f8bdffe..<release commit>` touches only
+`ci.yml`, `RELEASING.md`, `deferred-work.md`, `folio-dotnet/README.md`,
+`Folio8.csproj` and `PackagingTests.cs`. **Every source under `folio-go/`,
+`folio-js/src/` and `folio-designer/src/` is byte-identical between the commit
+where it passed and the commit being tagged.** So the browser-and-native
+agreement on a human-authored document is not being taken on trust for this
+release — it was measured, on the same engine, and the run is on record.
+
+**What still gates the tag, unchanged and green:** `matrix.yml` (cross-target
+byte identity, green on four consecutive release candidates) and every other
+`ci.yml` job — `folio-go`, `folio-go-matrix`, `lint`, `hashmatrix`,
+`folio-designer`, all six `folio-js` legs, and `folio-dotnet` including its
+pack and seven consumer shapes.
+
+**What would remove the need for this next time:** DW-208 discharged — the
+blocking action in preview admission named and fixed, or a measurement showing
+the timeout is environmental and which environments it does not reproduce in.
+Until then the next release has to make this judgement again, on its own
+evidence. **That is the point of dating it rather than quarantining it.**
 
 Run from the repository root, on `main`, with the release commit at `HEAD` and
 everything above done. **Pushing the tag is irreversible for anyone who
