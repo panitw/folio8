@@ -1,0 +1,18 @@
+=== soak.sh — translation verdict, taken before anything is run ===
+  uname machine        : x86_64
+  process architecture : amd64 (ELF e_machine of /proc/self/exe)
+  /proc/cpuinfo        : vendor_id VirtualApple (x86-shaped)
+  /run/rosetta         : absent
+  binfmt_misc for self : no interpreter registered that would run amd64
+  verdict              : TRANSLATED (cpuinfo vendor_id is VirtualApple — Apple Silicon running x86 under Rosetta)
+
+soak: REFUSING TO RUN on this host.
+  TRANSLATED (cpuinfo vendor_id is VirtualApple — Apple Silicon running x86 under Rosetta)
+
+  A translated host cannot distinguish the pre-fix binding from the post-fix one in
+  EITHER direction: measured this epic, under Rosetta amd64 both bindings die, at a
+  different test count every time. CAP-5 excludes emulated and translated hosts
+  outright, and a result from one would not be admissible however it came out.
+
+  Real amd64 and real arm64 are soaked separately and neither stands in for the other:
+  the spike measured 16 KiB of altstack against 24 KiB for the same handler frame.

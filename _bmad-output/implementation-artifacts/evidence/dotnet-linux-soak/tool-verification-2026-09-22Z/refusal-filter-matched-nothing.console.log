@@ -1,0 +1,37 @@
+=== soak.sh — translation verdict, taken before anything is run ===
+  uname machine        : aarch64
+  process architecture : arm64 (ELF e_machine of /proc/self/exe)
+  /proc/cpuinfo        : CPU implementer 0x61 (arm-shaped)
+  /run/rosetta         : absent
+  binfmt_misc for self : no interpreter registered that would run arm64
+  verdict              : NATIVE — kernel and process agree on aarch64, /proc/cpuinfo is consistent with arm64, no Rosetta marker, no matching binfmt_misc interpreter.
+
+=== soak.sh — what is being run ===
+  mode                 : soak
+  binding              : HEAD f3b68f5
+  native               : /Users/panitw/Projects/folio/folio-dotnet/build/native/linux-arm64/libfolio8_native.so
+  native sha256        : aa3051b82a15c50733d329a92d768da90019c4c4d262fa026211dbfa8c7c82f8
+  suite                : /Users/panitw/Projects/folio/folio-dotnet/test/Folio8.Tests/Folio8.Tests.csproj
+  filter               : FullyQualifiedName~NoSuchTestClassAnywhere
+  iterations requested : 3
+  host                 : c335c43af7a8
+  kernel               : Linux 7.0.12-linuxkit
+  architecture         : arm64
+  translation verdict  : NATIVE — kernel and process agree on aarch64, /proc/cpuinfo is consistent with arm64, no Rosetta marker, no matching binfmt_misc interpreter.
+  dmesg                : NOT READABLE — the kernel signature cannot be watched for; only the CLR-side one
+  harness validated    : NO for arm64 against this native — no reproduction leg is on the ledger
+  ledger               : /tmp/l.tsv
+  logs                 : /tmp/folio-soak-logs.naxkOl (temporary; kept if anything but a clean run comes out)
+  tool                 : folio-dotnet/build/soak.sh, sha256 5ee2862d58a1fc1daef8084d7264b1ae4603381c6348f3da81cefaeee8305720
+  started              : 2026-09-22T18:49:07Z
+  context              : (none given)
+
+⚠ 3 iterations is at or below the 11 that produced DW-396's false clear. Whatever comes out, it is not a soak.
+
+==> building the suite
+==> iteration 1 of 3 ... no tests matched
+
+soak: REFUSING — the filter selected no tests, so this would be a tally of iterations in
+  which the engine was never entered. That is the false clear in its purest form.
+    filter: FullyQualifiedName~NoSuchTestClassAnywhere
+    log:    /tmp/folio-soak-logs.naxkOl/iteration-1.log

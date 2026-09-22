@@ -1,0 +1,86 @@
+=== soak.sh --self-check: everything this tool decides, over synthetic inputs ===
+
+translation verdict (story 1's derivation, in shell):
+  ok   Rosetta container on Apple Silicon                         XLATED
+  ok   qemu: kernel aarch64, process amd64                        XLATED
+  ok   amd64 process, cpuinfo has no vendor_id                    XLATED
+  ok   arm64 process, x86-shaped cpuinfo                          XLATED
+  ok   Rosetta marker present                                     XLATED
+  ok   real amd64 silicon                                         native
+  ok   native arm64 silicon                                       native
+  ok   Zhaoxin's trimmed vendor id is real silicon                native
+  ok   VIA's multi-word vendor id is real silicon                 native
+  ok   Geode's multi-word vendor id is real silicon               native
+  ok   an x86 vendor no real silicon reports                      SUSPECT
+  ok   binfmt_misc interpreter for our own arch                   SUSPECT
+  ok   /proc/cpuinfo unreadable                                   UNKNOWN
+  ok   a machine string this tool cannot map                      UNKNOWN
+  ok   uname gave no machine                                      UNKNOWN
+  ok   this process's own architecture unreadable                 UNKNOWN
+
+finding a qemu registration in binfmt_misc, over a synthetic directory:
+  ok   a registration NAMED anything, interpreter names our arch  cross-amd64 (/usr/libexec/qemu-binfmt/x86_64-binfmt-P, enabled)
+  ok     and that same entry is nothing to an arm64 process       
+  ok   the ordinary qemu-aarch64 registration                     qemu-aarch64 (/usr/bin/qemu-aarch64-static, enabled)
+  ok     an amd64 process is not translated by it                 
+  ok   somebody else's cross-build setup is not our translation   qemu-aarch64 (/usr/bin/qemu-aarch64-static, enabled)
+  ok     and 'status' is not read as a registration               qemu-aarch64 (/usr/bin/qemu-aarch64-static, enabled)
+  ok   an unreadable registration still counts by its name        qemu-aarch64 (interpreter unreadable)
+
+the ledger round trip — the ONLY path that can turn a clean soak into a pass:
+  ok   a written row reads back for its own arch and native       yes
+  ok   the OTHER architecture is not validated by it              no
+  ok   nor is the same arch against a different native            no
+  ok     which is reported as a near miss, not as silence         yes
+  ok   a ledger that does not exist validates nothing             no
+  ok   a second row does not disturb the first                    yes
+  ok     and the second is found on its own terms                 yes
+  ok   the row carries host, kernel, binding and native           arm64 REPRODUCED soak-host 6.1.0 86e7e5a sha-AAA
+
+reading the two named signatures out of the text a run leaves behind:
+  ok   vstest's aborted-run wording reads as a dead host          yes
+  ok   a passing run does not                                     no
+  ok   a failing ASSERTION does not                               no
+  ok   Internal CLR error (0x80131506) is read                    yes
+  ok   a dead host with no CLR line is not                        no
+  ok   a filter that matched nothing is not a clean run           yes
+  ok     nor is the silent shape .NET 10 prints for it            yes
+  ok     38 renders is a run                                      no
+  ok     and so is a run with a failing assertion                 no
+  ok   the kernel's own overflow line is read                     yes
+  ok   somebody else's segfault is not this defect                no
+  ok   an overflow already in the ring buffer is not new          no
+
+per-iteration outcome (exit status is never asked to mean more than it does):
+  ok   exit 0, host alive                                         CLEAN
+  ok   dead host + kernel's sigaltstack line                      DW396
+  ok   dead host + Internal CLR error                             DW396
+  ok   runner killed by SIGSEGV, no signature                     CRASH-UNKNOWN
+  ok   dead host, neither signature                               CRASH-UNKNOWN
+  ok   a failing assertion is not a crash                         SUITE-FAILED
+  ok   kernel line but nothing died: still clean                  CLEAN
+
+final verdict (the ruling that a clean run alone is not a pass):
+  ok   clean soak, harness validated here                         CLEAN — VALIDATED HARNESS
+  ok     and it exits zero                                        0
+  ok   clean soak, harness NEVER validated                        UNVALIDATED
+  ok     and it exits non-zero                                    1
+  ok   soak died with a named signature                           FAILED — DW-396
+  ok   soak died with neither signature                           FAILED — UNEXPLAINED CRASH
+  ok   the suite failed; nothing is claimed                       INCONCLUSIVE
+  ok   reproduction leg caught it                                 REPRODUCED
+  ok     and it exits zero                                        0
+  ok   pre-fix binding stayed clean: no validation                NOT REPRODUCED
+  ok     and it exits non-zero                                    1
+  ok   pre-fix binding died of something else                     NOT REPRODUCED — UNEXPLAINED CRASH
+  ok   kernel overflowed while every iteration passed             FAILED — DW-396 SIGNATURE, HOST SURVIVED
+  ok     and it exits non-zero                                    1
+  ok   the same, on the pre-fix leg, validates the harness        REPRODUCED — KERNEL SIGNATURE, HOST SURVIVED
+  ok     and it exits zero                                        0
+  ok   Ctrl-C is not 60 clean iterations                          STOPPED — PARTIAL RUN
+  ok     and it exits 130                                         130
+  ok   nor is it a failure to reproduce                           STOPPED — PARTIAL RUN
+  ok   an unreadable dmesg is disclosed in the verdict            yes
+
+all 70 cases rendered as expected. This says the tool's JUDGEMENT is sound;
+it measures nothing and soaks nothing.

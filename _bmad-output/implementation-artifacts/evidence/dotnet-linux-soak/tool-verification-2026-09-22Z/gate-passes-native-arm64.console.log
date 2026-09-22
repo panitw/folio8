@@ -1,0 +1,9 @@
+=== soak.sh — translation verdict, taken before anything is run ===
+  uname machine        : aarch64
+  process architecture : arm64 (ELF e_machine of /proc/self/exe)
+  /proc/cpuinfo        : CPU implementer 0x61 (arm-shaped)
+  /run/rosetta         : absent
+  binfmt_misc for self : no interpreter registered that would run arm64
+  verdict              : NATIVE — kernel and process agree on aarch64, /proc/cpuinfo is consistent with arm64, no Rosetta marker, no matching binfmt_misc interpreter.
+
+soak: the .NET SDK is not on PATH (https://dotnet.microsoft.com/download); the test project targets net10.0

@@ -1,0 +1,13 @@
+=== soak.sh — translation verdict, taken before anything is run ===
+  uname machine        : aarch64
+  process architecture : arm64 (ELF e_machine of /proc/self/exe)
+  /proc/cpuinfo        : CPU implementer 0x61 (arm-shaped)
+  /run/rosetta         : absent
+  binfmt_misc for self : no interpreter registered that would run arm64
+  verdict              : NATIVE — kernel and process agree on aarch64, /proc/cpuinfo is consistent with arm64, no Rosetta marker, no matching binfmt_misc interpreter.
+
+soak: the staged native is amd64 and this host is arm64.
+  /Users/panitw/Projects/folio/folio-dotnet/build/native/linux-x64/libfolio8_native.so
+  Nothing was run: every iteration would fail to load it, and a suite that cannot reach
+  the engine says nothing about a defect at the ABI boundary. Build or pass the arm64
+  native — folio-dotnet/build/build-native.sh, or --native <path>.

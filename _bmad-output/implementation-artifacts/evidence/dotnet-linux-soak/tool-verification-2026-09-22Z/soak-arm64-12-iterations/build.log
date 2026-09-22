@@ -1,0 +1,7 @@
+An issue was encountered verifying workloads. For more information, run "dotnet workload update".
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:03.48

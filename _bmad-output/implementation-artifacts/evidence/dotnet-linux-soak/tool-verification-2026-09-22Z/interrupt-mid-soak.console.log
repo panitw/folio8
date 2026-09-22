@@ -1,0 +1,59 @@
+=== soak.sh — translation verdict, taken before anything is run ===
+  uname machine        : aarch64
+  process architecture : arm64 (ELF e_machine of /proc/self/exe)
+  /proc/cpuinfo        : CPU implementer 0x61 (arm-shaped)
+  /run/rosetta         : absent
+  binfmt_misc for self : no interpreter registered that would run arm64
+  verdict              : NATIVE — kernel and process agree on aarch64, /proc/cpuinfo is consistent with arm64, no Rosetta marker, no matching binfmt_misc interpreter.
+
+=== soak.sh — what is being run ===
+  mode                 : soak
+  binding              : HEAD f3b68f5
+  native               : /Users/panitw/Projects/folio/folio-dotnet/build/native/linux-arm64/libfolio8_native.so
+  native sha256        : aa3051b82a15c50733d329a92d768da90019c4c4d262fa026211dbfa8c7c82f8
+  suite                : /Users/panitw/Projects/folio/folio-dotnet/test/Folio8.Tests/Folio8.Tests.csproj
+  filter               : FullyQualifiedName~GoldenTests|FullyQualifiedName~FontsTests
+  iterations requested : 40
+  host                 : 2d8e7d8429fb
+  kernel               : Linux 7.0.12-linuxkit
+  architecture         : arm64
+  translation verdict  : NATIVE — kernel and process agree on aarch64, /proc/cpuinfo is consistent with arm64, no Rosetta marker, no matching binfmt_misc interpreter.
+  dmesg                : NOT READABLE — the kernel signature cannot be watched for; only the CLR-side one
+  harness validated    : NO for arm64 against this native — no reproduction leg is on the ledger
+  ledger               : /tmp/l.tsv
+  logs                 : /tmp/folio-soak-logs.Uza4bJ (temporary; kept if anything but a clean run comes out)
+  tool                 : folio-dotnet/build/soak.sh, sha256 5ee2862d58a1fc1daef8084d7264b1ae4603381c6348f3da81cefaeee8305720
+  started              : 2026-09-22T18:49:49Z
+  context              : (none given)
+
+==> building the suite
+==> iteration 1 of 40 ... clean
+==> iteration 2 of 40 ... clean
+==> iteration 3 of 40 ... clean
+==> iteration 4 of 40 ... 
+==> interrupt received; stopping after the current iteration and printing a partial verdict
+interrupted
+
+=== VERDICT: STOPPED — PARTIAL RUN ===
+
+  interrupted after 3 complete iteration(s), none of which crashed. THIS IS NOT A RESULT: nothing is validated, nothing is written to the ledger, and the count above is where somebody pressed Ctrl-C rather than where the run ended. Re-run it whole.
+
+  mode      : soak (the soak)
+  binding   : HEAD f3b68f5
+  native    : /Users/panitw/Projects/folio/folio-dotnet/build/native/linux-arm64/libfolio8_native.so
+              sha256 aa3051b82a15c50733d329a92d768da90019c4c4d262fa026211dbfa8c7c82f8, arm64
+  host      : 2d8e7d8429fb, Linux 7.0.12-linuxkit, arm64
+  translation: NATIVE — kernel and process agree on aarch64, /proc/cpuinfo is consistent with arm64, no Rosetta marker, no matching binfmt_misc interpreter.
+  iterations: 3 of 40 requested
+  started   : 2026-09-22T18:49:49Z
+  finished  : 2026-09-22T18:49:59Z
+  tool      : folio-dotnet/build/soak.sh, sha256 5ee2862d58a1fc1daef8084d7264b1ae4603381c6348f3da81cefaeee8305720
+  failures  : none
+  logs      : /tmp/folio-soak-logs.Uza4bJ
+              KEPT because this run was not clean — nothing here is swept up on exit.
+              They are in a temporary directory, so move them somewhere they will survive
+              a reboot before writing this run down.
+
+  Quote this verdict with the block above attached. A soak figure without its host,
+  architecture and translation verdict is the reading DW-396 has already recorded twice.
+exit=130

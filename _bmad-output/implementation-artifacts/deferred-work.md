@@ -7263,7 +7263,82 @@ carries a glibc old enough to provoke that last path on a real host, which is ex
 rendering is a pure function driven synthetically rather than a branch reasoned about.
 
 **DW-396 stays OPEN.** The probe preserves the mechanism's measurement; it does not fix anything.
-DW-396 closes when SPEC-dotnet-linux ships the restored RIDs with CAP-5's soak behind them.
+DW-396 closes in SPEC-dotnet-linux **story 7**, on CAP-5's soak evidence, once the restored RIDs
+have shipped behind it.
+
+#### 2026-09-23, SPEC-dotnet-linux story 5: the soak RUNNER exists; no soak has been run
+
+CAP-5's runner is `folio-dotnet/build/soak.sh`, and the record it fills is
+[dotnet-linux-soak.md](./dotnet-linux-soak.md). **Nothing about the fix is claimed here.** Both
+hardware legs are PENDING and the owner runs them; what landed is the instrument and a
+verification that it behaves.
+
+```sh
+folio-dotnet/build/soak.sh --reproduce              # validation leg: the PRE-FIX binding (7f6a936^)
+folio-dotnet/build/soak.sh --iterations 100         # the soak: HEAD's binding
+folio-dotnet/build/soak.sh --self-check             # the tool's own judgement, any OS
+```
+
+**The runner is built against this entry's own two wrong readings, and each one is answered by a
+refusal rather than by a caution.**
+
+- **0-crashes-in-11 was read as a clear.** So a clean run is reported as **`UNVALIDATED`** and exits
+  **non-zero** until a reproduction leg has caught the defect on the **same architecture against the
+  same native library** — the ledger row is matched on both, so an old reproduction against a
+  different `.so` cannot quietly validate today's soak. The validated/unvalidated state is produced
+  by the tool, from its own ledger, not asserted by whoever writes the record. A reproduction leg
+  must itself run a **pre-fix** binding — an ancestor of `7f6a936^`, checked, not asked — or
+  `--reproduce --binding head` would be a front door to the same wrong inference. amd64 and arm64
+  never stand in for each other: 16 KiB of altstack against 24 KiB for the same handler frame means
+  arm64 was never clear, only wider-margined.
+- **A qemu tally was nearly acted on, and a Rosetta tally was recorded with a footnote.** So the
+  runner derives the translation verdict itself — story 1's derivation in shell: `uname -m` against
+  the process's own ELF `e_machine`, `/proc/cpuinfo`'s `vendor_id`, the Rosetta marker, a
+  `binfmt_misc` interpreter for its own architecture — and **refuses** `TRANSLATED`, `SUSPECT` and
+  `UNKNOWN` alike, naming the signal. **There is no override flag.** Measured this epic: under
+  Rosetta amd64 the pre-fix and post-fix bindings both die, so a translated host cannot distinguish
+  them in either direction.
+- **"It died" was twice taken for "it died of this".** So a dead test host is read out of vstest's
+  own words (it survives its child and exits 1, which is indistinguishable by status from a failed
+  assertion), and the two **named** signatures are then looked for separately: `overflowed
+  sigaltstack` among the lines `dmesg` gained **during that iteration**, and `Internal CLR error
+  (0x80131506)` in the log. A dead host with neither is reported as an **unexplained crash** and is
+  not attributed to DW-396. And the converse, which is this entry's own history: an `overflowed
+  sigaltstack` printed while every iteration PASSED is surfaced as it happens, carried into the
+  verdict, and turns a clean soak into a failed one.
+
+**It is a diagnostic, not a gate, and no workflow invokes it** — a soak long enough to mean anything
+does not belong on every commit, and a short one would recreate the false clear. An `--iterations`
+at or below 11 is run but warned about by that name.
+
+**Tool verification, 2026-09-22T18:4xZ (2026-09-23 local) — and none of it is a leg.** On an Apple Silicon Mac: a `linux/amd64`
+(Rosetta) container was **refused before any iteration**, naming `vendor_id VirtualApple`; a
+`linux/arm64` container passed the gate, ran 12 clean iterations of HEAD's binding against the
+shipped `linux-arm64` native, and reported **`UNVALIDATED`, exit 1**, with the missing `dmesg` signal
+disclosed in the verdict; `--reproduce` built the pre-fix binding `86e7e5a` from a git worktree
+against the **same** native and reported `NOT REPRODUCED`. Four further refusals were exercised the same way: a
+reproduction leg against a post-fix binding, a foreign-architecture native, a `--filter` that selects
+no tests (measured: a mistyped filter produced three "clean" iterations that never entered the engine
+once), and a SIGTERM mid-soak, which prints a partial verdict, keeps its logs and exits 130 rather
+than vanishing. `--self-check` drives all 70 cases of the tool's judgement — the verdict derivation,
+the binfmt_misc search over a synthetic directory, the **ledger write-then-read round trip**, the
+reading of both signature strings (including an overflow line already in the ring buffer, which
+without the before/after diff would report a reproduction every iteration), the per-iteration
+classifier and the final verdict — on any OS, because the host that can produce a real crash is not
+the host this was written on. Console logs:
+`evidence/dotnet-linux-soak/tool-verification-2026-09-22Z/`, one per row of that file's
+verification table.
+
+**PENDING — the owner's hardware legs, and they are what CAP-5 turns on:**
+
+| Leg | What is outstanding | Where |
+|---|---|---|
+| **real amd64** | `--reproduce` **first** — the pre-fix binding must die with a named signature, or the harness is not validated and a clean soak there proves nothing — then the soak at 100 iterations. | the WSL2 box that first printed `overflowed sigaltstack` |
+| **real arm64** | the same pair, on a Linux arm64 **host** rather than a Docker Desktop VM, so `dmesg` is readable and the kernel signature can actually be watched for. | owner's Linux arm64 host |
+
+**DW-396 stays OPEN**, and story 6 must not restore the RIDs on the strength of this subsection: it
+records an instrument, not evidence. Story 7 closes this entry, on the legs above — the same
+statement the 2026-09-22 subsection above now makes.
 
 ### DW-148 — comments that describe a sibling's behaviour go stale silently; four instances this run
 
@@ -14284,3 +14359,7 @@ it. The second is the smaller change and fixes the field whose name is currently
 - source_spec: `_bmad-output/specs/spec-dotnet-linux/stories/4-throughput-non-regression.md`
   summary: The engine-thread handoff has a wakeup tail at low concurrency -- median render unchanged, p95 nearly doubled -- measured on macOS and not explained.
   evidence: darwin/arm64, three alternating runs per leg (evidence/dotnet-linux-throughput/darwin-arm64/): at concurrency 1 throughput falls 8.2% while the MEDIAN render is unchanged (19.99 ms after vs 20.35 ms before) and p95 goes 22.33 -> 41.78 ms; same shape at concurrency 2, gone by 4. Well outside both legs' spread (+/-0.9% and +/-1.6%), so it is not drift. NO DEFECT IS DEMONSTRATED and linux/arm64 shows no such tail on the same hardware, so the reading is consistent with a macOS scheduler artifact on a platform this package does not ship for -- which is why it is filed rather than acted on. It is filed rather than dismissed because the mechanism is the Monitor.Wait/Monitor.Pulse handoff in EngineThreads, which is the SAME code on every platform: a host whose scheduler behaves this way would cost a low-concurrency consumer the same 8%, and low concurrency is the ordinary shape of a reporting service rendering one statement per request. What would settle it: the same three-run measurement on a real Linux host during CAP-5's soak, reading median and p95 rather than throughput alone.
+
+- source_spec: `_bmad-output/specs/spec-dotnet-linux/stories/5-the-soak.md`
+  summary: In soak.sh's reproduce mode the test suite reverts along with the binding, so the reproduction leg and the soak leg may not render the same work.
+  evidence: A non-HEAD binding is obtained by `git worktree` at 7f6a936^, and folio-dotnet/test/Folio8.Tests travels with it. The engine is held fixed -- both legs stage the same native file -- and the corpus filter is the same string, but nothing asserts that the filtered GoldenTests|FontsTests bodies are identical at the two commits. If a fixture or an assertion changed between them, "the harness caught the defect" and "the harness ran clean" would be statements about different renders. No fixture did change across those two commits, which is why this is filed rather than blocking. What would close it: hash the filtered test sources (or the corpus manifest) at both commits and refuse a mismatch.

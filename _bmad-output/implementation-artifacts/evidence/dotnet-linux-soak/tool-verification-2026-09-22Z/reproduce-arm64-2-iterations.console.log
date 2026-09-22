@@ -1,0 +1,53 @@
+=== soak.sh — translation verdict, taken before anything is run ===
+  uname machine        : aarch64
+  process architecture : arm64 (ELF e_machine of /proc/self/exe)
+  /proc/cpuinfo        : CPU implementer 0x61 (arm-shaped)
+  /run/rosetta         : absent
+  binfmt_misc for self : no interpreter registered that would run arm64
+  verdict              : NATIVE — kernel and process agree on aarch64, /proc/cpuinfo is consistent with arm64, no Rosetta marker, no matching binfmt_misc interpreter.
+
+=== soak.sh — what is being run ===
+  mode                 : reproduce
+  binding              : 86e7e5a feat(folio-dotnet): make DW-396's signal-stack reading re-runnable, and say where each number came from [requested as '7f6a936^', checked out as a git worktree]
+  native               : /Users/panitw/Projects/folio/folio-dotnet/build/native/linux-arm64/libfolio8_native.so
+  native sha256        : aa3051b82a15c50733d329a92d768da90019c4c4d262fa026211dbfa8c7c82f8
+  suite                : /tmp/folio-soak.CSzby1/binding-tree/folio-dotnet/test/Folio8.Tests/Folio8.Tests.csproj
+  filter               : FullyQualifiedName~GoldenTests|FullyQualifiedName~FontsTests
+  iterations requested : 2
+  host                 : d29b46e3a89c
+  kernel               : Linux 7.0.12-linuxkit
+  architecture         : arm64
+  translation verdict  : NATIVE — kernel and process agree on aarch64, /proc/cpuinfo is consistent with arm64, no Rosetta marker, no matching binfmt_misc interpreter.
+  dmesg                : NOT READABLE — the kernel signature cannot be watched for; only the CLR-side one
+  harness validated    : NO for arm64 against this native — no reproduction leg is on the ledger
+  ledger               : /ev/ledger.tsv
+  logs                 : /ev/reproduce-arm64-2-iterations
+  tool                 : folio-dotnet/build/soak.sh, sha256 5ee2862d58a1fc1daef8084d7264b1ae4603381c6348f3da81cefaeee8305720
+  started              : 2026-09-22T18:49:34Z
+  context              : tool verification, Docker Desktop VM on Apple Silicon — NOT an owner hardware leg
+
+⚠ 2 iterations is at or below the 11 that produced DW-396's false clear. If this leg comes back NOT REPRODUCED, that is a statement about the run length and not about the host.
+
+==> building the suite
+==> iteration 1 of 2 ... clean
+==> iteration 2 of 2 ... clean
+
+=== VERDICT: NOT REPRODUCED ===
+
+  2 iterations of the PRE-FIX binding on this host did not produce the defect. THE HARNESS IS NOT VALIDATED HERE, and a clean soak on this host would therefore prove nothing. Either raise --iterations, or take this leg on a host where the defect is known to fire.
+
+  mode      : reproduce (the validation leg — the PRE-FIX binding)
+  binding   : 86e7e5a feat(folio-dotnet): make DW-396's signal-stack reading re-runnable, and say where each number came from [requested as '7f6a936^', checked out as a git worktree]
+  native    : /Users/panitw/Projects/folio/folio-dotnet/build/native/linux-arm64/libfolio8_native.so
+              sha256 aa3051b82a15c50733d329a92d768da90019c4c4d262fa026211dbfa8c7c82f8, arm64
+  host      : d29b46e3a89c, Linux 7.0.12-linuxkit, arm64
+  translation: NATIVE — kernel and process agree on aarch64, /proc/cpuinfo is consistent with arm64, no Rosetta marker, no matching binfmt_misc interpreter.
+  iterations: 2 of 2 requested
+  started   : 2026-09-22T18:49:34Z
+  finished  : 2026-09-22T18:49:41Z
+  tool      : folio-dotnet/build/soak.sh, sha256 5ee2862d58a1fc1daef8084d7264b1ae4603381c6348f3da81cefaeee8305720
+  failures  : none
+  logs      : /ev/reproduce-arm64-2-iterations
+
+  Quote this verdict with the block above attached. A soak figure without its host,
+  architecture and translation verdict is the reading DW-396 has already recorded twice.

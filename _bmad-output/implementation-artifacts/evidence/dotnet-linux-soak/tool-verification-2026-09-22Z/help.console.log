@@ -1,0 +1,40 @@
+soak.sh — CAP-5's soak, and the reproduction leg that makes it mean something
+
+  ./soak.sh --reproduce                # validation leg: the PRE-FIX binding
+  ./soak.sh                            # soak HEAD's binding
+  ./soak.sh --binding <commit>         # soak any commit's binding
+  ./soak.sh --self-check               # exercise this tool's judgement, any OS
+  ./soak.sh --help
+
+Options (environment variable in brackets; the flag wins):
+  -n, --iterations N   how many times to run the suite
+                       [SOAK_ITERATIONS] default 100, or 25 with --reproduce
+  -b, --binding REF    'head' (default) or a commit whose binding to soak.
+                       A commit is checked out as a git worktree; this tree's
+                       native library is staged into it, so the ENGINE is held
+                       fixed while the BINDING varies.  [SOAK_BINDING]
+      --reproduce      the validation leg. Implies --binding 7f6a936^ unless
+                       --binding was given, and inverts the verdict: catching
+                       the defect is success, and a clean run is a failure to
+                       validate the harness.
+      --filter EXPR    the vstest filter for the render-heavy suite
+                       [SOAK_FILTER] default GoldenTests and FontsTests, the
+                       corpus renders that historically triggered it
+      --native PATH    the native library to stage  [SOAK_NATIVE] default: the
+                       shipped native for this RID, else build/native/host/
+      --log-dir DIR    keep every iteration's log here  [SOAK_LOG_DIR]
+                       Use it for any run whose result gets written down.
+      --ledger FILE    where reproduction results are recorded  [SOAK_LEDGER]
+                       default ${XDG_STATE_HOME:-~/.local/state}/folio-soak/ledger.tsv
+      --context TEXT   free-text provenance stamped into the header
+                       [SOAK_HOST_CONTEXT]
+      --self-check     drive everything this tool decides over synthetic inputs
+                       and exit: the translation verdict, the binfmt_misc
+                       search, the ledger write-then-read round trip, the
+                       reading of the two named signatures, the per-run
+                       classifier and the final verdict. Runs on any OS; it
+                       measures nothing and soaks nothing.
+
+Exit status: 0 only for a soak that was clean AND validated, or a reproduction
+that caught the defect. Everything else -- a refusal, a crash, a clean run from
+an unvalidated harness -- is non-zero.

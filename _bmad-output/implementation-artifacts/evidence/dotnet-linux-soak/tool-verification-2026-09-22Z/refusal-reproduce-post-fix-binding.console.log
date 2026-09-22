@@ -1,0 +1,20 @@
+=== soak.sh — translation verdict, taken before anything is run ===
+  uname machine        : aarch64
+  process architecture : arm64 (ELF e_machine of /proc/self/exe)
+  /proc/cpuinfo        : CPU implementer 0x61 (arm-shaped)
+  /run/rosetta         : absent
+  binfmt_misc for self : no interpreter registered that would run arm64
+  verdict              : NATIVE — kernel and process agree on aarch64, /proc/cpuinfo is consistent with arm64, no Rosetta marker, no matching binfmt_misc interpreter.
+
+soak: REFUSING a reproduction leg against 'head'.
+  HEAD f3b68f5
+
+  A reproduction leg exists to show the harness can SEE the defect, so it has to run a
+  binding that still HAS it: one at or before 7f6a936^, the commit
+  before every crossing moved onto binding-owned engine threads. 'head' is not an
+  ancestor of it.
+
+  This is refused rather than warned about because it is the front door to the exact
+  inference this tool exists to refuse: a post-fix binding that died for any reason at
+  all would write REPRODUCED to the ledger, and every later soak on this architecture
+  would then read VALIDATED.
