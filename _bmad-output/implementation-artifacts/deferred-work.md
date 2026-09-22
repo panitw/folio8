@@ -7340,6 +7340,84 @@ verification table.
 records an instrument, not evidence. Story 7 closes this entry, on the legs above — the same
 statement the 2026-09-22 subsection above now makes.
 
+#### 2026-09-23, SPEC-dotnet-linux story 7: the record is now complete except for the evidence
+
+This is the consolidated state of the entry: the mechanism, the fix that is in the tree, everything
+measured, everything still PENDING, and what closes it. **It closes nothing.** Story 7 is the
+documentation and release-record story, and CAP-5's two hardware legs had not been run when it
+landed. **Status stays OPEN.**
+
+**The mechanism, in one paragraph.** The CLR installs a **fixed-size** alternate signal stack on
+every thread it touches — **16 KiB on amd64, 24 KiB on arm64**. Go, under cgo, **adopts an existing
+altstack rather than installing its own 32 KiB one** (`minitSignalStack`, at `needm` time). So every
+Go `SA_ONSTACK` handler entered from .NET runs in less room than Go sizes for itself; when a handler
+frame does not fit, the kernel converts the overflow into `SIGSEGV`, and the CLR — which needs that
+same signal for its own write barriers and null checks — reports `Internal CLR error (0x80131506)`,
+`COR_E_EXECUTIONENGINE`, and the process dies. Windows is immune because it has no POSIX signals.
+The 2026-09-21 subsection's "remaining hypothesis" is this, and it is no longer a bare lead:
+`sigaltstack(NULL, &old)` has been **read directly** on the thread that crosses, rather than inferred
+from a crash. **What was read, and on what kind of host:** arm64 — **24576** on every thread kind, in
+Debian 12 and Ubuntu 20.04 containers that execute natively on Apple Silicon but sit inside Docker
+Desktop's hypervisor; amd64 — **16384**, on a single **emulated** leg. Every reading is below the
+32 KiB Go sizes for itself, and that is the finding. **Neither figure is a real-hardware figure yet**,
+and both stay outstanding in the PENDING table below; the mechanism is established in shape and
+pending in its numbers.
+Measurements, source references and the probe are in
+[../specs/spec-dotnet-linux/sigaltstack-findings.md](../specs/spec-dotnet-linux/sigaltstack-findings.md).
+
+**The fix, as shipped in the tree.** `folio-dotnet/src/Folio8/EngineThreads.cs` (`7f6a936`, DW-396).
+Four properties, each load-bearing:
+
+1. **The binding owns the threads.** A pool of long-lived threads is created at first use, one per
+   `Environment.ProcessorCount` and never fewer than two, and the engine is entered from nothing
+   else. **Every** crossing goes through it, `folio8_free` included, so a caller who renders on one
+   thread and disposes on another is unaffected and sees no new contract.
+2. **Each thread's alternate signal stack is enlarged explicitly**, with `sigaltstack()`, to
+   **1 MiB**, **before that thread's first crossing** — Go reads it once, at attach, and the reading
+   is then fixed. Creating the thread is *not* the fix: the spike measured `new Thread()` at any
+   managed stack size, and a raw `pthread` created outside the CLR, all receiving the same
+   undersized altstack once the runtime attaches them.
+3. **The memory is never returned.** A thread that can still take a signal must still own its
+   alternate stack, so the threads live for the process and the buffer is allocated once and kept.
+4. **One call path on every platform** (owner ruling). Windows crosses the same boundary, though it
+   needs none of this, so that the POSIX path is not left unexercised by every Windows CI leg. Only
+   the `sigaltstack` step is POSIX-conditional.
+
+**What has been measured, and where it is written down.**
+
+| Claim | Where | State |
+|---|---|---|
+| The altstack sizes, per thread kind, read from the thread that crosses | `folio-dotnet/build/probe-signal-stack.sh`; spike rows in the 2026-09-22 subsection | measured; the **real-amd64** and **non-hypervisor arm64** rows are PENDING (table in that subsection) |
+| Byte identity of the corpus on both shipped Linux natives | `ci.yml` `folio-dotnet-linux`, one leg per architecture on real silicon | green. **This is byte identity, not a DW-396 clearance** |
+| No throughput regression across the new boundary | [dotnet-linux-throughput.md](./dotnet-linux-throughput.md) | measured on linux/arm64 natively: `3.63×` scaling to ten cores, every level inside run-to-run spread. **No Windows leg, no real-amd64 leg.** A benchmark is not a soak |
+| The soak runner itself behaves — refuses translated hosts, refuses an unvalidated clear, reads both named crash signatures | [dotnet-linux-soak.md](./dotnet-linux-soak.md); 70 self-check cases | verified. **The instrument, not the evidence** |
+| The crash class is gone under repetition on real hardware | — | **PENDING. This is the whole of what is left.** |
+
+**PENDING — CAP-5's two hardware legs, which are what closes this entry:**
+
+| Leg | What must happen | Where |
+|---|---|---|
+| **real amd64** | `folio-dotnet/build/soak.sh --reproduce` **first**, so the pre-fix binding dies with a named signature and the harness is shown able to see the defect; then `--iterations 100` on HEAD's binding, clean. | the WSL2 box that first printed `overflowed sigaltstack` |
+| **real arm64** | the same pair, on a Linux arm64 **host** rather than a Docker Desktop VM, so `dmesg` is readable. | owner's Linux arm64 host |
+
+Neither leg stands in for the other: 16 KiB of altstack against 24 KiB for the same handler frame
+means arm64 was never clear, only wider-margined. **No emulated or translated host counts, Rosetta
+included** — measured this epic, under Rosetta amd64 the pre-fix and post-fix bindings both die, so a
+translated host cannot distinguish them in either direction.
+
+**Exactly what closes DW-396, and nothing less:** both rows of that table run and recorded in
+[dotnet-linux-soak.md](./dotnet-linux-soak.md), each with its reproduction leg validated by the
+runner's own ledger rather than by whoever writes the record. Until then the two Linux RIDs are
+declared in `Folio8.csproj` and **cannot be packed** — `FolioAssertLinuxSoak` refuses without a
+typed assertion — so no consumer can reach this defect through a release.
+
+**Why it is not closed on the fix alone.** This entry's own history is the argument. 0-crashes-in-11
+on CI was read as a clear and was wrong; the same shipped native then overflowed twice in a WSL2
+soak. A qemu tally was nearly acted on in the opposite direction. glibc 2.34 turned `SIGSTKSZ` into a
+`sysconf()`-backed runtime value, so the build's glibc moves **how often** the defect fires, not
+whether it exists. A mechanism plus a fix plus a green CI leg is the same evidence that produced both
+wrong readings. **Status: OPEN.**
+
 ### DW-148 — comments that describe a sibling's behaviour go stale silently; four instances this run
 
 - **Deferred by:** the **Epic 10 reconstruction** (finding 8, ruled at D-10.R.8, 2026-09-02) — raised under
@@ -14353,8 +14431,8 @@ it. The second is the smaller change and fixes the field whose name is currently
   evidence: Same gap story 1 filed for signal-stack-probe, and worse in one respect. The probe needs only libc; render-throughput has `<ProjectReference Include="$(FolioBindingProject)">` and calls Folio8.Render, Template.Parse, Data, Params and FontSet by name, so any change to those public signatures reds a project no gate builds. Verified absent from Folio8.slnx and from every dotnet step in .github/workflows/ci.yml. measure-throughput.sh (400+ lines of bash with a git-worktree drive, a docker re-entry and an awk report) is likewise unlinted -- no shellcheck runs anywhere in this repository. Cheap partial close: add `dotnet build folio-dotnet/build/render-throughput -p:FolioNativeFile=<any staged native>` to an existing ubuntu dotnet job; it needs no native at RUN time, only at build time, and it would catch exactly the API-drift case. The tool is a developer diagnostic wired into no CI job by design, so this is filed, not a deviation.
 
 - source_spec: `_bmad-output/specs/spec-dotnet-linux/stories/4-throughput-non-regression.md`
-  summary: CAP-10's numbers are measured and recorded in an implementation artifact, but nothing owns copying them into the 1.2.0 release notes, which is what the capability's success criterion actually asks for.
-  evidence: CAP-10 reads "measured, with the numbers recorded in the release notes". Story 4's tasks stop at `_bmad-output/implementation-artifacts/` -- dotnet-linux-throughput.md is the source, and deliberately so, but neither RELEASING.md nor any 1.2.0 notes file carries a throughput line, and no story in stories.yaml names that step. The gap is one paragraph of prose, but it is the half of CAP-10 a consumer ever sees. Owner: whichever story closes the 1.2.0 release record (CAP-8's documentation story is the natural home, since it already touches RELEASING.md). What it needs: leg A's four-level table with its provenance line, the scaling figure, and the explicit statement that Windows is unmeasured.
+  summary: CLOSED 2026-09-23 by SPEC-dotnet-linux story 7 -- CAP-10's numbers are now in the release record, not only in the implementation artifact.
+  evidence: CAP-10 reads "measured, with the numbers recorded in the release notes", and RELEASING.md's v1.2.0 notes block now carries leg A's four-level before/after table with its spreads, its provenance line (Debian 12 arm64 container, 10 CPU, .NET 8.0.31, executing natively on an Apple Silicon Mac; three alternating runs per leg; indicative, not a controlled environment), the 3.63x scaling figure, and the explicit statements that Windows x64 is UNMEASURED and that the amd64 leg could not complete under Rosetta. dotnet-linux-throughput.md remains the source of record. The separate entry above -- CAP-10's Windows half being unmeasured -- STAYS OPEN and is what the release notes now disclose rather than paper over.
 
 - source_spec: `_bmad-output/specs/spec-dotnet-linux/stories/4-throughput-non-regression.md`
   summary: The engine-thread handoff has a wakeup tail at low concurrency -- median render unchanged, p95 nearly doubled -- measured on macOS and not explained.

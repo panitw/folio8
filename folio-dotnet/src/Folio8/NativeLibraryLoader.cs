@@ -35,9 +35,14 @@ using System.Text;
 /// RID, the filename and every path probed.
 /// </para>
 /// <para>
-/// Off Windows this does nothing at all. The folio8 package ships Windows natives
-/// only; the macOS and Linux host libraries are a development aid that plain
-/// <c>DllImport</c> probing already finds beside the test assembly.
+/// Off Windows this does nothing at all, and that is still correct now that
+/// the package ships Linux natives. There is no <c>net46</c> off Windows and
+/// nothing is AnyCPU in the sense above, so the host resolves
+/// <c>runtimes/&lt;rid&gt;/native/</c> from the RID graph before
+/// <c>DllImport</c> ever probes — and a macOS or Linux <b>host</b> library
+/// built by <c>build-native.sh host</c> (a development aid, never packaged)
+/// is found by that same probing beside the test assembly. This type has
+/// nothing to add on either path.
 /// </para>
 /// </remarks>
 internal static class NativeLibraryLoader

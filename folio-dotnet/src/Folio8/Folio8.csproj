@@ -64,7 +64,16 @@
     <Company>Panit Wechasil</Company>
     <Product>folio8</Product>
     <Copyright>Copyright (c) folio8 contributors</Copyright>
-    <Description>folio8 for .NET: render and validate .folio templates with the folio8 engine as a native library. Byte-identical to the Go engine, from .NET Framework 4.6 through modern .NET, on Windows x86 and x64. Ships both native architectures and the eleven shipped font faces. Design templates at https://folio8.report.</Description>
+    <!--
+      THE LISTING TEXT NAMES ONLY WHAT THIS PACK ACTUALLY CONTAINS, so it is
+      conditioned on the SAME property the FolioNative items are. A
+      -p:FolioPackPlatforms=windows pack drops the two Linux items below; a
+      nupkg that advertised linux-x64 and linux-arm64 it does not carry would
+      freeze that claim into the NuGet listing, where nothing can redden for
+      it afterwards.
+    -->
+    <Description Condition="'$(FolioPackPlatforms)' == 'windows'">folio8 for .NET: render and validate .folio templates with the folio8 engine as a native library. Byte-identical to the Go engine, from .NET Framework 4.6 through modern .NET, on Windows x86 and x64. Ships both Windows native architectures and the eleven shipped font faces. Design templates at https://folio8.report.</Description>
+    <Description Condition="'$(FolioPackPlatforms)' != 'windows'">folio8 for .NET: render and validate .folio templates with the folio8 engine as a native library. Byte-identical to the Go engine, from .NET Framework 4.6 through modern .NET, on Windows x86 and x64 and on Linux x64 and arm64 (glibc 2.28 or newer; musl is not supported). Ships all four native architectures and the eleven shipped font faces. Design templates at https://folio8.report.</Description>
     <PackageTags>pdf;reporting;folio8;rendering;documents;invoice;statement</PackageTags>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
     <PackageReadmeFile>README.md</PackageReadmeFile>

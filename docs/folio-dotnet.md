@@ -15,7 +15,7 @@ Three companion references hold the rules this guide does not repeat: [the `.fol
 dotnet add package folio8
 ```
 
-Nothing else is needed. No Go, no C compiler, no build step and no configuration: both Windows native libraries and all eleven shipped font faces travel inside the package, the right native library is chosen for you at load time, and the managed assembly takes no package dependencies at all.
+Nothing else is needed. No Go, no C compiler, no build step and no configuration: every native library the package ships and all eleven shipped font faces travel inside it, the right native library is chosen for you at load time, and the managed assembly takes no package dependencies at all.
 
 The public types sit in the **global namespace**, so there is no `using` directive to add for folio8 itself and a call site reads exactly as this reference writes it.
 
@@ -32,13 +32,34 @@ That floor decides the implementation. It predates `Span`, `System.Text.Json` an
 
 ### Supported platforms
 
-**Windows only, on x86 and on x64.** Both architectures ship in the package. There are no Linux, no macOS and no ARM64 native binaries here; for a non-Windows host use [folio-js](folio-js.md), which is the same engine compiled to WebAssembly and runs wherever Node does.
+**Linux support arrives in 1.2.0. Version 1.1.0, the release on NuGet today, carries the two Windows natives and nothing else.** Read the row for the version you actually have installed; `dotnet list package` prints it.
 
-**On an unsupported platform the first call into the engine throws `FolioNativeLoadException`.** The same exception is thrown whenever the native library cannot be loaded for any other reason. There is no degraded mode and nothing to fall back to: rendering and validation are the entire library. The exception names the detected process bitness, the runtime identifier and file name it sought, every path it probed, and the likely cause — a bitness mismatch, a missing package asset, or a host that blocks calls into unmanaged code.
+| Version | Native libraries inside the package |
+| --- | --- |
+| 1.1.x and earlier | `win-x86` and `win-x64`. No Linux, no macOS and no ARM64 native binary is present, so on any other host the first call into the engine fails. |
+| 1.2.0 and newer | `win-x86`, `win-x64`, `linux-x64` and `linux-arm64` — four natives, one managed assembly, and no load logic written by you on any of them. |
+
+Everything below about Linux describes 1.2.0 and newer.
+
+**The Linux natives need glibc 2.28 or newer.** They are built in a pinned AlmaLinux 8 image, and the image is what holds that floor: a library built with cgo records the glibc symbol versions of the machine that built it, so the build host rather than the source decides a consumer's minimum. In practice 2.28 means RHEL, CentOS, Alma and Rocky 8 and newer, Debian 10 and newer, Ubuntu 18.10 and newer, and the glibc-based `mcr.microsoft.com/dotnet` images.
+
+**Alpine and other musl hosts are not supported, deliberately.** No `linux-musl-x64` runtime identifier ships, and `linux-musl-x64` does not inherit `linux-x64` assets from the runtime identifier graph, so an Alpine consumer resolves no native at all. Be clear about when that shows up: `dotnet add package` and `dotnet restore` both succeed, the package installs, and the failure appears at the first call into the engine, as a load failure rather than a render that goes wrong. That is not a gap awaiting effort: Go's c-shared build mode emits initial-exec thread-local relocations that musl's loader refuses under `dlopen`, which is exactly how this library is loaded, and building the native against musl instead does not change it.
+
+**macOS is not shipped, and neither is Windows ARM64.** The `osx-x64` and `osx-arm64` natives are a build leg, a CI leg and a minimum-version discipline this package has not taken on; the engine itself builds there, so that is a scope decision rather than a technical one. `win-arm64` does not inherit `win-x64` assets from the runtime identifier graph either, so an ARM64 Windows host resolves no native from this package — a .NET Framework consumer is unaffected, because it runs the `win-x64` build under emulation as a 64-bit process.
+
+Wherever a native is absent, [folio-js](folio-js.md) is the same engine compiled to WebAssembly and runs wherever Node does.
+
+**On Windows, a native library that cannot be loaded throws `FolioNativeLoadException` on the first call into the engine.** It names the detected process bitness, the runtime identifier and file name it sought, every path it probed, and the likely cause — a bitness mismatch, a missing package asset, or a host that blocks calls into unmanaged code. That detail exists because this package does its own explicit load there, for the .NET Framework reasons below.
+
+**Off Windows the failure is the runtime's own, and it is plainer.** Nothing in this package probes on Linux or macOS: the host resolves the native from the runtime identifier graph, so when nothing resolves — a musl host, or any other platform with no asset in the package — the first call throws a `DllNotFoundException` naming `folio8_native` and nothing more. Expect that rather than `FolioNativeLoadException`.
+
+Either way there is no degraded mode and nothing to fall back to: rendering and validation are the entire library.
 
 ### Choosing the native library
 
-**By process bitness, at load time.** A .NET Framework project is AnyCPU by default, which runs as a 64-bit process on 64-bit Windows and as a 32-bit process under Prefer32Bit or on a 32-bit host, so nothing at build time can know which architecture you will need. This library reads the size of a pointer before the first call into the engine, picks the 64-bit or the 32-bit runtime identifier, and loads that file by full path.
+**On Linux, and on modern .NET generally, the host chooses it.** `dotnet` resolves `runtimes/<rid>/native/` from the runtime identifier graph before the first call into the engine ever probes for a file, so nothing in this package chooses and nothing in your project configures it. The rest of this section is about .NET Framework, which runs only on Windows by definition.
+
+**On .NET Framework, by process bitness, at load time.** A .NET Framework project is AnyCPU by default, which runs as a 64-bit process on 64-bit Windows and as a 32-bit process under Prefer32Bit or on a 32-bit host, so nothing at build time can know which architecture you will need. This library reads the size of a pointer before the first call into the engine, picks the 64-bit or the 32-bit runtime identifier, and loads that file by full path.
 
 All three process shapes work on both target framework families with no load logic written by the caller:
 
@@ -130,9 +151,17 @@ RenderResult result = Folio8.Render(template, data, parameters, Fonts_);
 
 ### Calling from several threads
 
-**`Folio8.Render` and `Folio8.Validate` may be called concurrently from as many threads as you like, against the one loaded native library.** Each call is self-contained: the engine carries no state from one call to the next, and the one structure that does span a call — the native allocation table that hands each result back across the boundary — is mutex-guarded. Nothing else crosses a call.
+**`Folio8.Render` and `Folio8.Validate` may be called concurrently from as many threads as you like, and no threading code of your own is required.** Each call is self-contained: the engine carries no state from one call to the next, and the one structure that does span a call — the native allocation table that hands each result back across the boundary — is mutex-guarded. Nothing else crosses a call.
 
-An ASP.NET application can therefore serve concurrent requests without a lock of its own. A `Template` is opaque and immutable, and a `FontSet` is never modified by the engine, so both are safe to share across threads; the only caution is the ordinary one, that you not mutate a `FontSet` while another thread is rendering with it. Each call still blocks its own thread for the duration of the render.
+**Renders run in parallel, and what bounds them is a pool of threads the binding owns.** From 1.2.0 every crossing into the engine — a render, a validation, and the release of a result buffer — is handed to one of those threads rather than made on yours, and the value or the exception comes back to you. The pool holds one thread per logical processor and never fewer than two, so the number of renders actually running at once is bounded by that count rather than by how many threads you call from. Beyond it, callers queue. Each call still blocks its own thread until its own render finishes, and none of this is configurable or visible in the API.
+
+**Two consequences a caller should budget for.** Each engine thread holds a **megabyte** of alternate signal stack for the life of the process and never gives it back, so the pool costs about one megabyte per logical processor — tens of megabytes on a large host. And the enlargement is not best-effort: if it fails at startup the binding does not quietly carry on, it latches that failure, and every later call on every thread throws `InvalidOperationException` with the same message. There is no retry and no degraded path.
+
+**What the boundary cost, measured.** On Linux there is no measurable throughput regression at any concurrency level and renders scale with cores. On macOS — for which this package ships no native — a low-concurrency latency tail was measured: about 8 % fewer renders a second with one or two callers, the median render unchanged but p95 roughly doubled, and gone by four callers. The handoff responsible is the same code on every platform, so it is recorded rather than dismissed.
+
+**The binding owns those threads because of what the engine does with signals.** On Linux the engine's handlers run on the alternate signal stack of whichever thread entered it, and the one the .NET runtime installs on its own threads is too small for them — an overflow there killed the process, which is why 1.1.0 shipped no Linux native. The pool's threads are given a large alternate stack once, at creation, before their first crossing. Windows has no such signals and needs none of it, and takes the same path anyway so that one call path is exercised everywhere.
+
+An ASP.NET application can therefore serve concurrent requests without a lock of its own. A `Template` is opaque and immutable, and a `FontSet` is never modified by the engine, so both are safe to share across threads; the only caution is the ordinary one, that you not mutate a `FontSet` while another thread is rendering with it.
 
 ## Warnings and errors
 
@@ -152,7 +181,7 @@ Two diagnostics carrying the same five values are equal: `Diagnostic` implements
 
 **`Code` is the contract and `Message` is not.** Codes are additive: once shipped, a code's string and its meaning never change. Message text is prose for a person to read, matches the Go library's word for word for the same condition, and carries no promise beyond that.
 
-A failure the engine raised as a known document condition is a `FolioRenderException` carrying the `Diagnostic` that caused it. Everything else — a null argument, data that is not valid JSON, a stream that failed — throws an ordinary framework exception, and a native library that cannot be loaded throws `FolioNativeLoadException`:
+A failure the engine raised as a known document condition is a `FolioRenderException` carrying the `Diagnostic` that caused it. Everything else — a null argument, data that is not valid JSON, a stream that failed — throws an ordinary framework exception, a native library that cannot be loaded throws `FolioNativeLoadException` on Windows or `DllNotFoundException` elsewhere, and a binding whose engine threads could not be started throws `InvalidOperationException` from every call for the life of the process:
 
 ```csharp
 try

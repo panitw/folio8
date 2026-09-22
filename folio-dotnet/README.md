@@ -15,9 +15,9 @@ dotnet add package folio8
 ```
 
 Nothing else is needed. No Go, no C compiler, no build step, no configuration:
-all four native libraries — two Windows, two Linux — and all eleven shipped
-font faces are in the package, and the right native is chosen for you at load
-time.
+every native library this version ships — four from 1.2.0, two Windows and
+two Linux — and all eleven shipped font faces are in the package, and the
+right native is chosen for you at load time.
 
 ## Where templates come from
 
@@ -99,8 +99,24 @@ Diagnostic codes, severities and message text are the engine's, identical
 across this package, the npm package and Go, so a caller can port between
 them.
 
-A render runs synchronously inside the native library and blocks the calling
-thread while it runs.
+A render runs synchronously and blocks the calling thread while it runs. It
+does not run *on* that thread: from 1.2.0 every crossing into the engine — a
+render, a validation, and the release of a result buffer — is handed to a pool
+of threads this package owns, sized to `Environment.ProcessorCount` and never
+smaller than two, and the result or the exception comes back to you.
+
+**Renders therefore run in parallel and you write no threading code.** Call
+`Folio8.Render` from as many threads as you like; what bounds how many renders
+actually run at once is that pool, and callers beyond it queue. Nothing here
+is configurable or visible in the API. Two costs to know about: each pool
+thread holds a megabyte of alternate signal stack for the life of the process
+— about a megabyte per logical processor — and if the pool cannot be started
+the failure is latched, so every later call throws
+`InvalidOperationException` with the same message rather than falling back.
+
+The pool exists because the engine's signal handlers run on the alternate
+signal stack of whichever thread enters it, and the one .NET installs on its
+own threads is too small for them; that is why 1.1.0 shipped no Linux native.
 
 ## Supported target frameworks
 
@@ -115,6 +131,12 @@ nothing newer than .NET Framework 4.6 has — no `Span<T>`, no
 dependencies at all**.
 
 ## Supported platforms
+
+**This page describes the package it is packed inside.** The two Linux
+natives arrive in **1.2.0**; `1.1.x` and earlier carry the two Windows natives
+and nothing else. If you are reading this rendered on NuGet or on
+folio8.report rather than out of the package you installed, check
+`dotnet list package` before planning around a row below.
 
 | Platform | RID | Native |
 | --- | --- | --- |

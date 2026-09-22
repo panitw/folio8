@@ -194,9 +194,11 @@ additions and the one behaviour change:
   `v1.0.0` call does today, so no existing call changes meaning;
 - **new** diagnostics `TEXT_FACE_ABSENT`'s companion
   `DiagCodeTextFaceSubstituted`, raised only under `Substitute`;
-- **folio-dotnet stays Windows-only.** Linux support was built for this
-  release and withdrawn before it: see DW-396 and the package-contents
-  section. Nothing about the Windows package changes.
+- **folio-dotnet shipped Windows-only, and that is a fact about `v1.1.0`
+  rather than about this package.** Linux support was built for this release
+  and withdrawn before it, over DW-396. Nothing about the Windows package
+  changed. It is restored for `v1.2.0` — see the next list, and the
+  package-contents section.
 - **format `4.2`** — a document whose `fonts` chain names an asset carrying
   `authorAcknowledged: true` declares it. A `4.0`/`4.1` reader loads such a
   document and then refuses it on the licence terms the key exists to excuse;
@@ -209,6 +211,58 @@ additions and the one behaviour change:
   on leading spaces after a `\n` renders differently — this is the fix for
   indents silently vanishing, so the new output is the intended one. No golden
   in this repository moved.
+
+For `v1.2.0`, **not yet released and not yet packable** — the notes will carry
+one addition and one behaviour change a .NET integrator can observe:
+
+- **new** the `linux-x64` and `linux-arm64` runtime identifiers, restored
+  after their withdrawal from `v1.1.0`. glibc 2.28 or newer; no
+  `linux-musl-x64` ships and `linux-musl-x64` inherits nothing from
+  `linux-x64`, so an Alpine consumer's restore succeeds and the first call into the engine then fails to load a native, rather than a render going wrong. No
+  public API is added and a caller's code is identical on either platform.
+- **a concurrency behaviour change, on every platform including Windows.**
+  Every crossing of the C ABI — render, validate and the free of a result
+  buffer — now runs on a pool of binding-owned threads sized to
+  `Environment.ProcessorCount` (minimum two), rather than on the caller's
+  thread. Calls from more threads than that now queue rather than all
+  entering the engine at once. The API is unchanged and no caller writes
+  threading code, but a consumer measuring concurrency will see the bound.
+  The reason is DW-396: those threads are the only place the binding can
+  enlarge the alternate signal stack the Go runtime adopts.
+- **the throughput measurements** (CAP-10). Rendering
+  `fixtures/multi-page-statement` from a fixed number of caller threads, before
+  is `86e7e5a` (the direct-`DllImport` binding) and after is the engine-thread
+  binding. **Leg A — `linux-arm64`, Debian 12 container, 10 CPU, .NET 8.0.31,
+  the shipped `linux-arm64` native, executing natively on an Apple Silicon Mac;
+  three alternating runs per leg, 5 s per level. One developer machine, so
+  indicative rather than controlled** — the spread columns are what that is
+  worth:
+
+  | Concurrency | before r/s | spread | after r/s | spread | change |
+  |---|---|---|---|---|---|
+  | 1 | 40.80 | ±3.1 % | 43.14 | ±1.8 % | +5.7 % |
+  | 2 | 74.17 | ±1.9 % | 76.15 | ±2.4 % | +2.7 % |
+  | 4 | 116.26 | ±1.2 % | 121.04 | ±0.6 % | +4.1 % |
+  | 10 (`ProcessorCount`) | 158.59 | ±1.1 % | 156.66 | ±3.8 % | −1.2 % |
+
+  **Scaling, after: 3.63×** from one caller to ten — the pool buys
+  parallelism rather than flattening at one core. Every change above is at or
+  inside the legs' own run-to-run spread, so **no regression is measurable on
+  Linux**.
+
+  ⚠ **What these numbers do not cover, and the notes must say so.**
+  **Windows x64 is UNMEASURED** — CAP-10 names it explicitly, and no Windows
+  leg was taken; the wrapper is POSIX-only. **Real amd64 is unmeasured too**:
+  the `linux-amd64` leg ran under Rosetta and no comparison completed there,
+  both bindings dying identically. And a **low-concurrency latency tail** was
+  measured on macOS — 8.2 % fewer renders a second at one caller, median
+  unchanged, p95 22.33 → 41.78 ms, gone by four callers — which is filed in
+  `deferred-work.md` rather than dismissed, because the handoff responsible is
+  the same code on every platform. Full record, with every log behind every
+  figure: `_bmad-output/implementation-artifacts/dotnet-linux-throughput.md`.
+- ⚠ **DW-396 is still OPEN as this is written.** `v1.2.0` cannot be packed at
+  all until CAP-5's two hardware soak legs are run and recorded — the pack
+  refuses without the assertion. See the package-contents section below.
 
 ### The cross-target hash matrix
 
@@ -296,30 +350,61 @@ written down — and reddens if one acquires it.
 
 ### What the package promises
 
-`folio8.1.1.0.nupkg` is **self-contained**:
+The packed `folio8.<version>.nupkg` is **self-contained**:
 
 ```
 lib/netstandard2.0/Folio8.dll          the one managed assembly, faces embedded
 runtimes/win-x64/native/folio8_native.dll
 runtimes/win-x86/native/folio8_native.dll
+runtimes/linux-x64/native/libfolio8_native.so
+runtimes/linux-arm64/native/libfolio8_native.so
 build/folio8.targets                   the .NET Framework delivery
 buildTransitive/folio8.targets
 README.md, LICENSE
 third-party-notices/fonts/**           each face's OFL text and notice
 ```
 
-**NO LINUX RID SHIPS, AND IT IS WITHDRAWN RATHER THAN UNATTEMPTED.**
-`linux-x64` and `linux-arm64` were built, verified and packed during 1.1.0's
-preparation, then taken out before release: entering the engine from a CLR
-thread-pool thread overflows that thread's `sigaltstack` and kills the
-process (**DW-396**). The pinned build image does not fix it — that was the
-first reading and it was wrong; the glibc the native is built against moves
-how OFTEN it fires, not whether. `PackagingTests` reddens if a `linux` RID is
-added back, and the tooling (`build-native.sh`'s linux targets,
-`verify-linux-natives.sh`, the ELF arm in `FolioPackageCheck`, the
-`folio-dotnet-linux` CI job) all remain in place for 1.2.0 — and that CI job
-now runs the corpus suite against both shipped natives, one leg per
-architecture, which proves byte identity on Linux and does not clear DW-396.
+**The two Linux entries are what `1.1.0` does not have.** `1.1.0` shipped the
+two `win-*` runtimes and nothing else; the Linux pair was built, verified and
+packed during its preparation and then taken out before release, because
+entering the engine from a CLR thread-pool thread overflows that thread's
+`sigaltstack` and kills the process (**DW-396**). The pinned build image does
+not fix that — it was the first reading and it was wrong; the glibc a native
+is built against moves how OFTEN the defect fires, not whether. The fix is on
+the .NET side: every crossing now runs on a binding-owned thread whose
+alternate signal stack was enlarged before its first crossing.
+
+⚠ **AND THAT IS WHY A LINUX PACK REFUSES UNTIL A PERSON ASSERTS THE SOAK.**
+`Folio8.csproj` declares both Linux `FolioNative` items, and its
+`FolioAssertLinuxSoak` target then **refuses the pack** unless this exact
+sentence is typed on the command line:
+
+```
+-p:FolioLinuxSoakEvidence="CAP-5 soaked on real amd64 and real arm64"
+```
+
+The comparison is **ordinal** — the wording and the casing must match
+character for character, and a differently-cased or reworded sentence is
+refused. It must also arrive as a command-line property and **not** be
+exported into the environment, which the gate refuses separately, because the
+point is that a person states it at the moment they pack. The assertion is a **claim about
+CAP-5's two hardware legs**: a reproduction of the pre-fix crash and then a
+100-iteration soak, on **real amd64** and on **real arm64** separately, with
+no emulation and no Rosetta, both recorded in
+`_bmad-output/implementation-artifacts/dotnet-linux-soak.md`. Both legs are
+PENDING as this is written, so **`1.2.0` is not packable today**, and typing
+the assertion anyway would repeat the false clear DW-396 already records being
+made twice. A Windows-only pack — `-p:FolioPackPlatforms=windows`, which the
+.NET Framework consumer harness uses — drops both Linux items and needs no
+assertion, because it ships no Linux native.
+
+`PackagingTests` holds all four RIDs in the packed layout, refuses a musl one,
+and enumerates every tracked `dotnet pack` of this project to check each one
+either asserts the soak or packs Windows-only. `ci.yml`'s `folio-dotnet-linux`
+job builds both ELF natives in the pinned image, verifies their machine type
+and glibc floor, and runs the corpus suite against each on its own
+architecture — which proves byte identity on Linux and **does not** clear
+DW-396.
 
 It declares **no dependencies**, so `dotnet add package folio8` on a
 machine with no Go and no C compiler produces a project that renders — from
@@ -382,12 +467,10 @@ carries preinstalled, an owner's laptop has to be given.
 | Go | `go build -buildmode=c-shared` builds the engine |
 | mingw-w64 gcc, `x86_64` | cgo's C compiler for `win-x64` |
 | mingw-w64 gcc, `i686` | a SEPARATE toolchain, for `win-x86` |
-| Docker | only for the **Linux** natives, which **1.1.0 does not ship** — see below |
+| Docker | the **Linux** natives, and the only supported way to build them — see below |
 
-**The Linux pair is not part of a release today (DW-396).** What follows
-describes tooling that still works and is still exercised by CI, kept because
-1.2.0 will need it. **Nothing in the publish procedure below builds or packs
-it.** The Linux pair needs Docker and nothing else — not a Go toolchain, not a
+**The Linux pair ships from `1.2.0` onward, and the publish procedure below
+builds it.** It needs Docker and nothing else — not a Go toolchain, not a
 cross-compiler. `build-native.sh linux-x64 linux-arm64` builds them inside a
 **digest-pinned AlmaLinux 8 image**, and the image is the point: a cgo library
 records the glibc symbol versions of the machine that built it, so building on
@@ -457,14 +540,18 @@ a standalone i686 mingw-w64 build unpacked there resolves with no code change.
      `folio-dotnet\build\build-native.ps1 win-x64 win-x86`. On a machine that
      has not built them before, satisfy *The build machine* above first — the
      script needs Go and a mingw-w64 gcc for each architecture.
-   - **Linux: nothing.** The package ships no Linux RID (DW-396), and
-     `Folio8.csproj` lists no Linux `FolioNative`, so the pack neither wants
-     nor checks one. Do not build them for a release; `folio-dotnet-linux`
-     builds them, verifies them and runs the corpus suite against each in CI,
-     which is where they belong until 1.2.0.
+   - **Linux**, anywhere Docker runs:
+     `folio-dotnet/build/build-native.sh linux-x64 linux-arm64`, which builds
+     both inside the digest-pinned AlmaLinux 8 image, then
+     `folio-dotnet/build/verify-linux-natives.sh` to check each one's ELF
+     machine and its glibc floor. Never build a shipped Linux native outside
+     that image, and never substitute the `host` target for it.
 
-   Both Windows natives must be present, or the pack refuses and names what is
-   missing.
+   All four natives must be present, or the pack refuses and names what is
+   missing — and for the two Linux ones the pack **also** refuses without the
+   soak assertion (see *What the package promises*). To cut a Windows-only
+   package deliberately, pass `-p:FolioPackPlatforms=windows` instead of
+   omitting the natives.
 2. `dotnet test folio-dotnet/test/Folio8.Tests/Folio8.Tests.csproj -c Release`
    is green, and so is the 32-bit leg. `ci.yml`'s `folio-dotnet` job runs both
    plus the consumer suite — the pack, the install into all three process

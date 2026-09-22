@@ -182,8 +182,74 @@ A buffer that does not decode cleanly is `FOLIO8_ERROR_ARGUMENT`.
 - `folio8_allocation_count()` reports how many tokens are outstanding. It
   exists so a caller can **prove** free discipline over a loop rather than
   assert it: take the count, run the loop, take it again.
-- Calls are safe to make from several threads; the allocation table is
-  mutex-guarded. No other state crosses calls.
+- Calls are safe to make from several threads as far as *this library's own
+  state* goes: the allocation table is mutex-guarded and no other state
+  crosses calls. That is not the whole of the thread-safety contract — read
+  the next section before calling from a runtime of your own.
+
+## Threads, and the alternate signal stack
+
+**Nothing here serialises calls, and nothing pins them to a thread.** Render,
+validate and free may all be entered concurrently, from any thread, in any
+order, and `folio8_free` need not run on the thread that produced the token.
+The engine keeps no per-thread state.
+
+**The caveat is not about this library's data; it is about signals.** A
+`c-shared` Go library brings the Go runtime with it, and that runtime installs
+`SA_ONSTACK` handlers — for stack growth, for preemption, for its own
+profiling. Under cgo, Go **adopts the alternate signal stack it finds on the
+calling thread** rather than installing its own (`minitSignalStack`, at
+`needm` time), and it never checks that the one it found is large enough for
+the frames it will push. So the handler runs in whatever room the calling
+thread's `sigaltstack` already had.
+
+**If your runtime installs its own alternate signal stack, size it before the
+first call, on every thread that will ever cross this ABI.** A stack that is
+too small does not fail cleanly: the kernel turns the overflow into `SIGSEGV`,
+the host's own fault handler sees corruption it cannot explain, and the
+process dies with no stack trace that names anything here. Two properties
+matter and both are easy to get wrong:
+
+- **Before the first crossing.** Go reads the stack once, when the thread
+  first attaches, and the reading is fixed for the life of that attachment.
+  Enlarging it afterwards changes nothing.
+- **For the life of the thread.** A thread that can still take a signal must
+  still own its alternate stack, so the memory must outlive the thread rather
+  than be freed when the call returns.
+
+A caller with no alternate signal stack of its own — an ordinary C program, or
+a Go caller — needs none of this: Go installs its own 32 KiB stack when it
+finds nothing to adopt. The trap is specifically a *managed* runtime that
+installs a small fixed one, and the .NET CLR is the instance this repository
+measured: folio-dotnet's Linux natives were withdrawn from its 1.1.0 release
+over exactly this, and it now creates its own long-lived threads, calls
+`sigaltstack()` on each with a megabyte before that thread's first crossing,
+and never enters this ABI from a runtime-owned thread.
+
+⚠ **Read your own size; do not copy ours.** The readings behind that work are
+**arm64: 24576 bytes**, taken in containers on an Apple Silicon hypervisor and
+not yet re-taken on a bare host, and **amd64: 16384 bytes**, taken under
+**emulation** and therefore *not* admissible as evidence about real amd64
+silicon. What they establish is the shape — a managed runtime's fixed altstack
+sitting below the 32 KiB Go sizes for itself — not a constant to size against.
+Take your own reading with `sigaltstack(NULL, &old)` on the thread that will
+cross, and then size **well above** it: a few hundred KB per thread costs
+nothing, and there is no single right queried value either, since `SIGSTKSZ`
+is a compile-time constant before glibc 2.34 and a `sysconf()`-backed runtime
+value after it. The measurements and their provenance are in `DW-396` in this
+repository's deferred-work record.
+
+**Darwin callers: `stack_t` is not laid out the way Linux lays it out.**
+glibc is `void *ss_sp; int ss_flags; <4 bytes padding>; size_t ss_size`, and
+the BSD/Darwin family is `void *ss_sp; size_t ss_size; int ss_flags`. The
+wrong declaration compiles cleanly and does not obviously misbehave — it
+passes a size of zero where the kernel expects one and comes back `ENOMEM`,
+which is measured, on macOS, against the Linux layout. So pick the layout by
+the kernel you are on rather than by assumption, **check the return value**,
+and read the stack back to confirm the size you actually got.
+
+**Windows callers are unaffected.** There are no POSIX signals there and no
+alternate signal stack to size.
 
 ## Determinism
 
@@ -217,6 +283,10 @@ one that could not.
 `folio-dotnet/build/build-native.sh` and `build-native.ps1` are the only
 supported way to build it — they pin `CGO_ENABLED=1`, the toolchain, and the
 output layout. Windows artifacts (`win-x86`, `win-x64`) need a mingw-w64
-toolchain per architecture. The host library the scripts also build (a macOS
-`.dylib` or a Linux `.so`) is a **development aid** so the ABI and the binding
-can be exercised off Windows; it is never packaged and never shipped.
+toolchain per architecture; the `linux-x64` and `linux-arm64` artifacts are
+built inside a digest-pinned AlmaLinux 8 image, which is what holds their
+glibc floor. The **host** library the scripts also build (a macOS `.dylib` or
+a Linux `.so` compiled on whatever machine you are sitting at) is a
+**development aid** so the ABI and the binding can be exercised locally; it is
+never packaged and never shipped, and it is not the same artifact as the
+`linux-*` targets above.

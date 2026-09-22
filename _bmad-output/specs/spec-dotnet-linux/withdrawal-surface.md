@@ -29,11 +29,11 @@ does neither reddens rather than being found by a red CI job.
 
 | Site | Claim |
 | --- | --- |
-| [docs/folio-dotnet.md:35](../../../docs/folio-dotnet.md) + [docs/folio-dotnet.html:370](../../../docs/folio-dotnet.html) | "**Windows only, on x86 and on x64.** … There are no Linux, no macOS and no ARM64 native binaries here" — `.md` is source of truth, `.html` is the published page, and the two must agree |
+| ~~[docs/folio-dotnet.md:35](../../../docs/folio-dotnet.md) + [docs/folio-dotnet.html:370](../../../docs/folio-dotnet.html)~~ — **done in story 7** | ~~"**Windows only, on x86 and on x64.** … There are no Linux, no macOS and no ARM64 native binaries here"~~ ✅ Replaced in **both twins** by a per-version table — `1.1.x and earlier` is the two `win-*` natives, `1.2.0 and newer` is all four — plus the glibc 2.28 floor, the musl exclusion and the macOS / `win-arm64` absences. **Version-scoped deliberately**: the site deploys from `main` on every green push, so the page had to be true for a 1.1.0 reader and a 1.2.0 reader at once, with no second edit at tag time. The concurrency section states the engine-thread pool (CAP-9) |
 | ~~[folio-dotnet/README.md:118](../../../folio-dotnet/README.md)~~ — **done in story 6** (the guard above asserts on this text, so it changed with it) | ~~"**Windows only**, on **x86** and **x64**", and the section *"Why there is no Linux build yet"*~~ ✅ |
-| [Folio8.csproj](../../../folio-dotnet/src/Folio8/Folio8.csproj) `<Description>` | "…from .NET Framework 4.6 through modern .NET, **on Windows x86 and x64**" — the NuGet listing text |
-| [RELEASING.md:197](../../../RELEASING.md), and the package-contents section at ~line 311 | "folio-dotnet stays Windows-only"; "**NO LINUX RID SHIPS, AND IT IS WITHDRAWN RATHER THAN UNATTEMPTED**"; the prerequisites table marking Docker as "only for the Linux natives, which 1.1.0 does not ship" |
-| [DW-396](../../implementation-artifacts/deferred-work.md) | Status OPEN. Closes with the mechanism, the fix, and the soak evidence recorded |
+| ~~[Folio8.csproj](../../../folio-dotnet/src/Folio8/Folio8.csproj) `<Description>`~~ — **done in story 7** | ~~"…from .NET Framework 4.6 through modern .NET, **on Windows x86 and x64**"~~ ✅ Now **two** `<Description>` elements conditioned on `$(FolioPackPlatforms)` — the same property the `FolioNative` items use. The default names Windows x86/x64 **and** Linux x64/arm64 with the glibc floor and the musl exclusion; a `-p:FolioPackPlatforms=windows` pack, which drops the two Linux items, advertises Windows only. Not version-scoped, and does not need to be — a NuGet listing's description is frozen at publish beside the version it describes — but it must not advertise a RID the package does not carry, because nothing can redden for a frozen listing afterwards |
+| ~~[RELEASING.md:197](../../../RELEASING.md), and the package-contents section at ~line 311~~ — **done in story 7** | ~~"folio-dotnet stays Windows-only"; "**NO LINUX RID SHIPS, AND IT IS WITHDRAWN RATHER THAN UNATTEMPTED**"; the prerequisites table marking Docker as "only for the Linux natives, which 1.1.0 does not ship"~~ ✅ The `v1.1.0` notes bullet is kept as **history of that tag** and now says so; a `v1.2.0` notes block states the two new RIDs, the concurrency behaviour change and where CAP-10's numbers live. Package contents lists all four runtimes and then says the Linux pair cannot be packed without the typed soak assertion, and why. The Docker row and the *Before publishing* step now build and verify the Linux pair |
+| [DW-396](../../implementation-artifacts/deferred-work.md) | **STILL OPEN, and this row stays open with it.** Story 7 added a 2026-09-23 subsection carrying the mechanism, the shipped fix, every measurement taken and where it is written down, and the two PENDING hardware legs. What is missing is the evidence, not the record: CAP-5's soak on **real amd64** and **real arm64**, each with its reproduction leg first. Until both are recorded in `dotnet-linux-soak.md`, `FolioAssertLinuxSoak` refuses to pack a Linux RID |
 
 `_bmad-output/specs/spec-client-libraries/` states the Windows-only position
 too — as a constraint, a non-goal, and in `packaging-matrix.md`. It is a
@@ -52,14 +52,15 @@ All of it survived the withdrawal deliberately. None of it is new work:
 ## The load path, which is not the problem
 
 [NativeLibraryLoader.cs](../../../folio-dotnet/src/Folio8/NativeLibraryLoader.cs)
-does **nothing at all** off Windows, by design: its explicit-load dance exists
+does **nothing at all** off Windows, by design — and its class remark was
+corrected in **story 7** to say so without calling the Linux natives a
+development aid. Its explicit-load dance exists
 because .NET Framework 4.6 has no `DllImportResolver` and AnyCPU decides
 bitness at load time. On Linux there is no `net46`, nothing is AnyCPU in that
 sense, and the host resolves `runtimes/<rid>/native/` from the RID graph
-before `DllImport` ever probes. Its class-level remark ("Off Windows this does
-nothing at all… the macOS and Linux host libraries are a development aid")
-needs its wording corrected — the Linux libraries are no longer only a
-development aid — but its **behaviour** is already right.
+before `DllImport` ever probes. Its **behaviour** was always right; only the
+wording was wrong, and it now distinguishes the shipped `linux-*` natives from
+the `build-native.sh host` library that is still never packaged. ✅
 
 ⚠ `linux-musl-x64` does **not** inherit `linux-x64` assets in the RID graph.
 An Alpine consumer therefore resolves no native from this package and fails at
