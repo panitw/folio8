@@ -1,0 +1,153 @@
+- id: "1"
+  title: Land the signal-stack probe as a repo diagnostic, and confirm the amd64 constant
+  description: >-
+    Make the spike's sigaltstack probe a supported tool in the repository rather
+    than a scratch file, and use it to confirm on real amd64 hardware the one
+    number sigaltstack-findings.md still takes on faith.
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    Read _bmad-output/specs/spec-dotnet-linux/sigaltstack-findings.md first; the
+    working probe is preserved beside it under evidence/. Decide its home in the
+    repo and give it a single documented invocation, because the amd64 leg is
+    run by the owner on a WSL2 box you cannot reach — do not assume access to
+    real amd64 hardware. The probe itself is a diagnostic and is NOT bound by
+    the netstandard2.0/net46 floor that constrains the package. Capture both the
+    CLR's altstack size and sysconf(_SC_SIGSTKSZ) on that machine; if sysconf
+    exceeds the CLR's constant there, say so plainly in the findings — it means
+    the CLR is below what glibc itself calls a minimum on that CPU. This story
+    does not block story 2.
+
+- id: "2"
+  title: Route every ABI crossing through engine threads with enlarged signal stacks
+  description: >-
+    The fix for DW-396 (CAP-2): a pool of long-lived binding-owned threads whose
+    alternate signal stacks are enlarged before first use, with every entry point
+    crossing on one of them. Carries its own mechanism assertion.
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    Read sigaltstack-findings.md before designing anything — it establishes that
+    creating the thread is NOT the fix, because the CLR installs the same
+    undersized altstack on every thread it touches including a raw pthread.
+    The load-bearing step is the explicit sigaltstack() enlargement.
+
+    Non-negotiable from SPEC.md: the netstandard2.0 / LangVersion 7.3 / net46
+    floor, and NO PackageReference, ever — test/Folio8.Net46Compile must stay
+    green. Windows takes the same path as Linux (owner ruling); do not put the
+    POSIX path behind a conditional that Windows CI never exercises. Every
+    crossing goes through the boundary INCLUDING folio8_free, so a caller can
+    still render on one thread and dispose on another with no new restriction.
+    Set the altstack before the thread's first crossing — Go's minitSignalStack
+    adopts whatever it finds at needm time — and never free that memory while
+    the thread can take a signal.
+
+    PROVE THE MECHANISM, NOT THE ABSENCE OF A CRASH. A suite that merely runs
+    clean is the exact inference DW-396 records as wrong. The test reads
+    sigaltstack(NULL, &old) on the thread that actually crosses and asserts both
+    that it is binding-owned and that its stack is the enlarged size, entered
+    from a ThreadPool worker and from a Task continuation. No corpus hash may
+    move; if one does, stop — the change did something it was not permitted to.
+
+- id: "3"
+  title: Corpus byte-identity on Linux in CI, on both architectures
+  description: >-
+    Restore the dotnet test step to the folio-dotnet-linux job and add an arm64
+    leg, so CAP-3's byte-identity standard covers Linux the way it already covers
+    the Windows targets.
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    The job exists and already builds and verifies both natives in the pinned
+    image; ci.yml carries a comment explaining why the test step was removed —
+    replace it with what is true now rather than deleting the history.
+
+    Emulation IS acceptable in this story: rendering is deterministic CPU work,
+    so a hash is a hash whatever translated it. That exemption does NOT extend to
+    story 5. Do not add a soak here, and do not let this job's greenness be
+    described anywhere as clearing DW-396.
+
+- id: "4"
+  title: Throughput non-regression across the new boundary
+  description: >-
+    CAP-10: show the engine-thread boundary costs callers nothing meaningful —
+    Windows holds against 1.1.0's direct-DllImport path, and Linux scales with
+    cores rather than flattening at one.
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    The owner chose a pool over a single thread specifically for throughput, so
+    this is an acceptance criterion rather than a measurement to file away.
+    Benchmark concurrent renders; baseline against 1.1.0's direct path on
+    Windows. Record the numbers for the release notes. Making it FASTER than
+    1.1.0, or exposing pool size as a knob, is out of scope per SPEC.md.
+
+- id: "5"
+  title: The soak — reproduce the defect, then show it closed on real hardware
+  description: >-
+    CAP-5: a harness that first reproduces the pre-fix overflow, then runs clean
+    over a long repetition on real amd64 and real arm64 separately. The evidence
+    that decides whether the RIDs ship.
+  spec_checkpoint: false
+  done_checkpoint: true
+  invoke_dev_with: >-
+    REPRODUCE FIRST. A harness that has never seen the defect cannot clear it,
+    and this is the whole reason 11 clean CI runs were previously misread as a
+    fix. Stage the pre-fix build and show the harness catches it — the kernel's
+    "overflowed sigaltstack" message, or the CLR's 0x80131506 — before any clean
+    result is reported.
+
+    NO EMULATION. Not qemu, not Rosetta: the defect is a handler frame
+    overflowing a stack whose size follows the CPU's register state, which is the
+    exact subsystem a translator replaces. amd64 and arm64 are soaked SEPARATELY
+    and neither stands in for the other — the spike showed arm64 was never clear,
+    just wider-margined at 24 KiB against amd64's 16.
+
+    The owner runs the hardware legs: the arm64 leg natively in a Linux VM or
+    container on an Apple Silicon Mac, the amd64 leg on their WSL2 box. Deliver a
+    harness plus the exact commands and what a pass looks like; do not report a
+    verdict you did not observe. Dispatch stops here for the owner to read it.
+
+- id: "6"
+  title: Restore the two Linux RIDs and invert the withdrawal guards
+  description: >-
+    Put linux-x64 and linux-arm64 back into the package and turn every guard that
+    enforced their absence into one that enforces their presence (CAP-4, CAP-6,
+    CAP-7). The story that makes Linux reachable by consumers.
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    withdrawal-surface.md is the inventory — work from it rather than grepping,
+    and INVERT each guard rather than deleting it: a guard that asserted absence
+    becomes one that asserts presence, so a half-restored package still cannot
+    ship. The comment beside the withdrawn FolioNative items becomes the record
+    of why they were once out, not something to delete.
+
+    Do not touch the tooling that already works: build-native.sh's linux targets,
+    verify-linux-natives.sh, the ELF arm of FolioPackageCheck and the pinned
+    AlmaLinux 8 image all survived the withdrawal deliberately. The glibc 2.28
+    ceiling is a provenance check, not a portability warning — a higher floor
+    means the native did not come out of the pinned image. No linux-musl RID, and
+    confirm an Alpine consumer still meets a clean install-time absence.
+
+- id: "7"
+  title: Documentation, the thread-safety contract, and the release record
+  description: >-
+    CAP-8 and CAP-9: every Windows-only claim retired, the engine's threading
+    contract re-examined against what the binding now does, and DW-396 closed with
+    its mechanism and evidence.
+  spec_checkpoint: false
+  done_checkpoint: false
+  invoke_dev_with: >-
+    docs/ is the source of truth and docs/folio-dotnet.html is the published page
+    — author both and keep them in agreement. The full list of claims to retire is
+    in withdrawal-surface.md: the docs page, folio-dotnet/README.md, the csproj
+    <Description> that becomes the NuGet listing text, and RELEASING.md in two
+    places. PackagingTests asserts README content, so those assertions move with it.
+
+    folio-go/cshared/README.md says calls are "safe to make from several threads".
+    Re-examine that against what the binding now actually does and state what is
+    true — including, in docs/folio-dotnet.md, what a caller may assume about
+    parallel renders. Close DW-396 with the mechanism, the fix and the soak
+    evidence; do not leave it open, and do not close it by deleting the history
+    that made it hard to diagnose.
