@@ -101,7 +101,7 @@ instead of accepting it and ignoring it.
 
 **Loading.**
 
-- A document whose `MAJOR` is higher than the library's (`5`) is a load error
+- A document whose `MAJOR` is higher than the library's (`4`) is a load error
   (`TEMPLATE_MALFORMED`), never a best-effort render. So is a `version` that is not of the form
   `MAJOR.MINOR`.
 - A document with a supported `MAJOR` and a higher `MINOR` (say `5.7`) loads. Keys the library does
