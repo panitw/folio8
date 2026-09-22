@@ -773,7 +773,7 @@ export function runRedProofs(baseline = verifyOfflineRelease()) {
   // over-budget release — so proving only the verifier's copy would leave the
   // generator's free to be inverted with every proof green, which is the whole
   // reason the duplication exists.
-  const loweredCeiling = `const minimumCoreCacheAssets = 30\nconst maximumCoreCacheAssets = 30\nconst maximumCoreCacheBytes = 1000000\n`
+  const loweredCeiling = `const minimumCoreCacheAssets = 31\nconst maximumCoreCacheAssets = 31\nconst maximumCoreCacheBytes = 1000000\n`
   redProof('core-tier-bytes-over-ceiling', () => undefined, 'core-tier-bytes-over-ceiling', { releasePayloadText: loweredCeiling })
   {
     let threw

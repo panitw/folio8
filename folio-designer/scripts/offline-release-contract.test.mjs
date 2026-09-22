@@ -148,6 +148,13 @@ describe('the release asset tier rule', () => {
     ['a document face', '/assets/noto-sans.a4c811314da2ade3b4d2-DDPrwTMs.ttf'],
     ['a Thai document face', '/assets/noto-sans-thai.c94562c15cbff8c9af93-CrLOPtlG.ttf'],
     ['a shell UI face', '/assets/ibm-plex-sans.975dcda37d80f038dcd1-Bl2SjS7V.ttf'],
+    // THE STARTER IS CORE BECAUSE A FIRST RUN OPENS IT (2026-09-22). It sat with
+    // the bundled examples until a production outage showed what that meant: a
+    // browser whose HTTP/3 connection idled out served every cached asset and
+    // still could not start, because the 275 bytes it could not reach were the
+    // template. An example is opened on request and is properly deferred; the
+    // starter is not optional, so it may not be behind a fetch.
+    ['the starter template', '/assets/starter.c66729f2a79c99ceae8b-BLD4F45l.folio'],
     // THE ONE CATALOGUE FACE THAT BLOCKS (story 3, owner decision 2026-09-19).
     // `runtime-fonts.css` maps the canvas family `Roboto` to this file while
     // `Roboto Bold`, `Roboto Italic` and `Roboto Bold Italic` map to the shipped
@@ -176,7 +183,6 @@ describe('the release asset tier rule', () => {
     ['a bundled example template', '/assets/invoice.f4877f7a403af1a19f4d-DYZ03lTH.folio'],
     ['a bundled example sample', '/assets/invoice.sample.78ed96ba6433f0dca7a7-tYlOXWm3.json'],
     ['a bundled example thumbnail', '/assets/invoice.thumbnail.88abffc36556da508be8-BhF2hbER.png'],
-    ['the starter template', '/assets/starter.c66729f2a79c99ceae8b-BLD4F45l.folio'],
     ['a bundled documentation page', '/assets/expression-reference-d40a356cf33f8a39d863.html'],
     // THE CJK FAMILY, NOT ONE CJK FILE. An exclusion anchored to the stem plus a
     // dot stops blocking as soon as the next character is a hyphen, and a
@@ -233,7 +239,7 @@ describe('the release asset tier rule', () => {
   // examples were drawn from — paints its body text in Roboto, so while that
   // face was deferred the FIRST SCREEN substituted and corrected itself. Nothing
   // else in the tier rules knows that. Adding a second catalogue family to the
-  // starter's chains would leave the classification rows above, the 30/30 pin
+  // starter's chains would leave the classification rows above, the 31/31 pin
   // and every other suite green while reintroducing exactly that regression, so
   // the starter's own chains are the input here.
   //

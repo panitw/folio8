@@ -185,8 +185,25 @@ export const cacheAssetCeiling = maximumCacheAssets
 // DEFAULT DOCUMENT could not paint its body text without a deferred fetch. The
 // tiers are now 30 / 10.82 MiB core against 50 / 7.81 MiB deferred, and
 // `asset-tiers.md` was re-measured in the same change.
-const minimumCoreCacheAssets = 30
-const maximumCoreCacheAssets = 30
+//
+// 30 -> 31 (2026-09-22): THE STARTER DOCUMENT JOINED THE BLOCKING SET, and by
+// this comment's own rule that is a decision, recorded here rather than
+// absorbed. It had been `deferred` only because it shared a classification rule
+// with the bundled examples, which are opened on request and are properly
+// deferred. The starter is what a first run OPENS, so deferring it put a live
+// network fetch on the one path that must work offline.
+//
+// It cost a production outage to find. A browser whose HTTP/3 connection idled
+// out (`QUIC_NETWORK_IDLE_TIMEOUT`) served every cached asset correctly and
+// still died, because the 275 bytes it could not reach were the template
+// itself: `Local engine/template could not start`, with a Retry that re-ran the
+// same failing fetch. Nothing in the release was missing or corrupt.
+//
+// The weight it admits is 275 Brotli bytes against the ceiling's remaining
+// margin of ~122 KiB, so this buys the startup path's independence from the
+// network for about two thousandths of the budget.
+const minimumCoreCacheAssets = 31
+const maximumCoreCacheAssets = 31
 // THE CORE TIER'S WEIGHT, WHICH NOTHING GUARDED UNTIL NOW
 // (spec-deferred-offline-cache, story 5). The two numbers above bound the
 // blocking set's COUNT and say nothing at all about its size: the wasm is one

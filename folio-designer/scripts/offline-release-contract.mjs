@@ -58,6 +58,25 @@ const CJK_FONT_ASSET = new RegExp(String.raw`^/assets/${cjkFamily}\.${contentAdd
 // and which is core.
 const BUNDLED_TEMPLATE_STEMS = ['starter', ...exampleIds]
 const BUNDLED_EXAMPLE_ASSET = new RegExp(String.raw`^/assets/(?:${BUNDLED_TEMPLATE_STEMS.join('|')})\.(?:${contentAddressed}\.folio|sample\.${contentAddressed}\.json|thumbnail\.${contentAddressed}\.png)$`)
+// THE STARTER DOCUMENT IS NOT A BUNDLED EXAMPLE, AND SHARING THEIR RULE MADE
+// STARTUP DEPEND ON THE NETWORK.
+//
+// An example is opened only if an author asks for it, which is exactly what
+// `deferred` is for. The starter is what the designer opens on a first run, so
+// a `deferred` starter puts a live fetch on the one path that must work — on an
+// offline-first release. MEASURED IN PRODUCTION (2026-09-22): a browser whose
+// HTTP/3 connection dropped (`QUIC_NETWORK_IDLE_TIMEOUT`) served every cached
+// asset correctly — shell, bundle, fonts, engine wasm — and died on this one
+// 275-byte document, with `Local engine/template could not start` and a Retry
+// that could only re-run the same failing fetch.
+//
+// ⚠ IT IS WRITTEN AS EXAMPLES-MINUS-STARTER RATHER THAN AS A CORE RULE LISTED
+// AFTER THEM, because `classifyAssetTier` throws on ANY overlap between rules.
+// Same device, and the same reason, as the catalogue's core arm above.
+//
+// Only the `.folio` moves. A starter `sample.json` or `thumbnail.png` would
+// stay with the examples, because neither is needed to start.
+const STARTER_DOCUMENT_ASSET = new RegExp(String.raw`^/assets/starter\.${contentAddressed}\.folio$`)
 // THE PRECACHED DOCUMENTATION PAGES BY NAME, and this is the one authority for
 // that list: `verify-offline-release.mjs` imports it rather than re-typing it,
 // for the same reason the cache-asset bound is derived rather than re-typed.
@@ -128,7 +147,8 @@ export const ASSET_TIER_RULES = [
   { name: 'catalogue face', tier: 'deferred', matches: (url) => isCatalogueAssetUrl(url) && !isCoreCatalogueAssetUrl(url) },
   { name: 'core catalogue face', tier: 'core', matches: isCoreCatalogueAssetUrl },
   { name: 'CJK font', tier: 'deferred', matches: (url) => CJK_FONT_ASSET.test(url) },
-  { name: 'bundled example', tier: 'deferred', matches: (url) => BUNDLED_EXAMPLE_ASSET.test(url) },
+  { name: 'bundled example', tier: 'deferred', matches: (url) => BUNDLED_EXAMPLE_ASSET.test(url) && !STARTER_DOCUMENT_ASSET.test(url) },
+  { name: 'starter document', tier: 'core', matches: (url) => STARTER_DOCUMENT_ASSET.test(url) },
   { name: 'bundled documentation page', tier: 'deferred', matches: (url) => BUNDLED_DOCUMENTATION_ASSET.test(url) },
   { name: 'navigation shell', tier: 'core', matches: (url) => url === '/index.html' },
   { name: 'engine wasm', tier: 'core', matches: (url) => ENGINE_WASM_ASSET.test(url) },
