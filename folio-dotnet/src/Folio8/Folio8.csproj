@@ -155,29 +155,55 @@
   <ItemGroup>
     <FolioNative Include="$(FolioNativeDir)/win-x64/folio8_native.dll"><Rid>win-x64</Rid></FolioNative>
     <FolioNative Include="$(FolioNativeDir)/win-x86/folio8_native.dll"><Rid>win-x86</Rid></FolioNative>
+    <FolioNative Include="$(FolioNativeDir)/linux-x64/libfolio8_native.so" Condition="'$(FolioPackPlatforms)' != 'windows'"><Rid>linux-x64</Rid></FolioNative>
+    <FolioNative Include="$(FolioNativeDir)/linux-arm64/libfolio8_native.so" Condition="'$(FolioPackPlatforms)' != 'windows'"><Rid>linux-arm64</Rid></FolioNative>
 
     <!--
-      ⚠ THE TWO LINUX RIDs ARE BUILT AND VERIFIED, AND DELIBERATELY NOT
-      SHIPPED — withdrawn before 1.1.0 on the evidence in DW-396.
+      THE TWO LINUX RIDs, RESTORED. They were BUILT, VERIFIED AND PACKED for
+      1.1.0 and then WITHDRAWN FROM THE PACKAGE before it shipped, and this
+      comment is the record of why — so that it is never re-litigated from
+      memory, and so that a future reader understands that these two lines
+      carry history rather than being an ordinary addition.
 
-      Entering the engine from a CLR thread-pool thread runs Go's SA_ONSTACK
-      signal handlers on that thread's alternate signal stack, which is too
-      small for them; the kernel reports `.NET TP Worker overflowed
-      sigaltstack` and turns it into SIGSEGV, which the CLR surfaces as
-      `Internal CLR error (0x80131506)`. It is nondeterministic, it has no
-      consumer-side mitigation, and it crashes the host process.
+      WHY THEY WERE OUT (DW-396). Entering the engine from a CLR thread-pool
+      thread ran Go's SA_ONSTACK signal handlers on that thread's alternate
+      signal stack, which is too small for them: the CLR installs a FIXED
+      16 KiB (amd64) / 24 KiB (arm64) altstack on every thread it touches,
+      and Go under cgo ADOPTS an existing altstack rather than installing its
+      own 32 KiB. The kernel reported `.NET TP Worker overflowed sigaltstack`
+      and converted the overflow into SIGSEGV, which the CLR surfaced as
+      `Internal CLR error (0x80131506)`. It was nondeterministic, had no
+      consumer-side mitigation, and killed the host process.
 
-      IT IS NOT FIXED BY THE PINNED BUILD IMAGE. That was the first reading —
-      the AlmaLinux 8 native went 11 runs clean on CI while the runner-built
-      one crashed — and it was wrong: the same native overflowed once it was
-      run enough times. The build's glibc moves the FREQUENCY, not the
-      defect, because glibc 2.34 turned SIGSTKSZ into a runtime value.
+      IT WAS NEVER THE BUILD IMAGE. That was the first reading — the
+      AlmaLinux 8 native went 11 runs clean on CI while the runner-built one
+      crashed — and it was wrong: the same native overflowed once it was run
+      enough times. The build's glibc moves the FREQUENCY, not the defect,
+      because glibc 2.34 turned SIGSTKSZ into a runtime value.
 
-      Restoring these two lines is most of what 1.2.0 needs, once the
-      binding stops crossing the ABI on arbitrary thread-pool threads.
-      Everything else is still here and still exercised: build-native.sh's
-      linux targets, verify-linux-natives.sh, the ELF arm in
-      FolioPackageCheck below, and ci.yml's folio-dotnet-linux job.
+      WHAT CHANGED. The binding no longer crosses the ABI on arbitrary CLR
+      threads. Every crossing — folio8_free included — is routed onto a pool
+      of long-lived binding-owned engine threads whose alternate signal stacks
+      the binding enlarges with sigaltstack() before their first crossing, so
+      the stack Go adopts is one the binding sized. That is the change these
+      two lines depend on; without it, restoring them reproduces DW-396
+      exactly.
+
+      NO linux-musl-x64, AND THAT IS NOT A DEFERRAL. See the note above.
+
+      THE SOAK IS NOT THE SAME THING AS THE FIX. Restoring these items makes
+      the repository ready; it does not make the package shippable. Packing a
+      Linux RID is gated on an explicit human assertion that CAP-5's soak has
+      passed on real hardware — see FolioAssertLinuxSoak below.
+
+      -p:FolioPackPlatforms=windows DROPS THE TWO LINUX ITEMS, and it is for
+      the .NET Framework consumer harness, which runs on a Windows runner that
+      has no libfolio8_native.so to pack and is asking a Windows-only
+      question. It is NOT a release mode and NOT a way past the gate: with no
+      Linux RID there is nothing to soak, and with no Linux native in the
+      package there is nothing to ship. A release pack passes the assertion
+      instead. PackagingTests enumerates every tracked `dotnet pack` of this
+      project and holds each one to that choice.
     -->
 
     <None Include="@(FolioNative)" Pack="true" PackagePath="runtimes/%(Rid)/native/" Visible="false" />
@@ -377,6 +403,66 @@
       ]]></Code>
     </Task>
   </UsingTask>
+
+  <!--
+    PACKING A LINUX RID IS A DELIBERATE ACT, NOT A DEFAULT.
+
+    This gate is an ADDITION the withdrawal never needed, and it exists for
+    one reason: the evidence that authorises shipping Linux does not exist
+    yet. CAP-5's two hardware legs — real amd64 and real arm64, neither
+    standing in for the other, no emulation and no Rosetta — are PENDING in
+    _bmad-output/implementation-artifacts/dotnet-linux-soak.md.
+
+    Without a gate, `dotnet pack` would be one command away from producing
+    exactly the package 1.1.0 withdrew, and the reason it was withdrawn would
+    be a COMMENT rather than a REFUSAL. DW-396's own history is that a run of
+    passes was read as a clear; a comment is weaker than that.
+
+    So the opt-in is not a boolean and not a bare `true`: the person packing
+    types the CLAIM THEY ARE MAKING, word for word, at the moment they make
+    it. It is never set in this file, in a script, in a Directory.Build.props
+    or in CI — if it ever is, this gate has become a rubber stamp and should
+    be read as broken.
+
+        dotnet pack folio-dotnet/src/Folio8/Folio8.csproj -c Release \
+          -p:FolioLinuxSoakEvidence="CAP-5 soaked on real amd64 and real arm64"
+
+    The gate arms off the packed RIDs, so -p:FolioPackPlatforms=windows — the
+    Windows-only pack the .NET Framework consumer harness uses — disarms it on
+    purpose: a package with no Linux native in it has nothing to soak.
+    PackagingTests holds every half of this: that the four RIDs are packed,
+    that the gate refuses a real `dotnet pack` without the assertion, that no
+    tracked file supplies the assertion, and that every tracked `dotnet pack`
+    of this project is compatible with the gate.
+  -->
+  <Target Name="FolioAssertLinuxSoak" BeforeTargets="GenerateNuspec">
+    <ItemGroup>
+      <FolioLinuxNative Include="@(FolioNative)" Condition="$([System.String]::Copy('%(FolioNative.Rid)').StartsWith('linux'))" />
+    </ItemGroup>
+    <!--
+      THE EXPECTED VALUE IS A LITERAL, NOT A PROPERTY. It was a property once,
+      and that was a hole: MSBuild global properties override everything, so
+      `-p:FolioLinuxSoakAssertion=` with no evidence made both sides empty and
+      the condition false — the gate opened with nothing typed. CompareOrdinal
+      rather than `!=` because MSBuild's string comparison is CASE-INSENSITIVE
+      and the claim above is one a human types word for word.
+    -->
+    <Error
+      Condition="'@(FolioLinuxNative)' != '' AND $([System.String]::CompareOrdinal('$(FolioLinuxSoakEvidence)', 'CAP-5 soaked on real amd64 and real arm64')) != 0"
+      Text="folio8 pack: REFUSING to pack the Linux RIDs (@(FolioLinuxNative->'%(Rid)', ', ')) because CAP-5's soak has not been asserted. The two hardware legs are recorded PENDING in _bmad-output/implementation-artifacts/dotnet-linux-soak.md; run folio-dotnet/build/soak.sh --reproduce and then folio-dotnet/build/soak.sh --iterations 100 on REAL amd64 and on REAL arm64 separately (the runner refuses translated hosts, Rosetta included), record both legs there, and only then pack with -p:FolioLinuxSoakEvidence=&quot;CAP-5 soaked on real amd64 and real arm64&quot;. Asserting this without those legs is the false clear DW-396 already records being made twice. (A Windows-only pack — -p:FolioPackPlatforms=windows — needs no assertion, because it ships no Linux native.)" />
+    <!--
+      AND IT WILL NOT TAKE THE ASSERTION FROM THE ENVIRONMENT. MSBuild reads
+      environment variables as properties, so `export FolioLinuxSoakEvidence=…`
+      in a shell profile or a CI `env:` block would open this gate invisibly —
+      in the one place the tracked-file sweep in PackagingTests cannot look.
+      The whole design is that a human types the claim at the moment they pack,
+      so an assertion that was sitting in the environment beforehand is exactly
+      the thing being refused.
+    -->
+    <Error
+      Condition="'@(FolioLinuxNative)' != '' AND '$([System.Environment]::GetEnvironmentVariable(`FolioLinuxSoakEvidence`))' != ''"
+      Text="folio8 pack: the CAP-5 soak assertion arrived in the ENVIRONMENT (FolioLinuxSoakEvidence is exported). Unset it and pass it on the command line instead: an assertion a shell profile or a CI env block makes on your behalf is not an assertion." />
+  </Target>
 
   <Target Name="FolioCheckPackageContents" BeforeTargets="GenerateNuspec">
     <FolioPackageCheck Faces="@(FolioShippedFace)" Natives="@(FolioNative)" ParityJson="$(FolioParityJson)" />

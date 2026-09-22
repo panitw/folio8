@@ -85,8 +85,17 @@ Remove-Item -Recurse -Force $work -ErrorAction SilentlyContinue
 $packages = if ($env:NUGET_PACKAGES) { $env:NUGET_PACKAGES } else { Join-Path $HOME '.nuget/packages' }
 Remove-Item -Recurse -Force (Join-Path $packages 'folio8') -ErrorAction SilentlyContinue
 
-Write-Host '==> dotnet pack'
-& dotnet pack (Join-Path $repo 'folio-dotnet/src/Folio8/Folio8.csproj') -c Release -o $feed
+# A WINDOWS-ONLY PACK, AND THAT IS THE QUESTION THIS HARNESS ASKS. Every leg
+# below is .NET Framework or Windows-modern; this runner has no
+# libfolio8_native.so to pack, and a release pack of the Linux RIDs is gated
+# on the CAP-5 soak assertion a human types (Folio8.csproj,
+# FolioAssertLinuxSoak). -p:FolioPackPlatforms=windows drops the two Linux
+# FolioNative items, which disarms that gate the honest way -- with nothing
+# Linux in the package -- rather than by asserting evidence this harness has
+# not got. It is NOT a release pack and the entries asserted below are the
+# Windows half only; RELEASING.md carries the real one.
+Write-Host '==> dotnet pack (Windows RIDs only)'
+& dotnet pack (Join-Path $repo 'folio-dotnet/src/Folio8/Folio8.csproj') -c Release -o $feed -p:FolioPackPlatforms=windows
 if ($LASTEXITCODE -ne 0) { throw 'dotnet pack failed' }
 
 $nupkg = Get-ChildItem $feed -Filter '*.nupkg' | Select-Object -First 1

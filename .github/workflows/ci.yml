@@ -823,8 +823,11 @@ jobs:
       # harness first to show the harness can see the defect. There is no
       # repeat count, no soak and no timing assertion in this job on purpose:
       # it asks a deterministic question and answers it once. The two Linux
-      # RIDs remain unpacked (see Folio8.csproj) until that soak, and nothing
-      # here changes that.
+      # RIDs are now DECLARED in Folio8.csproj — this leg is what exercises
+      # the natives they point at — but declaring is not shipping: packing
+      # them refuses without an explicit CAP-5 soak assertion typed at the
+      # pack command (FolioAssertLinuxSoak). This job cannot and must not
+      # supply that, and nothing here changes it.
       #
       # --blame-crash AND --blame-hang, WHICH NO OTHER TEST STEP IN THIS FILE
       # NEEDS. This is the one job whose expected failure mode is the TEST

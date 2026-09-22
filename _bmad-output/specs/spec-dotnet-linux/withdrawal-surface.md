@@ -12,17 +12,25 @@ finding aid, not a contract.
 
 | Site | What it does today | After |
 | --- | --- | --- |
-| [folio-dotnet/src/Folio8/Folio8.csproj](../../../folio-dotnet/src/Folio8/Folio8.csproj) | The two `FolioNative` items for `linux-x64` / `linux-arm64` are commented out with the DW-396 reasoning | The items are live; the comment becomes the record of why they were once withdrawn |
-| [PackagingTests.cs](../../../folio-dotnet/test/Folio8.Tests/PackagingTests.cs) `BothNativesArePackedIntoTheRidLayout` | `Assert.DoesNotContain(PackedRids(), rid => rid.StartsWith("linux"))` | Asserts both Linux RIDs **are** packed, beside the two `win-` RIDs |
-| [PackagingTests.cs](../../../folio-dotnet/test/Folio8.Tests/PackagingTests.cs) `TheReadmeTellsAnInstallerWhatTheyCannotGuess` | Requires the README to contain `"Windows only"` and `"Why there is no Linux build yet"` | Requires the README to state the Linux RIDs, the glibc floor, and the musl exclusion |
+| [folio-dotnet/src/Folio8/Folio8.csproj](../../../folio-dotnet/src/Folio8/Folio8.csproj) | ~~The two `FolioNative` items for `linux-x64` / `linux-arm64` are commented out with the DW-396 reasoning~~ — **done in story 6.** The items are live; the comment is now the record of why they were once withdrawn and what changed, and a new `FolioAssertLinuxSoak` target refuses to pack a Linux RID without an explicit CAP-5 soak assertion | ✅ |
+| [PackagingTests.cs](../../../folio-dotnet/test/Folio8.Tests/PackagingTests.cs) `AllFourNativesArePackedIntoTheRidLayout` (was `BothNativesArePackedIntoTheRidLayout`) | ~~`Assert.DoesNotContain(PackedRids(), rid => rid.StartsWith("linux"))`~~ — **done in story 6.** Now `AllFourNativesArePackedIntoTheRidLayout`, holding `PackedRids()` equal to all four RIDs, with `NoMuslRidIsPacked` and the two `ThePackGate…` tests beside it | ✅ |
+| [PackagingTests.cs](../../../folio-dotnet/test/Folio8.Tests/PackagingTests.cs) `TheReadmeTellsAnInstallerWhatTheyCannotGuess` | ~~Requires the README to contain `"Windows only"` and `"Why there is no Linux build yet"`~~ — **done in story 6.** Now pins `linux-x64`, `linux-arm64`, `glibc 2.28` and `linux-musl-x64`, and `TheReadmeNoLongerClaimsTheWithdrawal` pins the absence of both old claims | ✅ |
 | [.github/workflows/ci.yml](../../../.github/workflows/ci.yml) `folio-dotnet-linux` | ~~Builds and verifies both natives; the `dotnet test` step is **removed**, with a comment naming DW-396~~ — **done in story 3.** Now a two-leg matrix, one per shipped native, each running the corpus suite on real silicon, with the withdrawal comment rewritten rather than deleted | ✅ |
+| [RELEASING.md](../../../RELEASING.md) `dotnet pack` block (~498) | ~~Packs with no soak assertion, and its listing check demands `runtimes/*` count 2 and `runtimes/linux*` count **0**~~ — **story 6 broke this and story 6 fixed it**, because the pack gate it added asserts on exactly this text. Now types `-p:FolioLinuxSoakEvidence="…"` and expects four `runtimes/` entries, two of them `linux-*`, and no musl one. The surrounding release prose is still story 7's | ✅ |
+| [run-consumers.ps1](../../../folio-dotnet/test/consumers/run-consumers.ps1) `dotnet pack` (~99) | ~~Packs with no assertion on a `windows-2022` runner that has no `libfolio8_native.so`, and throws on non-zero — so the gate would have taken down the only evidence .NET Framework consumers work~~ — **done in story 6.** Now packs `-p:FolioPackPlatforms=windows`, which drops the two Linux `FolioNative` items and disarms the gate the honest way: nothing Linux in the package, nothing to soak | ✅ |
+| [.github/workflows/ci.yml](../../../.github/workflows/ci.yml) `folio-dotnet-linux` comment (~825) | ~~"The two Linux RIDs remain unpacked (see Folio8.csproj) until that soak, and nothing here changes that" — false once the RIDs were restored~~ — **done in story 6.** Now says the RIDs are declared and the pack gate is what holds them back | ✅ |
+
+⚠ `PackagingTests.EveryTrackedPackOfThisProjectSatisfiesTheGate` enumerates
+every tracked `dotnet pack` of `Folio8.csproj` and holds each to one of the two
+compatible shapes — assert the soak, or pack Windows-only. A new pack site that
+does neither reddens rather than being found by a red CI job.
 
 ## Claims that must stop being true
 
 | Site | Claim |
 | --- | --- |
 | [docs/folio-dotnet.md:35](../../../docs/folio-dotnet.md) + [docs/folio-dotnet.html:370](../../../docs/folio-dotnet.html) | "**Windows only, on x86 and on x64.** … There are no Linux, no macOS and no ARM64 native binaries here" — `.md` is source of truth, `.html` is the published page, and the two must agree |
-| [folio-dotnet/README.md:118](../../../folio-dotnet/README.md) | "**Windows only**, on **x86** and **x64**", and the section *"Why there is no Linux build yet"* |
+| ~~[folio-dotnet/README.md:118](../../../folio-dotnet/README.md)~~ — **done in story 6** (the guard above asserts on this text, so it changed with it) | ~~"**Windows only**, on **x86** and **x64**", and the section *"Why there is no Linux build yet"*~~ ✅ |
 | [Folio8.csproj](../../../folio-dotnet/src/Folio8/Folio8.csproj) `<Description>` | "…from .NET Framework 4.6 through modern .NET, **on Windows x86 and x64**" — the NuGet listing text |
 | [RELEASING.md:197](../../../RELEASING.md), and the package-contents section at ~line 311 | "folio-dotnet stays Windows-only"; "**NO LINUX RID SHIPS, AND IT IS WITHDRAWN RATHER THAN UNATTEMPTED**"; the prerequisites table marking Docker as "only for the Linux natives, which 1.1.0 does not ship" |
 | [DW-396](../../implementation-artifacts/deferred-work.md) | Status OPEN. Closes with the mechanism, the fix, and the soak evidence recorded |

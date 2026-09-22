@@ -495,21 +495,33 @@ matches the machine the procedure requires.
 # The version is READ from the packed file, never retyped: Folio8.csproj's
 # <Version> is the one place it is declared, and the consumer suite takes it
 # from the packed file name for the same reason.
-dotnet pack folio-dotnet\src\Folio8\Folio8.csproj -c Release -o .\artifacts\nupkg
+# THE SOAK ASSERTION IS TYPED HERE, BY YOU, AND IT IS A CLAIM. Packing the two
+# Linux RIDs refuses without it (Folio8.csproj, FolioAssertLinuxSoak): CAP-5's
+# two hardware legs -- real amd64 and real arm64, no emulation, Rosetta
+# included -- must both be recorded in
+# _bmad-output/implementation-artifacts/dotnet-linux-soak.md before this line
+# is true. It is not a flag and it must not be exported into the environment;
+# the gate refuses an assertion that arrives that way, because the point is
+# that a person types it at the moment they pack.
+dotnet pack folio-dotnet\src\Folio8\Folio8.csproj -c Release -o .\artifacts\nupkg `
+  -p:FolioLinuxSoakEvidence="CAP-5 soaked on real amd64 and real arm64"
 $pkg = (Get-ChildItem .\artifacts\nupkg\folio8.*.nupkg).FullName
 $v   = [IO.Path]::GetFileNameWithoutExtension($pkg) -replace '^folio8\.', ''
 
-# LAST LOOK AT EXACTLY WHAT WOULD BE SENT. Expect TWO runtimes/ entries, both
-# win-*, and ZERO runtimes/linux* — the Linux RIDs are withdrawn (DW-396), and
-# this listing is where a mistaken re-add would be caught before it ships.
+# LAST LOOK AT EXACTLY WHAT WOULD BE SENT. Expect FOUR runtimes/ entries — two
+# win-* and two linux-* — and this listing is where a half-restored package
+# would be caught before it ships. It read the other way through 1.1.0, when
+# the Linux RIDs were withdrawn (DW-396); they are restored, and the soak
+# assertion above is what now stands between them and a consumer.
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zip = [IO.Compression.ZipFile]::OpenRead($pkg)
 try {
   $zip.Entries | ForEach-Object { "{0,12}  {1}" -f $_.Length, $_.FullName }
   $rids  = @($zip.Entries.FullName -like 'runtimes/*')
   $linux = @($zip.Entries.FullName -like 'runtimes/linux*')
-  if ($rids.Count -ne 2 -or $linux.Count -ne 0) {
-    throw "expected exactly two win-* runtimes entries and no linux ones; got: $($rids -join ', ')"
+  $musl  = @($zip.Entries.FullName -like 'runtimes/*musl*')
+  if ($rids.Count -ne 4 -or $linux.Count -ne 2 -or $musl.Count -ne 0) {
+    throw "expected four runtimes entries — win-x64, win-x86, linux-x64, linux-arm64 — and no musl one; got: $($rids -join ', ')"
   }
 } finally { $zip.Dispose() }
 
