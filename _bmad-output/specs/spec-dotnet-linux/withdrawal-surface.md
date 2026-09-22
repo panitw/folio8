@@ -15,7 +15,7 @@ finding aid, not a contract.
 | [folio-dotnet/src/Folio8/Folio8.csproj](../../../folio-dotnet/src/Folio8/Folio8.csproj) | The two `FolioNative` items for `linux-x64` / `linux-arm64` are commented out with the DW-396 reasoning | The items are live; the comment becomes the record of why they were once withdrawn |
 | [PackagingTests.cs](../../../folio-dotnet/test/Folio8.Tests/PackagingTests.cs) `BothNativesArePackedIntoTheRidLayout` | `Assert.DoesNotContain(PackedRids(), rid => rid.StartsWith("linux"))` | Asserts both Linux RIDs **are** packed, beside the two `win-` RIDs |
 | [PackagingTests.cs](../../../folio-dotnet/test/Folio8.Tests/PackagingTests.cs) `TheReadmeTellsAnInstallerWhatTheyCannotGuess` | Requires the README to contain `"Windows only"` and `"Why there is no Linux build yet"` | Requires the README to state the Linux RIDs, the glibc floor, and the musl exclusion |
-| [.github/workflows/ci.yml](../../../.github/workflows/ci.yml) `folio-dotnet-linux` (~line 709) | Builds and verifies both natives; the `dotnet test` step is **removed**, with a comment naming DW-396 | The suite runs again, and is a gate |
+| [.github/workflows/ci.yml](../../../.github/workflows/ci.yml) `folio-dotnet-linux` | ~~Builds and verifies both natives; the `dotnet test` step is **removed**, with a comment naming DW-396~~ — **done in story 3.** Now a two-leg matrix, one per shipped native, each running the corpus suite on real silicon, with the withdrawal comment rewritten rather than deleted | ✅ |
 
 ## Claims that must stop being true
 

@@ -317,7 +317,9 @@ first reading and it was wrong; the glibc the native is built against moves
 how OFTEN it fires, not whether. `PackagingTests` reddens if a `linux` RID is
 added back, and the tooling (`build-native.sh`'s linux targets,
 `verify-linux-natives.sh`, the ELF arm in `FolioPackageCheck`, the
-`folio-dotnet-linux` CI job) all remain in place for 1.2.0.
+`folio-dotnet-linux` CI job) all remain in place for 1.2.0 — and that CI job
+now runs the corpus suite against both shipped natives, one leg per
+architecture, which proves byte identity on Linux and does not clear DW-396.
 
 It declares **no dependencies**, so `dotnet add package folio8` on a
 machine with no Go and no C compiler produces a project that renders — from
@@ -458,7 +460,8 @@ a standalone i686 mingw-w64 build unpacked there resolves with no code change.
    - **Linux: nothing.** The package ships no Linux RID (DW-396), and
      `Folio8.csproj` lists no Linux `FolioNative`, so the pack neither wants
      nor checks one. Do not build them for a release; `folio-dotnet-linux`
-     builds and verifies them in CI, which is where they belong until 1.2.0.
+     builds them, verifies them and runs the corpus suite against each in CI,
+     which is where they belong until 1.2.0.
 
    Both Windows natives must be present, or the pack refuses and names what is
    missing.
@@ -468,9 +471,11 @@ a standalone i686 mingw-w64 build unpacked there resolves with no code change.
    shapes on both target families, the corpus hash, and each forced CAP-11
    failure — so nothing below re-checks the package's *behaviour* by hand.
    `ci.yml`'s `folio-dotnet-linux` job builds both ELF natives in the pinned
-   image and asserts their machine type and glibc floor. It deliberately does
-   NOT run the suite against them — DW-396 — and nothing it produces is
-   packed.
+   image, asserts their machine type and glibc floor, and then runs the suite
+   against each of them on its own architecture — so the corpus hashes are
+   proved on the shipped Linux bytes too. That is byte identity, **not** a
+   DW-396 clearance: the crash class is cleared by the soak, not by a green
+   CI leg, and nothing this job produces is packed.
 3. `ci.yml` is green on that exact commit.
 
 ### The commands

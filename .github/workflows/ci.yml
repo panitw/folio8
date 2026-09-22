@@ -644,7 +644,7 @@ jobs:
   # folio-go-known-red is a job: the two ask different questions and a reader
   # is entitled to both answers on a run where one is red. The Windows job
   # also carries .NET Framework, mingw and the x86 legs, none of which exist
-  # here, so a matrix would be mostly `if:`.
+  # here, so a matrix over THAT would be mostly `if:`.
   #
   # WHAT ONLY THIS JOB CAN SEE: that the SHIPPED ELF natives load and render.
   # The managed assembly is the same netstandard2.0 build either way, so
@@ -658,27 +658,75 @@ jobs:
   # installs. Either can break while the other stays green.
   #
   # The natives are built in the PINNED CONTAINER build-native.sh uses, not
-  # against the runner's own glibc, because the runner is Ubuntu 24.04
+  # against the runner's own glibc, because the runners are Ubuntu 24.04
   # (glibc 2.39) and a native built there would demand GLIBC_2.39 from every
   # consumer. Building them here the same way the release does is the only
-  # way this job tests what ships. linux-arm64 needs binfmt/qemu to build
-  # under emulation; it is built and machine-checked, not executed.
+  # way this job tests what ships.
+  #
+  # TWO LEGS, ONE PER SHIPPED NATIVE, EACH ON REAL SILICON. The x64 leg runs
+  # on ubuntu-24.04, the arm64 leg on ubuntu-24.04-arm — a GitHub-hosted
+  # arm64 runner this repository already uses in matrix.yml, so it is
+  # available rather than hypothetical. Emulation WOULD have been admissible
+  # for the corpus question (rendering is deterministic CPU work, so a
+  # SHA-256 is a SHA-256 whatever executed it), and qemu remains the
+  # documented fallback if that runner class ever goes away. Real silicon is
+  # chosen because it is faster, and because what this job measures is how
+  # the SHIPPED aarch64 native behaves on an aarch64 CPU: under qemu every
+  # instruction, every libc call and every signal delivery is the emulator's
+  # rendition of that, which is the trap DW-396 fell into once already. The
+  # engine-thread assertions are NOT the reason — EngineThreads.SignalStackBytes
+  # is a fixed 1 MiB constant and EngineThreadTests asserts equality with it,
+  # so that reading is architecture-independent and would look the same
+  # either way.
+  #
+  # Each leg still BUILDS BOTH natives, under qemu for the one it is not:
+  # verify-linux-natives.sh checks the pair, and the provenance of the pair
+  # is what the check is for. Only the leg's OWN native is ever executed, and
+  # the staging step below asserts that rather than assuming it.
+  #
+  # fail-fast: false. An x64-only byte difference and an arm64-only one are
+  # different defects, and cancelling the survivor would report whichever
+  # raced first as though it were the whole story.
   #
   # No continue-on-error. Same reason as everywhere else in this file.
-  folio-dotnet-linux:
-    runs-on: ubuntu-24.04
-    timeout-minutes: 45
+  folio-dotnet-linux-matrix:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: linux-x64
+            runner: ubuntu-24.04
+            # The OTHER architecture: the native this leg builds but never
+            # executes, and the only thing qemu is installed for. Named in
+            # docker's platform vocabulary on both legs, because that is what
+            # it is passed to.
+            emulated: linux/arm64
+          - rid: linux-arm64
+            runner: ubuntu-24.04-arm
+            emulated: linux/amd64
+    name: folio-dotnet-linux (${{ matrix.rid }})
+    runs-on: ${{ matrix.runner }}
+    # RAISED FROM 45, WHICH WAS THE BUILD-AND-VERIFY-ONLY NUMBER. Each leg now
+    # also restores, builds and runs the whole suite, and each builds the
+    # other architecture's native under qemu rather than natively. Measured
+    # datapoint: the mirror of that build — the linux-x64 native on an arm64
+    # host — took 1m03s under Rosetta, and qemu on a runner is slower than
+    # Rosetta, so the emulated build is the term that can grow. 60 leaves
+    # room for that without making a genuinely hung leg cost an hour.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ env.DOTNET_VERSION }}
-      # qemu, so the linux-arm64 leg can be built on an x86 runner. The
-      # linux-x64 leg needs none of this.
+      # binfmt/qemu, so the native this leg does NOT run can still be built
+      # here and put in front of verify-linux-natives.sh. The leg's own
+      # native builds natively and needs none of this.
       - uses: docker/setup-qemu-action@v3
         with:
-          platforms: arm64
+          platforms: ${{ matrix.emulated }}
       - name: build the linux-x64 and linux-arm64 natives (pinned image)
+        id: build
         run: ./folio-dotnet/build/build-native.sh linux-x64 linux-arm64
       # A build that "succeeded" without producing both artifacts is not a
       # pass, and the GLIBC FLOOR is the thing a consumer feels and no other
@@ -690,37 +738,164 @@ jobs:
       # reddened this job on two perfectly correct natives. An inline check
       # can only be tested by pushing, which is how a wrong check survives to
       # fail a release; verify-linux-natives.sh runs anywhere readelf does.
+      #
+      # AHEAD OF THE TESTS, DELIBERATELY. It is a provenance check on the
+      # artefact: a suite that passes against a native from the wrong image,
+      # or of the wrong machine, proves the wrong thing. A native that fails
+      # it fails this job before a single test executes.
       - name: assert both natives exist, are the right machine, and keep the glibc floor
+        id: verify
         run: ./folio-dotnet/build/verify-linux-natives.sh
       # THE TESTS RUN AGAINST THE SHIPPED NATIVE, NOT A HOST BUILD. The test
       # project stages build/native/host/libfolio8_native.so on non-Windows,
       # and `build-native.sh host` would fill that with a library built
       # against the runner's own glibc 2.39 — which loads here and proves
-      # nothing about the artifact that ships. Putting the linux-x64 native
-      # there instead means every render assertion below is made against the
-      # exact bytes a consumer gets. The runner is x86-64 and glibc 2.39
-      # satisfies a 2.28-floor library, so it simply loads.
-      - name: stage the shipped linux-x64 native as the test native
+      # nothing about the artifact that ships. Putting THIS LEG'S shipped
+      # native there instead means every render assertion below is made
+      # against the exact bytes a consumer gets, on the architecture that
+      # consumer is running. Each runner's glibc 2.39 satisfies a 2.28-floor
+      # library, so it simply loads.
+      #
+      # A LEG THAT STAGED THE OTHER ARCHITECTURE'S NATIVE, OR RAN ON THE
+      # OTHER ARCHITECTURE'S RUNNER, WOULD BE WORSE THAN NO LEG AT ALL — it
+      # would report byte identity for a native it never executed, or execute
+      # one under an emulation nobody asked for. Both are asserted here, not
+      # printed for a human to notice: the staged ELF's machine must be this
+      # RID's, and the runner's own machine must match it too.
+      - name: stage the shipped ${{ matrix.rid }} native as the test native
+        id: stage
         run: |
           set -euo pipefail
+          case "${{ matrix.rid }}" in
+            linux-x64)   elf_machine='x86-64'  ; runner_machine='x86_64'  ;;
+            linux-arm64) elf_machine='aarch64' ; runner_machine='aarch64' ;;
+            *) echo "unknown rid ${{ matrix.rid }}" >&2; exit 1 ;;
+          esac
           mkdir -p folio-dotnet/build/native/host
-          cp folio-dotnet/build/native/linux-x64/libfolio8_native.so \
+          cp folio-dotnet/build/native/${{ matrix.rid }}/libfolio8_native.so \
              folio-dotnet/build/native/host/libfolio8_native.so
-      # ⚠ THE SUITE IS NOT RUN HERE, AND THAT IS THE POINT OF DW-396.
+          staged=folio-dotnet/build/native/host/libfolio8_native.so
+          sha256sum "$staged"
+          if ! readelf -h "$staged" | grep -i 'Machine:' | grep -qi -- "$elf_machine"; then
+            echo "the staged native is not $elf_machine, so this leg would render through the wrong architecture's bytes:" >&2
+            readelf -h "$staged" | grep -i 'Machine:' >&2
+            exit 1
+          fi
+          if [ "$(uname -m)" != "$runner_machine" ]; then
+            echo "this is the ${{ matrix.rid }} leg but the runner is $(uname -m), not $runner_machine — the native would run emulated, which this job does not claim" >&2
+            exit 1
+          fi
+          echo "staged the $elf_machine native on a $(uname -m) runner"
+      # ⚠ THE SUITE RUNS HERE AGAIN — AND A GREEN RUN OF IT DOES NOT CLOSE
+      # DW-396. Both halves of that sentence matter; this comment replaces
+      # the one that explained why the step was absent.
       #
-      # It used to be, and it passed — 154/154, then 0 crashes in a ten-run
-      # tally. Both were true and neither was evidence of much: entering the
-      # engine from a CLR thread-pool thread overflows that thread's
-      # sigaltstack and kills the process, and a run of passes cannot clear a
-      # marginal-size overflow. Run enough times on a real amd64 box, the
-      # SHIPPED native overflows too.
+      # It ran here once and passed — 154/154, then 0 crashes in a ten-run
+      # tally — and was then REMOVED, because both facts were true and
+      # neither was evidence: entering the engine from a CLR thread-pool
+      # thread overflows that thread's alternate signal stack and kills the
+      # process, and a run of passes cannot clear a marginal-size overflow.
+      # Run enough times on a real amd64 box, the SHIPPED native overflowed
+      # too. That history is why the step needs a reason to be trusted rather
+      # than a green square.
       #
-      # So the two Linux RIDs are built and checked here and are NOT packed
-      # (see Folio8.csproj), and this job asserts what is still deterministic
-      # and still worth guarding: that both natives build in the pinned image,
-      # are the architecture they claim, and keep their glibc floor. Restoring
-      # the `dotnet test` step is part of what closes DW-396 — when it can pass
-      # for a reason rather than by luck.
+      # WHAT CHANGED: the binding no longer enters the engine on CLR
+      # thread-pool threads at all. Every crossing, folio8_free included,
+      # goes through a binding-owned engine thread whose alternate signal
+      # stack the binding enlarges with sigaltstack() before that thread's
+      # first crossing — and EngineThreadTests takes that reading on the
+      # thread that actually crosses, so the property is asserted rather than
+      # inferred from an uneventful run. The reason the step was withdrawn
+      # was removed; that, not the passing, is why it is back.
+      #
+      # WHAT IT PROVES: byte identity. The whole fixtures/ corpus rendered
+      # through the shipped native of this leg's architecture, every SHA-256
+      # equal to its committed hash, diagnostics matched to Go's by code,
+      # severity and message. The hashes are the same on both legs because
+      # byte identity is architecture-independent by design — that is the
+      # property, and a difference on either leg is a defect in the engine,
+      # not in the leg.
+      #
+      # WHAT IT DOES NOT PROVE, and must never be cited as proving: that
+      # DW-396 is closed. That takes the soak — on real hardware, separately
+      # per architecture, at a run count materially beyond the 11 that once
+      # produced a false clear, with the pre-fix build reproduced in the same
+      # harness first to show the harness can see the defect. There is no
+      # repeat count, no soak and no timing assertion in this job on purpose:
+      # it asks a deterministic question and answers it once. The two Linux
+      # RIDs remain unpacked (see Folio8.csproj) until that soak, and nothing
+      # here changes that.
+      #
+      # --blame-crash AND --blame-hang, WHICH NO OTHER TEST STEP IN THIS FILE
+      # NEEDS. This is the one job whose expected failure mode is the TEST
+      # HOST DYING rather than an assertion failing: the defect class here
+      # kills the process from a signal handler, and a dead host writes no
+      # .trx at all — so without blame a crash arrives as an empty red step
+      # and a missing artifact. With it, the run leaves a dump and the
+      # sequence file naming the test that was executing.
+      - name: the whole corpus through the shipped ${{ matrix.rid }} native (hashes and Go diagnostics)
+        id: suite
+        run: >
+          dotnet test folio-dotnet/test/Folio8.Tests/Folio8.Tests.csproj -c Release
+          --blame-crash --blame-hang --blame-hang-timeout 15m
+          --logger "trx;LogFileName=folio-dotnet-${{ matrix.rid }}.trx"
+          --results-directory folio-dotnet/TestResults
+      # A red check should say WHICH LEG and WHICH PHASE without anyone
+      # opening a log — a question this job's two legs newly created, since
+      # "folio-dotnet-linux failed" no longer identifies an architecture.
+      # One step rather than three: the phases are mutually exclusive, and
+      # the first failure is the only one that ran.
+      #
+      # It states what failed and where to look, and NOT why. A suite failure
+      # here can be a corpus difference or the test host dying mid-render,
+      # and this step cannot tell them apart — claiming either would be the
+      # same species of unearned certainty the comment above is about.
+      - name: name the leg, the architecture and the phase that failed
+        if: failure()
+        run: |
+          set -uo pipefail
+          leg="${{ matrix.rid }} on ${{ matrix.runner }} ($(uname -m))"
+          if [ "${{ steps.build.outcome }}" = failure ]; then
+            echo "::error title=folio-dotnet-linux ${{ matrix.rid }}: build::building the shipped natives in the pinned AlmaLinux 8 image failed — $leg. Both RIDs are built on every leg and ${{ matrix.emulated }} is built under qemu here, so an emulation failure and a real build failure both land in this step. No native was verified and no test ran."
+          elif [ "${{ steps.verify.outcome }}" = failure ]; then
+            echo "::error title=folio-dotnet-linux ${{ matrix.rid }}: provenance::verify-linux-natives.sh rejected a native — $leg. That is a missing file, the wrong ELF machine, or a glibc floor above 2.28, which means it did not come out of the pinned image. It fails BEFORE the suite, deliberately: no test ran."
+          elif [ "${{ steps.stage.outcome }}" = failure ]; then
+            echo "::error title=folio-dotnet-linux ${{ matrix.rid }}: staging::the native staged as the test native was not this leg's architecture, or this leg is not on the runner it claims — $leg. No test ran."
+          elif [ "${{ steps.suite.outcome }}" = failure ]; then
+            echo "::error title=folio-dotnet-linux ${{ matrix.rid }}: suite::the suite failed against the SHIPPED ${{ matrix.rid }} native at folio-dotnet/build/native/${{ matrix.rid }}/libfolio8_native.so — $leg. Two different failures reach here and this step cannot tell them apart: read the .trx in the folio-dotnet-${{ matrix.rid }}-results artifact for an assertion failure (a corpus hash or a diagnostic), and if there is a crash dump or a Sequence.xml beside it instead, the test host died rather than a test failing."
+          fi
+      - uses: actions/upload-artifact@v4
+        # Whenever the suite ran at all — an empty `outcome` means it never
+        # did, and `if-no-files-found: error` would otherwise turn an earlier
+        # build failure into a second, misleading red step. The whole results
+        # directory, not just *.trx: a crashed host leaves a dump and a
+        # Sequence.xml and no .trx, which is exactly the run worth keeping.
+        if: always() && steps.suite.outcome != ''
+        with:
+          name: folio-dotnet-${{ matrix.rid }}-results
+          path: folio-dotnet/TestResults/
+          retention-days: 7
+          if-no-files-found: error
+
+  # THE FAN-IN, AND IT KEEPS THE NAME, for the reason folio-js's fan-in above
+  # gives: splitting folio-dotnet-linux into legs renamed its checks to
+  # "folio-dotnet-linux (<rid>)", and a branch protection requiring the check
+  # `folio-dotnet-linux` would then wait forever on a check that no longer
+  # exists — a required gate that can never go green, or worse, one quietly
+  # dropped. RELEASING.md's release gate names this job too. This job is that
+  # name, and it passes only if every leg did.
+  folio-dotnet-linux:
+    needs: folio-dotnet-linux-matrix
+    # always(), so a failed matrix reaches the explicit check below and
+    # reports as a folio-dotnet-linux failure rather than as a skip.
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: every matrix leg passed
+        run: |
+          echo "folio-dotnet-linux-matrix result: ${{ needs.folio-dotnet-linux-matrix.result }}"
+          test "${{ needs.folio-dotnet-linux-matrix.result }}" = "success"
 
   # No continue-on-error. Same reason as everywhere else in this file.
   folio-dotnet:
