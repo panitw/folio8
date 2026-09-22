@@ -9101,6 +9101,38 @@ the browser and the native binary agree on a human-authored document — so roug
 that guarantee still goes unchecked. Its redness also cannot be read as a signal about the change
 under test, which is the practical cost while it stands.
 
+#### 2026-09-22: the render SUCCEEDS and never reaches the application
+
+Two theories were tested and both are dead, which is worth more than the guesses they replace.
+
+**Not a tight budget.** The admission assertion allowed 60 s where the designer allows its face
+fetch 120 s (`FACE_FETCH_TIMEOUT_MS`), so a fetch landing between the two failed a test while
+staying inside the application's contract. That contradiction was real and is fixed — the budget is
+now read from the constant that declares it — but it was not the cause: admission MEASURES 223 ms
+and 182 ms locally, and the raised 150 s budget was then exhausted in CI too.
+
+**Not a slow fetch.** From the CI trace's own network log, the ~10 MiB CJK asset returned `200` in
+**38 ms** and **205 ms**. It is not the network.
+
+**What the failure actually is.** The worker posts `render:error` -> `install-face:ok` ->
+`render:ok` — it finishes — and the page snapshot taken at the timeout shows the application still
+at `no render yet`, `Rendering local PDF`, `No local render has produced a document yet`, with the
+PDF viewer section absent entirely (so `preview` is falsy, not stale and not stand-in). **A render
+that succeeded never reached the application.** The promise neither resolved nor rejected.
+
+That makes this a USER-FACING HANG, not a test defect: a document needing a deferred face can leave
+the designer dead on a preview that the engine already rendered.
+
+**Where to start.** `#settle`'s `if (this.#abandoned.delete(message.requestId)) return`
+(`engine-client.ts`) is the only branch that drops a response without settling its promise, and it
+is reachable if the render's `AbortSignal` fires during the recovery `await`. Named as the first
+candidate, NOT as a conclusion — the last two conclusions in this entry were both wrong, and both
+were beaten by measuring.
+
+**Also seen, unexplained:** the CJK asset produced TWO request events in the failing run, one
+service-worker-mediated and one from the page. This spec asserts it crosses the wire exactly once,
+and that assertion sits after the admission wait, so it never runs.
+
 ---
 
 ### DW-209 — `parseUTCOffsetMinutes` admits a signed hour or minute field, and it is recorded rather than repaired
@@ -14087,3 +14119,44 @@ name that attributes it to Story 6.7, and the audit trail for 6.7 quietly descri
 - source_spec: `_bmad-output/implementation-artifacts/spec-google-analytics.md`
   summary: Guard the head-injection invariant at the built artifact, not only at the source page.
   evidence: `src/index-head-injection.test.ts` proves `index.html` offers one injection site and leaks no text, and explicitly disclaims any statement about `dist/`. A Vite plugin emitting a second head, or a future generator change, would still ship a blank or text-leaking page with every gate green. The fix belongs in `verify-offline-release.mjs` (strip comments from `dist/index.html`, require the module script and bootstrap trio to survive), which this spec forbade changing.
+
+---
+
+### DW-397 — a release's identity does not cover asset TIERS, so changing what the first load blocks on is invisible to every identity check
+
+- **Found by:** the 2026-09-22 starter-tier fix, by comparing the deployed manifest before and after.
+- **Owner:** unassigned. **Severity:** MEDIUM. **Status:** OPEN
+
+**Measured, not inferred.** Moving `/assets/starter.<hash>.folio` from `deferred` to `core` changed
+the core tier from 30 assets to 31 and changed the emitted service worker's bytes — and left
+`id`, `pageId` and `workerRevision` **byte-identical** across the deploy:
+
+| field | before | after |
+|---|---|---|
+| `id` | `e36cb087b7e07215…` | `e36cb087b7e07215…` |
+| `pageId` | `e36cb087b7e07215…` | `e36cb087b7e07215…` |
+| `workerRevision` | `98c9d3dae9143147…` | `98c9d3dae9143147…` |
+| core assets | 30 | **31** |
+
+**Why.** `canonicalAssetRows` maps each asset to `` `${asset.url}:${asset.sha256}` `` and nothing
+else, so `releaseIdentity` and `pageIdentity` cannot see a tier. `workerRevision` is
+`sha256(offline-service-worker-template.mjs)` — the TEMPLATE, not the worker emitted from it, which
+embeds the manifest and therefore the tiers.
+
+**What still works, and why this is not an outage.** A browser installs a service worker on script
+BYTE difference, independently of any of these fields, and install then precaches the core tier —
+so the 2026-09-22 fix does reach users. The cache is named `folio8-release-<id>`, so an unchanged
+id means the new worker reuses the existing cache rather than replacing it, and precaches the newly
+core asset into it.
+
+**What is wrong anyway.** `workerRevision` names a worker that is not the worker that shipped, and
+two releases that block on different sets are indistinguishable by identity. Anything that decides
+"is this a new release?" from these fields — update prompts, cache replacement, the page's own
+`expectedPageId` — is reasoning from a value that did not move when the release's blocking
+behaviour did. The count pins exist precisely so a change to the blocking set is a decision rather
+than a silent drift; the identity is the one place that drift is still silent.
+
+**What discharges it.** Either `tier` added to `canonicalAssetRows` (which re-hashes every release
+once — a one-time churn, and the pins would need re-measuring), or `workerRevision` computed over
+the EMITTED worker rather than its template, which covers tiers because the manifest is embedded in
+it. The second is the smaller change and fixes the field whose name is currently a false claim.
