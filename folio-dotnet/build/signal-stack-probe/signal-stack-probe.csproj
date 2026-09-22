@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The DW-396 signal-stack probe: a DEVELOPER DIAGNOSTIC, never a package
+    asset. It is deliberately NOT bound by the folio8 package's
+    netstandard2.0 / net46 / LangVersion 7.3 floor — nothing here ships, and
+    the probe wants function pointers and UnmanagedCallersOnly to create a
+    raw pthread.
+
+    NO PackageReference, EVER — not the package's rule, just the truth: the
+    probe needs nothing but libc, and a restore that reaches the network is a
+    restore that fails on the owner's WSL2 box at the moment the measurement
+    is wanted.
+
+    net8.0 IS A FLOOR, NOT A PREFERENCE. The spike read the same 24576 on
+    .NET 6, 8 and 9, so the TFM is not a variable of the measurement; net8.0
+    is simply the oldest SDK image the wrapper is willing to pull. RollForward
+    is LatestMajor so the one binary also runs on whatever newer runtime a
+    host happens to have — which is how the self-check mode runs on a developer
+    machine that only carries .NET 10.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <Nullable>disable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AssemblyName>signal-stack-probe</AssemblyName>
+    <RootNamespace>SignalStackProbe</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <RollForward>LatestMajor</RollForward>
+    <ImplicitUsings>disable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>

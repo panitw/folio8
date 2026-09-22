@@ -170,9 +170,14 @@ __pycache__/
 obj/
 *.user
 TestResults/
-# folio-dotnet/build/ holds the two BUILD SCRIPTS, not build output, so the
-# generic `build/` rule above (line 28, a Node convention) must not swallow
-# them. Only the artifacts they produce are ignored, below.
+# folio-dotnet/build/ holds AUTHORED DEVELOPER TOOLING, not build output, so
+# the generic `build/` rule above (line 28, a Node convention) must not
+# swallow it. It is no longer just the two build scripts: `folio-dotnet.targets`
+# ships inside the NuGet package, and `signal-stack-probe/` is a C# console
+# project (SPEC-dotnet-linux story 1's DW-396 diagnostic) whose sources live in
+# a SUBDIRECTORY. The directory negation below re-includes that subdirectory's
+# contents too, and the `obj/` and `bin/` rules still catch its build output at
+# any depth -- so only the artifacts this directory PRODUCES are ignored, below.
 !/folio-dotnet/build/
 !/folio-dotnet/build/*.sh
 !/folio-dotnet/build/*.ps1

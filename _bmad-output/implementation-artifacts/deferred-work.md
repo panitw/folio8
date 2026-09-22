@@ -7185,6 +7185,86 @@ behaviour.
 **This entry is no longer "nothing explains it".** It is a specified bug with a known mechanism, a
 known blast radius, and a named reason it is not yet fixed.
 
+#### 2026-09-22, SPEC-dotnet-linux story 1: the probe is now a repo diagnostic, and every row states its provenance
+
+The reading this entry's mechanism rests on — a **fixed-size** CLR alternate signal stack against Go's
+32 KiB `gsignal` stack — was taken by a throwaway probe in a scratch directory. It is now
+`folio-dotnet/build/signal-stack-probe/`, run by `folio-dotnet/build/probe-signal-stack.sh`:
+
+```
+./probe-signal-stack.sh              # this host (Linux only)
+./probe-signal-stack.sh amd64        # linux/amd64 in a container
+./probe-signal-stack.sh arm64        # linux/arm64 in a container
+./probe-signal-stack.sh self-check   # row formatting only; any OS
+```
+
+**It is a diagnostic, not a test.** It asserts nothing about **what the numbers should be**, and is
+wired into no CI job: a check that failed a build would turn "the CLR's altstack is 16 KiB here" into
+policy, when what a reader needs is the number and where it came from. It does exit non-zero when a
+reading it attempted **failed to be taken** — that is a report about the run, not a verdict on the
+measurement. It reads `sigaltstack(NULL, &old)` on six thread
+kinds, prints **both** `sysconf(_SC_SIGSTKSZ)` and `_SC_MINSIGSTKSZ` beside them — the finding is
+that the two disagree and the CLR's size is a constant that tracks neither — and then enlarges the
+altstack on one thread to show the swap holds and the runtime survives it.
+
+**EVERY ROW CARRIES A PROVENANCE TAG THE PROBE DERIVED ITSELF, and that is the load-bearing part.**
+This entry has twice recorded a tally taken on a host that was not what it looked like. The probe
+does not take the operator's word for the architecture: it compares `uname`'s machine against its own
+`ProcessArchitecture`, reads `/proc/cpuinfo`'s `vendor_id`, and looks for the Rosetta marker and for a
+`binfmt_misc` interpreter registered for its *own* architecture, **and that derivation is a pure
+function over those four readings, exercised by `--self-check`** rather than trusted. **`uname` alone is
+not enough** —
+measured this run: a Docker Desktop `linux/amd64` container on Apple Silicon reports `x86_64` from
+`uname`, mounts no `/run/rosetta`, and has an empty `binfmt_misc`. The signal that survives is
+`vendor_id : VirtualApple`, where real amd64 silicon says `GenuineIntel` or `AuthenticAMD`.
+
+**Legs actually run, 2026-09-22, .NET 8.0.31 / Debian 12 / glibc 2.36 in `mcr.microsoft.com/dotnet/sdk:8.0`:**
+
+| Leg | Provenance, as the probe determined it | `sysconf(_SC_SIGSTKSZ)` | `_SC_MINSIGSTKSZ` | altstack, all six thread kinds |
+|---|---|---|---|---|
+| arm64, container on Apple Silicon | **NATIVE** (aarch64 kernel, aarch64 process, `CPU implementer 0x61`) | 20480 | 4720 | **24576** (24 KiB) |
+| amd64, container on Apple Silicon | **TRANSLATED — Rosetta** (`vendor_id VirtualApple`) | 8192 | 1348 | **16384** (16 KiB) |
+
+⚠ **The amd64 row is NOT admissible as evidence about real amd64**, and is recorded here only because
+a translated row that is *labelled* is worth more than no row. Under this spec's own ruling emulation
+is not evidence, Rosetta included. Its `sysconf` figure in particular is the translator's answer, not
+the silicon's — on a real amd64 with AVX-512 the kernel's signal frame is much larger, which is why
+glibc 2.34 made `SIGSTKSZ` a runtime value at all.
+
+The six thread kinds read **identically within each leg** — main, `.NET TP Worker`, `new Thread()`,
+`new Thread(16 MiB)`, a thread alive 50 ms, and a raw `pthread_create` thread the CLR attached. That
+re-confirms what the spike found: **thread origin and managed stack size are both irrelevant**, so
+"create our own thread" fixes nothing on its own. On both legs `sigaltstack(set 1024 KiB)` returned 0,
+the reading afterwards showed 1048576, and a forced `NullReferenceException` and a full blocking GC
+both still worked on the swapped thread — the CLR's own SIGSEGV handling is not deprived by being
+given *more* room.
+
+**PENDING — the owner's confirmation runs, 2026-09-23, and they are what closes this question:**
+
+| Leg | What is outstanding | Where |
+|---|---|---|
+| **real amd64** | Confirm **16384**, and capture **both** `sysconf(_SC_SIGSTKSZ)` and `sysconf(_SC_MINSIGSTKSZ)` on real silicon — the probe prints both. `_SC_SIGSTKSZ` is glibc's **recommended** size and `_SC_MINSIGSTKSZ` its **minimum**, and the two are far apart (8192 against 1348 on the Rosetta leg), so which one 16384 falls below decides whether the CLR is merely under glibc's advice or under its floor. | the WSL2 box that first reproduced the overflow |
+| **native arm64** | Re-take the 24576 row outside a Docker Desktop VM, so the arm64 figure rests on a host rather than on a hypervisor. | owner's Linux arm64 host |
+
+Neither blocks stories 2–6: the fix — enlarging the altstack explicitly on long-lived binding-owned
+threads — is arch-independent, so these numbers sharpen the record rather than change the design.
+
+**Two matrix branches are verified without a host that can reach them.** `--self-check` drives the
+row formatter with synthetic `stack_t` values, including `SS_DISABLE` and a null `ss_sp` (both must
+render `NONE INSTALLED`, never a stale size), a synthetic `sigaltstack()` failure (renders its errno),
+`sysconf` unavailable two ways (pre-2.34, and missing from libc entirely — never a size of −1), the
+**pre-2.34 `pthread_create`-not-in-libc** degradation (renders a SKIPPED row carrying the reason, so a
+host that cannot take the measurement is distinguishable from one that said nothing), and **the verdict
+derivation itself** — Rosetta, the qemu arch mismatch, real amd64, native arm64, `uname` unavailable,
+`/proc/cpuinfo` unreadable, a machine string the probe does not recognise (UNKNOWN, never agreement)
+and a trimmed Zhaoxin vendor id. **Nineteen cases**, each printing its
+expected rendering beside the actual one; a mismatch exits non-zero. No SDK image this probe uses
+carries a glibc old enough to provoke that last path on a real host, which is exactly why its
+rendering is a pure function driven synthetically rather than a branch reasoned about.
+
+**DW-396 stays OPEN.** The probe preserves the mechanism's measurement; it does not fix anything.
+DW-396 closes when SPEC-dotnet-linux ships the restored RIDs with CAP-5's soak behind them.
+
 ### DW-148 — comments that describe a sibling's behaviour go stale silently; four instances this run
 
 - **Deferred by:** the **Epic 10 reconstruction** (finding 8, ruled at D-10.R.8, 2026-09-02) — raised under
@@ -14160,3 +14240,15 @@ than a silent drift; the identity is the one place that drift is still silent.
 once — a one-time churn, and the pins would need re-measuring), or `workerRevision` computed over
 the EMITTED worker rather than its template, which covers tiers because the manifest is embedded in
 it. The second is the smaller change and fixes the field whose name is currently a false claim.
+
+- source_spec: `_bmad-output/specs/spec-dotnet-linux/stories/1-signal-stack-probe-diagnostic.md`
+  summary: The signal-stack probe transcribes the libc version its findings depend on instead of deriving it, unlike every other provenance signal it reports.
+  evidence: DW-396's 2026-09-22 subsection is headed "glibc 2.36" and the whole SIGSTKSZ argument turns on that number, but the probe prints only OSDescription and FrameworkDescription -- the version is typed in by whoever writes the entry. This contradicts the derive-don't-transcribe principle the rest of the provenance work follows, and it is met on every run rather than rarely. The close is a gnu_get_libc_version() read degrading to a named skip; it was filed rather than patched because it adds a P/Invoke and its own failure path, which is more than a direct correction.
+
+- source_spec: `_bmad-output/specs/spec-dotnet-linux/stories/1-signal-stack-probe-diagnostic.md`
+  summary: Nothing in the repository compiles or runs folio-dotnet/build/signal-stack-probe, so it can be broken at the moment it is next needed.
+  evidence: Verified absent from Folio8.slnx, from every dotnet step in .github/workflows/ci.yml (which builds three projects by explicit path), and from lint's Go-only walk. The project uses unsafe code, function pointers, UnmanagedCallersOnly and RollForward=LatestMajor, so SDK drift is a live variable. Story 1's frozen block states "wired into no CI job or suite in this story", so the intent excludes it -- this is filed, not a deviation. Cheap close: one `dotnet run --project folio-dotnet/build/signal-stack-probe -- --self-check` step in an existing ubuntu dotnet job; the mode asserts nothing about the host and is OS-independent by construction, so it cannot make the job flaky.
+
+- source_spec: `_bmad-output/specs/spec-dotnet-linux/stories/1-signal-stack-probe-diagnostic.md`
+  summary: Three paths through probe-signal-stack.sh are never exercised: the no-argument local-Linux path, the `uname -s` gate, and the docker-missing branch.
+  evidence: The container legs invoke `dotnet run` INSIDE the image, so the wrapper's own host-side logic is never run by them; this session's host is macOS, which takes the refusal path instead. The gap is real but closing it means having a container leg call the wrapper recursively, which is a restructure rather than a direct correction. Until then the local-Linux path first runs on a user's machine -- most likely the owner's WSL2 box during the DW-396 confirmation run.

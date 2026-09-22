@@ -102,7 +102,7 @@ A team running a .NET service in a Linux container adds `folio8` as a `PackageRe
 
 ## Open Questions
 
-- **Confirm `16384` on real amd64, and capture `sysconf(_SC_SIGSTKSZ)` there.** The amd64 row of the spike was emulated. If `sysconf` exceeds the CLR's altstack on that machine, the CLR is below what glibc itself calls a minimum there — worth knowing, and a ten-second run of the preserved probe on the WSL2 box.
+- **Confirm `16384` on real amd64, and capture both `sysconf(_SC_SIGSTKSZ)` and `_SC_MINSIGSTKSZ` there.** The amd64 row of the spike was emulated. The two constants are different claims and the distinction is the substance: `_SC_SIGSTKSZ` is glibc's **recommended** size (8192 on the emulated leg), `_SC_MINSIGSTKSZ` its **floor** (1348). If the CLR's 16384 sits below the recommended size on real silicon that is a strong signal; below the floor it would be indefensible. A ten-second run of `folio-dotnet/build/probe-signal-stack.sh` on the WSL2 box settles it.
 - **How large is the enlarged stack?** 1 MiB was used in the spike arbitrarily and worked. The cost is per pool thread, paid once.
 - **Does `DllImport("libc")` reach `sigaltstack` across the whole supported floor?** Plain P/Invoke, so it should — but the spike found `pthread_create` **not** resolvable from `libc` on glibc 2.31 (it lived in `libpthread` until the 2.34 merge), so libc entry points are not uniformly available across the range this package supports.
 - **Where does the boundary live — `Native.cs`, or a new type?** Placement only; the constraints settle the behaviour.
