@@ -34,6 +34,37 @@ const goRoot = path.join(root, 'folio-go')
 // `openPreparedStatement` re-asserts the five bound columns through the shipped
 // dialog on every run: a fixture that stopped matching the precondition is a
 // guard that cannot see the defect ([D-14.8.4]).
+// THE ADMISSION BUDGET IS THE APPLICATION'S OWN FACE-FETCH BUDGET, READ FROM
+// THE SOURCE THAT DECLARES IT — because this assertion used to permit HALF of
+// it, and that contradiction is what made this test flaky (DW-208).
+//
+// This session renders a document whose sample data carries a Han rune, so the
+// engine refuses once, `AbsentFaceInstaller` fetches the ~10 MiB CJK face, and
+// the render is retried. The designer allows that fetch
+// `FACE_FETCH_TIMEOUT_MS` = 120 s. This assertion allowed 60 s. A fetch landing
+// anywhere between the two is WITHIN the application's contract and still
+// failed the test, and because `captured()` runs AFTER the timeout the evidence
+// it printed showed `install-face:ok` and `render:ok` — the sequence had
+// succeeded, just later than this line was willing to wait. That is what made
+// the failure unreadable: it looked like a stall in the engine and was a
+// deadline shorter than the one the application publishes.
+//
+// It is READ rather than retyped so the two cannot drift apart again: raising
+// the designer's budget without raising this one would silently restore the
+// bug. Same device, and the same reason, as `engineVersion` in
+// `preview-evidence-rail.spec.ts`.
+const faceFetchTimeoutMs = (() => {
+  const source = readFileSync(path.join(root, 'folio-designer/src/startup-sequence.ts'), 'utf8')
+  const match = /^const FACE_FETCH_TIMEOUT_MS = ([0-9_]+)$/m.exec(source)
+  if (!match) throw new Error('could not read FACE_FETCH_TIMEOUT_MS from folio-designer/src/startup-sequence.ts')
+  return Number(match[1].replaceAll('_', ''))
+})()
+// The fetch is the only unbounded-ish leg; the render and PDF.js admission
+// after it are fast — MEASURED at 223 ms and 182 ms for the two sessions on an
+// arm64 laptop — so the margin covers them without being a second hidden
+// budget.
+const admissionTimeoutMs = faceFetchTimeoutMs + 30_000
+
 const fixtures = path.join(root, 'fixtures/statement-1')
 const template = readFileSync(path.join(fixtures, 'input.folio'))
 const sample = readFileSync(path.join(fixtures, 'data.json'))
@@ -280,14 +311,21 @@ async function savePreviewAndCapture(page: Page, fileName: string, output: strin
   // input bytes here are exactly those downloaded from this browser session.
   assertNativePreflight(output, name, savedBytes, sample, params)
   await page.getByRole('button', { name: 'Re-render' }).click()
+  const admissionStarted = Date.now()
   try {
     // Identity deliberately hashes the complete shipped font set before the
     // one Go render and PDF.js admission. This is runtime work, not a locator
     // ambiguity (all selector-facing steps above retain short timeouts).
-    await expect(page.getByRole('img', { name: /Current exact local production PDF, revision/ })).toBeVisible({ timeout: 60_000 })
+    await expect(page.getByRole('img', { name: /Current exact local production PDF, revision/ })).toBeVisible({ timeout: admissionTimeoutMs })
   } catch (error) {
+    // THE ELAPSED TIME IS PART OF THE EVIDENCE, because without it the two
+    // failures this catch can report are indistinguishable: a face fetch that
+    // is merely slow, and a render that never came back. The worker evidence
+    // alone cannot separate them — it is captured here, after the wait, so a
+    // sequence that completed one millisecond too late prints exactly like one
+    // that completed comfortably.
     const proof = await captured(page)
-    throw new Error(`Preview was not admitted; worker evidence: ${JSON.stringify({ requests: proof.requests.map(({ operation }) => operation), responses: proof.responses, failures: proof.failures })}`, { cause: error })
+    throw new Error(`Preview was not admitted after ${Date.now() - admissionStarted} ms of a ${admissionTimeoutMs} ms budget; worker evidence: ${JSON.stringify({ requests: proof.requests.map(({ operation }) => operation), responses: proof.responses, failures: proof.failures })}`, { cause: error })
   }
   const proof = await captured(page)
   const serialized = proof.serializations.at(-1)
@@ -322,7 +360,14 @@ function runNativeCLI(output: string, name: string): Buffer {
 }
 
 test('fresh authored sessions close exactly through admitted Preview and native folio8', async ({ browser }, testInfo) => {
-  test.setTimeout(300_000)
+  // TWO sessions each get the full admission budget, so the test's own budget
+  // has to cover both or raising the per-assertion one just moves the failure
+  // here. 2 x 150 s of admission, plus the `go build`, the two native CLI
+  // renders, the Go witness test and both authoring legs — the non-admission
+  // work measures ~10 s locally and is the slower part on CI, not the faster.
+  // 480 s leaves real margin inside the job's own 45-minute ceiling, which the
+  // whole suite currently uses ~32 minutes of.
+  test.setTimeout(admissionTimeoutMs * 2 + 180_000)
   const output = testInfo.outputPath('browser-native-roundtrip')
   mkdirSync(output, { recursive: true })
   execFileSync('go', ['build', '-o', path.join(output, 'folio8'), './cmd/folio8'], { cwd: goRoot, stdio: 'pipe' })
