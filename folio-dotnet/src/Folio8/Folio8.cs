@@ -174,7 +174,9 @@ public static class Folio8
     /// </summary>
     internal static int OutstandingNativeAllocations()
     {
-        return Native.folio8_allocation_count();
+        // Counting is an ABI crossing too, and the one that had no funnel
+        // above it. It goes through the engine threads like every other.
+        return EngineThreads.Run(new Func<int>(Native.folio8_allocation_count));
     }
 
     private static byte[] Check(Template template, Data data, FontSet fonts)

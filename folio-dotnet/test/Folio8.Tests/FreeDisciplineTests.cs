@@ -54,15 +54,25 @@ namespace Folio8Tests
         [Fact]
         public void ASecondFreeIsRefused()
         {
-            ulong token;
-            IntPtr result;
-            int length;
-            Assert.Equal(Native.StatusOk, Native.folio8_version(out token, out result, out length));
-            Assert.NotEqual(IntPtr.Zero, result);
-            Assert.True(length > 0);
+            // THROUGH THE ENGINE THREADS, like every other crossing. This test
+            // goes at the ABI directly because the managed surface has no way
+            // to free a token twice — but "directly" means past the funnel,
+            // not past the pool: on Linux a call made from the xunit thread
+            // enters the Go engine carrying the runtime's small alternate
+            // signal stack, which is DW-396 itself. A suite that is meant to
+            // be the evidence must not contain the trigger.
+            EngineThreads.Run(delegate
+            {
+                ulong token;
+                IntPtr result;
+                int length;
+                Assert.Equal(Native.StatusOk, Native.folio8_version(out token, out result, out length));
+                Assert.NotEqual(IntPtr.Zero, result);
+                Assert.True(length > 0);
 
-            Assert.Equal(Native.StatusOk, Native.folio8_free(token));
-            Assert.Equal(Native.StatusErrorUnknownFree, Native.folio8_free(token));
+                Assert.Equal(Native.StatusOk, Native.folio8_free(token));
+                Assert.Equal(Native.StatusErrorUnknownFree, Native.folio8_free(token));
+            });
         }
 
         /// <summary>
@@ -75,15 +85,18 @@ namespace Folio8Tests
         [Fact]
         public void TheLoadedLibrarySpeaksTheExpectedAbi()
         {
-            Assert.Equal(Native.ExpectedAbiVersion, Native.folio8_abi_version());
+            Assert.Equal(Native.ExpectedAbiVersion, EngineThreads.Run(new Func<int>(Native.folio8_abi_version)));
         }
 
         /// <summary>An unknown token is refused the same way, not acted on.</summary>
         [Fact]
         public void AnUnknownTokenIsRefused()
         {
-            Assert.Equal(Native.StatusErrorUnknownFree, Native.folio8_free(0));
-            Assert.Equal(Native.StatusErrorUnknownFree, Native.folio8_free(ulong.MaxValue));
+            EngineThreads.Run(delegate
+            {
+                Assert.Equal(Native.StatusErrorUnknownFree, Native.folio8_free(0));
+                Assert.Equal(Native.StatusErrorUnknownFree, Native.folio8_free(ulong.MaxValue));
+            });
         }
 
         private static void Run()

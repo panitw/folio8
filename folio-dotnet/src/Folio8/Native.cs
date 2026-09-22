@@ -128,6 +128,24 @@ internal static class Native
         {
             return;
         }
+        // THIS CROSSES, SO IT CROSSES FROM AN ENGINE THREAD LIKE EVERY OTHER
+        // CROSSING. Called from Invoke, which is already on one, this runs
+        // inline and takes no second queue hop.
+        //
+        // The unsynchronised read of _abiChecked above is pre-existing and
+        // deliberately left as it was: the write still happens under AbiGate,
+        // a stale read costs one extra lock acquisition and nothing else, and
+        // the hop below neither relies on the fast path nor makes it racier
+        // than it already was.
+        EngineThreads.Run(new Action(CheckAbi));
+    }
+
+    /// <summary>
+    /// The ABI check itself, which runs on an engine thread. Separated from
+    /// <see cref="EnsureAbi"/> only so the hop is expressed once.
+    /// </summary>
+    private static void CheckAbi()
+    {
         lock (AbiGate)
         {
             if (_abiChecked)
@@ -208,6 +226,26 @@ internal static class Native
     /// Go's own diagnostic or message.
     /// </summary>
     internal static Frame Invoke(Call call)
+    {
+        // THE WHOLE BODY MOVES, NOT JUST THE P/INVOKE. Moving only the inner
+        // call would leave the copy and the folio8_free tail on the calling
+        // thread, straddling the export and its free across a thread
+        // boundary — and the free is itself an ABI crossing.
+        return EngineThreads.Run(new Func<Frame>(delegate { return InvokeHere(call); }));
+    }
+
+    /// <summary>
+    /// <see cref="Invoke"/>'s body, running on an engine thread.
+    /// </summary>
+    /// <remarks>
+    /// NEVER INLINED, and that is an assertion's requirement rather than a
+    /// performance one: this is the frame a native error is thrown from, and
+    /// a test proves the hop preserved the original stack by finding this
+    /// name in it. A Release JIT free to inline the method would delete the
+    /// evidence and the test with it.
+    /// </remarks>
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+    private static Frame InvokeHere(Call call)
     {
         EnsureAbi();
 

@@ -14252,3 +14252,11 @@ it. The second is the smaller change and fixes the field whose name is currently
 - source_spec: `_bmad-output/specs/spec-dotnet-linux/stories/1-signal-stack-probe-diagnostic.md`
   summary: Three paths through probe-signal-stack.sh are never exercised: the no-argument local-Linux path, the `uname -s` gate, and the docker-missing branch.
   evidence: The container legs invoke `dotnet run` INSIDE the image, so the wrapper's own host-side logic is never run by them; this session's host is macOS, which takes the refusal path instead. The gap is real but closing it means having a container leg call the wrapper recursively, which is a restructure rather than a direct correction. Until then the local-Linux path first runs on a user's machine -- most likely the owner's WSL2 box during the DW-396 confirmation run.
+
+- source_spec: `_bmad-output/specs/spec-dotnet-linux/stories/2-engine-threads-enlarged-signal-stacks.md`
+  summary: Process shutdown may kill an engine thread mid-crossing and leave a foreground caller that never wakes.
+  evidence: Engine threads are IsBackground, so the runtime tears them down at process exit while a foreground caller could still be waiting on its work item's gate. Unsettled from the diff alone -- it depends on runtime teardown ordering that was not tested. What would settle it: a test that starts a render on a foreground thread and exits the process mid-crossing, observing whether the process still terminates. Filed as maybe-false at medium severity: if real, a host that renders during shutdown hangs instead of exiting.
+
+- source_spec: `_bmad-output/specs/spec-dotnet-linux/stories/2-engine-threads-enlarged-signal-stacks.md`
+  summary: The enlarged-signal-stack assertions never run against the natives a consumer actually installs.
+  evidence: folio-dotnet-linux runs no `dotnet test` (ci.yml), so the only Linux execution of EngineThreadTests is folio-dotnet-host, against a native built from the runner's own glibc rather than the pinned AlmaLinux 8 image. Story 2 was additionally verified locally on linux/arm64 against a real linux-arm64 native, but that is a developer run, not a gate. Story 3 owns restoring the CI leg and story 6 the shipped RIDs; recorded so the gap is not mistaken for coverage in the meantime.

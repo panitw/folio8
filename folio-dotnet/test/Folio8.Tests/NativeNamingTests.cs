@@ -74,7 +74,10 @@ namespace Folio8Tests
         [Fact]
         public void TheEngineIsReachableAndAnswers()
         {
-            Assert.Equal(Native.ExpectedAbiVersion, Native.folio8_abi_version());
+            // Through the engine threads: this crossing is no more exempt
+            // than any other, and on Linux the xunit thread's alternate
+            // signal stack is the one DW-396 overflows.
+            Assert.Equal(Native.ExpectedAbiVersion, EngineThreads.Run(new Func<int>(Native.folio8_abi_version)));
             Assert.False(string.IsNullOrEmpty(Folio8.Version));
         }
     }
