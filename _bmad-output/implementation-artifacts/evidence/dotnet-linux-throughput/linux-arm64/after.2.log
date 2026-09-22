@@ -1,0 +1,38 @@
+=== render-throughput: after ===
+  taken            2026-09-22 18:02:35Z
+  os               Debian GNU/Linux 12 (bookworm)
+  os arch          Arm64
+  process arch     Arm64
+  processors       10
+  runtime          .NET 8.0.31
+  server gc        True
+  cpu              (no model line in /proc/cpuinfo)
+  translated       not established from inside; uname reports the EMULATED arch, so see 'host context', and run probe-signal-stack.sh for the full derivation
+  host context     linux/arm64 container on Darwin/arm64; native on this host's silicon
+  engine           1.1.0
+  fixture          fixtures/multi-page-statement
+    input.folio    5366 bytes, sha256 d9d245eacc370153
+    data.json      13827 bytes, sha256 315272b1b97c8aa1
+    render         130169 bytes, sha256 4b0367f57e39141e  (matches expected.json)
+  window           5s timed, 1s warmup, per level
+
+  A developer machine is INDICATIVE. It is not a controlled environment, and a
+  translated host measures the translator as much as the binding. Quote these
+  numbers only with the four lines above them.
+
+  concurrency   renders   renders/s   mean ms   median ms   p95 ms   vs c=1
+  -----------   -------   ---------   -------   ---------   ------   ------
+            1       212       42.29     23.64       22.30    32.68   1.00x
+            2       372       74.14     26.97       24.92    37.41   1.75x
+            4       604      120.09     33.25       31.79    44.31   2.84x
+           10       783      155.63     64.10       62.35    96.36   3.68x
+
+  * more callers than this binding's engine pool holds (max(ProcessorCount,2) = 10, restated from EngineThreads — see the comment there).
+  Correctness: 17 renders — one per caller per level, in each level's warmup — hashed and matched
+  against expected.json, so a binding that corrupted only under concurrent crossings
+  could not be counted here as throughput.
+
+RESULT	after	1	212	5.013	42.294	23.643	22.300	32.682
+RESULT	after	2	372	5.018	74.137	26.974	24.915	37.408
+RESULT	after	4	604	5.030	120.090	33.248	31.786	44.310
+RESULT	after	10	783	5.031	155.631	64.097	62.351	96.365

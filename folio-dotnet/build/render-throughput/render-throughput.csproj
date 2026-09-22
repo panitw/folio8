@@ -1,0 +1,109 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The CAP-10 render-throughput harness: a DEVELOPER MEASUREMENT TOOL, never
+    a package asset and never a CI gate. It renders one named corpus fixture
+    at rising concurrency through whichever build of the binding it is pointed
+    at, and prints renders/second. A human reads the numbers; nothing here
+    asserts a threshold.
+
+    IT IS DELIBERATELY NOT BOUND BY THE folio8 PACKAGE'S FLOOR. The binding it
+    measures is netstandard2.0 / LangVersion 7.3 / net46-clean; this harness is
+    not, because nothing here ships. What it must NOT do is change the thing it
+    measures, which is why it is a separate project outside src/Folio8 and why
+    src/Folio8 gains no benchmark seam.
+
+    NO PackageReference, EVER — the same reason the signal-stack probe takes
+    none. A stopwatch and the committed fixtures are the whole apparatus, and a
+    restore that reaches the network is a restore that fails on the box where
+    the measurement is wanted.
+
+    net8.0 IS A FLOOR, NOT A PREFERENCE, exactly as in signal-stack-probe: it
+    is the oldest SDK image measure-throughput.sh is willing to pull, and
+    RollForward is LatestMajor so the same sources also run on a developer
+    machine that carries only .NET 10.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <OutputType>Exe</OutputType>
+    <Nullable>disable</Nullable>
+    <AssemblyName>render-throughput</AssemblyName>
+    <RootNamespace>RenderThroughput</RootNamespace>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <RollForward>LatestMajor</RollForward>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <!--
+      SERVER GC, SO THE GC IS NOT THE VARIABLE. Workstation GC's collections
+      run on the allocating thread and get dramatically worse as concurrency
+      rises, which would show up as a throughput curve that says nothing about
+      the ABI boundary this story measures. Both legs get the same setting, so
+      the comparison stays honest either way; server GC just makes the curve
+      readable.
+    -->
+    <ServerGarbageCollection>true</ServerGarbageCollection>
+    <ConcurrentGarbageCollection>true</ConcurrentGarbageCollection>
+  </PropertyGroup>
+
+  <!--
+    WHICH BINDING IS MEASURED IS AN ARGUMENT, NOT A CONSTANT.
+
+    This is the whole mechanism of the before/after comparison, and it is why
+    the comparison needs no switch inside the shipped binding. The default is
+    the working tree's own src/Folio8; measure-throughput.sh overrides it with
+    the Folio8.csproj inside a git worktree checked out at the commit BEFORE
+    the engine threads landed. One harness, two bindings, no conditional
+    compiled into either.
+
+    The referenced project reads its fonts and its native from paths relative
+    to ITSELF, so the baseline leg builds the baseline's fonts out of the
+    baseline worktree — which is correct: it is that tree's binding being
+    measured.
+  -->
+  <PropertyGroup>
+    <FolioBindingProject Condition="'$(FolioBindingProject)' == ''">$(MSBuildThisFileDirectory)../../src/Folio8/Folio8.csproj</FolioBindingProject>
+    <FolioNativeDir Condition="'$(FolioNativeDir)' == ''">$(MSBuildThisFileDirectory)../native</FolioNativeDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(FolioBindingProject)" />
+  </ItemGroup>
+
+  <!--
+    THE NATIVE LIBRARY, STAGED BESIDE THE HARNESS so plain DllImport probing
+    finds it — the same staging test/Folio8.Tests does, and named the same way
+    for the same reason (folio8_native.dll must not collide with the managed
+    Folio8.dll on a case-insensitive filesystem).
+
+    THE SAME NATIVE FOR BOTH LEGS, ALWAYS. FolioNativeFile defaults to this
+    tree's build/native/ and measure-throughput.sh passes one absolute path for
+    both legs, so the engine is held fixed while the binding varies. Staging
+    each leg's own worktree native would measure two engines at once and the
+    result would mean nothing.
+  -->
+  <PropertyGroup>
+    <FolioNativeFile Condition="'$(FolioNativeFile)' == '' AND '$([MSBuild]::IsOSPlatform(`Windows`))' == 'true'">$(FolioNativeDir)/win-x64/folio8_native.dll</FolioNativeFile>
+    <FolioNativeFile Condition="'$(FolioNativeFile)' == '' AND '$([MSBuild]::IsOSPlatform(`OSX`))' == 'true'">$(FolioNativeDir)/host/libfolio8_native.dylib</FolioNativeFile>
+    <FolioNativeFile Condition="'$(FolioNativeFile)' == ''">$(FolioNativeDir)/host/libfolio8_native.so</FolioNativeFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="$(FolioNativeFile)" Condition="Exists('$(FolioNativeFile)')">
+      <Link>%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <!--
+    FAIL AT BUILD TIME, NAMING THE FIX. Without this the native's absence
+    surfaces as a DllNotFoundException from the first render — deep inside a
+    timed loop, where it reads like a defect in the harness.
+  -->
+  <Target Name="FolioRequireNativeLibrary" BeforeTargets="Build">
+    <Error Condition="!Exists('$(FolioNativeFile)')"
+           Text="render-throughput: the native library is missing at $(FolioNativeFile). Run folio-dotnet/build/build-native.sh (host, or linux-x64 / linux-arm64) first, or pass -p:FolioNativeFile=&lt;path to one&gt;. Without it the harness can only measure a DllNotFoundException." />
+    <Error Condition="!Exists('$(FolioBindingProject)')"
+           Text="render-throughput: the binding project to measure does not exist at $(FolioBindingProject). measure-throughput.sh passes this per leg; check that the baseline git worktree was created before the build was attempted." />
+  </Target>
+
+</Project>

@@ -1,0 +1,38 @@
+=== render-throughput: before ===
+  taken            2026-09-22 18:04:43Z
+  os               macOS 26.6.2
+  os arch          Arm64
+  process arch     Arm64
+  processors       10
+  runtime          .NET 10.0.11
+  server gc        True
+  cpu              (not reported by this OS)
+  translated       no — sysctl.proc_translated=0
+  engine           1.1.0
+  fixture          fixtures/multi-page-statement
+    input.folio    5366 bytes, sha256 d9d245eacc370153
+    data.json      13827 bytes, sha256 315272b1b97c8aa1
+    render         130169 bytes, sha256 4b0367f57e39141e  (matches expected.json)
+  window           5s timed, 1s warmup, per level
+
+  A developer machine is INDICATIVE. It is not a controlled environment, and a
+  translated host measures the translator as much as the binding. Quote these
+  numbers only with the four lines above them.
+
+  concurrency   renders   renders/s   mean ms   median ms   p95 ms   vs c=1
+  -----------   -------   ---------   -------   ---------   ------   ------
+            1       245       48.81     20.49       20.29    21.79   1.00x
+            2       431       85.78     23.30       22.07    32.32   1.76x
+            4       612      121.88     32.81       28.18    52.81   2.50x
+           10       948      188.70     52.86       49.63    86.97   3.87x
+
+  This binding has no engine pool (--pool none), so no level is annotated as
+  oversubscribing one: every caller crosses the ABI on its own thread.
+  Correctness: 17 renders — one per caller per level, in each level's warmup — hashed and matched
+  against expected.json, so a binding that corrupted only under concurrent crossings
+  could not be counted here as throughput.
+
+RESULT	before	1	245	5.020	48.806	20.489	20.290	21.793
+RESULT	before	2	431	5.025	85.778	23.296	22.068	32.321
+RESULT	before	4	612	5.021	121.883	32.813	28.183	52.805
+RESULT	before	10	948	5.024	188.697	52.859	49.629	86.971

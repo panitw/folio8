@@ -1,0 +1,38 @@
+=== render-throughput: after ===
+  taken            2026-09-22 18:09:41Z
+  os               Debian GNU/Linux 12 (bookworm)
+  os arch          X64
+  process arch     X64
+  processors       10
+  runtime          .NET 8.0.31
+  server gc        True
+  cpu              VirtualApple @ 2.50GHz
+  translated       YES — /proc/cpuinfo vendor_id is 'VirtualApple'; NOT admissible as evidence about real silicon
+  host context     linux/amd64 container on Darwin/arm64; TRANSLATED (linux/amd64 on a arm64 host) — indicative only, and NOT admissible as evidence about real amd64
+  engine           1.1.0
+  fixture          fixtures/multi-page-statement
+    input.folio    5366 bytes, sha256 d9d245eacc370153
+    data.json      13827 bytes, sha256 315272b1b97c8aa1
+    render         130169 bytes, sha256 4b0367f57e39141e  (matches expected.json)
+  window           5s timed, 1s warmup, per level
+
+  A developer machine is INDICATIVE. It is not a controlled environment, and a
+  translated host measures the translator as much as the binding. Quote these
+  numbers only with the four lines above them.
+
+  concurrency   renders   renders/s   mean ms   median ms   p95 ms   vs c=1
+  -----------   -------   ---------   -------   ---------   ------   ------
+            1       135       26.96     37.09       37.33    44.25   1.00x
+            2       257       51.00     39.21       38.53    47.92   1.89x
+            4       422       83.77     47.56       45.91    60.53   3.11x
+           10       555      109.75     90.80       88.69   131.34   4.07x
+
+  * more callers than this binding's engine pool holds (max(ProcessorCount,2) = 10, restated from EngineThreads — see the comment there).
+  Correctness: 17 renders — one per caller per level, in each level's warmup — hashed and matched
+  against expected.json, so a binding that corrupted only under concurrent crossings
+  could not be counted here as throughput.
+
+RESULT	after	1	135	5.008	26.958	37.093	37.325	44.250
+RESULT	after	2	257	5.039	51.003	39.210	38.534	47.916
+RESULT	after	4	422	5.037	83.774	47.562	45.909	60.527
+RESULT	after	10	555	5.057	109.746	90.799	88.685	131.343

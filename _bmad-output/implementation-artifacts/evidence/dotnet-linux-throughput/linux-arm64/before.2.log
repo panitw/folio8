@@ -1,0 +1,39 @@
+=== render-throughput: before ===
+  taken            2026-09-22 18:02:11Z
+  os               Debian GNU/Linux 12 (bookworm)
+  os arch          Arm64
+  process arch     Arm64
+  processors       10
+  runtime          .NET 8.0.31
+  server gc        True
+  cpu              (no model line in /proc/cpuinfo)
+  translated       not established from inside; uname reports the EMULATED arch, so see 'host context', and run probe-signal-stack.sh for the full derivation
+  host context     linux/arm64 container on Darwin/arm64; native on this host's silicon
+  engine           1.1.0
+  fixture          fixtures/multi-page-statement
+    input.folio    5366 bytes, sha256 d9d245eacc370153
+    data.json      13827 bytes, sha256 315272b1b97c8aa1
+    render         130169 bytes, sha256 4b0367f57e39141e  (matches expected.json)
+  window           5s timed, 1s warmup, per level
+
+  A developer machine is INDICATIVE. It is not a controlled environment, and a
+  translated host measures the translator as much as the binding. Quote these
+  numbers only with the four lines above them.
+
+  concurrency   renders   renders/s   mean ms   median ms   p95 ms   vs c=1
+  -----------   -------   ---------   -------   ---------   ------   ------
+            1       205       40.80     24.51       22.77    31.95   1.00x
+            2       367       73.16     27.33       25.29    37.06   1.79x
+            4       592      117.81     33.93       33.00    45.70   2.89x
+           10       808      160.78     62.06       60.73    92.74   3.94x
+
+  This binding has no engine pool (--pool none), so no level is annotated as
+  oversubscribing one: every caller crosses the ABI on its own thread.
+  Correctness: 17 renders — one per caller per level, in each level's warmup — hashed and matched
+  against expected.json, so a binding that corrupted only under concurrent crossings
+  could not be counted here as throughput.
+
+RESULT	before	1	205	5.025	40.798	24.510	22.771	31.955
+RESULT	before	2	367	5.016	73.163	27.325	25.292	37.062
+RESULT	before	4	592	5.025	117.808	33.929	32.996	45.704
+RESULT	before	10	808	5.025	160.784	62.056	60.729	92.737

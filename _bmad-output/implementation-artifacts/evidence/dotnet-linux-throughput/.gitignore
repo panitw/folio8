@@ -1,0 +1,5 @@
+# The root .gitignore excludes *.log, which is right for build noise and wrong
+# for these: they ARE the record. dotnet-linux-throughput.md's tables are read
+# out of these files, and a table whose source was discarded is a table retyped
+# from a terminal that no longer exists. Scoped to this directory only.
+!*.log
