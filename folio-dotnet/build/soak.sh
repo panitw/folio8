@@ -58,7 +58,13 @@
 #
 # IT IS NOT A CI GATE AND MUST NOT BECOME ONE. A soak long enough to mean
 # anything does not belong on every commit, and a short one would recreate the
-# false clear. No workflow invokes this file.
+# false clear. One workflow invokes this file -- .github/workflows/soak.yml --
+# and it is `workflow_dispatch` ONLY: no push, no pull_request, no schedule,
+# and it is not a required check. It exists because CAP-5's evidence has to
+# come from real hardware and the owner's WSL2 box could not provide it (see
+# DW-396: six hypotheses tested and killed). If that workflow ever acquires a
+# trigger that fires without a human asking, this sentence is the thing it
+# contradicts, and the workflow is wrong rather than this comment.
 #
 # IT DOES NOT MODIFY src/Folio8. A non-HEAD binding comes from a git worktree,
 # exactly as measure-throughput.sh's baseline leg does; there is no bypass

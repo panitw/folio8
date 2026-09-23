@@ -1,0 +1,146 @@
+name: DW-396 soak (manual)
+
+# THIS IS NOT A GATE AND MUST NOT BECOME ONE. `soak.sh`'s own header says a
+# soak long enough to mean anything does not belong on every commit, and a
+# short one would recreate the false clear this entry already records. So:
+# `workflow_dispatch` only. No `push`, no `pull_request`, no `schedule`, and
+# nothing here is a required check. It exists because CAP-5's evidence has to
+# come from real hardware and the owner's WSL2 box could not provide it —
+# six hypotheses tested and killed, recorded under DW-396.
+#
+# WHY A DISPOSABLE RUNNER IS A BETTER SOAK HOST THAN A DEVELOPER MACHINE.
+# Nothing else competes on it, every run starts from the same image, and the
+# result is reproducible by anyone with the repository rather than by one
+# person with one laptop. That is the standard this epic holds everything
+# else to.
+#
+# THE RUNNERS ARE REAL SILICON, NOT EMULATION. `ubuntu-24.04` is amd64 and
+# `ubuntu-24.04-arm` is arm64, each running its own architecture's native.
+# qemu is installed only so the OTHER architecture's native can be BUILT for
+# verify-linux-natives.sh — it is never executed. soak.sh does not take this
+# on trust: it derives its own translation verdict and refuses a translated
+# host before running anything.
+
+on:
+  workflow_dispatch:
+    inputs:
+      rid:
+        description: "Which shipped native to soak"
+        type: choice
+        options: [linux-x64, linux-arm64, both]
+        default: both
+      iterations:
+        description: "Soak iterations (the control leg runs the same count first)"
+        type: string
+        default: "100"
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.26.0"
+  DOTNET_VERSION: "10.0.400"
+
+jobs:
+  soak:
+    strategy:
+      fail-fast: false
+      matrix:
+        rid: ${{ fromJSON(inputs.rid == 'both' && '["linux-x64","linux-arm64"]' || format('["{0}"]', inputs.rid)) }}
+    name: soak (${{ matrix.rid }})
+    runs-on: ${{ matrix.rid == 'linux-arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    # Each soak.sh invocation runs its control leg at the SAME iteration count
+    # before it measures anything, and this job invokes it twice — once to
+    # reproduce, once to soak. At the default 100 that is up to 250 suite runs.
+    timeout-minutes: 300
+
+    steps:
+      # FULL HISTORY, NOT A SHALLOW CLONE. The reproduction leg checks out the
+      # pre-fix binding (7f6a936^) as a git worktree; a shallow clone cannot
+      # reach it and the leg would fail for a reason that has nothing to do
+      # with the defect.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      # For BUILDING the other architecture's native only, so
+      # verify-linux-natives.sh can check both. Nothing emulated is executed.
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: ${{ matrix.rid == 'linux-arm64' && 'linux/amd64' || 'linux/arm64' }}
+
+      - name: build both Linux natives (pinned image)
+        run: ./folio-dotnet/build/build-native.sh linux-x64 linux-arm64
+
+      # Provenance before measurement. A soak against a native from the wrong
+      # image, or of the wrong machine, proves the wrong thing — and the glibc
+      # ceiling is the only check that can tell.
+      - name: assert both natives are the right machine and keep the glibc floor
+        run: ./folio-dotnet/build/verify-linux-natives.sh
+
+      # soak.sh picks build/native/<rid>/libfolio8_native.so for the host's own
+      # architecture, so this asserts the runner IS the architecture whose
+      # native is about to be soaked. soak.sh checks translation separately;
+      # this catches a matrix/runner mismatch, which is a different mistake.
+      - name: assert this runner is ${{ matrix.rid }} silicon
+        run: |
+          set -euo pipefail
+          case "${{ matrix.rid }}" in
+            linux-x64)   want=x86_64  ;;
+            linux-arm64) want=aarch64 ;;
+            *) echo "unknown rid ${{ matrix.rid }}" >&2; exit 1 ;;
+          esac
+          got="$(uname -m)"
+          if [ "$got" != "$want" ]; then
+            echo "the ${{ matrix.rid }} leg is on a $got runner, not $want — it would soak an emulated native, which this job does not claim" >&2
+            exit 1
+          fi
+          sha256sum "folio-dotnet/build/native/${{ matrix.rid }}/libfolio8_native.so"
+
+      # STEP 1 OF 2: SHOW THE HARNESS CAN SEE THE DEFECT.
+      # The ledger lives in the runner's HOME and is destroyed with it, so the
+      # reproduction must be earned on THIS runner, against THIS native, before
+      # the soak below can be called a pass. That is not a formality: it is the
+      # whole reason a clean run means anything. soak.sh runs its control leg
+      # first and refuses outright if this host crashes test hosts on its own.
+      - name: reproduce DW-396 on the pre-fix binding (validates the harness)
+        run: |
+          ./folio-dotnet/build/soak.sh --reproduce \
+            --log-dir "$RUNNER_TEMP/soak-reproduce" \
+            --context "GitHub Actions ${{ runner.os }} ${{ matrix.rid }}, run ${{ github.run_id }}"
+
+      # STEP 2 OF 2: THE SOAK ITSELF.
+      # soak.sh exits non-zero unless this is clean AND the ledger shows the
+      # reproduction above. A crash with the named signature, a clean run on an
+      # unvalidated harness, and a clean run during which the kernel printed
+      # `overflowed sigaltstack` are all failures, and each is reported as the
+      # thing it is.
+      - name: soak the shipped binding
+        run: |
+          ./folio-dotnet/build/soak.sh -n "${{ inputs.iterations }}" \
+            --log-dir "$RUNNER_TEMP/soak" \
+            --context "GitHub Actions ${{ runner.os }} ${{ matrix.rid }}, run ${{ github.run_id }}"
+
+      # ALWAYS. The run that finally catches the defect is the run whose logs
+      # matter most, and it is the one where the step above failed.
+      - name: keep the logs and the ledger
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: soak-${{ matrix.rid }}-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/soak-reproduce
+            ${{ runner.temp }}/soak
+            ~/.local/state/folio-soak/ledger.tsv
+          if-no-files-found: warn
+          retention-days: 30
+
+      # dmesg is where the kernel's half of the signature lands, and a runner
+      # is discarded the moment the job ends.
+      - name: kernel ring buffer
+        if: always()
+        run: sudo dmesg | tail -100 || dmesg | tail -100 || echo "dmesg unreadable on this runner"

@@ -7319,6 +7319,20 @@ loops, which is a second failure on top of the per-process crashes. **The amd64 
 different host.** The harness does not have to be re-earned anywhere it moves — but the ledger row
 is keyed to host, architecture and native sha256, so a new host runs its own reproduce leg first.
 
+**WHERE THE SOAK RUNS NOW: `.github/workflows/soak.yml`, `workflow_dispatch` ONLY.** No push, no
+pull_request, no schedule, not a required check — CAP-5's "not a CI gate" constraint is the reason
+the trigger list is one item long, and `soak.sh`'s header now names the workflow so the pair cannot
+drift apart silently. Both architectures are real silicon (`ubuntu-24.04` and `ubuntu-24.04-arm`),
+each soaking its own native; qemu is installed only so the *other* native can be **built** for
+`verify-linux-natives.sh`, never executed, and `soak.sh` derives its own translation verdict rather
+than trusting the runner label. Each leg earns its own ledger row: the job reproduces on the pre-fix
+binding first, in the same runner and against the same native, because the runner's HOME dies with
+it. Logs and the ledger upload as an artifact on success **and** failure.
+
+A disposable runner is a better soak host than a developer machine for reasons beyond availability:
+nothing else competes on it, every run starts from the same image, and the result is reproducible by
+anyone with the repository rather than by one person with one laptop.
+
 Neither blocks stories 2–6: the fix — enlarging the altstack explicitly on long-lived binding-owned
 threads — is arch-independent, so these numbers sharpen the record rather than change the design.
 
