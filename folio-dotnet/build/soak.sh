@@ -39,6 +39,23 @@
 # host with neither is reported as a crash of unknown cause -- never narrated as
 # DW-396, which is the exact misattribution this epic exists to stop making.
 #
+# THE HOST IS CONTROLLED BEFORE THE BINDING IS. Validating that the harness can
+# SEE the defect is only half the question; the other half is whether the host
+# INVENTS crashes, and until 2026-09-23 this tool never asked it. On that day a
+# WSL2 box crashed the .NET test host in 20 of 80 runs of a workload that never
+# loads the native at all -- a higher rate than the engine legs on the same box
+# -- and both soak legs were read as measuring the binding. Neither did, and a
+# wrong conclusion was committed and pushed on the strength of it (DW-397). So
+# every run now opens with a CONTROL LEG: the same iteration count, same host,
+# same built suite, against a filter that never enters the engine. Any crash
+# there and this tool refuses to produce a verdict at all -- because a figure
+# from a host that crashes on its own is worth less than no figure, it looks
+# like a measurement.
+#
+# THE CONTROL RUNS THE SAME NUMBER OF ITERATIONS AS THE SOAK, and that is not
+# configurable. A control shorter than the run it certifies buys exactly the
+# false clear this tool exists to refuse, one level up.
+#
 # IT IS NOT A CI GATE AND MUST NOT BECOME ONE. A soak long enough to mean
 # anything does not belong on every commit, and a short one would recreate the
 # false clear. No workflow invokes this file.
@@ -78,6 +95,12 @@ Options (environment variable in brackets; the flag wins):
                        --binding was given, and inverts the verdict: catching
                        the defect is success, and a clean run is a failure to
                        validate the harness.
+      --control-filter EXPR
+                       the filter for the CONTROL leg, which must never enter
+                       the engine  [SOAK_CONTROL_FILTER]. Default is
+                       PackagingTests, DocsTests and SurfaceTests. It runs for
+                       the same number of iterations as the soak, before it,
+                       and any crash there refuses the whole run.
       --filter EXPR    the vstest filter for the render-heavy suite
                        [SOAK_FILTER] default GoldenTests and FontsTests, the
                        corpus renders that historically triggered it
@@ -111,6 +134,12 @@ binding="${SOAK_BINDING:-}"
 if [ -n "$binding" ]; then binding_given_by_env=1; else binding_given_by_env=0; fi
 iterations=""
 filter="${SOAK_FILTER:-FullyQualifiedName~GoldenTests|FullyQualifiedName~FontsTests}"
+# THE CONTROL FILTER MUST NOT LOAD THE NATIVE. These three do not: verified on
+# 2026-09-23 by reading /proc/<pid>/maps during a run, where the count of
+# folio8_native lines was 0. PackagingTests is deliberately first -- it is the
+# heavy one, spawning `dotnet pack` subprocesses, and it is the workload that
+# exposed the unsound host in the first place. A light control proves little.
+control_filter="${SOAK_CONTROL_FILTER:-FullyQualifiedName~PackagingTests|FullyQualifiedName~DocsTests|FullyQualifiedName~SurfaceTests}"
 native="${SOAK_NATIVE:-}"
 log_dir="${SOAK_LOG_DIR:-}"
 ledger="${SOAK_LEDGER:-}"
@@ -129,6 +158,7 @@ while [ "$#" -gt 0 ]; do
     -n|--iterations) [ "$#" -ge 2 ] || { echo "soak: --iterations needs a number" >&2; exit 1; }; iterations="$2"; shift 2 ;;
     -b|--binding) [ "$#" -ge 2 ] || { echo "soak: --binding needs 'head' or a commit" >&2; exit 1; }; binding="$2"; binding_given=1; shift 2 ;;
     --filter) [ "$#" -ge 2 ] || { echo "soak: --filter needs an expression" >&2; exit 1; }; filter="$2"; shift 2 ;;
+    --control-filter) [ "$#" -ge 2 ] || { echo "soak: --control-filter needs an expression" >&2; exit 1; }; control_filter="$2"; shift 2 ;;
     --native) [ "$#" -ge 2 ] || { echo "soak: --native needs a path" >&2; exit 1; }; native="$2"; shift 2 ;;
     --log-dir) [ "$#" -ge 2 ] || { echo "soak: --log-dir needs a directory" >&2; exit 1; }; log_dir="$2"; shift 2 ;;
     --ledger) [ "$#" -ge 2 ] || { echo "soak: --ledger needs a file path" >&2; exit 1; }; ledger="$2"; shift 2 ;;
@@ -561,6 +591,36 @@ lines_say_overflow() {
   if printf '%s' "$1" | grep -q 'overflowed sigaltstack'; then echo yes; else echo no; fi
 }
 
+# --- 2b. is the HOST sound enough for any figure to mean anything? ---------
+
+# The control leg's judgement, as a function of what it saw, so --self-check
+# can drive it without a machine.
+#
+# ONE CRASH IS ENOUGH TO REFUSE. Not a rate, not a threshold: a host that can
+# kill a test host on a workload with the engine absent can kill it on a
+# workload with the engine present, and nothing downstream can tell the two
+# apart. DW-397 exists because a 25% background rate was read as a 4-7% defect
+# rate, and a threshold would have let a 3% one through on the same reasoning.
+#
+# A CONTROL THAT RAN NOTHING IS NOT A CLEAN CONTROL. An empty filter exits 0
+# and proves nothing, which is the same hole `log_says_no_tests_ran` closes one
+# level down.
+control_verdict() {
+  local crashes="$1" completed="$2" ran_tests="$3"
+  if [ "$ran_tests" != "yes" ]; then
+    CONTROL_TAG="EMPTY"
+    CONTROL_TEXT="the control leg matched no tests, so it certified nothing. Check --control-filter."
+    return
+  fi
+  if [ "$crashes" -gt 0 ]; then
+    CONTROL_TAG="UNSOUND"
+    CONTROL_TEXT="the host crashed the test host $crashes time(s) in $completed iterations of a workload that NEVER LOADS THE NATIVE. No soak figure from this host is admissible in either direction, and none is produced."
+    return
+  fi
+  CONTROL_TAG="SOUND"
+  CONTROL_TEXT="$completed control iterations with the engine absent, no crash. The host is not manufacturing the deaths the soak leg will or will not see."
+}
+
 # --- 3. what one iteration's outcome was -----------------------------------
 
 # HOW A RUN DIED IS NOT ONE QUESTION, AND ANSWERING IT AS ONE IS THE EXACT
@@ -729,6 +789,19 @@ if [ "$mode" = "self-check" ]; then
 
   echo "=== soak.sh --self-check: everything this tool decides, over synthetic inputs ==="
   echo
+  echo "control leg verdict (DW-397 -- is the host manufacturing crashes?):"
+  control_verdict 0 100 yes
+  expect "100 clean control iterations" SOUND "$CONTROL_TAG"
+  control_verdict 1 100 yes
+  expect "ONE crash in 100 refuses the run" UNSOUND "$CONTROL_TAG"
+  control_verdict 20 80 yes
+  expect "the 2026-09-23 WSL2 reading" UNSOUND "$CONTROL_TAG"
+  control_verdict 0 100 no
+  expect "clean but matched no tests" EMPTY "$CONTROL_TAG"
+  control_verdict 0 1 yes
+  expect "a one-iteration control still reports SOUND" SOUND "$CONTROL_TAG"
+  echo
+
   echo "translation verdict (story 1's derivation, in shell):"
   derive_translation x86_64 amd64 yes VirtualApple - no -
   expect "Rosetta container on Apple Silicon" XLATED "$VERDICT_TAG"
@@ -1356,6 +1429,68 @@ if ! dotnet build "$tests_csproj" -c Release -v quiet --nologo \
   echo "soak: the suite did not BUILD, so nothing was run and nothing is claimed."
   exit 1
 fi
+
+# ------------------------------------------------------- the control leg
+#
+# BEFORE the binding is measured, the HOST is. See the header: this exists
+# because a WSL2 box once crashed the test host in 20 of 80 runs of a workload
+# with the native absent, and both soak legs on it were read as measurements of
+# the binding (DW-397).
+
+control_logs="$logs/control"
+mkdir -p "$control_logs"
+echo "==> control leg: $iterations iterations with the engine ABSENT"
+echo "    filter: $control_filter"
+control_crashes=0
+control_completed=0
+control_ran_tests="no"
+for c in $(seq 1 "$iterations"); do
+  if [ "$interrupted" = "1" ]; then break; fi
+  clog="$control_logs/control-$c.log"
+  set +e
+  dotnet test "$tests_csproj" -c Release --no-build --nologo -v quiet \
+    -p:FolioNativeDir="$stage" --filter "$control_filter" >"$clog" 2>&1
+  cstatus=$?
+  set -e
+  if [ "$interrupted" = "1" ]; then break; fi
+  control_completed=$((control_completed + 1))
+  if [ "$(log_says_host_died "$clog")" = "yes" ]; then
+    control_crashes=$((control_crashes + 1))
+    printf '\r    iteration %d of %d ... HOST DIED\n' "$c" "$iterations"
+  else
+    if [ "$(log_says_no_tests_ran "$clog")" = "no" ]; then control_ran_tests="yes"; fi
+    printf '\r    iteration %d of %d ... clean' "$c" "$iterations"
+  fi
+  if [ "$cstatus" = 0 ]; then :; fi
+done
+echo
+
+if [ "$interrupted" = "1" ]; then
+  echo
+  echo "soak: interrupted during the control leg. Nothing is claimed."
+  exit 1
+fi
+
+control_verdict "$control_crashes" "$control_completed" "$control_ran_tests"
+if [ "$CONTROL_TAG" != "SOUND" ]; then
+  keep_logs=1
+  echo
+  echo "=== REFUSED — THE CONTROL LEG DID NOT PASS ($CONTROL_TAG) ==="
+  echo
+  echo "  $CONTROL_TEXT"
+  echo
+  echo "  control filter : $control_filter"
+  echo "  control logs   : $control_logs"
+  echo "  host           : $(uname -n), $(uname -s) $(uname -r), $arch"
+  echo "  translation    : $VERDICT_TEXT"
+  echo
+  echo "  The soak leg was NOT run. Nothing is written to the ledger. Fix the host --"
+  echo "  or move to one that passes this leg -- before reading anything into a crash"
+  echo "  from the binding, because on this host the two cannot be told apart."
+  exit 1
+fi
+echo "    $CONTROL_TEXT"
+echo
 
 before_dmesg="$work/dmesg.before"
 after_dmesg="$work/dmesg.after"

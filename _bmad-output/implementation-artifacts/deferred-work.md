@@ -7566,7 +7566,7 @@ arm64. **Nothing reached a consumer** — 1.1.0 ships Windows-only and 1.2.0 doe
 - **Deferred by:** SPEC-dotnet-linux, 2026-09-23, after the retraction recorded in DW-396.
 - **Owner:** whoever next runs or extends `folio-dotnet/build/soak.sh`.
 - **Severity:** HIGH. It produced a wrong conclusion that was committed and pushed.
-- **Status:** OPEN.
+- **Status:** CLOSED 2026-09-23, same day, by the control leg described below.
 
 **What happened.** `soak.sh` refuses to call a clean run a pass until a reproduction leg on the same
 architecture and native is on its ledger — it insists the harness has been shown able to **see** the
@@ -7582,6 +7582,18 @@ from a host that crashes on its own is worth less than nothing, because it looks
 
 ⚠ The control must not load the native. `DocsTests`/`SurfaceTests` qualify; `PackagingTests` also
 qualifies and is the workload that exposed this, being heavy enough to provoke the host.
+
+**CLOSED — what shipped.** `soak.sh` now opens every run with a control leg: the same iteration
+count, the same host, the same built suite, against `--control-filter` (default `PackagingTests`,
+`DocsTests`, `SurfaceTests` — none of which map the native, verified by reading `/proc/<pid>/maps`
+during a run). **One crash refuses the whole run**: no threshold, because a host that can kill a
+test host with the engine absent can do it with the engine present, and nothing downstream can tell
+those apart — a threshold would have admitted a 3% background rate on the same reasoning that
+admitted 25%. A control that matched no tests is refused too, as `EMPTY`. The control's iteration
+count is **not configurable** and equals the soak's: a control shorter than the run it certifies is
+the false clear one level up. The judgement lives in `control_verdict()` in the tool's pure half,
+and `--self-check` drives it over five synthetic cases including the 2026-09-23 reading itself —
+75 cases now, up from 70.
 
 ### DW-148 — comments that describe a sibling's behaviour go stale silently; four instances this run
 
