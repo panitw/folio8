@@ -115,6 +115,35 @@ jobs:
           fi
           sha256sum "folio-dotnet/build/native/${{ matrix.rid }}/libfolio8_native.so"
 
+      # WITHOUT THIS THE SOAK RUNS HALF-BLIND, AND RUN 35889756264 PROVED IT.
+      # Ubuntu ships kernel.dmesg_restrict=1, so an unprivileged `dmesg` is
+      # denied. soak.sh said so plainly -- "dmesg: NOT READABLE ... only the
+      # CLR-side one" -- and then, on the amd64 leg, classified a death at
+      # iteration 17 as CRASH-UNKNOWN. The workflow's own `sudo dmesg` step
+      # captured what the tool could not see on that very run:
+      #
+      #     signal: .NET Long Runni[32148] overflowed sigaltstack
+      #
+      # That is the named signature. A genuine reproduction was thrown away
+      # because the harness could not read the one line that identifies it.
+      #
+      # THE SPLIT IS DELIBERATE: the tool DISCLOSES what it cannot see and
+      # never guesses; the environment is responsible for letting it see. So
+      # this is a workflow step, not a `sudo` inside soak.sh -- a soak runner
+      # that escalates privileges by itself is a worse thing to own than one
+      # that says what it is missing. The assertion below is the point: if the
+      # sysctl does not take, this job fails HERE rather than producing a run
+      # whose reproduction leg cannot name what it caught.
+      - name: let the soak read the kernel ring buffer
+        run: |
+          set -euo pipefail
+          sudo sysctl -w kernel.dmesg_restrict=0
+          if ! dmesg >/dev/null 2>&1; then
+            echo "dmesg is still not readable unprivileged; the reproduction leg could not name a DW-396 death and this run would be misleading" >&2
+            exit 1
+          fi
+          echo "dmesg readable unprivileged — the kernel half of the signature can be watched for"
+
       # STEP 1 OF 2: SHOW THE HARNESS CAN SEE THE DEFECT.
       # The ledger lives in the runner's HOME and is destroyed with it, so the
       # reproduction must be earned on THIS runner, against THIS native, before

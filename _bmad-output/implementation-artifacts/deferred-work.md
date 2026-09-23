@@ -7354,6 +7354,40 @@ leg shorter than the soak it certifies turns "we did not ask enough times" into 
 see the defect". Fixed — `reproduce_iterations` is its own input, defaulting to **150**. Cheap: 25
 control plus 25 reproduce took 2m21s, so 150 of each is roughly a quarter-hour.
 
+**SECOND RUN, 35889756264 (2026-09-23), 300 reproduce iterations — and the harness was BLIND.**
+
+| Leg | Control (engine absent) | Reproduce (pre-fix binding) |
+|---|---|---|
+| amd64 | **300 / 300 clean** | died on iteration **17** — classified `CRASH-UNKNOWN` |
+| arm64 | **300 / 300 clean** | **300 / 300 survived** — genuinely did not fire |
+
+The amd64 classification was wrong, and the run itself contains the proof. Ubuntu ships
+`kernel.dmesg_restrict=1`, so `soak.sh` reported `dmesg : NOT READABLE — the kernel signature cannot
+be watched for; only the CLR-side one` and then could not name the death it caught. The workflow's
+own `sudo dmesg` step, which runs `always()`, captured this from the same job:
+
+```
+[ 1011.690095] signal: .NET Long Runni[32148] overflowed sigaltstack
+```
+
+**That is the named signature.** The amd64 leg DID reproduce DW-396 on a sound host — 0 crashes in
+300 control iterations against a death at 17 with the engine loaded — and the reproduction was
+discarded because the harness could not read the one line that identifies it. Note the thread:
+`.NET Long Runni…`, a long-running-task thread rather than a `.NET TP Worker`, which is another
+CLR-created thread the binding does not own and further evidence that the exposure is not confined
+to the threads that cross.
+
+Fixed in the workflow, not in the tool: a step sets `kernel.dmesg_restrict=0` and **fails the job**
+if an unprivileged `dmesg` still cannot be read. The split is deliberate — the tool discloses what it
+cannot see and never guesses; the environment is responsible for letting it see. A soak runner that
+escalates its own privileges is a worse thing to own than one that says what it is missing.
+
+**arm64 is a separate and real result.** 300 iterations of the pre-fix binding on a sound arm64 host,
+no crash, kernel buffer unreadable there too — so that leg must be re-run before anything is
+concluded. If it still does not fire with `dmesg` readable, the wider margin is the likely reason
+(24576 bytes against amd64's 16384 for the same handler frame), and arm64's reproduction may need
+materially more iterations or more concurrency than amd64's.
+
 ⚠ **If a long reproduction leg still cannot catch it on GitHub's runners, that is a finding, not a
 blocker to route around.** It would mean the amd64 evidence has to come from a host where the defect
 does fire, and the only one known to do so is the owner's WSL2 box — which is unsound for the soak
