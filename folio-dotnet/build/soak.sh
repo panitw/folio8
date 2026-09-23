@@ -1482,7 +1482,7 @@ if [ "$CONTROL_TAG" != "SOUND" ]; then
   echo "  control filter : $control_filter"
   echo "  control logs   : $control_logs"
   echo "  host           : $(uname -n), $(uname -s) $(uname -r), $arch"
-  echo "  translation    : $VERDICT_TEXT"
+  echo "  translation    : $VERDICT_SUMMARY"
   echo
   echo "  The soak leg was NOT run. Nothing is written to the ledger. Fix the host --"
   echo "  or move to one that passes this leg -- before reading anything into a crash"

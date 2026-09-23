@@ -7292,6 +7292,22 @@ Two consequences follow, and the second is the one that reaches other people:
 |---|---|---|
 | **native arm64** | Re-take the 24576 row outside a Docker Desktop VM, so the arm64 figure rests on a host rather than on a hypervisor. | owner's Linux arm64 host |
 
+⚠ **AND THE amd64 SOAK LEG, WHICH NEEDS A HOST THAT DOES NOT CRASH ON ITS OWN.** The owner's WSL2
+box reproduced DW-396 with the named signature on 2026-09-23 (ledger row above), so the *harness* is
+validated there. The *host* is not: on kernel `6.18.33.2-microsoft-standard-WSL2` with .NET 10.0.400,
+the control leg measured **5 crashed test hosts in 25 iterations of a workload that never loads the
+native** — 14+ GB free, load under 2, no OOM. Every one of those presents as
+`Comm: .NET TP Worker`, SIGSEGV, **indistinguishable from DW-396 except that the kernel's
+`overflowed sigaltstack` line is absent**. That line is the only discriminator on this host, which is
+why the named-signature rule is load-bearing rather than fastidious: without it every background
+crash today would have read as a reproduction, and the crash-rate comparison built on them produced
+a wrong conclusion that had to be retracted.
+
+Unresolved lead, untested: .NET's **W^X double-mapping** (`/memfd:doublemapper`, seen in a core from
+this box) against a very new kernel. `DOTNET_EnableWriteXorExecute=0` is the one-line A/B that would
+settle it. The box wedges under sustained `dotnet test` loops, which is what has prevented the test
+from completing.
+
 Neither blocks stories 2–6: the fix — enlarging the altstack explicitly on long-lived binding-owned
 threads — is arch-independent, so these numbers sharpen the record rather than change the design.
 
