@@ -7468,9 +7468,17 @@ soak. A qemu tally was nearly acted on in the opposite direction. glibc 2.34 tur
 whether it exists. A mechanism plus a fix plus a green CI leg is the same evidence that produced both
 wrong readings. **Status: OPEN.**
 
-#### 2026-09-23, the soak leg on real amd64: THE SHIPPED FIX DOES NOT CLOSE THIS, AND THE DESIGN IS WRONG
+#### 2026-09-23, the soak leg on real amd64: RETRACTED — THE SOAK HOST IS UNSOUND, AND THE VERDICT BELOW WAS WRONG
 
-**The fixed binding crashes at the same rate as the pre-fix binding.** Both legs run by the owner on
+⚠ **READ THE RETRACTION AT THE END OF THIS SUBSECTION BEFORE ANYTHING IN IT.** The soak numbers
+here were taken on a host that crashes .NET test hosts **without the engine loaded at all**, at a
+higher rate than the engine legs themselves. The conclusion this subsection originally reached — that
+the shipped fix does not work and its design is wrong — **is withdrawn**; it is not supported by this
+evidence. What survives is the handler-scope reading, which was measured directly rather than
+inferred from a crash. The subsection is kept in full, because this entry's value is its record of
+wrong readings and this was one of them — the third.
+
+**The fixed binding crashed at a similar rate to the pre-fix binding.** Both legs run by the owner on
 the WSL2 box, probe-stamped NATIVE, same shipped `linux-x64` native
 (`9f1296a37bb2ede56a49d4ac54656f7769affdfe9056164a6a0a82294769a021`), same filter:
 
@@ -7504,29 +7512,76 @@ address back and attributing it against `/proc/self/maps`
 And the altstacks, on the same process, after the engine is live: main **16384**, `.NET TP Worker`
 **16384**, `new Thread()` **16384**. Go sizes its own `gsignal` stack at **32768**.
 
-**So the premise of the shipped fix is false.** `EngineThreads` enlarges the altstack on
-binding-owned threads, and `EngineThreadTests` passes on real amd64 — the thread that *crosses* is
-binding-owned and does carry its megabyte. That was never the exposure. `dlopen` alone replaces
-`SIGSEGV`, `SIGBUS` and `SIGURG` for **every thread in the process**, and Go additionally *adds*
-`SA_ONSTACK` to handlers it leaves in place. CoreCLR raises `SIGSEGV` as ordinary business — null
-checks, GC write barriers — on threads that never touch this ABI, and each of those now enters Go's
-handler with 16 KiB where Go expects 32 KiB. **The crash is on threads the fix cannot reach, and
-routing every crossing through a pool does not address it.**
+**What the handler-scope reading establishes, and it stands.** `EngineThreads` enlarges the
+altstack on binding-owned threads, and `EngineThreadTests` passes on real amd64 — the thread that
+*crosses* is binding-owned and does carry its megabyte. But `dlopen` alone replaces `SIGSEGV`,
+`SIGBUS` and `SIGURG` for **every thread in the process**, and Go additionally *adds* `SA_ONSTACK`
+to handlers it leaves in place. CoreCLR raises `SIGSEGV` as ordinary business — null checks, GC
+write barriers — on threads that never touch this ABI, and each of those enters Go's handler with
+16 KiB where Go sizes 32 KiB for itself. So **enlarging only the crossing threads is incomplete on
+its face**, and the corollary reaches beyond this repository: entry is not what exposes a caller,
+*loading* is. That much is read, not inferred.
 
-The corollary is the one that matters outside this repository: **no amount of care on the calling
-thread is sufficient.** A caller cannot fix this by controlling which of its threads enter the ABI,
-because entry is not what exposes it — loading the library is. `folio-go/cshared/README.md` tells
-callers to size the altstack on "every thread that will ever cross this ABI"; that advice is
-**wrong**, and it is wrong in the direction that leaves a reader exposed.
+**What it does NOT establish, and what this subsection originally got wrong.** That the incompleteness
+actually produces the crashes measured above. Whether Go's `sigtramp` plus a forwarded CLR handler
+genuinely exhausts 16 KiB is **unmeasured**; the argument for it here was a crash rate, and the crash
+rate turned out not to be evidence.
 
-**What this does NOT establish.** That the arm64 half behaves the same way (unmeasured — 24 KiB is
-wider but the mechanism is identical), and that there is any in-process fix at all. The options
-worth costing are a Go-side change, controlling handler installation, or moving the engine out of
-process; none has been investigated and none should be assumed to exist.
+---
 
-**Status: OPEN, and the fix at `7f6a936` is now known insufficient rather than unproven.** The
-restored RIDs stay unpackable: `FolioAssertLinuxSoak` refuses without a soak assertion, and no soak
-has passed. **Nothing reached a consumer** — 1.1.0 ships Windows-only and 1.2.0 does not exist.
+### RETRACTION, same day: the soak host crashes without the engine
+
+Three workloads on the same box, same session:
+
+| Workload | Engine mapped? | Result |
+|---|---|---|
+| `GoldenTests` + `FontsTests` | **yes** | crashed at 13/100, 14/60, 15/25 (pre-fix), 27/30, 27/60, 40/60 — roughly 4–7% |
+| `DocsTests` + `SurfaceTests` | no | **120/120 clean** across three runs |
+| `PackagingTests` | **no** — `grep -c folio8_native /proc/<pid>/maps` = **0** | **20 crashes in 80 runs — ~25%** |
+
+The non-engine workload crashes the .NET test host **more often than the engine workload does**, with
+`libfolio8_native.so` not in the process's address space. `dmesg` names `Comm: .NET TP Worker` for
+those too. No OOM kill is logged. The crashes cluster late in a run (50, 54, 56, 57, 58, 59, 61, 68,
+70, 72, 74 of 80), so the host appears to degrade as it goes.
+
+**Therefore no soak figure from this host is admissible in either direction** — not the pre-fix leg,
+not the post-fix leg, and not the comparison between them that this subsection was built on. The
+`--reproduce` leg's `CRASH-UNKNOWN` was very likely this background failure, which is exactly why it
+carried neither named signature, and why `soak.sh` was right to refuse it.
+
+**The tool gap this exposes.** `soak.sh` validates that the harness can **see** the defect (the
+reproduction leg) but never validates that the host does not **manufacture** crashes on its own. A
+control leg — the same iteration count on a workload that never loads the native, required clean
+before any verdict — would have caught this in the first five minutes instead of after a wrong
+conclusion was committed and pushed. Filed as its own entry below.
+
+**Status: OPEN. The fix at `7f6a936` returns to UNPROVEN — not known-good, not known-insufficient.**
+Its premise is incomplete on the handler-scope reading, which is a real finding and reason enough not
+to ship; but the claim that it fails in practice is withdrawn. What is still needed is what was needed
+this morning: a soak on a host that has been shown not to crash on its own, on real amd64 and real
+arm64. **Nothing reached a consumer** — 1.1.0 ships Windows-only and 1.2.0 does not exist.
+
+### DW-397 — soak.sh validates that the harness can see the defect, but not that the host is sound
+
+- **Deferred by:** SPEC-dotnet-linux, 2026-09-23, after the retraction recorded in DW-396.
+- **Owner:** whoever next runs or extends `folio-dotnet/build/soak.sh`.
+- **Severity:** HIGH. It produced a wrong conclusion that was committed and pushed.
+- **Status:** OPEN.
+
+**What happened.** `soak.sh` refuses to call a clean run a pass until a reproduction leg on the same
+architecture and native is on its ledger — it insists the harness has been shown able to **see** the
+defect. It has no counterpart for the opposite failure: a host that **manufactures** crashes. On the
+2026-09-23 amd64 leg the WSL2 host crashed the .NET test host in 20 of 80 runs of a workload that
+never loads the native (`grep -c folio8_native /proc/<pid>/maps` = 0), which is a higher rate than
+the engine legs. Both soak legs were read as measuring the binding. Neither did.
+
+**What discharges it:** a **control leg** — the same iteration count against a filter that never
+enters the engine, required clean before any verdict is printed — and a refusal, not a warning, when
+it is not. The tool's own thesis is that a figure without its provenance is worth nothing; a figure
+from a host that crashes on its own is worth less than nothing, because it looks like a measurement.
+
+⚠ The control must not load the native. `DocsTests`/`SurfaceTests` qualify; `PackagingTests` also
+qualifies and is the workload that exposed this, being heavy enough to provoke the host.
 
 ### DW-148 — comments that describe a sibling's behaviour go stale silently; four instances this run
 

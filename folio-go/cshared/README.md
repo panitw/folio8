@@ -213,12 +213,11 @@ that raises `SIGSEGV` as ordinary business — the .NET CLR does, for null
 checks and GC write barriers — will do so on threads you do not control.
 
 **If your runtime installs its own alternate signal stack, every thread in the
-process needs enough room, not just the ones that cross.** Sizing only the
-calling threads is not sufficient, and this repository proved that the
-expensive way: a fix that routed every crossing through threads with a
-megabyte of alternate stack left the crash rate unchanged, because the threads
-that died were the ones that never crossed. A stack that is
-too small does not fail cleanly: the kernel turns the overflow into `SIGSEGV`,
+process needs enough room, not just the ones that cross.** That follows from
+the reading above rather than from a crash: the handlers are process-wide, so
+a thread that never calls in can still run one. Whether a given runtime's
+altstack is actually too small is for you to measure on your own threads. A
+stack that is too small does not fail cleanly: the kernel turns the overflow into `SIGSEGV`,
 the host's own fault handler sees corruption it cannot explain, and the
 process dies with no stack trace that names anything here. Two properties
 matter and both are easy to get wrong:

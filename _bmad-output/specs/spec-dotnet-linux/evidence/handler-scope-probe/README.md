@@ -21,8 +21,11 @@ before any crossing; Go additionally *adds* `SA_ONSTACK` to the CLR's own
 `SIGABRT` handler. Every .NET thread still carries a 16384-byte alternate
 signal stack. Go sizes its own for 32768.
 
-That is why routing crossings through binding-owned threads does not fix
-DW-396: the exposed threads are the ones that never cross. See the
-2026-09-23 subsection of DW-396.
+So routing crossings through binding-owned threads is incomplete on its face:
+the handlers are process-wide and the exposed threads include ones that never
+cross. It does **not** follow that this is what causes any particular crash —
+a conclusion to that effect was drawn from soak numbers and then retracted
+when the soak host turned out to crash without the engine loaded. See the
+2026-09-23 subsection of DW-396 and the retraction under it.
 
 It is a diagnostic, not a test, and is wired into no CI job.
