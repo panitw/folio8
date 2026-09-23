@@ -33,6 +33,20 @@ on:
         description: "Soak iterations (the control leg runs the same count first)"
         type: string
         default: "100"
+      # THE REPRODUCTION LEG NEEDS ITS OWN, LARGER COUNT, AND ITS FIRST RUN
+      # PROVED IT. Run 35888115354 left this to soak.sh's built-in default of
+      # 25 and came back NOT REPRODUCED on amd64 — on a runner whose control
+      # leg was 25/25 clean, so the host was sound and the defect simply did
+      # not fire. DW-396 is probabilistic and its RATE IS HOST-DEPENDENT: it
+      # took 8 iterations on the owner's WSL2 box and more than 25 here. A
+      # reproduction leg shorter than the soak it certifies is the false clear
+      # wearing the other hat — "the pre-fix binding did not crash" is how a
+      # host gets written off as unable to reproduce when it was only asked
+      # 25 times.
+      reproduce_iterations:
+        description: "Reproduction-leg iterations (must catch the defect or the soak is refused)"
+        type: string
+        default: "150"
 
 permissions:
   contents: read
@@ -109,7 +123,7 @@ jobs:
       # first and refuses outright if this host crashes test hosts on its own.
       - name: reproduce DW-396 on the pre-fix binding (validates the harness)
         run: |
-          ./folio-dotnet/build/soak.sh --reproduce \
+          ./folio-dotnet/build/soak.sh --reproduce -n "${{ inputs.reproduce_iterations }}" \
             --log-dir "$RUNNER_TEMP/soak-reproduce" \
             --context "GitHub Actions ${{ runner.os }} ${{ matrix.rid }}, run ${{ github.run_id }}"
 

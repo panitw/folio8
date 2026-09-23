@@ -7333,6 +7333,33 @@ A disposable runner is a better soak host than a developer machine for reasons b
 nothing else competes on it, every run starts from the same image, and the result is reproducible by
 anyone with the repository rather than by one person with one laptop.
 
+**FIRST RUN, 35888115354 (2026-09-23) — the runner is SOUND and the defect did NOT fire.** amd64 leg,
+`runnervmlun5p`, `Linux 6.17.0-1022-azure`, probe-stamped NATIVE, same native
+`9f1296a3…`:
+
+| Leg | Result |
+|---|---|
+| control, engine absent | **25 / 25 clean** — the host manufactures nothing |
+| reproduce, pre-fix binding | **NOT REPRODUCED in 25** — the soak was refused, correctly |
+
+Both halves matter. GitHub's runner is the sound host the WSL2 box never was, which is what the move
+was for. But **DW-396's firing rate is host-dependent**: 1-in-8 on the owner's WSL2 box (8 cpu),
+not once in 25 here. A GitHub standard runner has fewer cores, so fewer CLR thread-pool threads and
+fewer chances for a signal to land deep enough to overflow — the frame has to not fit, and whether
+it fits depends on how deep the stack was.
+
+The workflow's first cut left the reproduction leg on `soak.sh`'s built-in default of 25 while the
+`iterations` input fed only the soak. That is the false clear wearing the other hat: a reproduction
+leg shorter than the soak it certifies turns "we did not ask enough times" into "this host cannot
+see the defect". Fixed — `reproduce_iterations` is its own input, defaulting to **150**. Cheap: 25
+control plus 25 reproduce took 2m21s, so 150 of each is roughly a quarter-hour.
+
+⚠ **If a long reproduction leg still cannot catch it on GitHub's runners, that is a finding, not a
+blocker to route around.** It would mean the amd64 evidence has to come from a host where the defect
+does fire, and the only one known to do so is the owner's WSL2 box — which is unsound for the soak
+half. A sound host that cannot reproduce and a reproducing host that is not sound is a genuine
+impasse, and it must be recorded as one rather than resolved by relaxing either rule.
+
 Neither blocks stories 2–6: the fix — enlarging the altstack explicitly on long-lived binding-owned
 threads — is arch-independent, so these numbers sharpen the record rather than change the design.
 
