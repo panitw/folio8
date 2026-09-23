@@ -140,12 +140,21 @@ binding="${SOAK_BINDING:-}"
 if [ -n "$binding" ]; then binding_given_by_env=1; else binding_given_by_env=0; fi
 iterations=""
 filter="${SOAK_FILTER:-FullyQualifiedName~GoldenTests|FullyQualifiedName~FontsTests}"
-# THE CONTROL FILTER MUST NOT LOAD THE NATIVE. These three do not: verified on
-# 2026-09-23 by reading /proc/<pid>/maps during a run, where the count of
-# folio8_native lines was 0. PackagingTests is deliberately first -- it is the
-# heavy one, spawning `dotnet pack` subprocesses, and it is the workload that
-# exposed the unsound host in the first place. A light control proves little.
-control_filter="${SOAK_CONTROL_FILTER:-FullyQualifiedName~PackagingTests|FullyQualifiedName~DocsTests|FullyQualifiedName~SurfaceTests}"
+# THE CONTROL FILTER MUST NOT LOAD THE NATIVE, AND THE FIRST ONE DID.
+# It was `PackagingTests|DocsTests|SurfaceTests`, checked by reading
+# /proc/<pid>/maps during a *DocsTests* run and generalised to all three --
+# which was not a check, it was a sample. `PackagingTests` contains
+# `TheRecordedEngineVersionMatchesTheEngine`, which asks the engine its
+# version and therefore CROSSES THE ABI. Every control iteration was loading
+# the Go library, and Go installs its SA_ONSTACK handlers process-wide at
+# dlopen, so the "engine absent" leg was exposed to the very defect it existed
+# to rule out. Proven by deleting the native and running the filter: that one
+# test fails, the other 57 pass.
+#
+# The exclusion is verified at run time by `assert_control_is_engine_free`
+# below rather than trusted, because this is the second filter that looked
+# engine-free and was not.
+control_filter="${SOAK_CONTROL_FILTER:-(FullyQualifiedName~PackagingTests|FullyQualifiedName~DocsTests|FullyQualifiedName~SurfaceTests)&FullyQualifiedName!~TheRecordedEngineVersionMatchesTheEngine}"
 native="${SOAK_NATIVE:-}"
 log_dir="${SOAK_LOG_DIR:-}"
 ledger="${SOAK_LEDGER:-}"
@@ -1445,6 +1454,40 @@ fi
 
 control_logs="$logs/control"
 mkdir -p "$control_logs"
+
+# THE CONTROL LEG'S ONE CLAIM, CHECKED RATHER THAN ASSERTED. "With the engine
+# absent" is the entire value of this leg: if the filter loads the native, the
+# control is exposed to DW-396 and a crash there proves the opposite of what it
+# is read as proving. The check is empirical and costs one iteration -- move
+# the staged native aside, run the filter once, put it back. A filter that
+# needs the engine fails without it.
+echo "==> control leg: asserting the filter does not load the native"
+_cf_hidden="$stage/host/.hidden-libfolio8_native.so"
+mv "$stage/host/libfolio8_native.so" "$_cf_hidden"
+set +e
+dotnet test "$tests_csproj" -c Release --no-build --nologo -v quiet \
+  -p:FolioNativeDir="$stage" --filter "$control_filter" >"$control_logs/engine-free-check.log" 2>&1
+_cf_status=$?
+set -e
+mv "$_cf_hidden" "$stage/host/libfolio8_native.so"
+if [ "$_cf_status" != 0 ] || [ "$(log_says_no_tests_ran "$control_logs/engine-free-check.log")" = "yes" ]; then
+  keep_logs=1
+  echo
+  echo "=== REFUSED — THE CONTROL FILTER IS NOT ENGINE-FREE ==="
+  echo
+  echo "  With the native moved aside the control filter did not pass, so it CROSSES THE ABI."
+  echo "  A control leg that loads the Go library is exposed to the defect it exists to rule"
+  echo "  out -- Go installs its SA_ONSTACK handlers process-wide at dlopen -- and a crash"
+  echo "  there would be read as host noise when it may be DW-396."
+  echo
+  echo "  filter : $control_filter"
+  echo "  log    : $control_logs/engine-free-check.log"
+  echo
+  echo "  Narrow --control-filter until it passes with no native present."
+  exit 1
+fi
+echo "    it does not: the filter passes with no native present"
+
 echo "==> control leg: $iterations iterations with the engine ABSENT"
 echo "    filter: $control_filter"
 control_crashes=0

@@ -7388,6 +7388,46 @@ concluded. If it still does not fire with `dmesg` readable, the wider margin is 
 (24576 bytes against amd64's 16384 for the same handler frame), and arm64's reproduction may need
 materially more iterations or more concurrency than amd64's.
 
+#### 2026-09-24: THE CONTROL LEG WAS NEVER ENGINE-FREE, AND THAT CHANGES WHAT THE "HOST NOISE" WAS
+
+`soak.sh`'s control leg exists to answer one question — does this host crash test hosts *without the
+engine* — and its filter was `PackagingTests|DocsTests|SurfaceTests`. **`PackagingTests` contains
+`TheRecordedEngineVersionMatchesTheEngine`, which asks the engine its version and therefore crosses
+the ABI.** Proven by deleting the native and running the filter: that one test fails, the other 57
+pass. The original check was reading `/proc/<pid>/maps` during a *DocsTests* run and generalising to
+all three — a sample, not a check.
+
+So every control iteration **loaded the Go library**, and Go installs its `SA_ONSTACK` handlers
+process-wide at `dlopen` (measured, 2026-09-23). The leg that was supposed to rule the defect out was
+exposed to it.
+
+**What that does to the readings taken with it:**
+
+| Workload | Loads the native? | Result |
+|---|---|---|
+| `DocsTests` + `SurfaceTests` (WSL2) | **no** — verified | **120 / 120 clean** |
+| `PackagingTests` (WSL2) | **YES** — one crossing | **20 crashes / 80** |
+| GitHub amd64 control, 300 iterations | **YES** | 1 crash, and `dmesg` carried `signal: .NET Long Runni[27144] overflowed sigaltstack` |
+
+The differential runs the other way from the reading it was given. Genuinely engine-free workloads
+were clean; the workloads that crashed all had the library loaded. **The "background host noise" that
+justified retracting the 2026-09-23 conclusion may itself be DW-396**, firing on CLR threads that
+never cross — which is exactly what the handler-scope probe predicts and what the thread names say
+(`.NET TP Worker`, `.NET Long Runni…`, neither binding-owned).
+
+**This is NOT yet a conclusion, and it must not be turned into one the way the last one was.** What
+is missing is a leg that isolates the variable: **HEAD's binding — the one carrying the fix — loading
+the native and then NOT crossing again**, under thread-pool pressure, on a sound host, with `dmesg`
+readable. If `overflowed sigaltstack` fires there, enlarging only the crossing threads is
+demonstrably insufficient and the epic's design needs revisiting. If it does not, the crashes belong
+to the pre-fix binding and the fix stands. Every run so far confounds the two, because the control
+leg ran the *pre-fix* worktree's tests during a `--reproduce` invocation.
+
+**Fixed in the tool, and verified rather than asserted.** The default control filter now excludes that
+test, and `soak.sh` proves the claim at run time before every control leg: it moves the staged native
+aside, runs the filter once, and refuses the whole run if it does not pass. This is the second filter
+that looked engine-free and was not, so it is checked rather than reasoned about.
+
 ⚠ **If a long reproduction leg still cannot catch it on GitHub's runners, that is a finding, not a
 blocker to route around.** It would mean the amd64 evidence has to come from a host where the defect
 does fire, and the only one known to do so is the owner's WSL2 box — which is unsound for the soak
