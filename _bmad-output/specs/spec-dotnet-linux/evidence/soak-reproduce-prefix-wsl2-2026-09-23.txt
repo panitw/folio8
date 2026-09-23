@@ -1,0 +1,70 @@
+=== soak.sh — translation verdict, taken before anything is run ===
+  uname machine        : x86_64
+  process architecture : amd64 (ELF e_machine of /proc/self/exe)
+  /proc/cpuinfo        : vendor_id GenuineIntel (x86-shaped)
+  /run/rosetta         : absent
+  binfmt_misc for self : no interpreter registered that would run amd64
+  verdict              : NATIVE — kernel and process agree on x86_64, /proc/cpuinfo is consistent with amd64, no Rosetta marker, no matching binfmt_misc interpreter.
+
+=== soak.sh — what is being run ===
+  mode                 : reproduce
+  binding              : 86e7e5a feat(folio-dotnet): make DW-396's signal-stack reading re-runnable, and say where each number came from [requested as '7f6a936^', checked out as a git worktree]
+  native               : /home/panitw/folio8/folio-dotnet/build/native/linux-x64/libfolio8_native.so
+  native sha256        : 9f1296a37bb2ede56a49d4ac54656f7769affdfe9056164a6a0a82294769a021
+  suite                : /tmp/folio-soak.LMo8SL/binding-tree/folio-dotnet/test/Folio8.Tests/Folio8.Tests.csproj
+  filter               : FullyQualifiedName~GoldenTests|FullyQualifiedName~FontsTests
+  iterations requested : 25
+  host                 : LAPTOP-NL4JS2JT
+  kernel               : Linux 5.15.146.1-microsoft-standard-WSL2
+  architecture         : amd64
+  translation verdict  : NATIVE — kernel and process agree on x86_64, /proc/cpuinfo is consistent with amd64, no Rosetta marker, no matching binfmt_misc interpreter.
+  dmesg                : readable — the kernel's 'overflowed sigaltstack' line is being watched for
+  harness validated    : NO for amd64 against this native — no reproduction leg is on the ledger
+  ledger               : /home/panitw/.local/state/folio-soak/ledger.tsv
+  logs                 : /home/panitw/soak-logs/repro
+  tool                 : folio-dotnet/build/soak.sh, sha256 5ee2862d58a1fc1daef8084d7264b1ae4603381c6348f3da81cefaeee8305720
+  started              : 2026-09-23T00:18:33Z
+  context              : WSL2 Ubuntu, real amd64
+
+==> building the suite
+==> iteration 1 of 25 ... clean
+==> iteration 2 of 25 ... clean
+==> iteration 3 of 25 ... clean
+==> iteration 4 of 25 ... clean
+==> iteration 5 of 25 ... clean
+==> iteration 6 of 25 ... clean
+==> iteration 7 of 25 ... clean
+==> iteration 8 of 25 ... clean
+==> iteration 9 of 25 ... clean
+==> iteration 10 of 25 ... clean
+==> iteration 11 of 25 ... clean
+==> iteration 12 of 25 ... clean
+==> iteration 13 of 25 ... clean
+==> iteration 14 of 25 ... clean
+==> iteration 15 of 25 ... CRASH-UNKNOWN
+    the test host process died — NEITHER named signature was present, so this is an unexplained crash and is NOT attributed to DW-396
+    kernel said, during this iteration:
+      [ 1783.406701] potentially unexpected fatal signal 11.
+
+=== VERDICT: NOT REPRODUCED — UNEXPLAINED CRASH ===
+
+  the pre-fix binding died on iteration 15 with NEITHER named signature. A crash of unknown cause is not a reproduction of DW-396, and the harness stays unvalidated. Read the iteration's log before running anything else.
+
+  mode      : reproduce (the validation leg — the PRE-FIX binding)
+  binding   : 86e7e5a feat(folio-dotnet): make DW-396's signal-stack reading re-runnable, and say where each number came from [requested as '7f6a936^', checked out as a git worktree]
+  native    : /home/panitw/folio8/folio-dotnet/build/native/linux-x64/libfolio8_native.so
+              sha256 9f1296a37bb2ede56a49d4ac54656f7769affdfe9056164a6a0a82294769a021, amd64
+  host      : LAPTOP-NL4JS2JT, Linux 5.15.146.1-microsoft-standard-WSL2, amd64
+  translation: NATIVE — kernel and process agree on x86_64, /proc/cpuinfo is consistent with amd64, no Rosetta marker, no matching binfmt_misc interpreter.
+  iterations: 15 of 25 requested
+  started   : 2026-09-23T00:18:33Z
+  finished  : 2026-09-23T00:19:31Z
+  tool      : folio-dotnet/build/soak.sh, sha256 5ee2862d58a1fc1daef8084d7264b1ae4603381c6348f3da81cefaeee8305720
+  failures  :
+  iteration 15: CRASH-UNKNOWN — the test host process died — NEITHER named signature was present, so this is an unexplained crash and is NOT attributed to DW-396
+    log: /home/panitw/soak-logs/repro/iteration-15.log
+    kernel: [ 1783.406701] potentially unexpected fatal signal 11.
+  logs      : /home/panitw/soak-logs/repro
+
+  Quote this verdict with the block above attached. A soak figure without its host,
+  architecture and translation verdict is the reading DW-396 has already recorded twice.

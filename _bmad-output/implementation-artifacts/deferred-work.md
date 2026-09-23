@@ -7468,6 +7468,66 @@ soak. A qemu tally was nearly acted on in the opposite direction. glibc 2.34 tur
 whether it exists. A mechanism plus a fix plus a green CI leg is the same evidence that produced both
 wrong readings. **Status: OPEN.**
 
+#### 2026-09-23, the soak leg on real amd64: THE SHIPPED FIX DOES NOT CLOSE THIS, AND THE DESIGN IS WRONG
+
+**The fixed binding crashes at the same rate as the pre-fix binding.** Both legs run by the owner on
+the WSL2 box, probe-stamped NATIVE, same shipped `linux-x64` native
+(`9f1296a37bb2ede56a49d4ac54656f7769affdfe9056164a6a0a82294769a021`), same filter:
+
+| Binding | Result |
+|---|---|
+| `86e7e5a` — **pre-fix** (`--reproduce` leg) | died on iteration **15 of 25** |
+| `022d87b` — **HEAD, with the fix** | died on iteration **13 of 100** |
+| `022d87b` — reproduced again under direct control | died on iteration **27 of 30** |
+
+Every death is a bare `SIGSEGV` with **neither named signature**, so `soak.sh` correctly refused to
+attribute any of them to DW-396 and correctly refused to validate the harness. The classifier was
+right; the design it was validating was not.
+
+**What the kernel said, and what the core said.** `dmesg` names the dying thread both times:
+`Comm: .NET TP Worker`. The core dump is `core..NET TP Worker`, faulting `RIP` inside
+`libcoreclr.so`, with `RSP` exactly page-aligned in a function prologue that had just loaded its
+stack-protector canary — a thread out of room, not a wild pointer.
+
+**THE READING THAT SETTLES IT — Go's handlers are installed PROCESS-WIDE, at `dlopen`, before any
+crossing.** Taken with `sigaction(sig, NULL, &old)` on a .NET 10.0.11 host, reading the handler
+address back and attributing it against `/proc/self/maps`
+([../specs/spec-dotnet-linux/evidence/handler-scope-probe/](../specs/spec-dotnet-linux/evidence/handler-scope-probe/)):
+
+| Signal | Before `dlopen` | After `dlopen` — no crossing yet |
+|---|---|---|
+| `SIGSEGV` | `libcoreclr.so`, `SA_ONSTACK` | **`libfolio8_native.so`**, `SA_ONSTACK` |
+| `SIGBUS` | `libcoreclr.so`, **no** `SA_ONSTACK` | **`libfolio8_native.so`**, `SA_ONSTACK` |
+| `SIGURG` | `SIG_DFL` | **`libfolio8_native.so`**, `SA_ONSTACK` |
+| `SIGABRT` | `libcoreclr.so`, **no** `SA_ONSTACK` | `libcoreclr.so`, **`SA_ONSTACK` added by Go** |
+
+And the altstacks, on the same process, after the engine is live: main **16384**, `.NET TP Worker`
+**16384**, `new Thread()` **16384**. Go sizes its own `gsignal` stack at **32768**.
+
+**So the premise of the shipped fix is false.** `EngineThreads` enlarges the altstack on
+binding-owned threads, and `EngineThreadTests` passes on real amd64 — the thread that *crosses* is
+binding-owned and does carry its megabyte. That was never the exposure. `dlopen` alone replaces
+`SIGSEGV`, `SIGBUS` and `SIGURG` for **every thread in the process**, and Go additionally *adds*
+`SA_ONSTACK` to handlers it leaves in place. CoreCLR raises `SIGSEGV` as ordinary business — null
+checks, GC write barriers — on threads that never touch this ABI, and each of those now enters Go's
+handler with 16 KiB where Go expects 32 KiB. **The crash is on threads the fix cannot reach, and
+routing every crossing through a pool does not address it.**
+
+The corollary is the one that matters outside this repository: **no amount of care on the calling
+thread is sufficient.** A caller cannot fix this by controlling which of its threads enter the ABI,
+because entry is not what exposes it — loading the library is. `folio-go/cshared/README.md` tells
+callers to size the altstack on "every thread that will ever cross this ABI"; that advice is
+**wrong**, and it is wrong in the direction that leaves a reader exposed.
+
+**What this does NOT establish.** That the arm64 half behaves the same way (unmeasured — 24 KiB is
+wider but the mechanism is identical), and that there is any in-process fix at all. The options
+worth costing are a Go-side change, controlling handler installation, or moving the engine out of
+process; none has been investigated and none should be assumed to exist.
+
+**Status: OPEN, and the fix at `7f6a936` is now known insufficient rather than unproven.** The
+restored RIDs stay unpackable: `FolioAssertLinuxSoak` refuses without a soak assertion, and no soak
+has passed. **Nothing reached a consumer** — 1.1.0 ships Windows-only and 1.2.0 does not exist.
+
 ### DW-148 — comments that describe a sibling's behaviour go stale silently; four instances this run
 
 - **Deferred by:** the **Epic 10 reconstruction** (finding 8, ruled at D-10.R.8, 2026-09-02) — raised under

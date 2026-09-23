@@ -203,8 +203,21 @@ calling thread** rather than installing its own (`minitSignalStack`, at
 the frames it will push. So the handler runs in whatever room the calling
 thread's `sigaltstack` already had.
 
-**If your runtime installs its own alternate signal stack, size it before the
-first call, on every thread that will ever cross this ABI.** A stack that is
+⚠ **Loading this library is what exposes you, not calling it.** Measured on
+2026-09-23 with `sigaction(sig, NULL, &old)`: `dlopen` **alone** — before any
+call — replaces `SIGSEGV`, `SIGBUS` and `SIGURG` process-wide with Go's
+`SA_ONSTACK` handlers, and Go additionally *adds* `SA_ONSTACK` to handlers it
+leaves in place. So a signal taken on a thread that never touches this ABI
+still runs a Go handler on **that thread's** alternate stack. A host runtime
+that raises `SIGSEGV` as ordinary business — the .NET CLR does, for null
+checks and GC write barriers — will do so on threads you do not control.
+
+**If your runtime installs its own alternate signal stack, every thread in the
+process needs enough room, not just the ones that cross.** Sizing only the
+calling threads is not sufficient, and this repository proved that the
+expensive way: a fix that routed every crossing through threads with a
+megabyte of alternate stack left the crash rate unchanged, because the threads
+that died were the ones that never crossed. A stack that is
 too small does not fail cleanly: the kernel turns the overflow into `SIGSEGV`,
 the host's own fault handler sees corruption it cannot explain, and the
 process dies with no stack trace that names anything here. Two properties
@@ -216,6 +229,10 @@ matter and both are easy to get wrong:
 - **For the life of the thread.** A thread that can still take a signal must
   still own its alternate stack, so the memory must outlive the thread rather
   than be freed when the call returns.
+- **On every thread, not the crossing ones.** See the warning above. If your
+  runtime creates threads you cannot reach — a managed thread pool, a GC or
+  finalizer thread — you may have no way to satisfy this in-process, and that
+  is a reason to find out before you ship rather than after.
 
 A caller with no alternate signal stack of its own — an ordinary C program, or
 a Go caller — needs none of this: Go installs its own 32 KiB stack when it

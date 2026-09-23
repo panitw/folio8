@@ -1,0 +1,68 @@
+=== soak.sh — translation verdict, taken before anything is run ===
+  uname machine        : x86_64
+  process architecture : amd64 (ELF e_machine of /proc/self/exe)
+  /proc/cpuinfo        : vendor_id GenuineIntel (x86-shaped)
+  /run/rosetta         : absent
+  binfmt_misc for self : no interpreter registered that would run amd64
+  verdict              : NATIVE — kernel and process agree on x86_64, /proc/cpuinfo is consistent with amd64, no Rosetta marker, no matching binfmt_misc interpreter.
+
+=== soak.sh — what is being run ===
+  mode                 : soak
+  binding              : HEAD 022d87b
+  native               : /home/panitw/folio8/folio-dotnet/build/native/linux-x64/libfolio8_native.so
+  native sha256        : 9f1296a37bb2ede56a49d4ac54656f7769affdfe9056164a6a0a82294769a021
+  suite                : /home/panitw/folio8/folio-dotnet/test/Folio8.Tests/Folio8.Tests.csproj
+  filter               : FullyQualifiedName~GoldenTests|FullyQualifiedName~FontsTests
+  iterations requested : 100
+  host                 : LAPTOP-NL4JS2JT
+  kernel               : Linux 5.15.146.1-microsoft-standard-WSL2
+  architecture         : amd64
+  translation verdict  : NATIVE — kernel and process agree on x86_64, /proc/cpuinfo is consistent with amd64, no Rosetta marker, no matching binfmt_misc interpreter.
+  dmesg                : readable — the kernel's 'overflowed sigaltstack' line is being watched for
+  harness validated    : NO for amd64 against this native — no reproduction leg is on the ledger
+  ledger               : /home/panitw/.local/state/folio-soak/ledger.tsv
+  logs                 : /home/panitw/soak-logs/soak
+  tool                 : folio-dotnet/build/soak.sh, sha256 5ee2862d58a1fc1daef8084d7264b1ae4603381c6348f3da81cefaeee8305720
+  started              : 2026-09-23T00:24:50Z
+  context              : WSL2 Ubuntu, real amd64
+
+==> building the suite
+==> iteration 1 of 100 ... clean
+==> iteration 2 of 100 ... clean
+==> iteration 3 of 100 ... clean
+==> iteration 4 of 100 ... clean
+==> iteration 5 of 100 ... clean
+==> iteration 6 of 100 ... clean
+==> iteration 7 of 100 ... clean
+==> iteration 8 of 100 ... clean
+==> iteration 9 of 100 ... clean
+==> iteration 10 of 100 ... clean
+==> iteration 11 of 100 ... clean
+==> iteration 12 of 100 ... clean
+==> iteration 13 of 100 ... CRASH-UNKNOWN
+    the test host process died — NEITHER named signature was present, so this is an unexplained crash and is NOT attributed to DW-396
+    kernel said, during this iteration:
+      [ 2142.805886] potentially unexpected fatal signal 11.
+
+=== VERDICT: FAILED — UNEXPLAINED CRASH ===
+
+  the binding under soak died on iteration 13 and NEITHER named signature was present. It is a crash and it is reported as one; nothing here attributes it to DW-396.
+
+  mode      : soak (the soak)
+  binding   : HEAD 022d87b
+  native    : /home/panitw/folio8/folio-dotnet/build/native/linux-x64/libfolio8_native.so
+              sha256 9f1296a37bb2ede56a49d4ac54656f7769affdfe9056164a6a0a82294769a021, amd64
+  host      : LAPTOP-NL4JS2JT, Linux 5.15.146.1-microsoft-standard-WSL2, amd64
+  translation: NATIVE — kernel and process agree on x86_64, /proc/cpuinfo is consistent with amd64, no Rosetta marker, no matching binfmt_misc interpreter.
+  iterations: 13 of 100 requested
+  started   : 2026-09-23T00:24:50Z
+  finished  : 2026-09-23T00:25:30Z
+  tool      : folio-dotnet/build/soak.sh, sha256 5ee2862d58a1fc1daef8084d7264b1ae4603381c6348f3da81cefaeee8305720
+  failures  :
+  iteration 13: CRASH-UNKNOWN — the test host process died — NEITHER named signature was present, so this is an unexplained crash and is NOT attributed to DW-396
+    log: /home/panitw/soak-logs/soak/iteration-13.log
+    kernel: [ 2142.805886] potentially unexpected fatal signal 11.
+  logs      : /home/panitw/soak-logs/soak
+
+  Quote this verdict with the block above attached. A soak figure without its host,
+  architecture and translation verdict is the reading DW-396 has already recorded twice.
