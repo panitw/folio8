@@ -7303,10 +7303,21 @@ why the named-signature rule is load-bearing rather than fastidious: without it 
 crash today would have read as a reproduction, and the crash-rate comparison built on them produced
 a wrong conclusion that had to be retracted.
 
-Unresolved lead, untested: .NET's **W^X double-mapping** (`/memfd:doublemapper`, seen in a core from
-this box) against a very new kernel. `DOTNET_EnableWriteXorExecute=0` is the one-line A/B that would
-settle it. The box wedges under sustained `dotnet test` loops, which is what has prevented the test
-from completing.
+**Leads tested and killed on that box, 2026-09-23** — recorded so none is retried:
+
+| Lead | Test | Result |
+|---|---|---|
+| Memory / CPU starvation | resized 20cpu/7.7GB → 8cpu/16GB | helped, did not fix; crashes persist with 14+ GB free and load under 2 |
+| `networkingMode=mirrored` | switched to default NAT | **not the cause** — 5 crashes in 25 on NAT. (It is also required for the owner's ssh access, so it stays.) |
+| Windows sleep / Modern Standby | `monitor-timeout-ac 0`; owner confirmed machine awake during a hang | **not the cause** |
+| WSL crash-capture writing ~1 GB cores into tmpfs | `ulimit -c 0`, `core_pattern` set to a plain file | **not the cause** — a hang occurred before any crash |
+| MSBuild node reuse / process accumulation | `MSBUILDDISABLENODEREUSE=1`, build-server shutdown between runs | **not the cause** — 4 processes at the hang |
+| .NET **W^X double-mapping** (`/memfd:doublemapper`) | `DOTNET_EnableWriteXorExecute=0`, 20 iterations each way | **not the cause** — default 2/20, W^X off 3/20 |
+
+Still unexplained, and the box additionally *wedges the whole VM* under sustained `dotnet test`
+loops, which is a second failure on top of the per-process crashes. **The amd64 soak wants a
+different host.** The harness does not have to be re-earned anywhere it moves — but the ledger row
+is keyed to host, architecture and native sha256, so a new host runs its own reproduce leg first.
 
 Neither blocks stories 2–6: the fix — enlarging the altstack explicitly on long-lived binding-owned
 threads — is arch-independent, so these numbers sharpen the record rather than change the design.
