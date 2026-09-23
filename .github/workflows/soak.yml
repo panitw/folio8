@@ -47,6 +47,11 @@ on:
         description: "Reproduction-leg iterations (must catch the defect or the soak is refused)"
         type: string
         default: "150"
+      job:
+        description: "Which leg to run"
+        type: choice
+        options: [soak, load-exposure, both-legs]
+        default: soak
 
 permissions:
   contents: read
@@ -61,6 +66,7 @@ jobs:
       fail-fast: false
       matrix:
         rid: ${{ fromJSON(inputs.rid == 'both' && '["linux-x64","linux-arm64"]' || format('["{0}"]', inputs.rid)) }}
+    if: ${{ inputs.job == 'soak' || inputs.job == 'both-legs' }}
     name: soak (${{ matrix.rid }})
     runs-on: ${{ matrix.rid == 'linux-arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
     # Each soak.sh invocation runs its control leg at the SAME iteration count
@@ -187,3 +193,84 @@ jobs:
       - name: kernel ring buffer
         if: always()
         run: sudo dmesg | tail -100 || dmesg | tail -100 || echo "dmesg unreadable on this runner"
+
+  # ===================================================================
+  # THE ISOLATING LEG. `soak` asks whether the shipped binding survives
+  # rendering; this asks whether LOADING the engine is by itself enough to
+  # kill a thread that never crosses the ABI.
+  #
+  # WHY IT IS A SEPARATE JOB AND NOT A STEP OF THE SOAK. Every run so far
+  # confounded the two bindings: during `--reproduce` the soak's control leg
+  # runs the PRE-FIX worktree's tests, so a death there says nothing about the
+  # fix. This job runs ONE binding -- this tree's, carrying EngineThreads --
+  # in two arms that differ only in whether the native is loaded.
+  #
+  # IF THIS COMES BACK `EXPOSED`, THE EPIC'S DESIGN IS WRONG. Enlarging the
+  # alternate signal stack on binding-owned threads cannot help threads the
+  # binding does not own, and Go's handlers are installed process-wide at
+  # dlopen. That is a measured mechanism (2026-09-23) looking for a measured
+  # consequence; this job is the consequence half.
+  # ===================================================================
+  load-exposure:
+    if: ${{ inputs.job == 'load-exposure' || inputs.job == 'both-legs' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        rid: ${{ fromJSON(inputs.rid == 'both' && '["linux-x64","linux-arm64"]' || format('["{0}"]', inputs.rid)) }}
+    name: load-exposure (${{ matrix.rid }})
+    runs-on: ${{ matrix.rid == 'linux-arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    timeout-minutes: 300
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: ${{ matrix.rid == 'linux-arm64' && 'linux/amd64' || 'linux/arm64' }}
+
+      - name: build both Linux natives (pinned image)
+        run: ./folio-dotnet/build/build-native.sh linux-x64 linux-arm64
+
+      - name: assert both natives are the right machine and keep the glibc floor
+        run: ./folio-dotnet/build/verify-linux-natives.sh
+
+      - name: assert this runner is ${{ matrix.rid }} silicon
+        run: |
+          set -euo pipefail
+          case "${{ matrix.rid }}" in
+            linux-x64)   want=x86_64  ;;
+            linux-arm64) want=aarch64 ;;
+            *) echo "unknown rid ${{ matrix.rid }}" >&2; exit 1 ;;
+          esac
+          [ "$(uname -m)" = "$want" ] || { echo "the ${{ matrix.rid }} leg is on a $(uname -m) runner" >&2; exit 1; }
+
+      # load-exposure.sh REFUSES to run without this, rather than reporting
+      # deaths it cannot name. See the soak job for why that line matters.
+      - name: let it read the kernel ring buffer
+        run: |
+          set -euo pipefail
+          sudo sysctl -w kernel.dmesg_restrict=0
+          dmesg >/dev/null 2>&1 || { echo "dmesg still unreadable" >&2; exit 1; }
+
+      - name: does loading the engine expose a thread that never crosses?
+        run: |
+          ./folio-dotnet/build/load-exposure.sh \
+            -n "${{ inputs.iterations }}" \
+            --log-dir "$RUNNER_TEMP/load-exposure"
+
+      - name: keep the logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-exposure-${{ matrix.rid }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/load-exposure
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: kernel ring buffer
+        if: always()
+        run: sudo dmesg | tail -120 || echo "dmesg unreadable"
