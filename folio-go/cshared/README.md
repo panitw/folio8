@@ -219,19 +219,25 @@ matter and both are easy to get wrong:
 
 A caller with no alternate signal stack of its own — an ordinary C program, or
 a Go caller — needs none of this: Go installs its own 32 KiB stack when it
-finds nothing to adopt. The trap is specifically a *managed* runtime that
-installs a small fixed one, and the .NET CLR is the instance this repository
-measured: folio-dotnet's Linux natives were withdrawn from its 1.1.0 release
+finds nothing to adopt. **The trap is not a runtime that installs a *small*
+stack; it is any runtime that installs a *glibc-sane* one.** Measured on real
+amd64: glibc's floor (`_SC_MINSIGSTKSZ`) is 1776 bytes and its recommendation
+(`_SC_SIGSTKSZ`) is 8192, while Go sizes its own handlers at 32768 — four times
+what glibc advises anyone to use. A runtime that follows that advice to the
+letter still loses. The .NET CLR is the instance this repository measured, and
+it installs 16384 — *twice* the recommendation, and still not enough: folio-dotnet's Linux natives were withdrawn from its 1.1.0 release
 over exactly this, and it now creates its own long-lived threads, calls
 `sigaltstack()` on each with a megabyte before that thread's first crossing,
 and never enters this ABI from a runtime-owned thread.
 
 ⚠ **Read your own size; do not copy ours.** The readings behind that work are
-**arm64: 24576 bytes**, taken in containers on an Apple Silicon hypervisor and
-not yet re-taken on a bare host, and **amd64: 16384 bytes**, taken under
-**emulation** and therefore *not* admissible as evidence about real amd64
-silicon. What they establish is the shape — a managed runtime's fixed altstack
-sitting below the 32 KiB Go sizes for itself — not a constant to size against.
+**amd64: 16384 bytes**, taken on real amd64 silicon, and **arm64: 24576
+bytes**, taken in containers on an Apple Silicon hypervisor and not yet
+re-taken on a bare host. What they establish is the shape — a fixed altstack,
+set by the host runtime, sitting below the 32 KiB Go sizes for itself — not a
+constant to size against. Note that neither figure is *small*: both exceed
+glibc's recommended size on their machine. Sizing to `SIGSTKSZ`, or to
+anything glibc suggests, is not sufficient here.
 Take your own reading with `sigaltstack(NULL, &old)` on the thread that will
 cross, and then size **well above** it: a few hundred KB per thread costs
 nothing, and there is no single right queried value either, since `SIGSTKSZ`

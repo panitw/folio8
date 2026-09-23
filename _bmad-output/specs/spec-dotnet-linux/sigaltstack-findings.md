@@ -22,6 +22,7 @@ Every row is one `sigaltstack()` reading. All containers, arm64 executing
 | arm64 · Debian 12 · glibc 2.36 · .NET 9 | 20480 | **24576** | **24576** | **24576** | **24576** |
 | arm64 · Ubuntu 20.04 · glibc 2.31 · .NET 6 | **−1** (pre-2.34) | **24576** | **24576** | — | — |
 | amd64 · Debian 12 · .NET 8 — ⚠ **emulated** | 8192 | **16384** | **16384** | **16384** | — |
+| amd64 · Debian 12 · .NET 8 — ✅ **real silicon** (WSL2, `GenuineIntel`, 2026-09-23) | 8192 | **16384** | **16384** | **16384** | **16384** |
 
 `new Thread(…, 16 * 1024 * 1024)` reads 24576 as well: **the managed stack size
 is irrelevant** — it sizes the ordinary stack, not the signal stack.
@@ -31,7 +32,7 @@ Four things follow, and each rules something out:
 1. **It is a constant, not a computed value.** On glibc 2.31 `sysconf(_SC_SIGSTKSZ)` does not exist and returns −1, and the CLR still installs exactly 24576. It does not track `SIGSTKSZ`, and it did not change across .NET 6, 8 and 9.
 2. **Thread origin does not matter.** A raw `pthread` created through `pthread_create`, outside the CLR entirely, reads 24576 once the runtime has attached it. There is no thread you can reach from managed code that escapes this.
 3. **The architectures differ, and amd64 is the tighter one:** 16 KiB against arm64's 24 KiB.
-4. **Both are below what Go expects.**
+4. **Both are below what Go expects — and *above* what glibc advises.** On the real-amd64 leg `_SC_MINSIGSTKSZ` is 1776 and `_SC_SIGSTKSZ` is 8192, so the CLR's 16384 is **twice glibc's recommendation** and nine times its floor. The CLR is not undersizing its altstack by any standard glibc sets; Go is sizing its handlers at 4× that recommendation and then adopting someone else's stack without checking it. The defect is on the Go side of the boundary, and any runtime following glibc's advice would hit it.
 
 ## Why that is the defect
 
@@ -133,7 +134,7 @@ thread; the pool is what makes that step possible and permanent.
 
 ## Open after this spike
 
-- Confirm `16384` on real amd64 hardware, and capture `sysconf(_SC_SIGSTKSZ)` there — if it exceeds 16384, the CLR's altstack is below what glibc itself considers a minimum on that machine.
+- ~~Confirm `16384` on real amd64 hardware, and capture `sysconf(_SC_SIGSTKSZ)` there~~ — **✅ done 2026-09-23** on the WSL2 box, probe-stamped NATIVE. 16384 confirmed on all six thread kinds. `_SC_SIGSTKSZ` is **8192**, so it does *not* exceed 16384 and the conditional above resolves the opposite way to the one it anticipated: the CLR sits above glibc's recommendation, not below its minimum. See DW-396's 2026-09-23 subsection.
 - Decide the enlarged size. 1 MiB was used here arbitrarily and worked; the cost is per pool thread and paid once.
 - Confirm Go adopts the enlarged stack in practice, not only by source reading, by entering the real native from an enlarged pool thread on amd64 and soaking it.
 - `DllImport("libc")` for `sigaltstack` must be reachable from the `netstandard2.0`/`net46` floor. It is plain P/Invoke so it should be, but `pthread_create` was **not** resolvable from `libc` on glibc 2.31 (it lived in `libpthread` until the 2.34 merge) — a reminder that libc entry points are not uniformly available across the floor this package supports.

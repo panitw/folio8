@@ -7239,11 +7239,57 @@ the reading afterwards showed 1048576, and a forced `NullReferenceException` and
 both still worked on the swapped thread — the CLR's own SIGSEGV handling is not deprived by being
 given *more* room.
 
-**PENDING — the owner's confirmation runs, 2026-09-23, and they are what closes this question:**
+**RESOLVED 2026-09-23 — the real-amd64 leg, run by the owner on the WSL2 box**
+(`probe-signal-stack.sh amd64`, Debian 12 / glibc 2.36 / .NET 8.0.31, in a
+`linux/amd64` container on real amd64 silicon):
+
+| Leg | Provenance, as the probe determined it | `sysconf(_SC_SIGSTKSZ)` | `_SC_MINSIGSTKSZ` | altstack, all six thread kinds |
+|---|---|---|---|---|
+| **real amd64**, WSL2 | **NATIVE** (`vendor_id GenuineIntel`, kernel and process agree on x86_64, no Rosetta marker, no matching binfmt_misc interpreter) | 8192 | **1776** | **16384** (16 KiB) |
+
+**16384 is confirmed on real silicon**, identical across all six thread kinds,
+and `sigaltstack(set 1024 KiB)` returned 0 with the reading afterwards showing
+1048576 — a forced `NullReferenceException` and a full blocking GC both still
+worked on the swapped thread. The Rosetta row turned out to agree, which does
+not retroactively make it evidence; it makes it a guess that happened to land.
+
+⚠ **AND IT ANSWERS THE QUESTION THE OTHER WAY.** The outstanding question was
+whether 16384 sat below glibc's **recommended** size or below its **floor**.
+It is below **neither**: the floor is 1776, the recommendation is 8192, and the
+CLR installs **twice the recommendation**. So the framing this entry has
+carried since 2026-09-21 — a runtime installing a *small* or *undersized*
+altstack — is wrong, and the correction matters because it moves where the
+defect lives:
+
+| | bytes | against glibc's advice |
+|---|---|---|
+| `_SC_MINSIGSTKSZ` — glibc's floor | 1776 | — |
+| `_SC_SIGSTKSZ` — glibc's recommendation | 8192 | — |
+| **CLR's alternate signal stack** | **16384** | **2× the recommendation** |
+| **Go's own `gsignal` stack** | **32768** | **4× the recommendation** |
+
+**The CLR is compliant, and generously so. The discrepancy is entirely on Go's
+side of the boundary**: Go sizes its `SA_ONSTACK` handlers for 4× what glibc
+advises, and then, under cgo, *adopts* a stack sized by a runtime that followed
+that advice — without checking that what it adopted is large enough for the
+frames it will push. This is not a .NET defect and there is nothing to report
+upstream to Microsoft.
+
+Two consequences follow, and the second is the one that reaches other people:
+
+1. **The fix stays exactly where it is.** A caller that wants to enter a Go
+   `c-shared` library must size the altstack itself; no reasonable altstack
+   from the CLR would have been large enough, because Go's requirement is
+   outside the range glibc advises anyone to use.
+2. **Any runtime with a glibc-sane altstack hits this, not just the CLR.** The
+   warning in `folio-go/cshared/README.md` is therefore load-bearing for
+   callers who are doing nothing wrong, and must not be written as though the
+   CLR were the anomaly.
+
+**PENDING — the one hardware leg still outstanding:**
 
 | Leg | What is outstanding | Where |
 |---|---|---|
-| **real amd64** | Confirm **16384**, and capture **both** `sysconf(_SC_SIGSTKSZ)` and `sysconf(_SC_MINSIGSTKSZ)` on real silicon — the probe prints both. `_SC_SIGSTKSZ` is glibc's **recommended** size and `_SC_MINSIGSTKSZ` its **minimum**, and the two are far apart (8192 against 1348 on the Rosetta leg), so which one 16384 falls below decides whether the CLR is merely under glibc's advice or under its floor. | the WSL2 box that first reproduced the overflow |
 | **native arm64** | Re-take the 24576 row outside a Docker Desktop VM, so the arm64 figure rests on a host rather than on a hypervisor. | owner's Linux arm64 host |
 
 Neither blocks stories 2–6: the fix — enlarging the altstack explicitly on long-lived binding-owned
@@ -7356,12 +7402,16 @@ same signal for its own write barriers and null checks — reports `Internal CLR
 `COR_E_EXECUTIONENGINE`, and the process dies. Windows is immune because it has no POSIX signals.
 The 2026-09-21 subsection's "remaining hypothesis" is this, and it is no longer a bare lead:
 `sigaltstack(NULL, &old)` has been **read directly** on the thread that crosses, rather than inferred
-from a crash. **What was read, and on what kind of host:** arm64 — **24576** on every thread kind, in
-Debian 12 and Ubuntu 20.04 containers that execute natively on Apple Silicon but sit inside Docker
-Desktop's hypervisor; amd64 — **16384**, on a single **emulated** leg. Every reading is below the
-32 KiB Go sizes for itself, and that is the finding. **Neither figure is a real-hardware figure yet**,
-and both stay outstanding in the PENDING table below; the mechanism is established in shape and
-pending in its numbers.
+from a crash. **What was read, and on what kind of host:** amd64 — **16384** on every thread kind, on **real
+amd64 silicon** (WSL2, `vendor_id GenuineIntel`, probe-stamped NATIVE, 2026-09-23); arm64 —
+**24576** on every thread kind, in Debian 12 and Ubuntu 20.04 containers that execute natively on
+Apple Silicon but sit inside Docker Desktop's hypervisor, so the arm64 figure is **still not a
+bare-metal figure** and stays in the PENDING table below. Every reading is below the 32 KiB Go
+sizes for itself, and that is the finding.
+
+⚠ **Read "16 KiB on amd64, 24 KiB on arm64" above as the sizes, not as a verdict on the CLR.**
+Both are *above* glibc's recommended signal-stack size on their machines; see the 2026-09-23
+subsection, which corrects the "small fixed altstack" framing this paragraph inherited.
 Measurements, source references and the probe are in
 [../specs/spec-dotnet-linux/sigaltstack-findings.md](../specs/spec-dotnet-linux/sigaltstack-findings.md).
 

@@ -1,0 +1,26 @@
+os                   : Debian GNU/Linux 12 (bookworm)
+runtime              : .NET 8.0.31
+uname machine        : x86_64
+process architecture : X64
+/proc/cpuinfo        : vendor_id GenuineIntel (x86-shaped)
+/run/rosetta         : absent
+binfmt_misc for X64  : no matching interpreter registered
+PROVENANCE           : NATIVE — kernel and process agree on x86_64, /proc/cpuinfo is consistent with X64, no Rosetta marker, no matching binfmt_misc interpreter.
+
+sysconf(_SC_SIGSTKSZ)    = 8192 (8 KiB)
+sysconf(_SC_MINSIGSTKSZ) = 1776 (1.7 KiB)
+Go gsignal stack         = 32768 (32 KiB) — the room its SA_ONSTACK handlers expect
+
+[native ] main thread                        flags=0                     sp=0x7F3345EDD000 size=16384 (16 KiB)
+[native ] .NET TP Worker                     flags=0                     sp=0x7F33410B5000 size=16384 (16 KiB)
+[native ] new Thread() default stack         flags=0                     sp=0x7F3340066000 size=16384 (16 KiB)
+[native ] new Thread() 16 MiB stack          flags=0                     sp=0x7F333F065000 size=16384 (16 KiB)
+[native ] new Thread() after 50ms            flags=0                     sp=0x7F333F065000 size=16384 (16 KiB)
+[native ] raw pthread (attached)             flags=0                     sp=0x7F333F065000 size=16384 (16 KiB)
+
+--- can the binding enlarge it itself, and does the runtime survive? ---
+[native ]   before                           flags=0                     sp=0x7F333F065000 size=16384 (16 KiB)
+          sigaltstack(set 1024 KiB) -> 0
+[native ]   after                            flags=0                     sp=0x7F333EF64010 size=1048576 (1024 KiB)
+          NullReferenceException still caught normally after the swap.
+          Full blocking GC completed on the swapped thread.
