@@ -272,13 +272,19 @@ one addition and one behaviour change a .NET integrator can observe:
   `deferred-work.md` rather than dismissed, because the handoff responsible is
   the same code on every platform. Full record, with every log behind every
   figure: `_bmad-output/implementation-artifacts/dotnet-linux-throughput.md`.
-- ⚠ **DW-396's amd64 leg is done; the arm64 leg is not.** On 2026-09-24
-  the pre-fix binding reproduced the defect on a GitHub amd64 runner and the
-  shipped configuration then ran 100 / 100 clean on that validated harness
-  (run 36011142609, recorded in
-  `_bmad-output/implementation-artifacts/dotnet-linux-soak.md`). `v1.2.0`
-  still cannot be packed until the arm64 leg is run and recorded — the pack
-  refuses without the assertion. See the package-contents section below.
+- ⚠ **DW-396's soak legs have run on both architectures; the assertion is
+  the owner's to type.** On 2026-09-24 the pre-fix binding reproduced the
+  defect on a GitHub amd64 runner and the shipped configuration then ran
+  100 / 100 clean on that validated harness (run 36011142609). On arm64 —
+  the owner's Apple Silicon and GitHub's arm runner — the mechanism cannot
+  fire (the runtime's alternate stack is 24 KiB there), so the pre-fix binding
+  stayed clean with the engine's protection switched off, the reproducer
+  did not fire, and the shipped configuration's clean hundred is
+  `UNVALIDATED` by the tool's own rule. All of it is recorded in
+  `_bmad-output/implementation-artifacts/dotnet-linux-soak.md`. The pack
+  refuses without the assertion; typing it means accepting arm64 on the
+  mechanism's absence rather than on a reproduction. See the
+  package-contents section below.
 
 ### The cross-target hash matrix
 
@@ -409,9 +415,11 @@ CAP-5's two hardware legs**: a reproduction of the pre-fix crash and then a
 no emulation and no Rosetta, both recorded in
 `_bmad-output/implementation-artifacts/dotnet-linux-soak.md`. The amd64 leg is
 recorded there (run 36011142609: reproduced on iteration 27, then 100 / 100
-clean); the arm64 leg is PENDING as this is written, so **`1.2.0` is not
-packable today**, and typing the assertion anyway would repeat the false clear
-DW-396 already records being made twice. A Windows-only pack — `-p:FolioPackPlatforms=windows`, which the
+clean). The arm64 legs are recorded there too, and neither validates: the
+mechanism cannot fire on arm64, so the tool calls the clean hundred
+`UNVALIDATED`. **`1.2.0` is packable the moment the owner accepts that
+reading and types the assertion**; typing it without having read those rows
+would repeat the false clear DW-396 already records being made twice. A Windows-only pack — `-p:FolioPackPlatforms=windows`, which the
 .NET Framework consumer harness uses — drops both Linux items and needs no
 assertion, because it ships no Linux native.
 

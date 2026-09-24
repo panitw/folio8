@@ -93,7 +93,7 @@ varies.
 
 ---
 
-## Legs — the amd64 leg has run twice on GitHub's own amd64 runners; the arm64 leg is the owner's
+## Legs — amd64 twice on GitHub's amd64 runners; arm64 on the owner's Apple Silicon and on GitHub's arm runner
 
 Each leg is two runs, in this order, and the order is the point:
 
@@ -109,7 +109,8 @@ folio-dotnet/build/soak.sh --iterations 100 --log-dir ./soak-logs/soak
 |---|---|---|---|---|
 | **real amd64**, binding-only fix (managed restore after the first export; native `9f1296a3…`) | GitHub runner `runnervmtr4k5`, Linux 6.17.0-1022-azure, x86_64, translation verdict NATIVE, `DOTNET_GCgen0size=0x100000` | **REPRODUCED** — died on iteration 95 with the kernel's `overflowed sigaltstack`; 150 control iterations clean | **CLEAN — VALIDATED HARNESS**, 100 / 100, 100 control iterations clean | [run 36001723693](https://github.com/panitw/folio8/actions/runs/36001723693), artifact `soak-linux-x64-36001723693` (2026-09-24) |
 | **real amd64**, engine-side closure (`dispositions_linux.c`; binding `529da0d`; native `cdcc1c5b875ea3068a15c0b51e74491a399a5899ba19f98e426c66af20f8c81a`; the reproduce leg sets `FOLIO8_SIGNAL_DISPOSITIONS=leave`, the soak leg runs as shipped) | GitHub runner `runnervmtr4k5`, Linux 6.17.0-1022-azure, x86_64, translation verdict NATIVE, `DOTNET_GCgen0size=0x100000` | **REPRODUCED** — died on iteration 27 with the kernel's `overflowed sigaltstack`; 150 control iterations clean | **CLEAN — VALIDATED HARNESS**, 100 / 100, 100 control iterations clean; load-exposure 0 / 100 in both arms | [run 36011142609](https://github.com/panitw/folio8/actions/runs/36011142609), artifact `soak-linux-x64-36011142609` (2026-09-24T14:26Z) — **the amd64 half of the pack assertion** |
-| **real arm64** | a Linux arm64 host, executing natively — not a Docker Desktop VM | **PENDING** | **PENDING** | owner |
+| **real arm64**, engine-side closure (binding `ce6ec81`; native `826ac11253f5ee62595dacffe2a9ceea912474852c3ec9f54e56d1bf3da36b86`, built in the pinned image; the reproduce leg sets `FOLIO8_SIGNAL_DISPOSITIONS=leave`) | the owner's Apple Silicon Mac, `linux/arm64` container under Docker Desktop (Linux 7.0.12-linuxkit, executing natively: translation verdict NATIVE, CPU implementer 0x61, no SVE), 10 CPUs; dmesg NOT readable | **NOT REPRODUCED — MECHANISM NOT LIVE HERE**: pre-fix binding 25 / 25 clean, 25 control iterations clean, mechanism reproducer with the switch **0 / 40 loaded, 0 / 40 absent** | **UNVALIDATED**, 100 / 100 clean, 100 control iterations clean — the tool's own verdict, because no harness on this silicon has seen the defect | `evidence/dotnet-linux-soak/arm64-apple-silicon-docker/{reproduce,soak}/` (local; logs are gitignored), 2026-09-24 |
+| **real arm64**, same binding and native | GitHub runner `runnervmoyp6c`, `ubuntu-24.04-arm`, Linux 6.17.0-1022-azure, CPU implementer 0x41, translation verdict NATIVE, **dmesg readable** | **NOT REPRODUCED — MECHANISM NOT LIVE HERE**: 150 control iterations clean, mechanism reproducer **0 / 40 loaded, 0 / 40 absent** | **in flight** (the both-legs job stops at the reproduce verdict; the soak leg alone is [run 36019302426](https://github.com/panitw/folio8/actions/runs/36019302426)) | [run 36016056509](https://github.com/panitw/folio8/actions/runs/36016056509), 2026-09-24T14:53Z |
 
 The first amd64 row is the binding-only fix and stays on the record as what it is: a validated
 harness and a clean hundred, on a fix that the reproducer showed still loses one to four processes in
@@ -121,6 +122,17 @@ the same mechanism at the same order of rate as before (95 on the first row). Th
 the owner's: no arm64 host has run either leg, and on arm64 the reproduce leg is expected NOT to fire
 (the kernel's signal frame is small there; load-exposure was 0 / 1000), which the tool reports as a
 harness that cannot validate a soak — the owner decides what that is worth.
+
+**The arm64 rows say why, in numbers.** On both arm64 hosts the reproducer printed
+`minsigstksz=4720 sigstksz=20480 clr_altstack=24576`: the runtime's alternate stack is 24 KiB there
+(20 KiB usable over its guard page) under a 4.7 KB kernel frame, and the activation handler's
+roughly 10.5 KB fits with about 5 KB to spare. On amd64 the same handler has 12 KiB usable under a
+1.8 KB frame (AVX2) or 3.6 KB (AVX-512), which is marginal and fatal respectively — DW-398's arithmetic.
+So on arm64 the mechanism cannot fire, the reproduce leg cannot validate, and every clean run is
+`UNVALIDATED` by the tool's rule. What the two rows establish is exactly that: on the owner's silicon
+and on Azure's, with the engine's protection switched OFF, the pre-fix binding does not die, and with it
+ON the shipped configuration ran a clean hundred. A validated arm64 harness is not obtainable, and the
+assertion for `linux-arm64` rests on the mechanism's absence rather than on a reproduction.
 
 Fill each cell with the runner's own verdict block: it already carries binding
 identity, native path and **SHA-256**, host, kernel, architecture, translation

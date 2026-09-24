@@ -7571,8 +7571,12 @@ abort appears to be amd64-only. The abort was named (DW-398: it is this entry's 
 "engine-thread" fix never reached the threads that die) and is closed at its source in the engine
 (`dispositions_linux.c`); **the amd64 soak leg is done** — run 36011142609, the pre-fix binding
 reproduced on iteration 27 with the kernel line, the shipped configuration 100 / 100 clean, recorded in
-`dotnet-linux-soak.md`. `linux-x64` is shippable on that evidence; the pack gate still holds both RIDs
-until the arm64 leg is on the record.
+`dotnet-linux-soak.md`. `linux-x64` is shippable on that evidence. **The arm64 legs ran the same day**
+on the owner's Apple Silicon (a `linux/arm64` container, native) and on GitHub's arm runner: with the
+engine's protection switched off the pre-fix binding stayed clean and the reproducer did not fire
+(0 / 40 on both hosts), because the runtime's alternate stack is 24 KiB there and the handler fits; the
+shipped configuration's clean hundred is `UNVALIDATED` by the tool's rule. The pack gate now waits on
+the owner's reading of that, not on a run.
 
 **Next, and it is a different investigation from this entry's:** a minimal reproducer. A console app
 that `dlopen`s the engine and exercises the thread pool, with the test host and vstest removed from

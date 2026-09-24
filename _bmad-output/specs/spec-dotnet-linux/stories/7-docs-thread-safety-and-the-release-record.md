@@ -147,8 +147,11 @@ leaves open; the binding keeps its own restore as a fallback and asserts the eng
 (`restored-by=constructor`) on Linux. The amd64 leg (run 36011142609): pre-fix binding reproduced on
 iteration 27 with the kernel line, shipped configuration 100 / 100 clean, recorded in
 `dotnet-linux-soak.md`; `RELEASING.md`'s notes and gate text updated; `docs/folio-dotnet.md` and its
-twin re-worded so the page describes the engine-side fix and the binding's fallback. The arm64 leg is
-still the owner's, so the pack gate still holds.
+twin re-worded so the page describes the engine-side fix and the binding's fallback. The arm64 legs ran
+the same day on the owner's Apple Silicon and on GitHub's arm runner: the mechanism cannot fire there
+(24 KiB alternate stack), so the reproduce leg does not validate and the clean hundred is
+`UNVALIDATED` by the tool's rule — recorded as such. The pack gate now waits on the owner typing the
+assertion with that reading in front of them.
 
 **No guard was weakened.** `PackagingTests`'s soak-assertion sweep exempts
 `RELEASING.md` already, and its pack enumerator matches an *invocation*
