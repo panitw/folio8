@@ -7936,6 +7936,36 @@ handler still has no name.**
   hook's mask report compared 128 bytes of `sa_mask` of which glibc initialises 8, and reported every
   signal as changed; the 8 real bytes agree with the source read.
 
+**2026-09-24, later: IT REPRODUCES IN A BARE PROCESS, AND THE INSTRUMENT IS NOW CHEAP.** Run
+35987979509, `load-repro` with the GC-pressure workload: **177 / 300 SIGSEGV with the engine loaded,
+0 / 300 without** — pool threads allocating in managed code, `GC.Collect` forced through a 400 ms
+hold, the process exiting with the workers still running. That is 59%, higher than vstest ever showed,
+at about a second an iteration, with the dying process's stderr visible. Three consequences:
+
+- The GC-suspension reading of the cores is **supported by construction**: the only thing the
+  workload adds over the empty-room version (0/300, run 35983829443) is collections, and collections
+  suspend managed threads by signal.
+- **vstest was never the trigger**, and the noisy 42–69/150 rates under it were rates for a workload
+  that GC'd by accident.
+- **Every earlier signal-handler arm is now suspect, not settled.** They were run under vstest, their
+  hook's own output was swallowed, and a ±20-point rate cannot distinguish a partial effect. They are
+  re-run in the reproducer as `--fix` arms, each printing what it changed, where a working fix reads as
+  zero against 177.
+
+**A third core (run 35987974678) is the abort shape again — and the process terminated with SIGSEGV.**
+`futex_fatal_error` on the faulting thread's stack, `Program terminated with signal SIGSEGV`. The abort
+path itself dies. `SIGABRT` is one of the five handlers Go relocated onto the alternate stack, which
+is why the `noonstack` arm is back in the bisection rather than struck. `err` in that core is
+`<optimized out>`; `*futex_word = 0`.
+
+**Two more instrument facts.** The DAC will not open a kernel core (`Can not load or initialize
+libmscordaccore.so`), so the reproducer's baseline arm now asks the runtime for its own dump
+(`DOTNET_DbgEnableMiniDump`) and reads it with `dotnet-dump … clrstack -f` — the first route by which
+a frame in this defect can carry a name. And `crash-trace`'s `libcoreclr` symbol path had a stray
+`dirname`, so its "symbols: no" was a path bug, not a server failure. `dmesg` is silent in all three
+crash-trace runs, which is expected — the kernel logs a fault only when no handler is installed, and
+Go's always is — and therefore proves nothing either way.
+
 **Not yet tried, in order of cost:** *(the `restore-*` arms are struck — run and null)* a symbolised
 core (`dotnet-symbol` for `libcoreclr.so.dbg`, `dotnet-dump analyze … clrstack -all` for the managed
 frame the worker was interrupted in), which names the handler in one shot and is in the trace now;
