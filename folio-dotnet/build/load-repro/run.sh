@@ -67,6 +67,7 @@ hold=400
 gcflag=--gc
 out=""
 native=""
+iteration_timeout=60
 arms=(load noload "load:fix=restore-relocated" "load:fix=restore-relocated:sync=call" "load:fix=restore-rtmin:sync=call" "load:fix=restore-relocated:sync=poll")
 selfcheck=0
 
@@ -78,6 +79,7 @@ while [ "$#" -gt 0 ]; do
     --nogc) gcflag=--nogc; shift ;;
     --out) out="$2"; shift 2 ;;
     --native) native="$2"; shift 2 ;;
+    --iteration-timeout) iteration_timeout="$2"; shift 2 ;;
     --arms) IFS=, read -r -a arms <<<"$2"; shift 2 ;;
     --self-check) selfcheck=1; shift ;;
     *) echo "unknown argument '$1'" >&2; exit 1 ;;
@@ -89,6 +91,7 @@ done
 classify() {
   case "$1" in
     0)   echo clean ;;
+    124) echo TIMEOUT ;;
     134) echo SIGABRT ;;
     139) echo SIGSEGV ;;
     132) echo SIGILL ;;
@@ -125,7 +128,7 @@ if [ "$selfcheck" = 1 ]; then
   }
   echo "=== classifier self-check ==="
   # Synthetic, including the two this entry must never merge.
-  check 0 clean; check 134 SIGABRT; check 139 SIGSEGV; check 132 SIGILL
+  check 0 clean; check 124 TIMEOUT; check 134 SIGABRT; check 139 SIGSEGV; check 132 SIGILL
   check 135 SIGBUS; check 136 SIGFPE; check 1 exit1; check 2 exit2; check 3 exit3
   check 137 signal9; check 143 signal15
   # The arm parser, on the shapes the default list uses and on two it must refuse.
@@ -208,7 +211,11 @@ for arm in "${arms[@]}"; do
       dumpenv=(DOTNET_DbgEnableMiniDump=1 DOTNET_DbgMiniDumpType=1 "DOTNET_DbgMiniDumpName=$work/dumps/dump.%p")
     fi
     set +e
-    err="$(env ${arm_env[@]+"${arm_env[@]}"} ${dumpenv[@]+"${dumpenv[@]}"} "$work/bin/repro" "${args[@]}" 2>&1 >/dev/null)"
+    # ONE ITERATION MAY NOT HANG THE RUN. Run 35993471395 sat in this loop for
+    # over an hour with nothing to show; whichever arm it was, a hang is an
+    # outcome and gets counted as one (TIMEOUT, exit 124) rather than
+    # swallowing every arm after it. The hold is 400ms; a minute is generous.
+    err="$(env ${arm_env[@]+"${arm_env[@]}"} ${dumpenv[@]+"${dumpenv[@]}"} timeout -k 5 "${iteration_timeout:-60}" "$work/bin/repro" "${args[@]}" 2>&1 >/dev/null)"
     st=$?
     set -e
     # The first iteration that PRINTED a [repro] line, not the first
