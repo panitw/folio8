@@ -8051,6 +8051,19 @@ the kernel cannot build a frame there, forces `SIG_DFL`, and no handler — Go's
 **`overflowed sigaltstack`**: the line from the owner's WSL2 box that opened DW-396. One mechanism,
 three landings, and the kernel signature now has a cause that predicts it.
 
+**Run 35992109447: the kernel's own line, 244 times, and the CPU class behind the rate.** On
+`runnervmlun5p` — **Xeon Platinum 8370C, AVX-512** — the bare reproducer's baseline was **244 / 250**,
+and `dmesg` carried **244** lines of `signal: .NET TP Worker[pid] overflowed sigaltstack`, one per
+death. That is the line the owner's WSL2 box printed on 2026-09-21 and DW-396 was opened on,
+reproduced 1:1 by a process that contains nothing but the engine's load and a garbage collection. On
+the AVX2-only VMs (`runnervmtr4k5`) the same workload ran at 55–59% (83/150, 177/300); the kernel's
+signal frame there is ~1.3 KB, here ~2.7 KB and more, and the difference is the room the CLR's handler
+has left on a 16 KiB altstack. **The run-to-run rate variance this entry kept noting — 42, 65, 69, 83
+per 150 — was the runner fleet's CPU mix, not noise in the defect.** The run then ended by this
+tool's own hand: `grep | head -1` under `pipefail` took SIGPIPE after the baseline arm and no sync
+arm ran — the mistake `crash-trace.sh` made and recorded earlier the same day. Fixed; the confirmation
+is re-run.
+
 **Not yet tried, in order of cost:** *(the `restore-*` arms are struck — run and null)* a symbolised
 core (`dotnet-symbol` for `libcoreclr.so.dbg`, `dotnet-dump analyze … clrstack -all` for the managed
 frame the worker was interrupted in), which names the handler in one shot and is in the trace now;

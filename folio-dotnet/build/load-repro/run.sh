@@ -207,7 +207,13 @@ for arm in "${arms[@]}"; do
     err="$(env ${arm_env[@]+"${arm_env[@]}"} ${dumpenv[@]+"${dumpenv[@]}"} "$work/bin/repro" "${args[@]}" 2>&1 >/dev/null)"
     st=$?
     set -e
-    [ -n "$first_line" ] || first_line="$(printf '%s\n' "$err" | grep -m1 '^\[repro\]' || echo '(no [repro] line: the process printed nothing)')"
+    # The first iteration that PRINTED a [repro] line, not the first
+    # iteration: on an AVX-512 host the first one can die before it gets
+    # that far (run 35992109447), and the arm's touched= and stack numbers
+    # would then never be seen.
+    if [ -z "$first_line" ]; then
+      first_line="$(printf '%s\n' "$err" | grep -m1 '^\[repro\]' || true)"
+    fi
     word="$(classify "$st")"
     tally["$word"]=$(( ${tally["$word"]:-0} + 1 ))
     if [ "$word" = clean ]; then printf '.'; else
@@ -220,6 +226,7 @@ for arm in "${arms[@]}"; do
   done
   b=""; for k in "${!tally[@]}"; do [ "$k" = clean ] && continue; b="$b $k=${tally[$k]}"; done
   echo "  -> $bad / $iterations${b:+  ($b )}"
+  [ -n "$first_line" ] || first_line="[repro] (no iteration of this arm lived long enough to print its line)"
   echo "      ${first_line#\[repro\] }"
   # THE KERNEL'S OWN WORD, after the baseline. A SIGSEGV delivered nested onto
   # an altstack the handler has already overflowed cannot get a frame; the x86
@@ -227,10 +234,14 @@ for arm in "${arms[@]}"; do
   # line from the owner's WSL2 box that opened DW-396. Best-effort: needs
   # dmesg readable (the workflow lifts dmesg_restrict; elsewhere, sudo -n).
   if [ "$arm" = load ] && [ "$bad" -gt 0 ]; then
+    # NO `| head` UNDER pipefail. Run 35992109447 did exactly that here, grep
+    # took SIGPIPE when head closed, the script exited 2 after the baseline
+    # arm, and five arms never ran -- the same mistake crash-trace.sh made
+    # and wrote down earlier. grep -m1 stops on its own.
     kl="$( (dmesg 2>/dev/null || sudo -n dmesg 2>/dev/null) | grep -c 'overflowed sigaltstack' || true)"
     if [ -n "$kl" ] && [ "$kl" -gt 0 ]; then
       echo "      kernel: $kl 'overflowed sigaltstack' line(s) in dmesg after $bad death(s); first:"
-      (dmesg 2>/dev/null || sudo -n dmesg 2>/dev/null) | grep 'overflowed sigaltstack' | head -1 | sed 's/^/        /'
+      (dmesg 2>/dev/null || sudo -n dmesg 2>/dev/null) | grep -m1 'overflowed sigaltstack' | sed 's/^/        /'
     else
       echo "      kernel: no 'overflowed sigaltstack' in dmesg (unreadable, rate-limited, or the fault was not a nested delivery)"
     fi
