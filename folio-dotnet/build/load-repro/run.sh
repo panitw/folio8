@@ -124,6 +124,17 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
+# The CPU's name, on x86 and on arm: arm's /proc/cpuinfo has no `model name`
+# (the arm64 leg printed an empty banner), so fall back to lscpu, then to the
+# implementer/part pair the kernel does print.
+cpu_name() {
+  local n
+  n="$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | sed 's/^ *//')"
+  [ -n "$n" ] || n="$(lscpu 2>/dev/null | grep -m1 -i '^model name' | cut -d: -f2- | sed 's/^ *//')"
+  [ -n "$n" ] || n="$(grep -m1 'CPU implementer' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | sed 's/^ *//') part $(grep -m1 'CPU part' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | sed 's/^ *//')"
+  printf '%s' "$n"
+}
+
 # One place that turns a wait status into a word, so the self-check below is
 # testing the thing the arms actually use.
 classify() {
@@ -242,7 +253,7 @@ cat <<EOF2
   native    : $(sha256sum "$native" | awk '{print $1}')
   host      : $(uname -n), $(uname -s) $(uname -r), $(uname -m)
   runtime   : $(dotnet --version)
-  cpu       : $(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | sed 's/^ *//'); xsave-relevant flags: $(grep -m1 '^flags' /proc/cpuinfo 2>/dev/null | tr ' ' '\n' | grep -E '^(avx2|avx512[a-z_]*|amx[a-z_]*|xsave[a-z]*|pku)$' | sort -u | tr '\n' ' ')
+  cpu       : $(cpu_name); xsave-relevant flags: $(grep -m1 '^flags' /proc/cpuinfo 2>/dev/null | tr ' ' '\n' | grep -E '^(avx2|avx512[a-z_]*|amx[a-z_]*|xsave[a-z]*|pku)$' | sort -u | tr '\n' ' ')
   iterations: $iterations per arm, pool $pool, hold ${hold}ms, $gcflag
   arms      : ${arms[*]}
 

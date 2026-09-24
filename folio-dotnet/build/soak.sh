@@ -788,7 +788,11 @@ mechanism_check() {
   MECH_LOG="$logs/mechanism.log"
   local tool="$here/load-repro/run.sh"
   if [ ! -x "$tool" ]; then MECH_NOTE="the mechanism reproducer is not at $tool"; return 0; fi
-  echo "==> the pre-fix binding died with no named signature. Asking the mechanism reproducer"
+  if [ "$outcome" = "CLEAN" ]; then
+    echo "==> the pre-fix binding stayed clean. Asking the mechanism reproducer"
+  else
+    echo "==> the pre-fix binding died with no named signature. Asking the mechanism reproducer"
+  fi
   echo "    whether the defect is live on THIS host with THIS native: $mech_iterations iterations per arm,"
   echo "    engine loaded against engine absent."
   # Its exit status is not the answer -- it exits non-zero on a clean baseline
