@@ -8118,6 +8118,19 @@ pre-fix binding died on attempt 1 or 2 in four consecutive crash-trace runs (359
 with no death.** Same host, same native (`9f1296a3…`), same suite and filter, same tool. The tool's
 NO-CRASH text now says what a clean run means once the fix is in the tree, instead of "raise -n".
 
+**The fix's first version had an ordering hole, found by CI on test order alone (run 35995186412).**
+The pre-load snapshot lived in the ABI check — the first *crossing* — but on Linux the binding never
+calls `dlopen`; the runtime does, on the first P/Invoke, and three test classes reach
+`Native.folio8_version` / `folio8_abi_version` directly through `EngineThreads.Run`, bypassing the ABI
+check. Whichever ran first brought Go up before the snapshot, the snapshot recorded Go's edits as the
+baseline, and there was nothing to put back: the assertion passed in `folio-dotnet-linux` and failed in
+`folio-dotnet-host` with `sa_flags 0x1C000004`. The snapshot now lives in an **explicit static
+constructor on `Native`** — the CLR runs it before any static member of the type is used, extern
+methods included, and a class with one is not `beforefieldinit` — and both the snapshot and the
+restore latch. A consumer only ever reaches the engine through `Invoke` → `CheckAbi`, so for them the
+old placement was already right; the test suite was the caller that exposed it, which is what it is
+for. The Linux test now also asserts that a pre-load snapshot exists at all.
+
 **Not yet tried, in order of cost:** *(the `restore-*` arms are struck — run and null)* a symbolised
 core (`dotnet-symbol` for `libcoreclr.so.dbg`, `dotnet-dump analyze … clrstack -all` for the managed
 frame the worker was interrupted in), which names the handler in one shot and is in the trace now;
