@@ -1,53 +1,68 @@
 #!/usr/bin/env bash
 #
-# DW-396: IS THE ALTERNATE SIGNAL STACK ACTUALLY THE CAUSE?
+# DW-398: WHAT DOES LOADING THE ENGINE DO TO THIS PROCESS THAT KILLS IT?
 #
 #   ./run.sh [-n N]       # three arms, N iterations each
 #
 # WHAT IS KNOWN GOING IN. Loading the engine kills the .NET test host on about
 # one Linux amd64 run in four; not loading it never does (load-exposure.sh,
-# run 35933716928: 134/500 against 0/500). The death is an ABORT, not a
-# segfault -- glibc's futex_fatal_error reached from the CLR's own handler
-# under `<signal handler called>`, on a `.NET TP Worker` (crash-trace.sh, run
-# 35945107391). That is what a corrupted futex looks like, and a handler
-# running out of room on a 16 KiB alternate stack is a way to corrupt one.
+# run 35933716928: 134/500 against 0/500). arm64 is clean at 1000. The death
+# is an ABORT, not a segfault -- glibc's futex_fatal_error reached from
+# pthread_cond_wait inside libcoreclr, UNDER a `<signal handler called>`
+# frame, on a `.NET TP Worker` (crash-trace.sh, run 35945107391).
 #
-# WHAT IS NOT KNOWN: whether the alternate stack is the cause or a bystander.
-# The mechanism is measured -- Go installs SA_ONSTACK handlers process-wide at
-# dlopen, every CLR thread carries 16 KiB, Go sizes 32 KiB for itself -- but a
-# mechanism that could explain a crash is not the same as the one that did.
+# THE ALTERNATE STACK IS RULED OUT, MEASURED, NOT ARGUED. Run 35979184685
+# cleared SA_ONSTACK from every signal carrying a handler and the rate did not
+# move: 65 deaths/150 against a 69/150 baseline. No handler is dying for want
+# of room, and the three earlier arms that cleared it from SEGV/BUS/URG alone
+# were not merely incomplete -- they were aimed at the wrong field.
 #
-# THREE ARMS, ONE VARIABLE EACH, ON A HOST WHOSE SOUNDNESS IS ESTABLISHED:
+# WHAT THAT RUN DID ESTABLISH. Its report block showed dlopen changing 13
+# signals, and five of them keep their original handler ADDRESS while their
+# flags change: SIG4, SIG5, SIGABRT, SIG15 and SIGRTMIN. Go did not install
+# those handlers. It re-flagged the CLR's -- and it does that with sigaction(),
+# which replaces sa_flags and sa_mask TOGETHER. sa_mask is the set of signals
+# blocked while the handler runs; SA_ONSTACK was just the bit we printed.
 #
-#   none       the shipped binding, untouched                 -- the baseline
-#   noonstack  SA_ONSTACK cleared from Go's handlers after
-#              load, so they run on the thread's ORDINARY
-#              stack, which is megabytes                      -- removes the
-#                                                                small stack
-#   restore    the CLR's original handlers put back after
-#              load, so Go's never run on a .NET thread       -- removes Go
-#                                                                from the path
+# SIGRTMIN is CoreCLR's thread-suspension activation signal, and its handler
+# does real work. A handler whose author chose its blocking set, re-installed
+# by another runtime with a different one, is a re-entrancy bug waiting for
+# load -- and condvar state mangled by re-entry is exactly the futex abort we
+# have.
 #
-# HOW TO READ IT. If `none` crashes and `noonstack` does not, the alternate
-# stack's SIZE is the cause and any fix must cover threads the binding does
-# not own. If `restore` also fixes it but `noonstack` does not, Go's handler
-# is implicated for some reason other than stack size. If all three crash
-# alike, the signal path is not the cause at all and this whole line of
-# investigation is finished -- which is worth knowing and is why `none` is run
-# here rather than quoted from an earlier run on a different day.
+# THREE ARMS, ONE VARIABLE EACH:
 #
-# NEITHER WORKAROUND IS A SHIPPABLE FIX. Both reach into another runtime's
-# signal handlers from a library. They are here to identify a cause.
+#   none             the shipped binding, untouched          -- the baseline
+#   restore-foreign  every RELOCATED handler (address
+#                    unchanged, flags or mask changed) put
+#                    back byte for byte                      -- undoes Go's
+#                                                               edits to the
+#                                                               CLR's handlers
+#   restore-rtmin    the same, SIGRTMIN alone                -- names the one
+#                                                               signal, if the
+#                                                               arm above works
+#
+# HOW TO READ IT. If `restore-foreign` is clean, Go's re-flagging of handlers
+# it does not own is the cause, and `restore-rtmin` says whether it is the
+# activation signal specifically. If both still crash, the signal path is
+# finished for DW-398 as well and the next lead is glibc's own stderr, kept
+# below, or a minimal console reproducer without vstest.
+#
+# UNLIKE EVERY EARLIER ARM, THIS ONE'S SHAPE COULD SHIP: it restores handlers
+# Go neither installed nor relies on. It is still not a fix -- it is a cause
+# test -- but if it works the fix is not required to be a workaround.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "$here/../../.." && pwd)"
 tests="$root/folio-dotnet/test/Folio8.Tests/Folio8.Tests.csproj"
-iterations=200
+iterations=150
+arms=(none restore-foreign restore-rtmin)
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
     -n|--iterations) iterations="$2"; shift 2 ;;
+    --arms) IFS=, read -r -a arms <<<"$2"; shift 2 ;;
     *) echo "unknown argument '$1'" >&2; exit 1 ;;
   esac
 done
@@ -77,18 +92,17 @@ export FOLIO_SO="$stage/host/libfolio8_native.so"
 
 cat <<EOF2
 
-=== altstack experiment ===
+=== signal experiment ===
   binding   : $(cd "$root" && git log --oneline -1 2>/dev/null || echo unknown)
   native    : $(sha256sum "$native" | awk '{print $1}')
   host      : $(uname -n), $(uname -s) $(uname -r), $(uname -m)
+  arms      : ${arms[*]}
   iterations: $iterations per arm
 
 EOF2
 
-# WHAT dlopen ACTUALLY REWRITES, printed once before any arm runs. This is the
-# diagnostic the first experiment lacked: it assumed Go touches three signals,
-# and Go also ADDS SA_ONSTACK to handlers it leaves in place. Whatever appears
-# here is the real list.
+# WHAT dlopen ACTUALLY REWRITES -- now including sa_mask, which the previous
+# report omitted and which is the field this run exists to examine.
 echo "=== what loading the engine changes about this process's signal handlers ==="
 FOLIO_EXP=report dotnet test "$tests" -c Release --no-build --nologo -v quiet \
     -p:FolioNativeDir="$stage" --filter "FullyQualifiedName~DocsTests" 2>&1 |
@@ -96,14 +110,11 @@ FOLIO_EXP=report dotnet test "$tests" -c Release --no-build --nologo -v quiet \
 echo
 
 declare -a names=() results=()
-# Two arms. `none` is the baseline; `noonstack-all` clears SA_ONSTACK from
-# EVERY signal that carries a handler. The earlier three-signal arms
-# (noonstack, restore) left SIGRTMIN -- CoreCLR's thread-suspension signal --
-# exactly as Go rewrote it, which is very likely why all three crashed alike.
-for mode in none noonstack-all; do
+saved=0
+for mode in "${arms[@]}"; do
   export FOLIO_EXP="$mode"
   deaths=0
-  printf '  %-14s ' "$mode"
+  printf '  %-16s ' "$mode"
   for i in $(seq 1 "$iterations"); do
     set +e
     out="$(dotnet test "$tests" -c Release --no-build --nologo -v quiet \
@@ -111,7 +122,14 @@ for mode in none noonstack-all; do
     set -e
     case "$out" in
       *"Test host process crashed"*|*"active test run was aborted"*)
-        deaths=$((deaths + 1)); printf 'X' ;;
+        deaths=$((deaths + 1)); printf 'X'
+        # KEEP THE FIRST FEW. DW-398's own entry lists reading the dying
+        # process's stderr as untried, and every run so far has thrown this
+        # away after matching one substring. glibc's __libc_fatal writes its
+        # reason here and nobody has looked at it.
+        if [ "$saved" -lt 3 ]; then
+          saved=$((saved + 1)); printf '%s' "$out" >"$work/death-$saved.txt"
+        fi ;;
       *) printf '.' ;;
     esac
   done
@@ -119,29 +137,44 @@ for mode in none noonstack-all; do
   names+=("$mode"); results+=("$deaths")
 done
 
+if [ "$saved" -gt 0 ]; then
+  echo
+  echo "=== what the dying process actually said (first $saved death(s), verbatim) ==="
+  for k in $(seq 1 "$saved"); do
+    echo "--- death $k ---"
+    # Everything vstest did not swallow: glibc's fatal message, the CLR's own
+    # complaint, and any Go runtime output. Never truncated to a match.
+    sed 's/^/  /' "$work/death-$k.txt" | tail -60
+  done
+fi
+
 echo
 echo "=== RESULT ==="
-for i in 0 1; do printf '  %-14s %s deaths / %s\n' "${names[$i]}" "${results[$i]}" "$iterations"; done
+for i in "${!names[@]}"; do printf '  %-16s %s deaths / %s\n' "${names[$i]}" "${results[$i]}" "$iterations"; done
 echo
-base="${results[0]}"; all="${results[1]}"
+base="${results[0]}"
 if [ "$base" -eq 0 ]; then
   echo "  INCONCLUSIVE — the baseline did not crash, so there was nothing to fix."
   echo "  Raise -n; the rate has been measured between 1-in-60 and 3-in-4."
-elif [ "$all" -eq 0 ]; then
-  echo "  THE ALTERNATE STACK IS THE CAUSE AFTER ALL, AND THE EARLIER ARMS MISSED IT."
-  echo "  Clearing SA_ONSTACK from every signal removed the crash where clearing it from"
-  echo "  SIGSEGV/SIGBUS/SIGURG did not. The signal that matters is one Go did not replace"
-  echo "  but DID move onto the alternate stack -- read the report block above for which."
-  echo "  A fix must stop the host runtime's OWN handlers being relocated, and cannot be"
-  echo "  confined to threads the binding owns."
-elif [ "$all" -lt "$base" ]; then
-  echo "  PARTIAL. Clearing SA_ONSTACK everywhere reduced the rate from $base to $all but did"
-  echo "  not remove it. The alternate stack is implicated and is not the whole story."
 else
-  echo "  NOT THE ALTERNATE STACK. Clearing SA_ONSTACK from every signal that has a handler"
-  echo "  changed nothing, so no handler is dying for want of room. The crash is something"
-  echo "  else that loading the engine provokes, and the signal-stack line of investigation"
-  echo "  is finished."
+  clean=""; for i in "${!names[@]}"; do
+    [ "$i" = 0 ] && continue
+    [ "${results[$i]}" -eq 0 ] && clean="$clean ${names[$i]}"
+  done
+  if [ -n "$clean" ]; then
+    echo "  GO'S EDITS TO HANDLERS IT DOES NOT OWN ARE THE CAUSE."
+    echo "  Clean arm(s):$clean, against a baseline of $base/$iterations. Restoring the CLR's"
+    echo "  own sigaction struct — flags AND mask together — removed the crash where clearing"
+    echo "  SA_ONSTACK alone did nothing. Read the mask column in the report block above for"
+    echo "  what Go changed; that difference is the defect, and a fix restores it rather than"
+    echo "  reaching for stack sizes."
+  else
+    echo "  NOT THE SIGNAL PATH, AND NOW MEASURED TWICE. Neither clearing SA_ONSTACK"
+    echo "  everywhere (run 35979184685) nor restoring the CLR's relocated handlers whole"
+    echo "  changes the rate. Loading the engine kills this process by some other means."
+    echo "  Next: the death output above, then a minimal console reproducer without vstest,"
+    echo "  then strace -f -e futex for the errno."
+  fi
 fi
 echo
 echo "  Quote this with the host and binding block above."

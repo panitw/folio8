@@ -7852,10 +7852,43 @@ merely `NativeLibrary.Load`, is enough. Not loading it: **0 deaths in 500**. arm
 **Ruled out:** the alternate signal stack's size, Go's signal handlers being in the path, symbol
 interposition, host unsoundness. See DW-396's 2026-09-24 subsection for the three-arm experiment.
 
-**Not yet tried, in order of cost:** read the CLR's stderr (`__libc_fatal` prints there and nobody has
-looked); a minimal console reproducer without vstest; `strace -f -e futex` for the errno; bisecting
-the Go toolchain and the .NET runtime version; testing whether the glibc 2.28 build floor against a
-2.39 host is implicated, which would be visible as an abort that a host-built native does not produce.
+**RULED OUT BY MEASUREMENT, 2026-09-24, run 35979184685: the alternate stack is not the cause, and
+the way that was established is worth keeping.** A fourth arm cleared `SA_ONSTACK` from **every**
+signal carrying a handler — not the three the earlier arms touched — so that no handler in the
+process could be running on the 16 KiB alternate stack. The rate did not move: **65 deaths / 150
+against a 69 / 150 baseline**. Nothing is dying for want of room. The three earlier arms were not
+merely incomplete; they were aimed at the wrong field, and running a wider version of the same wrong
+thing is what proved it rather than more argument about which signals mattered.
+
+**The prediction written down before that run was wrong, and it is recorded because it was specific.**
+The arm was launched with: *"if `noonstack-all` comes back clean where the three-signal arms didn't,
+then the alternate stack **is** the cause, DW-396 and DW-398 may be the same defect after all, and the
+fix has a clear shape."* It did not come back clean. The pre-registration is what makes the negative
+result usable — the claim could not be retrofitted to the number afterwards — and it is the second
+time this entry's line of investigation has survived only because the verdict was fixed in advance of
+the measurement.
+
+**What that run DID establish, and it is the current lead.** Its report block showed `dlopen`
+changing **13** signals, and five of them keep their original handler **address** while their flags
+change — `SIG4`, `SIG5`, `SIGABRT`, `SIG15` and **`SIGRTMIN`**, which is CoreCLR's thread-suspension
+activation signal and whose handler does real work. Go did not install those handlers; it re-flagged
+the CLR's. It does that with `sigaction()`, which replaces `sa_flags` **and `sa_mask` together**.
+`sa_mask` is the set of signals blocked while the handler runs — the field that decides whether a
+handler can be re-entered — and **no probe in this entry has ever printed it**. `SA_ONSTACK` was
+simply the bit the report happened to show. A handler whose author chose its blocking set,
+re-installed by another runtime with a different one, is a re-entrancy defect waiting for load; and
+the crash on record is `pthread_cond_wait` reaching `futex_fatal_error` **under** a
+`<signal handler called>` frame, which is what condvar state looks like after re-entry.
+
+**Not yet tried, in order of cost:** restore the CLR's own `sigaction` struct — flags and mask
+together — for the five relocated handlers, and for `SIGRTMIN` alone (in the tree as
+`altstack-experiment` arms `restore-foreign` and `restore-rtmin`; unlike every earlier arm this one's
+shape could ship, because it restores handlers Go neither installed nor relies on); read the CLR's
+stderr (`__libc_fatal` prints there and nobody has looked — every run so far matched one substring of
+vstest's output and discarded the rest, now kept by the runner); a minimal console reproducer without
+vstest; `strace -f -e futex` for the errno; bisecting the Go toolchain and the .NET runtime version;
+testing whether the glibc 2.28 build floor against a 2.39 host is implicated, which would be visible
+as an abort that a host-built native does not produce.
 
 ⚠ **DO NOT fold this back into DW-396.** They have different symptoms, different signatures, and one
 of them is measured while the other is not. Conflating them is what produced a wrong conclusion on
