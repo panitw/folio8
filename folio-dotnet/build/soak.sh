@@ -1216,6 +1216,25 @@ MEOF
     *) expect "an unreadable dmesg is disclosed in the verdict" yes no ;;
   esac
 
+  # THE BANNER ITSELF, RENDERED. Twice now (runs 35998599319 and 36009787332)
+  # an apostrophe inside ${var:-word} in the unquoted HEADER heredoc opened a
+  # string that closed lines later, and the soak exited after its banner with
+  # `bash -n` green and every case above green. No host this tool runs on
+  # reaches the banner without a Linux SDK, so it is rendered here from the
+  # script's own text with every variable empty: the render must succeed and
+  # print no literal `${`.
+  _banner="$(sed -n '/^cat <<HEADER$/,/^HEADER$/p' "${BASH_SOURCE[0]}")"
+  if [ -z "$_banner" ]; then
+    expect "the HEADER banner is where the self-check looks for it" found missing
+  else
+    _rendered="$(bash -c "set +u; $_banner" 2>&1)" && _rc=0 || _rc=$?
+    expect "the HEADER banner renders (no apostrophe inside \${var:-word})" 0 "$_rc"
+    case "$_rendered" in
+      *'${'*) expect "the rendered banner carries no literal \${" none literal ;;
+      *) expect "the rendered banner carries no literal \${" none none ;;
+    esac
+  fi
+
   echo
   if [ "$bad" != "0" ]; then
     echo "$bad of $checks cases did not render as expected." >&2
