@@ -8023,6 +8023,34 @@ re-flagged — which is `restore-relocated`, in the binding, at load. It undoes 
 nothing Go relies on. It must run after **the** load the binding performs (one `dlopen`, one path), and
 a regression test must assert `SIGRTMIN` carries no `SA_ONSTACK` once the binding is up.
 
+**Run 35990136271, the bisection, against the pre-registration:** baseline **83/150**, control
+**0/150**; `restore-go` 67 (≈ baseline, as predicted); `GODEBUG=asyncpreemptoff=1` 101 and
+`DOTNET_EnableWriteXorExecute=0` 93 (≈ baseline, as predicted); **`restore-relocated` 1/150** and
+**`noonstack` 1/150** — predicted 0. Each arm's `touched=` line confirms it changed what it claims
+(`restore-relocated` touched `2,3,ILL,TRAP,ABRT,TERM,RTMIN`; `noonstack` every handled signal). So:
+**removing `SA_ONSTACK` from the CLR's relocated handlers takes the rate from 83 to 1** — a 98.8%
+reduction, in the arm the mechanism predicts, and no other arm moves it. The cause is confirmed.
+The runner's own verdict text called 1/150 "partial, not a finding"; that threshold was written
+for an unnamed cause and is wrong here — corrected in the tool, recorded here.
+
+**The residual is real and has one specific candidate.** Two deaths in 300 with the flag removed,
+against none in 150 without the load. A c-shared Go library initialises its runtime **on its own
+thread**: `_rt0_amd64_linux_lib` starts the runtime asynchronously and `dlopen` returns before
+`initsig` has run. The reproducer applies its fix the instant `NativeLibrary.Load` returns, so in a
+small fraction of iterations Go's `setsigstack` runs *after* the fix and re-adds the flag. If that is
+it, forcing Go's initialisation to complete first — any exported call blocks on
+`_cgo_wait_runtime_init_done` — before restoring the handlers takes the residual to zero, and **the
+shippable fix must do the same**: restore after the first call into the engine, never merely after
+the load. The alternative reading — a second, rarer overflow path — is what a non-zero result after
+that change would mean.
+
+**"No runtime dump was written" is consistent, not a tooling gap.** The overflowing handler is on the
+altstack; the SIGSEGV it provokes is delivered *nested* onto the same, already-overflowed altstack;
+the kernel cannot build a frame there, forces `SIG_DFL`, and no handler — Go's, the CLR's, or
+`createdump` — ever runs. That nested-delivery failure is precisely the case the x86 kernel logs as
+**`overflowed sigaltstack`**: the line from the owner's WSL2 box that opened DW-396. One mechanism,
+three landings, and the kernel signature now has a cause that predicts it.
+
 **Not yet tried, in order of cost:** *(the `restore-*` arms are struck — run and null)* a symbolised
 core (`dotnet-symbol` for `libcoreclr.so.dbg`, `dotnet-dump analyze … clrstack -all` for the managed
 frame the worker was interrupted in), which names the handler in one shot and is in the trace now;
