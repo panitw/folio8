@@ -1571,6 +1571,16 @@ if ! dmesg >/dev/null 2>&1; then
   dmesg_available="no"
 fi
 
+# Computed OUTSIDE the heredoc. Inside `${var:-word}` bash parses quotes even
+# in a heredoc, and run 35998599319 died on an apostrophe in that word: the
+# substitution failed under set -e right after printing the banner, and no
+# leg ran. Plain assignments have no such edge.
+if [ -n "$gc_gen0size" ]; then
+  gc_pressure_desc="DOTNET_GCgen0size=$gc_gen0size on every test host"
+else
+  gc_pressure_desc="none; the runtime collects at its own pace"
+fi
+
 cat <<HEADER
 === soak.sh — what is being run ===
   mode                 : $mode
@@ -1579,7 +1589,7 @@ cat <<HEADER
   native sha256        : $native_sha
   suite                : $tests_csproj
   filter               : $filter
-  gc pressure          : ${gc_gen0size:+DOTNET_GCgen0size=$gc_gen0size on every test host}${gc_gen0size:-none (collections at the runtime's own pace)}
+  gc pressure          : $gc_pressure_desc
   iterations requested : $iterations
   host                 : $(uname -n)
   kernel               : $(uname -s) $(uname -r)
