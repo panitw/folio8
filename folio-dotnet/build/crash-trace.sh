@@ -197,8 +197,32 @@ for core in "$core_dir"/core.*; do
   [ -n "$exe" ] && [ -f "$exe" ] || exe="$(command -v dotnet || true)"
   echo "  executable: ${exe:-<unresolved>}"
 
+  # THE ERRNO IS THE WHOLE QUESTION NOW, AND THE FIRST TRACE NEVER ASKED FOR IT.
+  # Run 35945107391 died in glibc's futex_fatal_error at futex-internal.c:119.
+  # That switch lets 0, EAGAIN, EINTR and ETIMEDOUT through and aborts on
+  # everything else, so "which errno" discriminates between causes that have
+  # nothing to do with each other: EFAULT is a bad futex address, EINVAL is
+  # misalignment or a mismatched futex op, ENOSYS is the op being unsupported
+  # (seccomp, emulation), and anything at or above 512 is an ERESTART* code
+  # leaking out of the kernel's signal-restart machinery, which would put the
+  # defect in signal delivery rather than in anyone's locking.
+  #
+  # `err` is a local in the frame that calls futex_fatal_error. gdb resolved
+  # glibc SOURCE LINES on this host, so it has the debug info to resolve
+  # locals too -- Ubuntu's gdb has debuginfod on by default. It is asked for
+  # by FUNCTION rather than by frame number so it cannot silently read the
+  # wrong frame, with a numeric fallback for a gdb too old for that form.
   gdb -q -batch -ex "set pagination off" \
+      -ex "set debuginfod enabled on" \
       -ex "thread apply all bt" \
+      -ex "echo \n===FAULTING THREAD, WITH LOCALS===\n" \
+      -ex "thread 1" -ex "bt full" \
+      -ex "echo \n===THE FUTEX ERRNO===\n" \
+      -ex "frame function __futex_abstimed_wait_common" \
+      -ex "info args" -ex "info locals" \
+      -ex "p err" -ex "p/d err" -ex "p (int)-err" \
+      -ex "echo \n===FALLBACK, FRAME 1===\n" \
+      -ex "frame 1" -ex "info locals" -ex "p err" \
       -ex "echo \n===MAPPINGS===\n" -ex "info proc mappings" \
       -ex "echo \n===REGISTERS===\n" -ex "info registers" \
       ${exe:+"$exe"} --core="$core" \
@@ -252,7 +276,15 @@ for core in "$core_dir"/core.*; do
   if grep -qE "futex_fatal_error|__libc_fatal|abort \(\)" "$work/backtrace.txt" 2>/dev/null; then
     echo
     echo "--- NOTE: this is an ABORT, not a segfault ---"
+    set +o pipefail
     grep -nE "futex_fatal_error|__libc_fatal|abort \(\)|<signal handler called>" "$work/backtrace.txt" | head -5
+    # The errno, printed where a reader will see it rather than only in the
+    # artefact. glibc aborts on anything outside {0, EAGAIN, EINTR, ETIMEDOUT},
+    # so whatever appears here names the class of defect.
+    echo
+    echo "--- the futex errno that glibc refused ---"
+    sed -n '/===THE FUTEX ERRNO===/,/===MAPPINGS===/p' "$work/backtrace.txt" | sed 's/^/  /' | head -30
+    set -o pipefail
   fi
   break
 done
