@@ -118,6 +118,19 @@ fi
 [ "$(uname -s)" = Linux ] || { echo "crash-trace: Linux only; --self-check works anywhere." >&2; exit 1; }
 command -v gdb >/dev/null 2>&1 || { echo "crash-trace: gdb is not on PATH, and reading the core is the entire point." >&2; exit 1; }
 
+# SYMBOLS, OR EVERY CLR FRAME IS `??` AND THE HANDLER CANNOT BE NAMED. Both
+# cores on record die inside a libcoreclr signal handler and neither could
+# say WHICH handler, because libcoreclr ships stripped. Microsoft publishes
+# the .dbg on its symbol server; dotnet-symbol fetches it by build-id and
+# dotnet-dump reads the core the way the runtime does, naming the MANAGED
+# frame the pool thread was interrupted in -- which gdb can never do. Both
+# are best-effort: the core is kept and read without them if they fail, and
+# the summary says so.
+export PATH="$HOME/.dotnet/tools:$PATH"
+for tool in dotnet-symbol dotnet-dump; do
+  command -v "$tool" >/dev/null 2>&1 || dotnet tool install -g "$tool" >/dev/null 2>&1 || echo "crash-trace: could not install $tool; continuing without it"
+done
+
 # ROOT, OR NOTHING. A core routed to Ubuntu's apport pipe is a core this script
 # cannot read, and silently producing no trace is the failure mode it exists to
 # remove.
@@ -212,21 +225,77 @@ for core in "$core_dir"/core.*; do
   # locals too -- Ubuntu's gdb has debuginfod on by default. It is asked for
   # by FUNCTION rather than by frame number so it cannot silently read the
   # wrong frame, with a numeric fallback for a gdb too old for that form.
+  # libcoreclr's .dbg, placed beside the .so so gdb's debuglink lookup finds
+  # it without being told. The runner has sudo; a host without it gets the
+  # unsymbolised trace it would have got anyway.
+  coreclr="$(dirname "$(dotnet --list-runtimes 2>/dev/null | awk '/Microsoft.NETCore.App/{print $3}' | tr -d '[]' | tail -1)")/$(dotnet --list-runtimes 2>/dev/null | awk '/Microsoft.NETCore.App/{print $2}' | tail -1)/libcoreclr.so"
+  symbolised=no
+  if [ -f "$coreclr" ] && command -v dotnet-symbol >/dev/null 2>&1; then
+    mkdir -p "$work/syms"
+    if dotnet-symbol --symbols -o "$work/syms" "$coreclr" >"$work/symbol.log" 2>&1 && [ -f "$work/syms/libcoreclr.so.dbg" ]; then
+      if sudo -n cp "$work/syms/libcoreclr.so.dbg" "$(dirname "$coreclr")/" 2>/dev/null; then symbolised=yes; fi
+    fi
+  fi
+  echo "  libcoreclr symbols: $symbolised"
+
+  # THE FUTEX ERRNO, ASKED FOR IN A WAY THAT CANNOT LIE. The previous version
+  # ran `frame function __futex_abstimed_wait_common` then `p err`, and on a
+  # core with NO such frame gdb resolved `err` to glibc's err(3) function and
+  # printed `$2 = -13` -- a number that reads as an errno and is not one. This
+  # walks the faulting thread's frames itself and prints the local only from
+  # the frame that has it, or says plainly that the frame is absent.
+  cat >"$work/futex-errno.py" <<'PYEOF'
+import gdb
+print("===THE FUTEX ERRNO===")
+try:
+    gdb.execute("thread 1", to_string=True)
+    f = gdb.newest_frame(); hit = None
+    while f is not None:
+        n = f.name() or ""
+        if "futex_abstimed_wait_common" in n:
+            hit = f; break
+        f = f.older()
+    if hit is None:
+        print("no __futex_abstimed_wait_common frame on the faulting thread: this death is NOT the futex abort")
+    else:
+        hit.select()
+        try:
+            v = hit.read_var("err")
+            print("futex errno: err = %s  (glibc aborts on anything outside 0/EAGAIN/EINTR/ETIMEDOUT)" % v)
+        except Exception as e:
+            print("frame found but `err` not readable: %s" % e)
+        try:
+            print("futex_word = %s" % hit.read_var("futex_word"))
+            print("*futex_word = %s" % gdb.parse_and_eval("*(unsigned int*)futex_word"))
+        except Exception as e:
+            print("futex_word not readable: %s" % e)
+except Exception as e:
+    print("errno probe failed: %s" % e)
+PYEOF
+
   gdb -q -batch -ex "set pagination off" \
       -ex "set debuginfod enabled on" \
       -ex "thread apply all bt" \
       -ex "echo \n===FAULTING THREAD, WITH LOCALS===\n" \
-      -ex "thread 1" -ex "bt full" \
-      -ex "echo \n===THE FUTEX ERRNO===\n" \
-      -ex "frame function __futex_abstimed_wait_common" \
-      -ex "info args" -ex "info locals" \
-      -ex "p err" -ex "p/d err" -ex "p (int)-err" \
-      -ex "echo \n===FALLBACK, FRAME 1===\n" \
-      -ex "frame 1" -ex "info locals" -ex "p err" \
+      -ex "thread 1" -ex "bt full 12" \
+      -ex "echo \n" \
+      -x "$work/futex-errno.py" \
       -ex "echo \n===MAPPINGS===\n" -ex "info proc mappings" \
       -ex "echo \n===REGISTERS===\n" -ex "info registers" \
       ${exe:+"$exe"} --core="$core" \
       >"$work/backtrace.txt" 2>"$work/gdb.err" || true
+
+  # THE MANAGED SIDE. Both cores show the pool thread interrupted at an
+  # address gdb cannot attribute -- JIT'd code in a doublemapper region.
+  # dotnet-dump names that method and, with the symbol server, the native
+  # handler frames above it. Best-effort; kept as its own artefact.
+  if command -v dotnet-dump >/dev/null 2>&1; then
+    timeout 600 dotnet-dump analyze "$core" -c "setsymbolserver -ms" -c "threads" -c "clrstack -all" -c "exit" \
+      >"$work/clrstack.txt" 2>&1 || echo "  (dotnet-dump analyze did not complete; see clrstack.txt)"
+    cp "$work/clrstack.txt" "$core_dir/clrstack-$(basename "$core").txt" 2>/dev/null || true
+  else
+    echo "  (dotnet-dump unavailable; no managed frames)" >"$work/clrstack.txt"
+  fi
 
   # ATTRIBUTION WITHOUT SYMBOLS, WHICH IS ALL THIS QUESTION NEEDS. The engine
   # is stripped Go and the CLR is not shipped with symbols, so frame NAMES may
@@ -244,8 +313,14 @@ for core in "$core_dir"/core.*; do
   cp "$work/gdb.err" "$core_dir/gdb-$(basename "$core").err" 2>/dev/null || true
 
   # The faulting thread first, then anything naming a Go handler anywhere.
+  # The range ends at the first blank line: `thread apply all bt` prints
+  # Thread 1 LAST, so a range that ran to "Thread 2" ran to end of file and
+  # took the mappings block with it -- whose libfolio8_native.so PATHS were
+  # then counted as Go frames (run 35984125246, a wrong GO-SIGNAL-PATH).
+  echo "--- how it died ---"
+  grep -m1 -E 'Program terminated with signal' "$work/backtrace.txt" | sed 's/^/  /' || echo "  (no termination line)"
   set +o pipefail
-  sed -n '/^Thread 1 /,/^Thread 2 /p' "$work/backtrace.txt" | head -40
+  sed -n '/^Thread 1 (/,/^$/p' "$work/backtrace.txt" | head -40
   set -o pipefail
   echo
   echo
@@ -260,11 +335,28 @@ for core in "$core_dir"/core.*; do
   # frame in libfolio8_native.so on the faulting stack can only have arrived
   # through a signal.
   go_frames=$(( $(grep -cE "sigtramp|sigtrampgo|runtime\.sighandler|cgoSigtramp" "$work/backtrace.txt" || true) \
-              + $(sed -n '/^Thread 1 /,/^Thread 2 /p' "$work/backtrace.txt" | grep -cE "libfolio8_native" || true) ))
+              + $(sed -n '/^Thread 1 (/,/^$/p' "$work/backtrace.txt" | grep -cE "libfolio8_native" || true) ))
   echo
   echo "--- frames naming libcoreclr or the engine ---"
   grep -nE "libcoreclr|libfolio8_native" "$work/backtrace.txt" | head -10 || echo "  (none)"
   clr_only=$(grep -cE "libcoreclr" "$work/backtrace.txt" || true)
+
+  echo
+  echo "--- the futex errno probe ---"
+  set +o pipefail
+  sed -n '/===THE FUTEX ERRNO===/,/===MAPPINGS===/p' "$work/backtrace.txt" | grep -v '===MAPPINGS===' | sed 's/^/  /' | head -12
+  echo
+  echo "--- the faulting thread's MANAGED frames (dotnet-dump clrstack) ---"
+  # The OS thread id of gdb's Thread 1 is its LWP; clrstack -all prints every
+  # thread, so pick the block whose OSID matches, and fall back to the whole
+  # thing trimmed if the match fails.
+  lwp="$(sed -n 's/^Thread 1 (Thread 0x[0-9a-f]* (LWP \([0-9]*\))).*/\1/p' "$work/backtrace.txt" | head -1)"
+  if [ -n "$lwp" ] && grep -qi "OS Thread Id: 0x$(printf '%x' "$lwp")" "$work/clrstack.txt" 2>/dev/null; then
+    awk -v id="0x$(printf '%x' "$lwp")" 'tolower($0) ~ "os thread id: " id {p=1} p && /^OS Thread Id:/ && tolower($0) !~ id {p=0} p' "$work/clrstack.txt" | head -40 | sed 's/^/  /'
+  else
+    head -60 "$work/clrstack.txt" | sed 's/^/  /'
+  fi
+  set -o pipefail
 
   # ABORT IS A DIFFERENT DEATH FROM A SEGFAULT, AND THIS RUN FOUND ONE.
   # Run 35945107391's faulting thread was inside glibc's futex_fatal_error --
@@ -278,12 +370,6 @@ for core in "$core_dir"/core.*; do
     echo "--- NOTE: this is an ABORT, not a segfault ---"
     set +o pipefail
     grep -nE "futex_fatal_error|__libc_fatal|abort \(\)|<signal handler called>" "$work/backtrace.txt" | head -5
-    # The errno, printed where a reader will see it rather than only in the
-    # artefact. glibc aborts on anything outside {0, EAGAIN, EINTR, ETIMEDOUT},
-    # so whatever appears here names the class of defect.
-    echo
-    echo "--- the futex errno that glibc refused ---"
-    sed -n '/===THE FUTEX ERRNO===/,/===MAPPINGS===/p' "$work/backtrace.txt" | sed 's/^/  /' | head -30
     set -o pipefail
   fi
   break

@@ -7901,7 +7901,50 @@ re-flags handlers it does not own is true and measured; the inference that it th
 delivery window is false, and one grep would have caught it before a 450-iteration run was
 launched.** The cost is worth naming — the source was available locally the whole time.
 
-**Not yet tried, in order of cost:** restore the CLR's own `sigaction` struct — flags and mask
+**2026-09-24, three runs later: the signal path is closed for good, the death has two shapes, and the
+handler still has no name.**
+
+- **Run 35983414123** (`none` / `restore-foreign` / `restore-rtmin`): **42 / 63 / 68 deaths per 150.**
+  Null, as predicted from the source read above. Two things were learned from its side-channels rather
+  than its rate. First, **the baseline itself moved from 65 to 42 between runs on the same runner
+  image** — the rate is not stable to better than ±20 points, so no two-arm comparison under 300
+  iterations per arm can see a partial effect. Second, the kept death outputs show **vstest forwards
+  none of the testhost's stderr**: not glibc's fatal message, not even the hook's own `[hook] restored…`
+  line. "Nobody has read the dying process's stderr" was never achievable through `dotnet test`; it
+  needs the hook to `dup2` fd 2 to a file, or a process that is not a testhost. And every death printed
+  **`Passed!` first** — the host dies on the way *out*, after the run completes.
+- **Run 35983829443** (`load-repro`, the console process): **0 / 300 load, 0 / 300 control.** Its verdict
+  text said *"vstest is part of the trigger"*, and that is **withdrawn**: the workload parked eight pool
+  threads and allocated nothing, so no GC ever ran and the path both cores implicate was never
+  exercised. It measured an empty room. The reproducer now keeps workers allocating in managed code,
+  forces collections for the hold, and exits with the workers still running.
+- **Run 35984125246** (`crash-trace`, 1 death in 150): a second core, and **a different death** —
+  `Program terminated with signal SIGSEGV`, no glibc frame anywhere, the `.NET TP Worker` at two
+  `libcoreclr` frames under `<signal handler called>`, interrupted at an address in a
+  `/memfd:doublemapper` region, which is JIT'd managed code. So DW-398 now has **two shapes with one
+  skeleton**: a pool thread in managed code takes a signal, the CLR's handler runs, and the handler
+  dies — once by aborting in `pthread_cond_wait` (run 35945107391), once by segfaulting. The one CLR
+  handler that interrupts managed code on pool threads and then parks them on a condvar is **GC
+  suspension** — `SuspendRuntime` sends `SIGRTMIN` to every thread in managed code — and it is the
+  working hypothesis, not a finding: **no frame in either core has a name**, because `libcoreclr`
+  ships stripped and the trace never fetched symbols.
+- **Two of this entry's own instruments were wrong and are fixed.** The trace's `p err` printed `$2 =
+  -13` on a core with no futex frame — gdb resolved `err` to glibc's `err(3)` *function*; it is not an
+  errno and must not be quoted as one. And its Thread-1 extraction ran to end of file (Thread 1 is
+  printed *last*), swallowing the mappings block and counting `libfolio8_native.so` **path strings** as
+  Go frames — the run's `GO-SIGNAL-PATH` verdict is **wrong**; there is no Go frame on that stack. The
+  hook's mask report compared 128 bytes of `sa_mask` of which glibc initialises 8, and reported every
+  signal as changed; the 8 real bytes agree with the source read.
+
+**Not yet tried, in order of cost:** *(the `restore-*` arms are struck — run and null)* a symbolised
+core (`dotnet-symbol` for `libcoreclr.so.dbg`, `dotnet-dump analyze … clrstack -all` for the managed
+frame the worker was interrupted in), which names the handler in one shot and is in the trace now;
+the GC-pressure reproducer; the CLR's stderr via a `dup2` in the hook; `strace -f -e futex` for the
+errno on a futex-shaped death; bisecting the Go toolchain and the .NET runtime version; testing
+whether the glibc 2.28 build floor against a 2.39 host is implicated, which would be visible as an
+abort that a host-built native does not produce.
+
+*Superseded list kept for the record:* restore the CLR's own `sigaction` struct — flags and mask
 together — for the five relocated handlers, and for `SIGRTMIN` alone (in the tree as
 `altstack-experiment` arms `restore-foreign` and `restore-rtmin`; unlike every earlier arm this one's
 shape could ship, because it restores handlers Go neither installed nor relies on); read the CLR's

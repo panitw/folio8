@@ -52,8 +52,16 @@ internal sealed class StartupHook
     // glibc x86_64 `struct sigaction`: handler at 0, sa_mask at 8 (128 bytes),
     // sa_flags at 136, sa_restorer at 144. 256 is room to spare; glibc reads
     // only what it needs.
+    //
+    // ONLY THE FIRST 8 BYTES OF sa_mask ARE REAL. Linux has 64 signals; the
+    // kernel fills 8 bytes and glibc's sigaction() copies the whole 128-byte
+    // field out of a kernel struct whose tail it never initialised. Run
+    // 35983414123 compared all 128 and reported every signal's mask as
+    // CHANGED, including ones nothing had touched, because the tail was
+    // stack garbage that differed between two calls. Comparing and rendering
+    // the same 8 bytes is what makes the two agree.
     private const int MASK_OFF  = 8;
-    private const int MASK_LEN  = 128;
+    private const int MASK_LEN  = 8;
     private const int FLAGS_OFF = 136;
 
     [DllImport("libc", SetLastError = true)]

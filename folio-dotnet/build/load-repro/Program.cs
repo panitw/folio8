@@ -5,36 +5,37 @@ using System.Threading;
 
 // DW-398, the smallest process that can die of it -- if it can.
 //
-// Everything measured so far has died inside `dotnet test`: a vstest host with
-// its own threads, its own AppDomain setup and its own way of reporting a dead
-// child. That makes vstest a confounder nobody has removed, and it makes every
-// iteration cost seconds. This is the same exposure with nothing else in it.
+//   repro <libfolio8_native.so> [--load|--noload] [--pool N] [--hold MS] [--gc|--nogc]
 //
-//   repro <libfolio8_native.so> [--load|--noload] [--pool N] [--hold MS]
+// WHAT THE TWO CORES SAY THE WINDOW IS. Both cores on record (runs
+// 35945107391 and 35984125246) are the same shape: a `.NET TP Worker`
+// interrupted BY A SIGNAL while executing JIT'd managed code, with the CLR's
+// own handler then dying under `<signal handler called>` -- once by aborting
+// in pthread_cond_wait, once by segfaulting. The CLR handler that interrupts
+// managed code on a pool thread and then waits on a condvar is the GC
+// suspension path: SuspendRuntime sends SIGRTMIN to every thread in managed
+// code and the handler parks the thread until the GC is done.
 //
-// --noload is the control: identical process, identical thread-pool work, no
-// engine. load-exposure.sh established that merely loading the library is
-// enough under vstest (134/500 against 0/500); if that holds here the
-// instrument gets ~100x cheaper, and if it does NOT hold, vstest is part of
-// the trigger and that is a finding in its own right.
+// So the window needs three things this program's first version had none of:
+// pool threads IN MANAGED CODE (not parked -- parked threads are not signalled),
+// GCs actually happening, and the process leaving while that is going on.
+// The first version parked eight threads for 300ms and allocated nothing, so
+// no GC ever ran, no activation was ever sent, and its 0/300 measured an
+// empty room. --nogc reproduces that arm so the comparison is on record.
 //
-// WHY THE THREAD POOL. The one real backtrace (run 35945107391) died on a
-// `.NET TP Worker` in pthread_cond_wait. Pool workers park on a condvar, which
-// is the state the crash implicates, so the pool has to be awake and parking
-// for the window to exist at all. --pool 0 turns that off to test whether it
-// is required.
+// --noload is the control: identical process, identical work, no engine.
 //
-// Exit status IS the result: 0 clean, 134 SIGABRT (128+6), 139 SIGSEGV
-// (128+11). The runner reads those rather than scraping a message, because a
-// self-abort and a segfault are different defects and this entry has already
-// conflated two once.
+// Exit status IS the result: 0 clean, 134 SIGABRT, 139 SIGSEGV. Both have
+// now been seen for this one defect, and the runner counts them apart.
 internal static class Program
 {
+    private static volatile int s_sink;
+
     private static int Main(string[] argv)
     {
         string so = null;
-        bool load = true;
-        int pool = 8, holdMs = 300;
+        bool load = true, gc = true;
+        int pool = 8, holdMs = 400;
 
         for (int i = 0; i < argv.Length; i++)
         {
@@ -42,6 +43,8 @@ internal static class Program
             {
                 case "--load":   load = true; break;
                 case "--noload": load = false; break;
+                case "--gc":     gc = true; break;
+                case "--nogc":   gc = false; break;
                 case "--pool":   pool = int.Parse(argv[++i]); break;
                 case "--hold":   holdMs = int.Parse(argv[++i]); break;
                 default:         so = argv[i]; break;
@@ -49,17 +52,35 @@ internal static class Program
         }
         if (load && string.IsNullOrEmpty(so))
         {
-            Console.Error.WriteLine("usage: repro <libfolio8_native.so> [--load|--noload] [--pool N] [--hold MS]");
+            Console.Error.WriteLine("usage: repro <libfolio8_native.so> [--load|--noload] [--pool N] [--hold MS] [--gc|--nogc]");
             return 2;
         }
 
-        // Get the pool warm and parking BEFORE the load, so the load lands on
-        // threads already sitting in the condvar rather than on a cold pool.
-        var done = new CountdownEvent(Math.Max(pool, 1));
+        ThreadPool.SetMinThreads(Math.Max(pool, 1), 1);
+
+        // Workers that stay IN managed code: allocate, compute, yield, repeat,
+        // until told to stop. A thread that is signalled mid-allocation is
+        // exactly the thread the activation handler has to redirect.
+        var stop = new ManualResetEventSlim(false);
+        var started = new CountdownEvent(Math.Max(pool, 1));
         for (int i = 0; i < pool; i++)
-            ThreadPool.QueueUserWorkItem(_ => { Thread.Sleep(5); done.Signal(); });
-        if (pool == 0) done.Signal();
-        done.Wait(2000);
+        {
+            ThreadPool.QueueUserWorkItem(_ =>
+            {
+                started.Signal();
+                var rnd = new Random(Environment.CurrentManagedThreadId);
+                while (!stop.IsSet)
+                {
+                    var a = new byte[rnd.Next(16, 4096)];
+                    var o = new object[rnd.Next(1, 64)];
+                    for (int k = 0; k < o.Length; k++) o[k] = new int[4];
+                    s_sink += a.Length + o.Length;
+                    if ((s_sink & 0xff) == 0) Thread.Yield();
+                }
+            });
+        }
+        if (pool == 0) started.Signal();
+        started.Wait(2000);
 
         if (load)
         {
@@ -67,19 +88,20 @@ internal static class Program
             if (h == IntPtr.Zero) { Console.Error.WriteLine("load returned null"); return 3; }
         }
 
-        // Keep the pool cycling across the window. The crash is not at the
-        // instant of dlopen -- load-exposure's arm B returned from the load
-        // and died later -- so the process has to stay alive and scheduling.
+        // The window. With --gc the main thread forces collections for the
+        // whole hold, each one suspending every worker that is in managed
+        // code by signal. Without it the workers just run.
         var sw = Stopwatch.StartNew();
         while (sw.ElapsedMilliseconds < holdMs)
         {
-            var round = new CountdownEvent(Math.Max(pool, 1));
-            for (int i = 0; i < pool; i++)
-                ThreadPool.QueueUserWorkItem(_ => { Thread.Yield(); round.Signal(); });
-            if (pool == 0) round.Signal();
-            round.Wait(1000);
+            if (gc) GC.Collect(2, GCCollectionMode.Forced, blocking: true);
+            else Thread.Sleep(1);
         }
 
+        // Leave with the workers still running. Every death under vstest
+        // printed `Passed!` first: the process dies on the way OUT, and a
+        // reproducer that tidies up before exiting removes that from the
+        // window. `stop` is deliberately never set.
         Console.Out.Flush();
         return 0;
     }

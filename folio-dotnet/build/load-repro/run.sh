@@ -11,17 +11,31 @@
 # this entry holds. It also costs seconds per iteration, which is why the rate
 # is known to ±20 points and not better.
 #
+# THE FIRST VERSION MEASURED AN EMPTY ROOM, AND THAT IS ON THE RECORD. Run
+# 35983829443: 0/300 load, 0/300 noload -- with eight pool threads PARKED for
+# 300ms and nothing allocated. Both cores on record show a pool thread
+# interrupted by a signal WHILE IN MANAGED CODE, with the CLR's handler dying;
+# that is the GC-suspension path, and a process that never allocates never
+# GCs, never suspends anything, and never opens the window. Its verdict
+# text -- "vstest is part of the trigger" -- was an over-claim and is
+# withdrawn: the workload was wrong, not the hypothesis.
+#
 # TWO ARMS, THE SAME PROCESS, ONE VARIABLE:
 #
-#   load     warm the thread pool, dlopen the engine, keep scheduling
+#   load     pool threads allocating in managed code, dlopen the
+#            engine, forced GCs for the hold, leave with the
+#            workers still running
 #   noload   identical, without the dlopen                  -- the control
 #
+# `--nogc` re-runs the first version's workload so the two are comparable.
+#
 # HOW TO READ IT. If `load` dies and `noload` does not, DW-398 reproduces in a
-# bare console process: vstest is not part of the trigger, and the instrument
-# is now cheap enough to bisect a Go toolchain with. If NEITHER dies, vstest
-# IS part of the trigger -- which is a finding, not a failed run, and it means
-# every rate in this entry is a rate for a vstest host rather than for the
-# library. Say which of those happened; do not rerun until one is convenient.
+# bare console process: vstest is not part of the trigger, the GC-suspension
+# reading of the cores is supported, and the instrument is cheap enough to
+# bisect a Go toolchain with. If NEITHER dies with GCs forced and workers in
+# managed code, the workload still differs from a testhost in some way that
+# matters, and THAT is the next thing to name -- not "vstest is the trigger",
+# which the first run already over-claimed once.
 #
 # THE EXIT STATUS IS THE RESULT. 134 is SIGABRT, 139 is SIGSEGV, and this
 # entry has already conflated an abort with a segfault once. They are counted
@@ -32,7 +46,8 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="$(cd "$here/../../.." && pwd)"
 iterations=300
 pool=8
-hold=300
+hold=400
+gcflag=--gc
 selfcheck=0
 
 while [ "$#" -gt 0 ]; do
@@ -40,6 +55,7 @@ while [ "$#" -gt 0 ]; do
     -n|--iterations) iterations="$2"; shift 2 ;;
     --pool) pool="$2"; shift 2 ;;
     --hold) hold="$2"; shift 2 ;;
+    --nogc) gcflag=--nogc; shift ;;
     --self-check) selfcheck=1; shift ;;
     *) echo "unknown argument '$1'" >&2; exit 1 ;;
   esac
@@ -105,7 +121,7 @@ cat <<EOF2
   native    : $(sha256sum "$native" | awk '{print $1}')
   host      : $(uname -n), $(uname -s) $(uname -r), $(uname -m)
   runtime   : $(dotnet --version)
-  iterations: $iterations per arm, pool $pool, hold ${hold}ms
+  iterations: $iterations per arm, pool $pool, hold ${hold}ms, $gcflag
 
 EOF2
 
@@ -123,7 +139,7 @@ for arm in load noload; do
   printf '  %-8s ' "$arm"
   for i in $(seq 1 "$iterations"); do
     set +e
-    err="$("$work/bin/repro" "${args[@]}" --pool "$pool" --hold "$hold" 2>&1 >/dev/null)"
+    err="$("$work/bin/repro" "${args[@]}" --pool "$pool" --hold "$hold" "$gcflag" 2>&1 >/dev/null)"
     st=$?
     set -e
     word="$(classify "$st")"
@@ -163,13 +179,13 @@ elif [ "${totals[0]}" -gt 0 ]; then
   echo "  vstest is not part of the trigger, every rate in this entry stands, and the"
   echo "  instrument is now cheap enough to bisect the Go toolchain and the runtime with."
 else
-  echo "  VSTEST IS PART OF THE TRIGGER, AND THAT IS A FINDING, NOT A FAILED RUN."
+  echo "  DID NOT REPRODUCE WITH THIS WORKLOAD ($gcflag, pool $pool, hold ${hold}ms)."
   echo "  Loading the engine into a bare console process did not kill it once in $iterations,"
-  echo "  where the same load under \`dotnet test\` dies on roughly one run in four. So every"
-  echo "  rate DW-398 records is a rate for a vstest host, not for the library, and the"
-  echo "  difference between the two processes is now the thing to chase. Vary --pool and"
-  echo "  --hold before concluding the workload is wrong: this arm parks 8 pool threads for"
-  echo "  ${hold}ms and a testhost does considerably more."
+  echo "  where the same load under \`dotnet test\` dies on roughly one run in four. That does"
+  echo "  NOT show vstest is the trigger -- the first run of this tool claimed exactly that on"
+  echo "  a workload that never GC'd, and withdrew it. It shows this process still lacks"
+  echo "  something a testhost has. Name the difference before running again; do not raise"
+  echo "  -n and hope."
 fi
 echo
 echo "  Quote this with the host and binding block above."
