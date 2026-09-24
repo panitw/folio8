@@ -419,7 +419,9 @@ jobs:
         run: ./folio-dotnet/build/load-repro/run.sh --self-check
       - name: baseline, control, and one arm per thing the load changes
         run: |
-          sudo apt-get install -y -qq strace >/dev/null 2>&1 || true
+          # strace for the signal census; gdb for read-core.sh (run 36006849443
+          # caught the residual's core and could not read it: no gdb here).
+          sudo apt-get install -y -qq strace gdb >/dev/null 2>&1 || true
           # shellcheck disable=SC2086 -- extra_args is a list of arguments by design
           ./folio-dotnet/build/load-repro/run.sh -n "${{ inputs.iterations }}" --out "$RUNNER_TEMP/repro-out" --core-arm "${{ inputs.core_arm }}" ${{ inputs.extra_args }}
       - name: keep the dump analysis and the first deaths' stderr

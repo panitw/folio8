@@ -30,7 +30,7 @@ func TestSignalDispositionsAreReported(t *testing.T) {
 		t.Fatalf("payload does not carry the report %q:\n% x", report, buf)
 	}
 	if strings.HasPrefix(report, "linux ") {
-		for _, key := range []string{"snapshot=", "constructor-ran-before-go=", "restored-by=", "restored=", "restore-calls="} {
+		for _, key := range []string{"mode=", "snapshot=", "constructor-ran-before-go=", "restored-by=", "restored=", "restore-calls="} {
 			if !strings.Contains(report, " "+key) {
 				t.Errorf("report lacks %s: %q", key, report)
 			}

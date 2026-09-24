@@ -48,19 +48,23 @@
 # with a kernel `overflowed sigaltstack` line, so the residual is not in
 # Go's handlers either. The default arms now test the window directly:
 #
-#   load                                     baseline
-#   noload                                   the control: identical, no dlopen
-#   load:fix=restore-relocated               the fix, window = dlopen (expect 1-4%)
-#   load:fix=restore-relocated:workers=after the pool starts after the fix: no thread
-#                                            exists to be activated in the window
-#                                            (PREDICTION: 0)
-#   load:fix=restore-relocated:delay=400     the window held open for the hold's
-#                                            length before the fix (PREDICTION:
-#                                            the baseline's rate)
+# THE ENGINE NOW CLOSES THE WINDOW ITSELF (dispositions_linux.c: a
+# constructor linked right after Go's puts the flags back), so a plain `load`
+# is the shipped configuration and is expected clean. The baseline that shows
+# the mechanism is still live on the host -- without which a clean `load`
+# means nothing -- sets FOLIO8_SIGNAL_DISPOSITIONS=leave, which the engine
+# honours once, at load, and reports as mode=leave. Every load arm prints the
+# engine's own report ([repro-engine]) after its hold.
 #
-# Earlier default sets, kept runnable: fix=restore-all (Go's five put back
-# too), env=GODEBUG=asyncpreemptoff=1, sync=call (the fix after the first
-# export, which is the longer window the product has).
+#   load:env=FOLIO8_SIGNAL_DISPOSITIONS=leave  baseline: Go's edits left in place
+#   noload                                   the control: identical, no dlopen
+#   load                                     what ships (PREDICTION: 0, or 1 in 250)
+#   load:fix=restore-relocated               the binding's fallback on top: nothing
+#                                            left to touch (touched=-), same rate
+#
+# Earlier arm sets, kept runnable: fix=restore-all (Go's five put back too),
+# env=GODEBUG=asyncpreemptoff=1, sync=call, workers=after, delay=MS (the
+# window arms; run 36006849443).
 #
 # Every arm now also reports the kernel's `overflowed sigaltstack` lines that
 # appeared DURING it, so the residual's deaths say whether they are
@@ -99,7 +103,7 @@ iteration_timeout=60
 core_arm=""   # --core-arm NAME: keep the first core that arm produces, and read it
 strace_iterations=0   # --strace-iterations N: before each arm, N iterations under strace -f -e trace=signal, summarised
 strace_arms=""        # --strace-arms a,b: only these arms get the census (default: every arm)
-arms=(load noload "load:fix=restore-relocated" "load:fix=restore-relocated:workers=after" "load:fix=restore-relocated:delay=400")
+arms=("load:env=FOLIO8_SIGNAL_DISPOSITIONS=leave" noload load "load:fix=restore-relocated")
 selfcheck=0
 
 while [ "$#" -gt 0 ]; do
@@ -273,7 +277,7 @@ for arm in "${arms[@]}"; do
   args=(); [ "$arm_load" = load ] && args=("$native" --load) || args=(--noload)
   args+=(--pool "$pool" --hold "$hold" "$gcflag" --fix "$arm_fix" --sync "$arm_sync" --workers "$arm_workers" --delay "$arm_delay")
   declare -A tally=()
-  bad=0; first_line=""; saved_arm=0
+  bad=0; first_line=""; engine_line=""; saved_arm=0
   if [ -n "$core_arm" ] && [ "$arm" = "$core_arm" ]; then ulimit -S -c unlimited; else ulimit -S -c 0 2>/dev/null || true; fi
   # WHICH SIGNALS A THREAD OF THIS PROCESS ACTUALLY TAKES. The residual with
   # the fix is a SIGSEGV that only kills the process with Go's handler in
@@ -324,7 +328,7 @@ for arm in "${arms[@]}"; do
     else
       echo "      no SIGSEGV was delivered to any thread in $strace_iterations strace'd iterations"
     fi
-  elif [ "$strace_iterations" -gt 0 ]; then
+  elif [ "$strace_iterations" -gt 0 ] && ! command -v strace >/dev/null 2>&1; then
     echo "      (strace not on PATH; the signal census is skipped)"
   fi
   kl_before="$( (dmesg 2>/dev/null || sudo -n dmesg 2>/dev/null) | grep -c 'overflowed sigaltstack' || true)"; kl_before="${kl_before:-0}"
@@ -334,7 +338,7 @@ for arm in "${arms[@]}"; do
     # until one exists. Kernel cores are what every earlier trace read, and
     # the DAC will not open those.
     dumpenv=()
-    if [ "$arm" = load ] && [ -z "$dump" ]; then
+    if [ "$arm" = "${arms[0]}" ] && [ -z "$dump" ]; then
       dumpenv=(DOTNET_DbgEnableMiniDump=1 DOTNET_DbgMiniDumpType=1 "DOTNET_DbgMiniDumpName=$work/dumps/dump.%p")
     fi
     set +e
@@ -352,6 +356,9 @@ for arm in "${arms[@]}"; do
     if [ -z "$first_line" ]; then
       first_line="$(printf '%s\n' "$err" | grep -m1 '^\[repro\]' || true)"
     fi
+    if [ -z "$engine_line" ]; then
+      engine_line="$(printf '%s\n' "$err" | grep -m1 '^\[repro-engine\]' || true)"
+    fi
     word="$(classify "$st")"
     tally["$word"]=$(( ${tally["$word"]:-0} + 1 ))
     if [ "$word" = clean ]; then printf '.'; else
@@ -368,6 +375,7 @@ for arm in "${arms[@]}"; do
   echo "  -> $bad / $iterations${b:+  ($b )}"
   [ -n "$first_line" ] || first_line="[repro] (no iteration of this arm lived long enough to print its line)"
   echo "      ${first_line#\[repro\] }"
+  [ -n "$engine_line" ] && echo "      engine: ${engine_line#\[repro-engine\] }"
   # THE KERNEL'S OWN WORD, after the baseline. A SIGSEGV delivered nested onto
   # an altstack the handler has already overflowed cannot get a frame; the x86
   # kernel forces SIG_DFL and logs `<comm>[pid] overflowed sigaltstack` -- the
@@ -382,8 +390,8 @@ for arm in "${arms[@]}"; do
     kl_after="$( (dmesg 2>/dev/null || sudo -n dmesg 2>/dev/null) | grep -c 'overflowed sigaltstack' || true)"; kl_after="${kl_after:-0}"
     kl=$(( kl_after - kl_before ))
     if [ "$kl" -gt 0 ]; then
-      echo "      kernel: $kl 'overflowed sigaltstack' line(s) during this arm's $bad death(s)$( [ "$arm" = load ] && echo '; first:' )"
-      if [ "$arm" = load ]; then (dmesg 2>/dev/null || sudo -n dmesg 2>/dev/null) >"$work/dmesg.txt" || true; grep -m1 'overflowed sigaltstack' "$work/dmesg.txt" | sed 's/^/        /'; fi
+      echo "      kernel: $kl 'overflowed sigaltstack' line(s) during this arm's $bad death(s)$( [ "$arm" = "${arms[0]}" ] && echo '; first:' )"
+      if [ "$arm" = "${arms[0]}" ]; then (dmesg 2>/dev/null || sudo -n dmesg 2>/dev/null) >"$work/dmesg.txt" || true; grep -m1 'overflowed sigaltstack' "$work/dmesg.txt" | sed 's/^/        /'; fi
     else
       echo "      kernel: no 'overflowed sigaltstack' during this arm's $bad death(s) (silent push-fault, a genuine fault, or dmesg unreadable)"
     fi
@@ -441,7 +449,7 @@ if [ "${totals[1]}" -gt 0 ]; then
   echo "  quote the load arm. This is DW-397's failure mode and it is why a control is run."
 elif [ "${totals[0]}" -gt 0 ]; then
   base="${totals[0]}"
-  echo "  DW-398 REPRODUCES WITHOUT VSTEST: $base/$iterations with the load, 0/$iterations without."
+  echo "  DW-398 REPRODUCES WITHOUT VSTEST: $base/$iterations on '${names[0]}', 0/$iterations without the engine."
   zero=""; reduced=""; nochange=""
   for i in "${!names[@]}"; do
     [ "$i" -le 1 ] && continue

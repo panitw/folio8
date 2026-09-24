@@ -41,12 +41,20 @@
 // after initsig and before any export can return. Either way the host can
 // read what happened through folio8_signal_dispositions.
 //
+// FOLIO8_SIGNAL_DISPOSITIONS=leave, in the environment at load, switches the
+// restore off and leaves Go's edits in place. It exists for one reader: a
+// harness that must first show it can SEE the defect on a host before a
+// clean run on that host means anything (folio-dotnet/build/soak.sh's
+// reproduce leg, load-repro's baseline arm). It is not a tuning knob, it is
+// read once, and the report says `mode=leave` whenever it was honoured.
+//
 // Nothing here takes a lock: both constructors run under the dynamic
 // loader's lock, on one thread, and the report reads only after they have
 // run. The names buffer is written once, by whichever call restores.
 
 #include <signal.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #define FOLIO8_NSIG 65
@@ -57,6 +65,7 @@ static int folio8_snapshot_taken;
 static int folio8_restore_calls;
 static int folio8_constructor_ran_before_go;
 static const char *folio8_restored_by = "none";
+static const char *folio8_mode = "restore";
 static char folio8_restored_names[256];
 
 /* 9 and 19 cannot be caught; 32 and 33 are glibc's and sigaction refuses them. */
@@ -99,6 +108,10 @@ __attribute__((constructor(101)))
 static void folio8_dispositions_snapshot(void)
 {
     int sig;
+    const char *env = getenv("FOLIO8_SIGNAL_DISPOSITIONS");
+    if (env != NULL && strcmp(env, "leave") == 0) {
+        folio8_mode = "leave";
+    }
     for (sig = 1; sig < FOLIO8_NSIG; sig++) {
         folio8_snap_ok[sig] = folio8_catchable(sig) && sigaction(sig, NULL, &folio8_snap[sig]) == 0;
     }
@@ -116,7 +129,7 @@ int folio8_dispositions_restore(const char *who)
     int sig, restored = 0;
 
     folio8_restore_calls++;
-    if (!folio8_snapshot_taken) {
+    if (!folio8_snapshot_taken || strcmp(folio8_mode, "leave") == 0) {
         return 0;
     }
     /* Go has run initsig exactly when SIGSEGV's handler is no longer what
@@ -162,6 +175,7 @@ static void folio8_dispositions_restore_ctor(void)
  * One line of key=value pairs, for folio8_signal_dispositions. Writes at
  * most cap bytes into buf and returns the length written, or -1 if buf is
  * too small. The keys are the contract a test may read:
+ *   mode=restore|leave               leave: FOLIO8_SIGNAL_DISPOSITIONS=leave was set
  *   snapshot=yes|no                  the pre-Go record exists
  *   constructor-ran-before-go=yes|no the link order held (no) or did not (yes)
  *   restored-by=constructor|init|none who actually put dispositions back
@@ -171,7 +185,8 @@ static void folio8_dispositions_restore_ctor(void)
 int folio8_dispositions_report(char *buf, int cap)
 {
     int n = snprintf(buf, cap > 0 ? (size_t)cap : 0,
-                     "linux snapshot=%s constructor-ran-before-go=%s restored-by=%s restored=%s restore-calls=%d",
+                     "linux mode=%s snapshot=%s constructor-ran-before-go=%s restored-by=%s restored=%s restore-calls=%d",
+                     folio8_mode,
                      folio8_snapshot_taken ? "yes" : "no",
                      folio8_constructor_ran_before_go ? "yes" : "no",
                      folio8_restored_by,

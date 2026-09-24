@@ -157,6 +157,41 @@ internal static class Program
         }
     }
 
+    private static IntPtr s_lib;
+
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int ReportFn(out ulong token, out IntPtr result, out int length);
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int FreeFn(ulong token);
+
+    // folio8_signal_dispositions's payload: an ok frame is kind(1), u32
+    // diagnostics count, u32 references count, u32 payload length, payload.
+    private static string EngineReport(IntPtr lib)
+    {
+        try
+        {
+            IntPtr fn = NativeLibrary.GetExport(lib, "folio8_signal_dispositions");
+            IntPtr freeFn = NativeLibrary.GetExport(lib, "folio8_free");
+            ulong token; IntPtr result; int length;
+            int status = Marshal.GetDelegateForFunctionPointer<ReportFn>(fn)(out token, out result, out length);
+            if (status != 0 || length < 13) return "status=" + status + " length=" + length;
+            var buf = new byte[length];
+            Marshal.Copy(result, buf, 0, length);
+            Marshal.GetDelegateForFunctionPointer<FreeFn>(freeFn)(token);
+            int n = BitConverter.ToInt32(buf, 9);
+            if (n < 0 || 13 + n > length) return "malformed frame";
+            return System.Text.Encoding.UTF8.GetString(buf, 13, n);
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return "export-missing (a native built before dispositions_linux.c)";
+        }
+        catch (Exception e)
+        {
+            return "unavailable: " + e.GetType().Name;
+        }
+    }
+
     private static void Churn(int ms, bool gc)
     {
         var sw = Stopwatch.StartNew();
@@ -286,6 +321,7 @@ internal static class Program
         {
             IntPtr h = NativeLibrary.Load(so);
             if (h == IntPtr.Zero) { Console.Error.WriteLine("load returned null"); return 3; }
+            s_lib = h;
             synced = Sync(sync, h);
         }
 
@@ -302,6 +338,13 @@ internal static class Program
         // The hold: forced collections for the whole of it, each one
         // suspending every worker in managed code by signal.
         Churn(holdMs, gc);
+
+        // WHAT THE ENGINE SAYS IT DID, read only now: calling any export
+        // waits for the Go runtime to be up, and doing that before the hold
+        // would turn every arm into a sync=call arm. The report names who
+        // restored the dispositions (constructor, init, none) and whether
+        // FOLIO8_SIGNAL_DISPOSITIONS=leave was honoured.
+        if (load) Console.Error.WriteLine("[repro-engine] " + EngineReport(s_lib));
 
         // Leave with the workers still running: every death under vstest
         // printed `Passed!` first, so the process dies on the way out.

@@ -8233,6 +8233,19 @@ both runs uploaded nothing because the copy to `--out` was on the happy path (no
 residual arms' stderr had never been kept (the first three deaths of a *run*, all baseline) — now two
 per arm.
 
+**Run 36006849443 (R1) — BOTH PRE-REGISTERED PREDICTIONS HELD.** Xeon 8370C (AVX-512;
+`_SC_MINSIGSTKSZ` 3632, `_SC_SIGSTKSZ` 14528, and the CLR's altstack **still 16384** — it uses the 8192
+constant, not `sysconf`, so on this class the kernel frame alone takes 3.6 KiB of the 12 KiB usable),
+250 per arm: baseline **17** (17 kernel lines), control **0**, `restore-relocated` **1** (a kernel
+line), **`workers=after` 0**, **`delay=400` 20** — the fixed arm with the window held open for the
+hold's length dies at the baseline's rate, and the fixed arm with no thread alive to be activated inside
+the window does not die at all. The census on the fixed arm: 100 straced iterations, 0 died, **no
+`SIGSEGV`**, 4,440 activations, 35 `SIGURG` on Go's threads. The residual *is* the window and nothing
+else. The one counted death yielded a 36 MB core with symbols that `read-core.sh` could not open —
+**no `gdb` in the load-repro job** (crash-trace installs it; this job did not; fixed, `gdb` is on the
+apt line now). Its kernel line says what the core would have: a nested delivery onto an altstack
+already in use.
+
 **The window is closed where it opens — `dispositions_linux.c` (commit after 12778f2).** Read from
 the Go 1.26 source, not assumed: `_rt0_amd64_lib` calls `runtime·libpreinit` *before* creating the
 runtime's thread, `libpreinit` is `initsig(true)`, and for a c-shared build that is the only

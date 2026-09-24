@@ -128,6 +128,7 @@ namespace Folio8Tests
                 Assert.StartsWith("not-linux", report);
                 return;
             }
+            Assert.Contains(" mode=restore ", report);
             Assert.Contains(" snapshot=yes ", report);
             Assert.Contains(" constructor-ran-before-go=no ", report);
             Assert.True(report.Contains(" restored-by=constructor "),

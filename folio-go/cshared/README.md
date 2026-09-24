@@ -242,7 +242,12 @@ ordinary stacks, so a handler of yours reaching one of them without
 as one line of `key=value` pairs — `restored-by=constructor` and the
 signal names are the two a host's test should read — and
 `folio-dotnet/build/verify-linux-natives.sh` refuses a shipped file whose
-`.init_array` order is not snapshot, Go, restore.
+`.init_array` order is not snapshot, Go, restore. One environment variable
+is read, once, at load: `FOLIO8_SIGNAL_DISPOSITIONS=leave` switches the
+restore off and leaves Go's edits in place, and the report then says
+`mode=leave`. It is for a harness that must first show it can *see* the
+defect on a host before a clean run there means anything — folio-dotnet's
+soak does exactly that on its reproduction leg — and for nothing else.
 
 **Why a restore made by the host, after the load, is not enough — and why
 folio-dotnet still makes one.** Before the constructors, folio-dotnet did

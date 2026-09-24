@@ -229,6 +229,15 @@ if [ "$want_self_check" = "1" ]; then
 elif [ "$want_reproduce" = "1" ]; then
   mode="reproduce"
 fi
+# THE ENGINE CLOSES DW-398'S WINDOW ITSELF NOW (dispositions_linux.c), for
+# every binding that loads it -- the pre-fix binding included. So the
+# reproduction leg, whose whole job is to show this host can SEE the
+# defect, runs its test hosts with FOLIO8_SIGNAL_DISPOSITIONS=leave: the
+# engine honours it once, at load, leaves Go's edits in place, and reports
+# mode=leave. The soak leg runs without it, as shipped. The mechanism check
+# below sets it on its own baseline arm for the same reason.
+leave_env=""
+if [ "$mode" = "reproduce" ]; then leave_env="FOLIO8_SIGNAL_DISPOSITIONS=leave"; fi
 
 # THE WHOLE ARGUMENT LIST IS KNOWN GOOD BEFORE THE HOST IS EVEN LOOKED AT.
 # `--iterations 0` must be refused as a bad argument wherever it is typed, not
@@ -780,7 +789,7 @@ mechanism_check() {
   echo "    engine loaded against engine absent."
   # Its exit status is not the answer -- it exits non-zero on a clean baseline
   # too -- the numbers are.
-  "$tool" --arms load,noload -n "$mech_iterations" --native "$native" >"$MECH_LOG" 2>&1 || true
+  FOLIO8_SIGNAL_DISPOSITIONS=leave "$tool" --arms load,noload -n "$mech_iterations" --native "$native" >"$MECH_LOG" 2>&1 || true
   if ! mechanism_parse "$MECH_LOG"; then
     MECH_NOTE="its RESULT block could not be read; see $MECH_LOG"
     return 0
@@ -1590,6 +1599,7 @@ cat <<HEADER
   suite                : $tests_csproj
   filter               : $filter
   gc pressure          : $gc_pressure_desc
+  engine switch: ${leave_env:-none (the engine restores the host's signal flags in its own constructor, as shipped)}}
   iterations requested : $iterations
   host                 : $(uname -n)
   kernel               : $(uname -s) $(uname -r)
@@ -1758,7 +1768,7 @@ for i in $(seq 1 "$iterations"); do
   printf '==> iteration %d of %d ... ' "$i" "$iterations"
   log="$logs/iteration-$i.log"
   set +e
-  env ${gc_gen0size:+DOTNET_GCgen0size=$gc_gen0size} dotnet test "$tests_csproj" -c Release --no-build --nologo -v quiet \
+  env ${gc_gen0size:+DOTNET_GCgen0size=$gc_gen0size} ${leave_env:+$leave_env} dotnet test "$tests_csproj" -c Release --no-build --nologo -v quiet \
     -p:FolioNativeDir="$stage" --filter "$filter" >"$log" 2>&1
   status=$?
   set -e
