@@ -26,15 +26,20 @@
 # undoes ONE thing loading the engine does to the process, in the process
 # itself, with what it touched printed to stderr and recorded here per arm.
 #
-#   load                          baseline
-#   noload                        the control: identical, no dlopen
-#   load:fix=restore-go           the CLR's handlers back where Go REPLACED them
-#   load:fix=restore-relocated    the CLR's structs back where Go only re-flagged them
-#   load:fix=noonstack            SA_ONSTACK cleared everywhere, handlers left
-#   load:env=GODEBUG=asyncpreemptoff=1   Go's SIGURG preemption off
-#   load:env=DOTNET_EnableWriteXorExecute=0   the CLR's W^X double-mapping off
+# RUN 35990136271 SETTLED THE CAUSE: baseline 83/150, control 0;
+# restore-relocated 1, noonstack 1; restore-go, asyncpreemptoff and W^X-off
+# at baseline. Removing SA_ONSTACK from the handlers Go re-flagged is the fix.
+# The default arms are now the CONFIRMATION set, aimed at the residual 1/150:
 #
-# --arms a,b,c replaces that list; an arm is `load|noload[:fix=MODE][:env=K=V]...`.
+#   load                                     baseline
+#   noload                                   the control: identical, no dlopen
+#   load:fix=restore-relocated               as run 35990136271 (expect ~1/150)
+#   load:fix=restore-relocated:sync=call     Go's init forced complete first (expect 0)
+#   load:fix=restore-rtmin:sync=call         SIGRTMIN alone, the minimal fix (expect 0)
+#   load:fix=restore-relocated:sync=poll     wait for the flag to appear, then fix (expect 0)
+#
+# --arms a,b,c replaces that list; an arm is
+# `load|noload[:fix=MODE][:sync=none|call|poll][:env=K=V]...`.
 # `--nogc` re-runs the first version's workload so the two are comparable.
 #
 # THE FIRST DEATH ALSO YIELDS A RUNTIME DUMP. Every core so far was a kernel
@@ -61,7 +66,7 @@ pool=8
 hold=400
 gcflag=--gc
 out=""
-arms=(load noload "load:fix=restore-go" "load:fix=restore-relocated" "load:fix=noonstack" "load:env=GODEBUG=asyncpreemptoff=1" "load:env=DOTNET_EnableWriteXorExecute=0")
+arms=(load noload "load:fix=restore-relocated" "load:fix=restore-relocated:sync=call" "load:fix=restore-rtmin:sync=call" "load:fix=restore-relocated:sync=poll")
 selfcheck=0
 
 while [ "$#" -gt 0 ]; do
@@ -95,12 +100,13 @@ classify() {
 # `load|noload[:fix=MODE][:env=K=V]...` -> sets arm_load, arm_fix, arm_env[].
 # One function, so the self-check exercises the same parser the arms use.
 parse_arm() {
-  arm_load=""; arm_fix=none; arm_env=()
+  arm_load=""; arm_fix=none; arm_sync=none; arm_env=()
   local IFS=: part
   for part in $1; do
     case "$part" in
       load|noload) arm_load="$part" ;;
       fix=*) arm_fix="${part#fix=}" ;;
+      sync=*) arm_sync="${part#sync=}" ;;
       env=*) arm_env+=("${part#env=}") ;;
       *) echo "bad arm token '$part' in '$1'" >&2; return 1 ;;
     esac
@@ -122,15 +128,16 @@ if [ "$selfcheck" = 1 ]; then
   check 137 signal9; check 143 signal15
   # The arm parser, on the shapes the default list uses and on two it must refuse.
   parm() {
-    if parse_arm "$1" 2>/dev/null; then got="$arm_load fix=$arm_fix env=${arm_env[*]+${arm_env[*]}}"; else got="REFUSED"; fi
+    if parse_arm "$1" 2>/dev/null; then got="$arm_load fix=$arm_fix sync=$arm_sync env=${arm_env[*]+${arm_env[*]}}"; else got="REFUSED"; fi
     if [ "$got" = "$2" ]; then printf '  ok    %-24s -> %s\n' "arm '$1'" "$got"
     else printf '  FAIL  %-24s -> %s (want %s)\n' "arm '$1'" "$got" "$2"; fails=$((fails+1)); fi
   }
-  parm "load"                                  "load fix=none env="
-  parm "noload"                                "noload fix=none env="
-  parm "load:fix=restore-go"                   "load fix=restore-go env="
-  parm "load:env=GODEBUG=asyncpreemptoff=1"    "load fix=none env=GODEBUG=asyncpreemptoff=1"
-  parm "load:fix=noonstack:env=A=1:env=B=2"    "load fix=noonstack env=A=1 B=2"
+  parm "load"                                  "load fix=none sync=none env="
+  parm "noload"                                "noload fix=none sync=none env="
+  parm "load:fix=restore-go"                   "load fix=restore-go sync=none env="
+  parm "load:fix=restore-rtmin:sync=call"      "load fix=restore-rtmin sync=call env="
+  parm "load:env=GODEBUG=asyncpreemptoff=1"    "load fix=none sync=none env=GODEBUG=asyncpreemptoff=1"
+  parm "load:fix=noonstack:env=A=1:env=B=2"    "load fix=noonstack sync=none env=A=1 B=2"
   parm "fix=noonstack"                         "REFUSED"
   parm "load:bogus"                            "REFUSED"
   # And a REAL status, so the arms are not reading a number bash never produces.
@@ -184,7 +191,7 @@ dump=""
 for arm in "${arms[@]}"; do
   parse_arm "$arm" || exit 1
   args=(); [ "$arm_load" = load ] && args=("$native" --load) || args=(--noload)
-  args+=(--pool "$pool" --hold "$hold" "$gcflag" --fix "$arm_fix")
+  args+=(--pool "$pool" --hold "$hold" "$gcflag" --fix "$arm_fix" --sync "$arm_sync")
   declare -A tally=()
   bad=0; first_line=""
   printf '  %-42s ' "$arm"
@@ -214,6 +221,20 @@ for arm in "${arms[@]}"; do
   b=""; for k in "${!tally[@]}"; do [ "$k" = clean ] && continue; b="$b $k=${tally[$k]}"; done
   echo "  -> $bad / $iterations${b:+  ($b )}"
   echo "      ${first_line#\[repro\] }"
+  # THE KERNEL'S OWN WORD, after the baseline. A SIGSEGV delivered nested onto
+  # an altstack the handler has already overflowed cannot get a frame; the x86
+  # kernel forces SIG_DFL and logs `<comm>[pid] overflowed sigaltstack` -- the
+  # line from the owner's WSL2 box that opened DW-396. Best-effort: needs
+  # dmesg readable (the workflow lifts dmesg_restrict; elsewhere, sudo -n).
+  if [ "$arm" = load ] && [ "$bad" -gt 0 ]; then
+    kl="$( (dmesg 2>/dev/null || sudo -n dmesg 2>/dev/null) | grep -c 'overflowed sigaltstack' || true)"
+    if [ -n "$kl" ] && [ "$kl" -gt 0 ]; then
+      echo "      kernel: $kl 'overflowed sigaltstack' line(s) in dmesg after $bad death(s); first:"
+      (dmesg 2>/dev/null || sudo -n dmesg 2>/dev/null) | grep 'overflowed sigaltstack' | head -1 | sed 's/^/        /'
+    else
+      echo "      kernel: no 'overflowed sigaltstack' in dmesg (unreadable, rate-limited, or the fault was not a nested delivery)"
+    fi
+  fi
   names+=("$arm"); totals+=("$bad"); breakdowns+=("${b:- none}"); touched+=("$first_line")
   unset tally
 done
@@ -261,28 +282,37 @@ if [ "${totals[1]}" -gt 0 ]; then
 elif [ "${totals[0]}" -gt 0 ]; then
   base="${totals[0]}"
   echo "  DW-398 REPRODUCES WITHOUT VSTEST: $base/$iterations with the load, 0/$iterations without."
-  zero=""; partial=""; nochange=""
+  zero=""; reduced=""; nochange=""
   for i in "${!names[@]}"; do
     [ "$i" -le 1 ] && continue
     n="${totals[$i]}"
     if [ "$n" -eq 0 ]; then zero="$zero
-      ${names[$i]}   (${touched[$i]#\[repro\] })"
-    elif [ $(( n * 3 )) -lt "$base" ]; then partial="$partial
-      ${names[$i]}   $n/$iterations"
+      ${names[$i]}   0/$iterations   (${touched[$i]#\[repro\] })"
+    elif [ $(( n * 10 )) -lt "$base" ]; then reduced="$reduced
+      ${names[$i]}   $n/$iterations   ($(( base / n ))x fewer than baseline)   (${touched[$i]#\[repro\] })"
     else nochange="$nochange
       ${names[$i]}   $n/$iterations"; fi
   done
   echo
   if [ -n "$zero" ]; then
-    echo "  ARMS THAT REMOVED THE CRASH ENTIRELY -- each names a cause:$zero"
-  else
+    echo "  ARMS THAT REMOVED THE CRASH ENTIRELY:$zero"
+  fi
+  if [ -n "$reduced" ]; then
+    echo
+    echo "  ARMS THAT REMOVED MOST OF IT (a tenfold cut or better). With the cause named --"
+    echo "  the CLR's activation handler overflowing its 16 KiB altstack once Go sets"
+    echo "  SA_ONSTACK on it -- this is the fix working and a residual to explain, not a"
+    echo "  partial result. Run 35990136271's 83 -> 1 was reported as 'partial' by an"
+    echo "  earlier version of this text, and that was wrong:$reduced"
+  fi
+  if [ -z "$zero" ] && [ -z "$reduced" ]; then
     echo "  NO ARM REMOVED THE CRASH. Whatever loading the engine does that kills this process"
     echo "  is not any of the things these arms undo."
   fi
-  [ -n "$partial" ] && { echo; echo "  Partial (under a third of baseline; suggestive, not a finding):$partial"; }
   [ -n "$nochange" ] && { echo; echo "  No effect:$nochange"; }
   echo
-  echo "  Believe an arm only if its touched= line shows it changed what it claims to."
+  echo "  Believe an arm only if its touched= line shows it changed what it claims to, and"
+  echo "  read sync= on the fix arms: an arm that fixed before Go's init finished can be undone."
 else
   echo "  DID NOT REPRODUCE WITH THIS WORKLOAD ($gcflag, pool $pool, hold ${hold}ms)."
   echo "  Run 35987979509 got 177/300 from this same workload on the same runner image, so"

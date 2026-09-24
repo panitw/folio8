@@ -32,8 +32,24 @@ using System.Threading;
 //
 //   restore-go         put the CLR's original handler back where Go REPLACED one
 //   restore-relocated  put the CLR's original struct back where Go only re-flagged one
+//   restore-rtmin      the same, for SIGRTMIN alone -- the smallest fix that could ship
 //   restore-all        both
 //   noonstack          clear SA_ONSTACK from every handled signal, leave handlers
+//
+// --sync IS THE RESIDUAL. Run 35990136271: restore-relocated and noonstack
+// took the rate from 83/150 to 1/150 each. A c-shared Go library initialises
+// its runtime ON ITS OWN THREAD -- dlopen returns before initsig has run --
+// so a fix applied the instant NativeLibrary.Load returns can, rarely, run
+// before Go's setsigstack and be undone by it.
+//
+//   none   fix immediately after the load (what run 35990136271 did)
+//   call   call an exported function first: every export blocks on
+//          _cgo_wait_runtime_init_done, so Go's handlers are in place
+//   poll   spin until SIGRTMIN shows SA_ONSTACK (2s cap), then fix
+//
+// If either takes the residual to zero, the race is the residual and the
+// shippable fix must restore AFTER the first call into the engine, never
+// merely after the load. If neither does, there is a second overflow path.
 //
 // Exit status IS the result: 0 clean, 134 SIGABRT, 139 SIGSEGV.
 internal static class Program
@@ -93,6 +109,36 @@ internal static class Program
     // Applies one fix after the load and returns the signals it changed, so
     // the runner can print per arm what was actually done -- the thing the
     // vstest experiments never had.
+    [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+    private delegate int AbiVersionFn();
+
+    // Forces the Go runtime's initialisation to complete, or observes that
+    // it has. Returns what it saw, for the [repro] line.
+    private static string Sync(string sync, IntPtr lib)
+    {
+        switch (sync)
+        {
+            case "call":
+            {
+                IntPtr fn = NativeLibrary.GetExport(lib, "folio8_abi_version");
+                int v = Marshal.GetDelegateForFunctionPointer<AbiVersionFn>(fn)();
+                return "call(abi=" + v + ")";
+            }
+            case "poll":
+            {
+                var sw = Stopwatch.StartNew();
+                while (sw.ElapsedMilliseconds < 2000)
+                {
+                    byte[] a = Read(34);
+                    if (a != null && (FlagsOf(a) & SA_ONSTACK) != 0) return "poll(" + sw.ElapsedMilliseconds + "ms)";
+                    Thread.Sleep(1);
+                }
+                return "poll(TIMEOUT: SIGRTMIN never gained SA_ONSTACK)";
+            }
+            default: return "none";
+        }
+    }
+
     private static string ApplyFix(string fix, byte[][] before)
     {
         var touched = new List<string>();
@@ -108,6 +154,7 @@ internal static class Program
             {
                 case "restore-go":        if (replaced)               ok = sigaction(sig, before[sig], null) == 0; break;
                 case "restore-relocated": if (reflagged)              ok = sigaction(sig, before[sig], null) == 0; break;
+                case "restore-rtmin":     if (reflagged && sig == 34) ok = sigaction(sig, before[sig], null) == 0; break;
                 case "restore-all":       if (replaced || reflagged)  ok = sigaction(sig, before[sig], null) == 0; break;
                 case "noonstack":
                 {
@@ -129,7 +176,7 @@ internal static class Program
 
     private static int Main(string[] argv)
     {
-        string so = null, fix = "none";
+        string so = null, fix = "none", sync = "none";
         bool load = true, gc = true;
         int pool = 8, holdMs = 400;
 
@@ -144,6 +191,7 @@ internal static class Program
                 case "--pool":   pool = int.Parse(argv[++i]); break;
                 case "--hold":   holdMs = int.Parse(argv[++i]); break;
                 case "--fix":    fix = argv[++i]; break;
+                case "--sync":   sync = argv[++i]; break;
                 default:         so = argv[i]; break;
             }
         }
@@ -154,8 +202,13 @@ internal static class Program
         }
         switch (fix)
         {
-            case "none": case "restore-go": case "restore-relocated": case "restore-all": case "noonstack": break;
+            case "none": case "restore-go": case "restore-relocated": case "restore-rtmin": case "restore-all": case "noonstack": break;
             default: Console.Error.WriteLine("unknown --fix " + fix); return 2;
+        }
+        switch (sync)
+        {
+            case "none": case "call": case "poll": break;
+            default: Console.Error.WriteLine("unknown --sync " + sync); return 2;
         }
 
         ThreadPool.SetMinThreads(Math.Max(pool, 1), 1);
@@ -189,15 +242,17 @@ internal static class Program
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
             for (int sig = 1; sig <= 64; sig++) if (Touchable(sig)) before[sig] = Read(sig);
 
+        string synced = "none";
         if (load)
         {
             IntPtr h = NativeLibrary.Load(so);
             if (h == IntPtr.Zero) { Console.Error.WriteLine("load returned null"); return 3; }
+            synced = Sync(sync, h);
         }
 
         string touched = fix == "none" ? "-" : ApplyFix(fix, before);
         Console.Error.WriteLine("[repro] load=" + (load ? "yes" : "no") + " gc=" + (gc ? "yes" : "no")
-                                + " fix=" + fix + " touched=" + touched + StackNumbers());
+                                + " sync=" + synced + " fix=" + fix + " touched=" + touched + StackNumbers());
 
         // The window: forced collections for the whole hold, each one
         // suspending every worker in managed code by signal.
