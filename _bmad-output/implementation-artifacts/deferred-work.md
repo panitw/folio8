@@ -7966,6 +7966,63 @@ a frame in this defect can carry a name. And `crash-trace`'s `libcoreclr` symbol
 crash-trace runs, which is expected — the kernel logs a fault only when no handler is installed, and
 Go's always is — and therefore proves nothing either way.
 
+**2026-09-24, run 35990139779, THE FIRST NAMED FRAME — and it names the whole defect.** With
+`libcoreclr.so.dbg` fetched, the faulting thread reads
+`GetThread() ← HandleSuspensionForInterruptedThread(threadsuspend.cpp:5793) ← inject_activation_handler
+(signal.cpp:932) ← <signal handler called>`. That is **CoreCLR's GC activation handler, on
+`SIGRTMIN`.** Disassembling the exact 10.0.12 binary at `rip` (offset `0x517b4a`):
+
+```
+517b2b:  subq  $0x1c20, %rsp          ; 7,200 bytes of frame
+517b35:  movq  %fs:0x28, %rax         ; stack-protector canary (the "garbage" rax)
+517b42:  leaq  gCurrentThreadInfo@tlsdesc, %rdi
+517b4a:  callq __tls_get_addr@plt     ; <- rip. A CALL faults only when the push of the return address faults.
+```
+
+`rsp` = `0x7f6d70a069d0`; the kernel's `ucontext` for the same delivery is at `0x7f6d70a09300`, so
+**~10.5 KB of handler frames already sit below the signal frame**, and the frame itself — `siginfo`,
+`ucontext`, and this CPU's full XSAVE area — sits above. On a **16 KiB** alternate stack that runs out,
+and it runs out at the first push after the 7,200-byte `sub`. `fs_base` equals the thread's own
+pthread handle: TLS is fine, the `GetThread` attribution is the inlined callee's line.
+
+**The mechanism, stated once.** The CLR installs its activation handler **without `SA_ONSTACK`**: it
+runs on the thread's normal stack, which is megabytes, and its frame is sized on that assumption. Go's
+`setsigstack` adds `SA_ONSTACK` to every foreign handler it finds, so after the engine loads the same
+handler runs on the CLR's own 16 KiB alternate stack — which the CLR sized for its *fault* handlers,
+not for this one. It is x86-only because the kernel's signal frame carries the XSAVE state and on
+this CPU that is kilobytes; arm64's frame is small. And it explains **both** death shapes with one
+cause: the altstack is `malloc`'d, so what lies below it is sometimes unmapped (→ SIGSEGV at the push)
+and sometimes another allocation (→ silent overwrite → a mutex or condvar trampled →
+`futex_fatal_error`, "the futex facility returned an unexpected error code"). Same defect, two
+landings.
+
+**Why every hook arm was null, and it was not the hook's logic.** The hook loaded
+`$stage/host/libfolio8_native.so`, applied its fix, and the suite's own `DllImport` then loaded
+`bin/…/libfolio8_native.so` — a different inode, therefore **a second copy of the Go runtime and a
+second `initsig`**, which re-flagged `SIGRTMIN` after the fix. The core's mappings show the `bin/`
+copy. `noonstack-all`, `restore-foreign`, `restore-rtmin`: each undone by the load it was meant to
+correct. The console reproducer loads once and fixes after, so its arms are the first clean test.
+
+**Pre-registered, before run 35990136271 is read:** `restore-relocated` → **0**, `noonstack` → **0**,
+`restore-go` ≈ baseline, `GODEBUG=asyncpreemptoff=1` ≈ baseline, `DOTNET_EnableWriteXorExecute=0` ≈
+baseline. If `restore-relocated` is not zero, the reading above is wrong somewhere specific and the
+number will say where.
+
+**What this does to DW-396.** Its mechanism paragraph was half right — the 16 KiB alternate stack
+and Go relocating handlers onto it — and wrong about *whose* handler and *whose* threads: it is the
+**CLR's** activation handler, on **CLR pool threads**, not Go's handlers on binding-owned threads. The
+shipped fix (a larger altstack on threads the binding creates) therefore cannot reach the threads that
+die. The original WSL2 `overflowed sigaltstack` is the same cause landing a third way: a delivery
+that finds the altstack already too full to hold a frame. **DW-396 and DW-398 are one defect**, and
+the 2026-09-24 note that kept them apart was right to keep the *symptoms* apart and wrong about the
+cause; it stays as written, with this paragraph as its correction.
+
+**The fix that follows, if the bisection confirms:** after loading the engine, put back the CLR's own
+`sigaction` for every signal whose handler address the load did not change — the five Go only
+re-flagged — which is `restore-relocated`, in the binding, at load. It undoes nothing Go installed and
+nothing Go relies on. It must run after **the** load the binding performs (one `dlopen`, one path), and
+a regression test must assert `SIGRTMIN` carries no `SA_ONSTACK` once the binding is up.
+
 **Not yet tried, in order of cost:** *(the `restore-*` arms are struck — run and null)* a symbolised
 core (`dotnet-symbol` for `libcoreclr.so.dbg`, `dotnet-dump analyze … clrstack -all` for the managed
 frame the worker was interrupted in), which names the handler in one shot and is in the trace now;
