@@ -121,8 +121,12 @@ static void folio8_dispositions_snapshot(void)
 /*
  * Puts back every disposition Go re-flagged without replacing. Returns how
  * many. `who` names the caller for the report: "constructor" or "init".
- * Idempotent — a second call finds nothing left to do.
+ * Idempotent — a second call finds nothing left to do. Hidden: it is called
+ * from this library's own constructor and from its Go side, and the
+ * library's exports are the folio8_ symbols the README lists, counted by
+ * CI — this and the report function are not among them.
  */
+__attribute__((visibility("hidden")))
 int folio8_dispositions_restore(const char *who)
 {
     struct sigaction now;
@@ -182,6 +186,7 @@ static void folio8_dispositions_restore_ctor(void)
  *   restored=<names>|-               which, comma-separated
  *   restore-calls=<n>                how many times the restore was asked
  */
+__attribute__((visibility("hidden")))
 int folio8_dispositions_report(char *buf, int cap)
 {
     int n = snprintf(buf, cap > 0 ? (size_t)cap : 0,

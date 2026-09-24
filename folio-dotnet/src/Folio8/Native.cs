@@ -196,7 +196,7 @@ internal static class Native
                 throw new InvalidOperationException(
                     "folio8: a library named '" + Library + "' loaded, but it does not export folio8_abi_version — so it is not the folio8 engine. " +
                     LoadedModuleDescription() +
-                    " Expected a c-shared build of folio-go/cshared/cmd/folio8, which exports folio8_abi_version, folio8_version, folio8_parse, folio8_render, folio8_validate, folio8_parameter_references, folio8_free and folio8_allocation_count.",
+                    " Expected a c-shared build of folio-go/cshared/cmd/folio8, which exports folio8_abi_version, folio8_version, folio8_signal_dispositions, folio8_parse, folio8_render, folio8_validate, folio8_parameter_references, folio8_free and folio8_allocation_count.",
                     missing);
             }
             if (actual != ExpectedAbiVersion)

@@ -1006,13 +1006,14 @@ jobs:
               Write-Host "::warning::neither objdump nor dumpbin was found; the export table cannot be shown"
             }
             $symbols | ForEach-Object { Write-Host "  $_" }
-            # The count is the assertion. Eight exports, or this DLL cannot
-            # satisfy the binding no matter what the managed side does.
+            # The count is the assertion. Nine exports (ABI version 2's eight
+            # plus folio8_signal_dispositions), or this DLL cannot satisfy the
+            # binding no matter what the managed side does.
             if ($objdump -or $dumpbin) {
               $names = $symbols | ForEach-Object { $_.ToString() } | Select-String -Pattern 'folio8_[a-z_]+' -AllMatches |
                        ForEach-Object { $_.Matches } | ForEach-Object { $_.Value } | Sort-Object -Unique
               Write-Host "  distinct folio8_ exports: $($names.Count) -> $($names -join ', ')"
-              if ($names.Count -lt 8) { throw "$dll exports only $($names.Count) folio8_ symbols; expected 8" }
+              if ($names.Count -lt 9) { throw "$dll exports only $($names.Count) folio8_ symbols; expected 9" }
             }
           }
       # THE FLOOR, CHECKED BY THE COMPILER. This project compiles the shipped
@@ -1229,7 +1230,10 @@ jobs:
           count=$(nm -D --defined-only folio-dotnet/build/native/host/libfolio8_native.so | grep -c ' T folio8_' || true)
           echo "distinct folio8_ exports: $count"
           nm -D --defined-only folio-dotnet/build/native/host/libfolio8_native.so | grep ' T folio8_'
-          test "$count" -eq 8
+          # Nine: the eight of ABI version 2 plus folio8_signal_dispositions
+          # (additive, no bump). The two C helpers behind it are hidden on
+          # purpose -- run 36011466408 counted 11 when they were not.
+          test "$count" -eq 9
       # The 4.6 reference assemblies come from a NuGet package, so the floor
       # check runs here too — on Linux, with no .NET Framework installed.
       - name: .NET Framework 4.6 compile check
