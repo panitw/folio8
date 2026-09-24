@@ -609,7 +609,7 @@ internal static class EngineThreads
     /// and <c>RuntimeInformation</c> — which could — arrived in .NET
     /// Framework 4.7.1, above this assembly's floor.
     /// </remarks>
-    private static string KernelName()
+    internal static string KernelName()
     {
         // sysname is the first field, at offset zero, NUL-terminated in every
         // libc that has uname(). The rest of the buffer is never read.
@@ -637,7 +637,7 @@ internal static class EngineThreads
     /// <see cref="Environment.OSVersion"/> is present everywhere from 1.1,
     /// and this is the same reading <c>NativeLibraryLoader</c> takes.
     /// </remarks>
-    private static bool IsPosix()
+    internal static bool IsPosix()
     {
         PlatformID platform = Environment.OSVersion.Platform;
         return platform == PlatformID.Unix || platform == PlatformID.MacOSX;

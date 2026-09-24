@@ -203,9 +203,14 @@ internal static class SignalDispositions
         return sig != 9 && sig != 19 && sig != 32 && sig != 33;
     }
 
+    // NOT RuntimeInformation: that arrived in .NET Framework 4.7.1 and this
+    // assembly's floor is 4.6 — the Net46Compile project reddened on it (CI
+    // run 35992568594). The same reading EngineThreads takes: a POSIX
+    // PlatformID, then the kernel's own name from uname(2). A null name is a
+    // missing answer and reads as "not Linux", which here means "do nothing".
     private static bool IsLinux()
     {
-        return RuntimeInformation.IsOSPlatform(OSPlatform.Linux);
+        return EngineThreads.IsPosix() && string.Equals(EngineThreads.KernelName(), "Linux", StringComparison.Ordinal);
     }
 
     private static string Name(int sig)
