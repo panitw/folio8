@@ -84,6 +84,7 @@ out=""
 native=""
 iteration_timeout=60
 core_arm=""   # --core-arm NAME: keep the first core that arm produces, and read it
+strace_iterations=0   # --strace-iterations N: before each arm, N iterations under strace -f -e trace=signal, summarised
 arms=(load noload "load:fix=restore-relocated" "load:fix=restore-all" "load:fix=restore-relocated:env=GODEBUG=asyncpreemptoff=1" "load:fix=restore-relocated:sync=call")
 selfcheck=0
 
@@ -97,6 +98,7 @@ while [ "$#" -gt 0 ]; do
     --native) native="$2"; shift 2 ;;
     --iteration-timeout) iteration_timeout="$2"; shift 2 ;;
     --core-arm) core_arm="$2"; shift 2 ;;
+    --strace-iterations) strace_iterations="$2"; shift 2 ;;
     --arms) IFS=, read -r -a arms <<<"$2"; shift 2 ;;
     --self-check) selfcheck=1; shift ;;
     *) echo "unknown argument '$1'" >&2; exit 1 ;;
@@ -238,6 +240,39 @@ for arm in "${arms[@]}"; do
   declare -A tally=()
   bad=0; first_line=""
   if [ -n "$core_arm" ] && [ "$arm" = "$core_arm" ]; then ulimit -c unlimited; else ulimit -c 0 2>/dev/null || true; fi
+  # WHICH SIGNALS A THREAD OF THIS PROCESS ACTUALLY TAKES. The residual with
+  # the fix is a SIGSEGV that only kills the process with Go's handler in
+  # front of the CLR's (run 36000448980: restore-all 0/250). A signal the CLR
+  # takes and SURVIVES is invisible in the control -- nothing dies -- so the
+  # question "does this workload raise SIGSEGV at all, and with what si_code
+  # and si_addr" has never been asked. strace answers it per thread; the
+  # timing under strace is different, so these iterations are not counted
+  # in the arm's rate, only their signals are summarised.
+  if [ "$strace_iterations" -gt 0 ] && command -v strace >/dev/null 2>&1; then
+    sdir="$work/strace-$(echo "$arm" | tr ':=/' '___')"; mkdir -p "$sdir"
+    sdeaths=0
+    for i in $(seq 1 "$strace_iterations"); do
+      set +e
+      env ${arm_env[@]+"${arm_env[@]}"} strace -f -qq -e trace=signal -e signal=all -o "$sdir/it-$i.txt" \
+        timeout -k 5 "$iteration_timeout" "$work/bin/repro" "${args[@]}" >/dev/null 2>&1
+      st=$?
+      set -e
+      [ "$st" -eq 0 ] || sdeaths=$((sdeaths + 1))
+    done
+    echo "      strace ($strace_iterations iterations, $sdeaths died under it): signals delivered, by signal and si_code:"
+    cat "$sdir"/it-*.txt | grep -oE -- '--- SIG[A-Z0-9_+]+ \{si_signo=[A-Z0-9_+]+, si_code=[A-Z_0-9]+' | sed -E 's/^--- ([A-Z0-9_+]+) \{si_signo=[A-Z0-9_+]+, si_code=([A-Z_0-9]+)/\1(\2)/' | sort | uniq -c | sort -rn | awk '{printf "        %6d  %s\n", $1, $2}' | head -12
+    segv="$(cat "$sdir"/it-*.txt | grep -oE -- '--- SIGSEGV \{[^}]*\}' | head -2000 || true)"
+    if [ -n "$segv" ]; then
+      echo "      SIGSEGV details (distinct si_code/si_addr, first 8):"
+      printf '%s\n' "$segv" | sed -E 's/.*si_code=([A-Z_0-9]+).*si_addr=([0-9a-fx]+).*/\1 \2/' | sort | uniq -c | sort -rn | head -8 | awk '{printf "        %6d  %s %s\n", $1, $2, $3}'
+      # Which thread, and what it was doing: the pid on the line is the LWP.
+      echo "      first SIGSEGV line, verbatim:"; cat "$sdir"/it-*.txt | grep -m1 -E -- '--- SIGSEGV' | sed 's/^/        /'
+    else
+      echo "      no SIGSEGV was delivered to any thread in $strace_iterations strace'd iterations"
+    fi
+  elif [ "$strace_iterations" -gt 0 ]; then
+    echo "      (strace not on PATH; the signal census is skipped)"
+  fi
   kl_before="$( (dmesg 2>/dev/null || sudo -n dmesg 2>/dev/null) | grep -c 'overflowed sigaltstack' || true)"; kl_before="${kl_before:-0}"
   printf '  %-42s ' "$arm"
   for i in $(seq 1 "$iterations"); do
