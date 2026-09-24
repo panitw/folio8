@@ -152,6 +152,18 @@ internal static class Native
             {
                 return;
             }
+            // BEFORE THE LOAD, ONCE: what every signal's disposition was
+            // before the engine touched it. Go's initsig re-flags handlers
+            // it does not own (DW-398); this is the reference the restore
+            // below writes back. Taken once for the process rather than per
+            // attempt, so a retry after a failed ABI check does not record
+            // the post-load state as "before".
+            if (_dispositionsBeforeLoad == null && !_dispositionsTaken)
+            {
+                _dispositionsTaken = true;
+                _dispositionsBeforeLoad = SignalDispositions.Take();
+            }
+
             // BEFORE THE FIRST P/INVOKE, AND THAT ORDER IS THE WHOLE POINT.
             // DllImport binds a module by name once; loading the
             // bitness-correct file by full path here means the seven imports
@@ -184,9 +196,37 @@ internal static class Native
                     ", but this assembly was built against version " + Number(ExpectedAbiVersion) +
                     ". The managed and native halves of folio8 are from different builds; replace the one that is out of date.");
             }
+
+            // AFTER THE FIRST EXPORT HAS RETURNED — NOT AFTER THE LOAD. A
+            // c-shared Go runtime initialises on its own thread and dlopen
+            // returns before its initsig has run, so a restore placed right
+            // after Ensure() can be undone moments later. folio8_abi_version
+            // blocked until the runtime was up; Go's edits are all in place
+            // now, and this puts the CLR's own dispositions back for the
+            // handlers Go re-flagged without replacing (SIGRTMIN among them,
+            // which is DW-398). See SignalDispositions for the whole account.
+            _dispositionsRestored = SignalDispositions.Restore(_dispositionsBeforeLoad);
             _abiChecked = true;
         }
     }
+
+    /// <summary>
+    /// Every signal's disposition before the engine loaded, taken once per
+    /// process; <c>null</c> off Linux.
+    /// </summary>
+    private static SignalDispositions.Snapshot _dispositionsBeforeLoad;
+    private static bool _dispositionsTaken;
+
+    /// <summary>
+    /// The signals whose dispositions the first crossing put back, as a
+    /// comma-separated list, for diagnostics. Empty until the first crossing,
+    /// and empty off Linux.
+    /// </summary>
+    internal static string DispositionsRestored
+    {
+        get { return _dispositionsRestored ?? string.Empty; }
+    }
+    private static string _dispositionsRestored;
 
     /// <summary>
     /// Names the file actually loaded under <see cref="Library"/>, for the
