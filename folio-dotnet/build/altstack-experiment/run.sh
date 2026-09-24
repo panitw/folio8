@@ -85,11 +85,25 @@ cat <<EOF2
 
 EOF2
 
+# WHAT dlopen ACTUALLY REWRITES, printed once before any arm runs. This is the
+# diagnostic the first experiment lacked: it assumed Go touches three signals,
+# and Go also ADDS SA_ONSTACK to handlers it leaves in place. Whatever appears
+# here is the real list.
+echo "=== what loading the engine changes about this process's signal handlers ==="
+FOLIO_EXP=report dotnet test "$tests" -c Release --no-build --nologo -v quiet \
+    -p:FolioNativeDir="$stage" --filter "FullyQualifiedName~DocsTests" 2>&1 |
+  grep '^\[hook\]' || echo "  (no hook output — check DOTNET_STARTUP_HOOKS)"
+echo
+
 declare -a names=() results=()
-for mode in none noonstack restore; do
+# Two arms. `none` is the baseline; `noonstack-all` clears SA_ONSTACK from
+# EVERY signal that carries a handler. The earlier three-signal arms
+# (noonstack, restore) left SIGRTMIN -- CoreCLR's thread-suspension signal --
+# exactly as Go rewrote it, which is very likely why all three crashed alike.
+for mode in none noonstack-all; do
   export FOLIO_EXP="$mode"
   deaths=0
-  printf '  %-10s ' "$mode"
+  printf '  %-14s ' "$mode"
   for i in $(seq 1 "$iterations"); do
     set +e
     out="$(dotnet test "$tests" -c Release --no-build --nologo -v quiet \
@@ -107,27 +121,27 @@ done
 
 echo
 echo "=== RESULT ==="
-for i in 0 1 2; do printf '  %-10s %s deaths / %s\n' "${names[$i]}" "${results[$i]}" "$iterations"; done
+for i in 0 1; do printf '  %-14s %s deaths / %s\n' "${names[$i]}" "${results[$i]}" "$iterations"; done
 echo
-base="${results[0]}"; noon="${results[1]}"; rest="${results[2]}"
+base="${results[0]}"; all="${results[1]}"
 if [ "$base" -eq 0 ]; then
-  echo "  INCONCLUSIVE — the baseline did not crash either, so there was nothing to fix."
-  echo "  Raise -n; the rate has been measured between 1-in-60 and 1-in-4."
-elif [ "$noon" -eq 0 ] && [ "$rest" -eq 0 ]; then
-  echo "  THE SIGNAL PATH IS THE CAUSE. Both workarounds removed the crash."
-  echo "  Whichever is responsible, the exposure is on threads the binding does not own."
-elif [ "$noon" -eq 0 ]; then
-  echo "  THE ALTERNATE STACK'S SIZE IS THE CAUSE. Clearing SA_ONSTACK — which moves the"
-  echo "  handler onto the thread's ordinary megabyte-plus stack, changing nothing else —"
-  echo "  removed the crash. Enlarging only binding-owned threads cannot fix this."
-elif [ "$rest" -eq 0 ]; then
-  echo "  GO'S HANDLER IS IMPLICATED, BUT NOT THROUGH STACK SIZE. Restoring the CLR's"
-  echo "  handlers removed the crash while clearing SA_ONSTACK did not."
+  echo "  INCONCLUSIVE — the baseline did not crash, so there was nothing to fix."
+  echo "  Raise -n; the rate has been measured between 1-in-60 and 3-in-4."
+elif [ "$all" -eq 0 ]; then
+  echo "  THE ALTERNATE STACK IS THE CAUSE AFTER ALL, AND THE EARLIER ARMS MISSED IT."
+  echo "  Clearing SA_ONSTACK from every signal removed the crash where clearing it from"
+  echo "  SIGSEGV/SIGBUS/SIGURG did not. The signal that matters is one Go did not replace"
+  echo "  but DID move onto the alternate stack -- read the report block above for which."
+  echo "  A fix must stop the host runtime's OWN handlers being relocated, and cannot be"
+  echo "  confined to threads the binding owns."
+elif [ "$all" -lt "$base" ]; then
+  echo "  PARTIAL. Clearing SA_ONSTACK everywhere reduced the rate from $base to $all but did"
+  echo "  not remove it. The alternate stack is implicated and is not the whole story."
 else
-  echo "  THE SIGNAL PATH IS NOT THE CAUSE. Every arm crashed. Neither removing Go's"
-  echo "  handlers nor moving them off the alternate stack helped, so the crash is"
-  echo "  something else that loading the engine provokes. DW-396's mechanism is real"
-  echo "  and measured, but it is not what is killing this process."
+  echo "  NOT THE ALTERNATE STACK. Clearing SA_ONSTACK from every signal that has a handler"
+  echo "  changed nothing, so no handler is dying for want of room. The crash is something"
+  echo "  else that loading the engine provokes, and the signal-stack line of investigation"
+  echo "  is finished."
 fi
 echo
 echo "  Quote this with the host and binding block above."
