@@ -104,6 +104,9 @@ Options (environment variable in brackets; the flag wins):
                        A commit is checked out as a git worktree; this tree's
                        native library is staged into it, so the ENGINE is held
                        fixed while the BINDING varies.  [SOAK_BINDING]
+      --gc-gen0size HEX  gen0 budget handed to every test host as DOTNET_GCgen0size, so
+                       the runtime collects often enough for the defect to have its
+                       chance; '' disables it. [SOAK_GC_GEN0SIZE] default 0x100000
       --mechanism-iterations N
                        on the reproduction leg, when the pre-fix binding dies with no
                        named signature: iterations per arm for the mechanism reproducer
@@ -169,6 +172,16 @@ filter="${SOAK_FILTER:-FullyQualifiedName~GoldenTests|FullyQualifiedName~FontsTe
 control_filter="${SOAK_CONTROL_FILTER:-(FullyQualifiedName~PackagingTests|FullyQualifiedName~DocsTests|FullyQualifiedName~SurfaceTests)&FullyQualifiedName!~TheRecordedEngineVersionMatchesTheEngine}"
 native="${SOAK_NATIVE:-}"
 mech_iterations="${SOAK_MECHANISM_ITERATIONS:-40}"
+# GC PRESSURE, FOR BOTH LEGS ALIKE. The defect fires on GC suspension -- the
+# CLR signals every thread in managed code and the handler overflows -- so
+# how often the suite collects is how often it can die. The corpus workload
+# collects a handful of times an iteration, and run 35995188797 ran the
+# pre-fix binding 150 iterations clean on a host where the mechanism
+# reproducer dies 81 times in 100 with collections forced. A small gen0
+# budget makes the runtime collect early and often, on the pre-fix leg and
+# the soak leg alike, so the instrument provokes what it measures and the
+# two legs stay comparable. Hex, as the runtime reads it; empty to disable.
+gc_gen0size="${SOAK_GC_GEN0SIZE-0x100000}"
 log_dir="${SOAK_LOG_DIR:-}"
 ledger="${SOAK_LEDGER:-}"
 host_context="${SOAK_HOST_CONTEXT:-}"
@@ -184,6 +197,7 @@ while [ "$#" -gt 0 ]; do
     --self-check) want_self_check=1; shift ;;
     --reproduce) want_reproduce=1; shift ;;
     --mechanism-iterations) [ "$#" -ge 2 ] || { echo "soak: --mechanism-iterations needs a count" >&2; exit 1; }; mech_iterations="$2"; shift 2 ;;
+    --gc-gen0size) [ "$#" -ge 2 ] || { echo "soak: --gc-gen0size needs a hex size, or '' to disable" >&2; exit 1; }; gc_gen0size="$2"; shift 2 ;;
     -n|--iterations) [ "$#" -ge 2 ] || { echo "soak: --iterations needs a number" >&2; exit 1; }; iterations="$2"; shift 2 ;;
     -b|--binding) [ "$#" -ge 2 ] || { echo "soak: --binding needs 'head' or a commit" >&2; exit 1; }; binding="$2"; binding_given=1; shift 2 ;;
     --filter) [ "$#" -ge 2 ] || { echo "soak: --filter needs an expression" >&2; exit 1; }; filter="$2"; shift 2 ;;
@@ -836,8 +850,24 @@ final_verdict() {
         FINAL_STATUS=1
         ;;
       *)
-        FINAL_TAG="NOT REPRODUCED"
-        FINAL_TEXT="$completed iterations of the PRE-FIX binding on this host did not produce the defect. THE HARNESS IS NOT VALIDATED HERE, and a clean soak on this host would therefore prove nothing. Either raise --iterations, or take this leg on a host where the defect is known to fire."
+        case "$MECH_TAG" in
+          ATTRIBUTED)
+            FINAL_TAG="NOT REPRODUCED — MECHANISM LIVE, WORKLOAD TOO LIGHT"
+            FINAL_TEXT="$completed iterations of the PRE-FIX binding on this host did not produce the defect — yet the mechanism reproducer, on this host against this native, died $MECH_LOAD/$MECH_N with the engine loaded and $MECH_CONTROL/$MECH_N without. The defect is live here; this workload did not collect often enough to meet it. THE HARNESS IS NOT VALIDATED HERE by a clean pre-fix run. Raise the GC pressure (--gc-gen0size) or --iterations, and run this leg again."
+            ;;
+          HOST-MANUFACTURES)
+            FINAL_TAG="NOT REPRODUCED — HOST MANUFACTURES DEATHS"
+            FINAL_TEXT="$completed iterations of the PRE-FIX binding stayed clean, and the mechanism reproducer's CONTROL — the engine never loaded — died $MECH_CONTROL/$MECH_N on this host. Nothing on this host can be attributed to the engine (DW-397). Find out what kills the control first."
+            ;;
+          DID-NOT-FIRE)
+            FINAL_TAG="NOT REPRODUCED — MECHANISM NOT LIVE HERE"
+            FINAL_TEXT="$completed iterations of the PRE-FIX binding stayed clean, and the mechanism reproducer did not fire either: $MECH_LOAD/$MECH_N with the engine loaded, $MECH_CONTROL/$MECH_N without. This host cannot see the defect and cannot validate a harness for it. Take this leg on a host where the reproducer fires."
+            ;;
+          *)
+            FINAL_TAG="NOT REPRODUCED"
+            FINAL_TEXT="$completed iterations of the PRE-FIX binding on this host did not produce the defect. THE HARNESS IS NOT VALIDATED HERE, and a clean soak on this host would therefore prove nothing. Either raise --iterations, or take this leg on a host where the defect is known to fire.${MECH_NOTE:+ (The mechanism reproducer could not say more: $MECH_NOTE.)}"
+            ;;
+        esac
         FINAL_STATUS=1
         ;;
     esac
@@ -1145,7 +1175,16 @@ MEOF
   final_verdict reproduce 2 CRASH-UNKNOWN no yes
   expect "a nameless death where the mechanism is not live" "NOT REPRODUCED — UNEXPLAINED CRASH" "$FINAL_TAG"
   expect "  and it exits non-zero" 1 "$FINAL_STATUS"
+  MECH_LOAD=22; MECH_CONTROL=0; MECH_N=40; MECH_TAG=ATTRIBUTED
+  final_verdict reproduce 150 CLEAN no yes
+  expect "clean pre-fix run where the mechanism IS live: workload too light" "NOT REPRODUCED — MECHANISM LIVE, WORKLOAD TOO LIGHT" "$FINAL_TAG"
+  expect "  and it exits non-zero: a clean pre-fix run validates nothing" 1 "$FINAL_STATUS"
+  MECH_LOAD=0; MECH_CONTROL=0; MECH_TAG=DID-NOT-FIRE
+  final_verdict reproduce 150 CLEAN no yes
+  expect "clean pre-fix run where the mechanism is NOT live" "NOT REPRODUCED — MECHANISM NOT LIVE HERE" "$FINAL_TAG"
   MECH_LOAD=""; MECH_CONTROL=""; MECH_N=""; MECH_TAG=NOT-RUN
+  final_verdict reproduce 25 CLEAN no yes
+  expect "clean pre-fix run, mechanism not consulted: the plain refusal" "NOT REPRODUCED" "$FINAL_TAG"
   rm -rf "$mech_dir"
   final_verdict soak 100 KERNEL-OVERFLOW-ONLY yes yes
   expect "kernel overflowed while every iteration passed" "FAILED — DW-396 SIGNATURE, HOST SURVIVED" "$FINAL_TAG"
@@ -1540,6 +1579,7 @@ cat <<HEADER
   native sha256        : $native_sha
   suite                : $tests_csproj
   filter               : $filter
+  gc pressure          : ${gc_gen0size:+DOTNET_GCgen0size=$gc_gen0size on every test host}${gc_gen0size:-none (collections at the runtime's own pace)}
   iterations requested : $iterations
   host                 : $(uname -n)
   kernel               : $(uname -s) $(uname -r)
@@ -1604,7 +1644,7 @@ echo "==> control leg: asserting the filter does not load the native"
 _cf_hidden="$stage/host/.hidden-libfolio8_native.so"
 mv "$stage/host/libfolio8_native.so" "$_cf_hidden"
 set +e
-dotnet test "$tests_csproj" -c Release --no-build --nologo -v quiet \
+env ${gc_gen0size:+DOTNET_GCgen0size=$gc_gen0size} dotnet test "$tests_csproj" -c Release --no-build --nologo -v quiet \
   -p:FolioNativeDir="$stage" --filter "$control_filter" >"$control_logs/engine-free-check.log" 2>&1
 _cf_status=$?
 set -e
@@ -1636,7 +1676,7 @@ for c in $(seq 1 "$iterations"); do
   if [ "$interrupted" = "1" ]; then break; fi
   clog="$control_logs/control-$c.log"
   set +e
-  dotnet test "$tests_csproj" -c Release --no-build --nologo -v quiet \
+  env ${gc_gen0size:+DOTNET_GCgen0size=$gc_gen0size} dotnet test "$tests_csproj" -c Release --no-build --nologo -v quiet \
     -p:FolioNativeDir="$stage" --filter "$control_filter" >"$clog" 2>&1
   cstatus=$?
   set -e
@@ -1708,7 +1748,7 @@ for i in $(seq 1 "$iterations"); do
   printf '==> iteration %d of %d ... ' "$i" "$iterations"
   log="$logs/iteration-$i.log"
   set +e
-  dotnet test "$tests_csproj" -c Release --no-build --nologo -v quiet \
+  env ${gc_gen0size:+DOTNET_GCgen0size=$gc_gen0size} dotnet test "$tests_csproj" -c Release --no-build --nologo -v quiet \
     -p:FolioNativeDir="$stage" --filter "$filter" >"$log" 2>&1
   status=$?
   set -e
@@ -1811,7 +1851,11 @@ echo
 
 # A DEATH WITH NO NAME GOES TO THE MECHANISM REPRODUCER, ON THIS HOST, NOW.
 # Linux only: the reproducer is, and so is the defect.
-if [ "$mode" = "reproduce" ] && [ "$outcome" = "CRASH-UNKNOWN" ] && [ "$(uname -s)" = "Linux" ]; then
+# ...AND SO DOES A PRE-FIX BINDING THAT STAYED CLEAN. Then the numbers say
+# whether the mechanism is live on this host at all (the workload was too
+# GC-light to show it) or not (this host cannot validate anything), which
+# are different next steps; neither validates the harness.
+if [ "$mode" = "reproduce" ] && { [ "$outcome" = "CRASH-UNKNOWN" ] || [ "$outcome" = "CLEAN" ]; } && [ "$(uname -s)" = "Linux" ]; then
   mechanism_check
   echo
 fi

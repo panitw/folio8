@@ -8131,6 +8131,18 @@ restore latch. A consumer only ever reaches the engine through `Invoke` → `Che
 old placement was already right; the test suite was the caller that exposed it, which is what it is
 for. The Linux test now also asserts that a pre-load snapshot exists at all.
 
+**Run 35995188797: two more before/afters, and the soak's reproduce leg stayed clean for a reason
+that is now measured for.** `load-exposure` on HEAD (with the fix): **arm B 0 / 100** on the host class
+where the pre-fix binding scored 134 / 500 (run 35933716928); arm A 0 / 100. And the soak's `--reproduce`
+leg ran the **pre-fix** binding **150 / 150 clean** on the same host class that killed it on iteration 2
+the run before — identical suite, filter (`GoldenTests|FontsTests`), timing and tool. That is not a
+fluctuation at any rate this defect has shown; it is a workload that did not collect often enough to
+meet the mechanism (the reproducer, which forces collections, dies 81 / 100 there). The soak now hands
+every test host `DOTNET_GCgen0size=0x100000` on both legs, so the instrument provokes what it measures
+and the legs stay comparable, and when the pre-fix binding stays clean it consults the mechanism
+reproducer anyway — "mechanism live, workload too light" and "mechanism not live here" are different
+next steps, and neither validates the harness. 93 self-check cases.
+
 **Not yet tried, in order of cost:** *(the `restore-*` arms are struck — run and null)* a symbolised
 core (`dotnet-symbol` for `libcoreclr.so.dbg`, `dotnet-dump analyze … clrstack -all` for the managed
 frame the worker was interrupted in), which names the handler in one shot and is in the trace now;
