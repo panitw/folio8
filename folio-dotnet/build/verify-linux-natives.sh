@@ -139,8 +139,12 @@ init_array_order() {
     return 1
   fi
   local lo=$((16#$addr)) hi=$((16#$addr + 16#$size))
+  # Code symbols only, and never a mapping symbol: on AArch64 nm can list
+  # `$x` at the same address as the function (run 36008698227 named the
+  # snapshot constructor "$x" and refused a correct file), and `$d` marks
+  # data. Whether nm shows them depends on its version and flags.
   local symbols
-  symbols="$(nm "$path" 2>/dev/null | awk 'NF == 3 { print $1, $3 }')"
+  symbols="$(nm "$path" 2>/dev/null | awk 'NF == 3 && $2 ~ /^[tTwW]$/ && $3 !~ /^\$/ { print $1, $3 }')"
   local off type addend value found
   while read -r off type addend; do
     case "$type" in *RELATIVE*) ;; *) continue ;; esac

@@ -93,7 +93,7 @@ varies.
 
 ---
 
-## Legs — every one of these is PENDING, and the owner runs them
+## Legs — the amd64 leg has run twice on GitHub's own amd64 runners; the arm64 leg is the owner's
 
 Each leg is two runs, in this order, and the order is the point:
 
@@ -107,8 +107,14 @@ folio-dotnet/build/soak.sh --iterations 100 --log-dir ./soak-logs/soak
 
 | Leg | Host | Reproduction (pre-fix `86e7e5a`) | Soak (HEAD) | Where |
 |---|---|---|---|---|
-| **real amd64** | the WSL2 Ubuntu 24.04 box that first printed `overflowed sigaltstack` | **PENDING** | **PENDING** | owner |
+| **real amd64**, binding-only fix (managed restore after the first export; native `9f1296a3…`) | GitHub runner `runnervmtr4k5`, Linux 6.17.0-1022-azure, x86_64, translation verdict NATIVE, `DOTNET_GCgen0size=0x100000` | **REPRODUCED** — died on iteration 95 with the kernel's `overflowed sigaltstack`; 150 control iterations clean | **CLEAN — VALIDATED HARNESS**, 100 / 100, 100 control iterations clean | [run 36001723693](https://github.com/panitw/folio8/actions/runs/36001723693), artifact `soak-linux-x64-36001723693` (2026-09-24) |
+| **real amd64**, engine-side closure (`dispositions_linux.c`, commit `d147329`; the reproduce leg sets `FOLIO8_SIGNAL_DISPOSITIONS=leave`) | GitHub runner, x86_64 | **in flight** | **in flight** | [run 36009447283](https://github.com/panitw/folio8/actions/runs/36009447283) — the leg the pack assertion will cite |
 | **real arm64** | a Linux arm64 host, executing natively — not a Docker Desktop VM | **PENDING** | **PENDING** | owner |
+
+The first amd64 row is the binding-only fix and stays on the record as what it is: a validated
+harness and a clean hundred, on a fix that the reproducer showed still loses one to four processes in
+a hundred to the window before its restore (DW-398, runs 36002483670 and 36006849443). The second row
+is the shipped configuration.
 
 Fill each cell with the runner's own verdict block: it already carries binding
 identity, native path and **SHA-256**, host, kernel, architecture, translation

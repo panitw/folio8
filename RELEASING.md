@@ -229,6 +229,18 @@ one addition and one behaviour change a .NET integrator can observe:
   threading code, but a consumer measuring concurrency will see the bound.
   The reason is DW-396: those threads are the only place the binding can
   enlarge the alternate signal stack the Go runtime adopts.
+- **the engine puts the runtime's signal dispositions back itself, inside
+  its own load** (DW-398). Loading a Go `c-shared` library re-installs every
+  handler it finds with `SA_ONSTACK`, which on the .NET runtime moves the GC
+  activation handler onto a 12 KiB alternate stack, where it overflows. From
+  1.2.0 the native carries a constructor, linked to run right after Go's,
+  that writes the pre-load dispositions back for every handler Go re-flagged
+  without replacing; the binding keeps a restore of its own as a fallback and
+  a test reads both `sigaction` and the engine's report
+  (`folio8_signal_dispositions`) back. One environment variable is read,
+  once, at load: `FOLIO8_SIGNAL_DISPOSITIONS=leave` switches the engine's
+  restore off. It exists so a soak can first show its host can see the
+  defect; nothing else should set it.
 - **the throughput measurements** (CAP-10). Rendering
   `fixtures/multi-page-statement` from a fixed number of caller threads, before
   is `86e7e5a` (the direct-`DllImport` binding) and after is the engine-thread
