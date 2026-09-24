@@ -7074,7 +7074,53 @@ client-libraries stories 3 and 2 when 15.3 was deprecated.
 - **Deferred by:** SPEC-client-libraries story 9's CI (2026-09-18), on run 35367593971.
 - **Owner:** whoever next touches `folio-dotnet`'s test wiring or the c-shared engine.
 - **Severity:** MEDIUM. It is a native crash, not an assertion failure, and it aborted a required job.
-- **Status:** OPEN.
+- **Status:** OPEN — **cause named 2026-09-24 under DW-398; fix in the tree (`SignalDispositions`); evidence
+  legs re-running.** Read the correction directly below before anything under it.
+
+#### 2026-09-24, THE CORRECTION: the mechanism below is half right, the shipped fix reaches the wrong threads, and DW-398 is this defect
+
+Everything from the 2026-09-21 "MECHANISM IDENTIFIED" subsection down was written with the right
+ingredients and the wrong handler. It says Go's handlers run in the CLR's 16 KiB alternate stack and
+overflow it, and it fixed that on threads the binding creates. **What overflows is the CLR's own GC
+activation handler (`inject_activation_handler` → `HandleSuspensionForInterruptedThread`, on
+`SIGRTMIN`), on CLR thread-pool workers, which the binding does not own and cannot reach.** The CLR
+installs that handler **without** `SA_ONSTACK` — `dotnet/runtime` v10.0.12 `pal/src/exception/signal.cpp`
+passes no flag for `INJECT_ACTIVATION_SIGNAL` and `SA_ONSTACK` for `SIGSEGV` — so it was sized for
+a thread's ordinary stack. Go's `initsig` re-installs every foreign handler it finds with
+`SA_ONSTACK` added (`runtime.setsigstack`, `os_linux.go:501`), and from then on the activation
+handler's 7,200-byte frame, under `inject_activation_handler`'s ~3.3 KB `CONTEXT`, under the
+kernel's XSAVE-carrying signal frame, runs on 16 KiB. The full account, every measurement and every
+wrong turn are under **DW-398**; the load-bearing facts are:
+
+- **Named from a symbolised core** (run 35990139779): `rip` at `HandleSuspensionForInterruptedThread+42`,
+  the `call __tls_get_addr` immediately after `subq $0x1c20,%rsp` — a `call` faults only when its push
+  does.
+- **Bisected twice in a bare console process** (runs 35990136271, 35991612843): baseline 83/150 and
+  81/100; clearing `SA_ONSTACK` from the handlers Go re-flagged → **1/150 and 1/100**; putting Go's own
+  five handlers back → 67 and 84 (no effect); `asyncpreemptoff`, W^X off → no effect.
+- **The kernel's line, 1:1** (run 35992109447, AVX-512 host): 244 deaths in 250, and **244**
+  `signal: .NET TP Worker[pid] overflowed sigaltstack` lines in `dmesg`. This subsection's opening
+  signature, from the WSL2 box, reproduced by a process holding nothing but the load and a GC.
+- **arm64 is clean because its kernel signal frame is small**, not because of the 24 KiB. The rate on
+  amd64 tracks the CPU's XSAVE state: ~55% on AVX2-only VMs, ~98% on AVX-512.
+
+**The fix (in the tree, commit `fix(folio-dotnet): put the CLR's signal dispositions back after the
+engine loads`):** `SignalDispositions` snapshots every `sigaction` before the load and, after the first
+export (`folio8_abi_version`) has *returned* — a c-shared Go runtime initialises on its own thread, so
+"after the load" races `initsig` — writes back the pre-load struct for every signal whose handler
+address the load left alone but whose flags it changed. Go's own handlers are untouched. A Linux
+regression test reads `sigaction(SIGRTMIN)` back; it passed on both Linux CI legs (run 35992568594).
+**The story-2 pool and its megabyte altstacks stay** — they protect a fault taken inside the engine on a
+crossing thread, a smaller and separate matter — but they were not the fix for this, and every line
+below that says they were is corrected by this paragraph.
+
+**Why the record separated DW-398 from DW-396 and why that was right at the time:** the split was made
+on symptoms (an abort with no kernel line, versus a kernel line), before either had a cause, to stop a
+wrong attribution — and the abort turned out to be the same overflow landing on a neighbouring
+allocation instead of on unmapped memory. Keeping them apart until a core named the handler is what let
+the cause be found; folding them back now is what the evidence says.
+
+- **Status of the original entry:** OPEN.
 
 **What happened.** `folio-dotnet-host` (ubuntu-24.04, modern .NET against `libfolio8_native.so`)
 reported `The active test run was aborted. Reason: Test host process crashed` after nine tests had

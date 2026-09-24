@@ -195,56 +195,61 @@ order, and `folio8_free` need not run on the thread that produced the token.
 The engine keeps no per-thread state.
 
 **The caveat is not about this library's data; it is about signals.** A
-`c-shared` Go library brings the Go runtime with it, and that runtime installs
-`SA_ONSTACK` handlers — for stack growth, for preemption, for its own
-profiling. Under cgo, Go **adopts the alternate signal stack it finds on the
-calling thread** rather than installing its own (`minitSignalStack`, at
-`needm` time), and it never checks that the one it found is large enough for
-the frames it will push. So the handler runs in whatever room the calling
-thread's `sigaltstack` already had.
+`c-shared` Go library brings the Go runtime with it, and at load — before any
+call — that runtime runs `initsig`. For the signals Go handles itself
+(`SIGSEGV`, `SIGBUS`, `SIGFPE`, `SIGPIPE`, `SIGURG`) it installs its own
+`SA_ONSTACK` handlers process-wide. **For every other signal that already has
+a handler, it re-installs that handler with `SA_ONSTACK` added**
+(`runtime.setsigstack`) — the handler stays yours; only the flag changes.
+Under cgo, Go also adopts the alternate signal stack it finds on a thread
+that calls in (`minitSignalStack`, at `needm` time) rather than installing
+its own, and never checks the size of what it found.
 
-⚠ **Loading this library is what exposes you, not calling it.** Measured on
-2026-09-23 with `sigaction(sig, NULL, &old)`: `dlopen` **alone** — before any
-call — replaces `SIGSEGV`, `SIGBUS` and `SIGURG` process-wide with Go's
-`SA_ONSTACK` handlers, and Go additionally *adds* `SA_ONSTACK` to handlers it
-leaves in place. So a signal taken on a thread that never touches this ABI
-still runs a Go handler on **that thread's** alternate stack. A host runtime
-that raises `SIGSEGV` as ordinary business — the .NET CLR does, for null
-checks and GC write barriers — will do so on threads you do not control.
+⚠ **Loading this library is what exposes you, not calling it — and the
+handler that dies is YOURS, not Go's.** Measured on Linux amd64 (2026-09-24,
+`sigaction(sig, NULL, &old)` before and after `dlopen`): the load replaced
+five handlers and re-flagged five more — `SIGILL`, `SIGTRAP`, `SIGABRT`,
+`SIGTERM` and `SIGRTMIN`, all at their original addresses, all now
+`SA_ONSTACK`. `SIGRTMIN` is the .NET runtime's GC activation signal. Its
+handler carries a multi-kilobyte frame and was installed **without**
+`SA_ONSTACK` on purpose, to run on the thread's ordinary stack; relocated
+onto the runtime's fixed 16 KiB alternate stack, beneath a kernel signal
+frame that carries the CPU's XSAVE state, it overflows. The process then
+dies on a thread-pool worker during garbage collection — as a bare
+`SIGSEGV`, as glibc's `futex_fatal_error` when the overflow trampled a
+neighbouring allocation, or with the kernel's `overflowed sigaltstack`
+when the next signal cannot be delivered. A console process holding
+nothing but the load and a `GC.Collect` loop reproduces it at 55 % on an
+AVX2 host and 98 % on an AVX-512 one; the identical process without the
+load, 0 %.
 
-**If your runtime installs its own alternate signal stack, every thread in the
-process needs enough room, not just the ones that cross.** That follows from
-the reading above rather than from a crash: the handlers are process-wide, so
-a thread that never calls in can still run one. Whether a given runtime's
-altstack is actually too small is for you to measure on your own threads. A
-stack that is too small does not fail cleanly: the kernel turns the overflow into `SIGSEGV`,
-the host's own fault handler sees corruption it cannot explain, and the
-process dies with no stack trace that names anything here. Two properties
-matter and both are easy to get wrong:
+**If you host this library from a runtime that owns signal handlers, put
+your dispositions back after Go's runtime has come up.** That is the fix
+folio-dotnet ships: snapshot every `sigaction` before the load; after the
+first exported call has *returned* — every export blocks until the Go
+runtime is initialised, and `dlopen` returns before that, because a
+`c-shared` runtime initialises on a thread of its own — write back the
+pre-load struct for every signal whose handler address the load left alone
+and whose flags it changed. Handlers Go installed are Go's and must stay.
+Under cgo Go's own threads are ordinary pthreads with ordinary stacks, so a
+handler of yours reaching one of them without `SA_ONSTACK` has room. On
+Linux amd64 that change took the reproduction above from 83 deaths in 150
+to 1. Do it once, after the first call, and assert it in a test that reads
+`sigaction` back — a run of clean calls is not evidence, and was how this
+defect was first "cleared".
 
-- **Before the first crossing.** Go reads the stack once, when the thread
-  first attaches, and the reading is fixed for the life of that attachment.
-  Enlarging it afterwards changes nothing.
-- **For the life of the thread.** A thread that can still take a signal must
-  still own its alternate stack, so the memory must outlive the thread rather
-  than be freed when the call returns.
-- **On every thread, not the crossing ones.** See the warning above. If your
-  runtime creates threads you cannot reach — a managed thread pool, a GC or
-  finalizer thread — you may have no way to satisfy this in-process, and that
-  is a reason to find out before you ship rather than after.
-
-A caller with no alternate signal stack of its own — an ordinary C program, or
-a Go caller — needs none of this: Go installs its own 32 KiB stack when it
-finds nothing to adopt. **The trap is not a runtime that installs a *small*
-stack; it is any runtime that installs a *glibc-sane* one.** Measured on real
-amd64: glibc's floor (`_SC_MINSIGSTKSZ`) is 1776 bytes and its recommendation
-(`_SC_SIGSTKSZ`) is 8192, while Go sizes its own handlers at 32768 — four times
-what glibc advises anyone to use. A runtime that follows that advice to the
-letter still loses. The .NET CLR is the instance this repository measured, and
-it installs 16384 — *twice* the recommendation, and still not enough: folio-dotnet's Linux natives were withdrawn from its 1.1.0 release
-over exactly this, and it now creates its own long-lived threads, calls
-`sigaltstack()` on each with a megabyte before that thread's first crossing,
-and never enters this ABI from a runtime-owned thread.
+**A large alternate stack on the threads that cross is a separate, smaller
+matter.** A fault taken *inside* the engine on one of your threads runs
+Go's handler and then, forwarded, yours, on that thread's alternate stack;
+folio-dotnet gives its own crossing threads a megabyte for that. It does
+not reach the threads that die above, which are the runtime's, and it was
+this repository's first, insufficient answer. A caller with no alternate
+signal stack of its own — an ordinary C program, or a Go caller — needs
+neither measure: Go installs its own 32 KiB stack when it finds nothing to
+adopt. Sizes measured here for the shape, not as constants: glibc's floor
+(`_SC_MINSIGSTKSZ`) 1776 bytes and its recommendation (`_SC_SIGSTKSZ`) 8192
+on an AVX2 host; the .NET runtime's alternate stack 16384 on amd64 and
+24576 on arm64; Go's own 32768.
 
 ⚠ **Read your own size; do not copy ours.** The readings behind that work are
 **amd64: 16384 bytes**, taken on real amd64 silicon, and **arm64: 24576
