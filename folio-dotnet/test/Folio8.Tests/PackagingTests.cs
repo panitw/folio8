@@ -456,9 +456,73 @@ namespace Folio8Tests
         /// bounded, because a first-run SDK or NuGet stall would otherwise
         /// hang the suite with no diagnostic at all.
         /// </summary>
+        /// <summary>
+        /// A `dotnet` WITH AN SDK IN IT, FOUND RATHER THAN ASSUMED.
+        ///
+        /// These tests shell out to `dotnet pack` and `dotnet msbuild`, which
+        /// need the SDK. Bare "dotnet" resolves through PATH, and on the x86
+        /// corpus legs that is the wrong install: ci.yml puts a 32-bit
+        /// RUNTIME-ONLY .NET in `%ProgramFiles(x86)%\dotnet`, which the
+        /// runner image already has on PATH ahead of the x64 SDK. The child
+        /// then answered "The command could not be loaded, possibly because
+        /// this is not a valid .NET SDK command" and both gate tests failed
+        /// on that leg alone while passing everywhere else.
+        ///
+        /// CLEARING DOTNET_ROOT WAS THE FIRST FIX AND IT WAS WRONG -- the
+        /// variable was never the path being taken; PATH order was. This
+        /// picks the first candidate that actually has an `sdk` directory,
+        /// so the answer does not depend on what is in front on PATH.
+        ///
+        /// IT FAILS LOUDLY IF IT FINDS NOTHING. The pack gate is what stands
+        /// between an unsoaked Linux RID and NuGet; a leg that cannot run it
+        /// must say so, not pass quietly.
+        /// </summary>
+        private static string DotnetWithAnSdk()
+        {
+            List<string> candidates = new List<string>();
+            string viaHost = Environment.GetEnvironmentVariable("DOTNET_HOST_PATH");
+            if (!string.IsNullOrEmpty(viaHost))
+            {
+                candidates.Add(viaHost);
+            }
+            bool windows = Path.DirectorySeparatorChar == '\\';
+            string exe = windows ? "dotnet.exe" : "dotnet";
+            foreach (string variable in new string[] { "ProgramFiles", "ProgramW6432" })
+            {
+                string programs = Environment.GetEnvironmentVariable(variable);
+                if (!string.IsNullOrEmpty(programs))
+                {
+                    candidates.Add(Path.Combine(programs, "dotnet", exe));
+                }
+            }
+            candidates.Add("/usr/share/dotnet/" + exe);
+            candidates.Add("/usr/local/share/dotnet/" + exe);
+            candidates.Add(Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".dotnet", exe));
+
+            foreach (string candidate in candidates)
+            {
+                if (string.IsNullOrEmpty(candidate) || !File.Exists(candidate))
+                {
+                    continue;
+                }
+                string sdks = Path.Combine(Path.GetDirectoryName(candidate), "sdk");
+                if (Directory.Exists(sdks) && Directory.GetDirectories(sdks).Length > 0)
+                {
+                    return candidate;
+                }
+            }
+
+            // Nothing verified. Fall back to PATH rather than refusing here:
+            // on a developer machine `dotnet` is usually right, and a wrong
+            // answer surfaces as these tests failing with the muxer's own
+            // message rather than as a silent skip.
+            return "dotnet";
+        }
+
         private static int RunDotnet(string arguments, string soakEvidence, TimeSpan limit, out string output)
         {
-            ProcessStartInfo start = new ProcessStartInfo("dotnet", arguments)
+            ProcessStartInfo start = new ProcessStartInfo(DotnetWithAnSdk(), arguments)
             {
                 WorkingDirectory = Repo.Root,
                 RedirectStandardOutput = true,
