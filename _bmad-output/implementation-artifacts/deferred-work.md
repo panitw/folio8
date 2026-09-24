@@ -7880,6 +7880,27 @@ re-installed by another runtime with a different one, is a re-entrancy defect wa
 the crash on record is `pthread_cond_wait` reaching `futex_fatal_error` **under** a
 `<signal handler called>` frame, which is what condvar state looks like after re-entry.
 
+**AND THE MASK LEAD DIED TO A SOURCE READ, BEFORE THE EXPERIMENT IT PROMPTED CAME BACK.** Run
+35983414123 was launched on the reasoning above and then Go 1.26.0's `runtime` was read directly
+(`os_linux.go:477` and `:501`), which settles it without a rate:
+
+- **`setsigstack`** — the path that produces the five **relocated** handlers — does
+  `sigaction(i, nil, &sa)`, returns early if `SA_ONSTACK` is already set, otherwise ORs in
+  `SA_ONSTACK` and writes the struct back. **`sa_mask` is read out and written back unchanged.** Go
+  does not widen the CLR's blocking set on the handlers it relocates; it only moves them onto the
+  alternate stack.
+- **`setsig`** — Go's own handlers, the five it **replaces** — sets
+  `SA_SIGINFO|SA_ONSTACK|SA_RESTORER|SA_RESTART` and `sigfillset(&sa.sa_mask)`. Go's handlers block
+  every signal while they run, which is Go's business and not an edit to anyone else's handler.
+
+So `restore-foreign` restores handlers whose mask was never altered, making it **a strict subset of
+the `noonstack-all` arm that already measured null** — and `restore-rtmin` a subset of that. Both
+arms of run 35983414123 are predicted null before it reports, and the prediction is written here for
+the same reason the last one was: so the number cannot retrofit the claim. **The premise that Go
+re-flags handlers it does not own is true and measured; the inference that it thereby widens the
+delivery window is false, and one grep would have caught it before a 450-iteration run was
+launched.** The cost is worth naming — the source was available locally the whole time.
+
 **Not yet tried, in order of cost:** restore the CLR's own `sigaction` struct — flags and mask
 together — for the five relocated handlers, and for `SIGRTMIN` alone (in the tree as
 `altstack-experiment` arms `restore-foreign` and `restore-rtmin`; unlike every earlier arm this one's
