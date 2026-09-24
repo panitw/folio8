@@ -8187,9 +8187,12 @@ frames is what the residual-core run (36002483670, `--core-arm`) is for. The `sy
 three for three (10, 10, 8): a call attaches a Go M to the calling thread and adopts its altstack, and
 that thread then runs the collections.
 
-**`restore-all` is a diagnostic, not a fix.** Go's `SIGSEGV`/`SIGBUS`/`SIGFPE` handlers are how a Go
-fault becomes a recoverable panic, and its `SIGURG` handler is async preemption; taking them away
-changes the engine's failure semantics. The shippable answer waits on the core: if the death is Go's
+**`restore-all` is a diagnostic, not a fix — checked, not assumed.** Go's `SIGSEGV`/`SIGBUS`/`SIGFPE`
+handlers are how a Go fault becomes a recoverable panic, and `folio-go/cshared/cmd/folio8/main.go:361`
+recovers exactly that and returns `statusErrorPanic`: an engine fault inside a render is a status code
+to the caller *because* Go's handler is installed. Take it away and the same fault kills the host
+process. Its `SIGURG` handler is async preemption. So the five replaced handlers stay, whatever the
+residual turns out to be, and the fix has to make the *forwarded* path survive. The shippable answer waits on the core: if the death is Go's
 own frame running out of the CLR's altstack, the options are different from a CLR handler that cannot
 run nested. Under vstest the fixed binding is still 0 / 150 and 0 / 100; the residual has only shown
 under forced collections.
