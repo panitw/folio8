@@ -137,6 +137,19 @@ it does *not* establish), the two PENDING hardware legs, and a closing statement
 that a mechanism plus a fix plus a green CI leg is the same evidence that
 produced both of this entry's wrong readings.
 
+**Addendum, 2026-09-24 — the amd64 leg is on the record, on a different fix than this story
+described.** DW-398 (the abort DW-396 could not name) turned out to be DW-396's own mechanism: Go's
+`c-shared` start-up re-flags the runtime's GC activation handler with `SA_ONSTACK`, and the handler
+overflows the runtime's alternate stack. The engine-thread pool never reached those threads. The fix
+that ships is in the engine: `folio-go/cshared/cmd/folio8/dispositions_linux.c` restores the host's
+dispositions in a constructor linked right after Go's, closing even the window a host-side restore
+leaves open; the binding keeps its own restore as a fallback and asserts the engine's report
+(`restored-by=constructor`) on Linux. The amd64 leg (run 36011142609): pre-fix binding reproduced on
+iteration 27 with the kernel line, shipped configuration 100 / 100 clean, recorded in
+`dotnet-linux-soak.md`; `RELEASING.md`'s notes and gate text updated; `docs/folio-dotnet.md` and its
+twin re-worded so the page describes the engine-side fix and the binding's fallback. The arm64 leg is
+still the owner's, so the pack gate still holds.
+
 **No guard was weakened.** `PackagingTests`'s soak-assertion sweep exempts
 `RELEASING.md` already, and its pack enumerator matches an *invocation*
 (`dotnet pack <path>Folio8.csproj`), not the prose mention added here. The

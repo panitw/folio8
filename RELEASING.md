@@ -272,8 +272,12 @@ one addition and one behaviour change a .NET integrator can observe:
   `deferred-work.md` rather than dismissed, because the handoff responsible is
   the same code on every platform. Full record, with every log behind every
   figure: `_bmad-output/implementation-artifacts/dotnet-linux-throughput.md`.
-- ⚠ **DW-396 is still OPEN as this is written.** `v1.2.0` cannot be packed at
-  all until CAP-5's two hardware soak legs are run and recorded — the pack
+- ⚠ **DW-396's amd64 leg is done; the arm64 leg is not.** On 2026-09-24
+  the pre-fix binding reproduced the defect on a GitHub amd64 runner and the
+  shipped configuration then ran 100 / 100 clean on that validated harness
+  (run 36011142609, recorded in
+  `_bmad-output/implementation-artifacts/dotnet-linux-soak.md`). `v1.2.0`
+  still cannot be packed until the arm64 leg is run and recorded — the pack
   refuses without the assertion. See the package-contents section below.
 
 ### The cross-target hash matrix
@@ -403,10 +407,11 @@ point is that a person states it at the moment they pack. The assertion is a **c
 CAP-5's two hardware legs**: a reproduction of the pre-fix crash and then a
 100-iteration soak, on **real amd64** and on **real arm64** separately, with
 no emulation and no Rosetta, both recorded in
-`_bmad-output/implementation-artifacts/dotnet-linux-soak.md`. Both legs are
-PENDING as this is written, so **`1.2.0` is not packable today**, and typing
-the assertion anyway would repeat the false clear DW-396 already records being
-made twice. A Windows-only pack — `-p:FolioPackPlatforms=windows`, which the
+`_bmad-output/implementation-artifacts/dotnet-linux-soak.md`. The amd64 leg is
+recorded there (run 36011142609: reproduced on iteration 27, then 100 / 100
+clean); the arm64 leg is PENDING as this is written, so **`1.2.0` is not
+packable today**, and typing the assertion anyway would repeat the false clear
+DW-396 already records being made twice. A Windows-only pack — `-p:FolioPackPlatforms=windows`, which the
 .NET Framework consumer harness uses — drops both Linux items and needs no
 assertion, because it ships no Linux native.
 

@@ -7565,9 +7565,14 @@ the crash-rate comparison that produced "the fix does not work" was comparing th
 fix was never aimed at. What remains unknown is whether `EngineThreads` closes DW-396 proper — the
 soak has never completed, because the abort kills it first.
 
-**What ships, and what does not.** `linux-arm64` shows **0 deaths in 1000 iterations** across both
-arms of load-exposure and both architectures of the abort experiment — the abort appears to be
-amd64-only. `linux-x64` cannot ship until the abort is named. The pack gate holds both.
+**What ships, and what does not — updated 2026-09-24.** `linux-arm64` shows **0 deaths in 1000
+iterations** across both arms of load-exposure and both architectures of the abort experiment — the
+abort appears to be amd64-only. The abort was named (DW-398: it is this entry's mechanism, and the
+"engine-thread" fix never reached the threads that die) and is closed at its source in the engine
+(`dispositions_linux.c`); **the amd64 soak leg is done** — run 36011142609, the pre-fix binding
+reproduced on iteration 27 with the kernel line, the shipped configuration 100 / 100 clean, recorded in
+`dotnet-linux-soak.md`. `linux-x64` is shippable on that evidence; the pack gate still holds both RIDs
+until the arm64 leg is on the record.
 
 **Next, and it is a different investigation from this entry's:** a minimal reproducer. A console app
 that `dlopen`s the engine and exercises the thread pool, with the test host and vstest removed from
@@ -8282,6 +8287,18 @@ restore-calls=2` — the constructor did it, and the Go `init()` fallback found 
 first attempt at this run (36008698227) never reached an arm: `verify-linux-natives.sh` named the
 arm64 snapshot constructor `$x` — the runner's `nm` lists the AArch64 mapping symbol at the same
 address — and refused a correct file; the lookup now takes code symbols only.
+
+**Run 36011142609 — THE ACCEPTANCE LEG, ON THE ENGINE-SIDE CLOSURE.** Binding `529da0d`, native
+`cdcc1c5b…` (the pinned image, with the constructors), GitHub amd64 runner `runnervmtr4k5`, GC pressure
+on. Reproduce leg, pre-fix binding `86e7e5a` with `FOLIO8_SIGNAL_DISPOSITIONS=leave`: **died on
+iteration 27** with the kernel's `overflowed sigaltstack`, 150 control iterations clean — the harness
+is validated against this native. Soak leg, as shipped: **100 / 100 clean**, 100 control iterations
+clean, load-exposure 0 / 100 both arms. Together with R2's 0 / 250 on the reproducer (mechanism live
+at 5 / 250 beside it) and CI's `restored-by=constructor` assertion green on both Linux legs, this entry's
+question is answered for `linux-x64`: the process no longer dies, the reason it died is named to the
+instruction, and the reason it stopped dying is asserted rather than inferred. What remains is not
+amd64's: the arm64 soak leg (owner), where the mechanism cannot fire and the tool will say so. The
+switch, the reproducer's arms and the census stay in the tree as the regression instrument.
 
 **Not yet tried, in order of cost:** *(the `restore-*` arms are struck — run and null)* a symbolised
 core (`dotnet-symbol` for `libcoreclr.so.dbg`, `dotnet-dump analyze … clrstack -all` for the managed

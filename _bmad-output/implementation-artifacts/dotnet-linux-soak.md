@@ -108,13 +108,19 @@ folio-dotnet/build/soak.sh --iterations 100 --log-dir ./soak-logs/soak
 | Leg | Host | Reproduction (pre-fix `86e7e5a`) | Soak (HEAD) | Where |
 |---|---|---|---|---|
 | **real amd64**, binding-only fix (managed restore after the first export; native `9f1296a3…`) | GitHub runner `runnervmtr4k5`, Linux 6.17.0-1022-azure, x86_64, translation verdict NATIVE, `DOTNET_GCgen0size=0x100000` | **REPRODUCED** — died on iteration 95 with the kernel's `overflowed sigaltstack`; 150 control iterations clean | **CLEAN — VALIDATED HARNESS**, 100 / 100, 100 control iterations clean | [run 36001723693](https://github.com/panitw/folio8/actions/runs/36001723693), artifact `soak-linux-x64-36001723693` (2026-09-24) |
-| **real amd64**, engine-side closure (`dispositions_linux.c`, commit `d147329`; the reproduce leg sets `FOLIO8_SIGNAL_DISPOSITIONS=leave`) | GitHub runner, x86_64 | **in flight** | **in flight** | [run 36009447283](https://github.com/panitw/folio8/actions/runs/36009447283) — the leg the pack assertion will cite |
+| **real amd64**, engine-side closure (`dispositions_linux.c`; binding `529da0d`; native `cdcc1c5b875ea3068a15c0b51e74491a399a5899ba19f98e426c66af20f8c81a`; the reproduce leg sets `FOLIO8_SIGNAL_DISPOSITIONS=leave`, the soak leg runs as shipped) | GitHub runner `runnervmtr4k5`, Linux 6.17.0-1022-azure, x86_64, translation verdict NATIVE, `DOTNET_GCgen0size=0x100000` | **REPRODUCED** — died on iteration 27 with the kernel's `overflowed sigaltstack`; 150 control iterations clean | **CLEAN — VALIDATED HARNESS**, 100 / 100, 100 control iterations clean; load-exposure 0 / 100 in both arms | [run 36011142609](https://github.com/panitw/folio8/actions/runs/36011142609), artifact `soak-linux-x64-36011142609` (2026-09-24T14:26Z) — **the amd64 half of the pack assertion** |
 | **real arm64** | a Linux arm64 host, executing natively — not a Docker Desktop VM | **PENDING** | **PENDING** | owner |
 
 The first amd64 row is the binding-only fix and stays on the record as what it is: a validated
 harness and a clean hundred, on a fix that the reproducer showed still loses one to four processes in
 a hundred to the window before its restore (DW-398, runs 36002483670 and 36006849443). The second row
-is the shipped configuration.
+is the shipped configuration, and it is the row the amd64 half of `FolioLinuxSoakEvidence` rests on.
+Its reproduce leg needs the engine's `leave` switch because the engine now protects every binding that
+loads it, the pre-fix one included; with the switch the pre-fix binding died on iteration 27, which is
+the same mechanism at the same order of rate as before (95 on the first row). The arm64 row is still
+the owner's: no arm64 host has run either leg, and on arm64 the reproduce leg is expected NOT to fire
+(the kernel's signal frame is small there; load-exposure was 0 / 1000), which the tool reports as a
+harness that cannot validate a soak — the owner decides what that is worth.
 
 Fill each cell with the runner's own verdict block: it already carries binding
 identity, native path and **SHA-256**, host, kernel, architecture, translation
