@@ -50,7 +50,7 @@ on:
       job:
         description: "Which leg to run"
         type: choice
-        options: [soak, load-exposure, both-legs]
+        options: [soak, load-exposure, crash-trace, both-legs]
         default: soak
 
 permissions:
@@ -274,3 +274,67 @@ jobs:
       - name: kernel ring buffer
         if: always()
         run: sudo dmesg | tail -120 || echo "dmesg unreadable"
+
+  # ===================================================================
+  # NAME THE CRASH. load-exposure proved the shipped binding kills the test
+  # host on about one Linux amd64 run in four, and that EVERY death is
+  # unnamed. A rate cannot tell DW-396 from anything else that kills a
+  # process; a backtrace can. This routes the kernel's core to a file and
+  # reads it with gdb, asking one question: is a Go signal handler on the
+  # faulting thread?
+  # ===================================================================
+  crash-trace:
+    if: ${{ inputs.job == 'crash-trace' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        rid: ${{ fromJSON(inputs.rid == 'both' && '["linux-x64","linux-arm64"]' || format('["{0}"]', inputs.rid)) }}
+    name: crash-trace (${{ matrix.rid }})
+    runs-on: ${{ matrix.rid == 'linux-arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    timeout-minutes: 120
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: ${{ matrix.rid == 'linux-arm64' && 'linux/amd64' || 'linux/arm64' }}
+
+      - name: gdb, to read the core
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq gdb
+
+      - name: build both Linux natives (pinned image)
+        run: ./folio-dotnet/build/build-native.sh linux-x64 linux-arm64
+      - name: assert both natives are the right machine and keep the glibc floor
+        run: ./folio-dotnet/build/verify-linux-natives.sh
+
+      - name: let it read the kernel ring buffer
+        run: |
+          sudo sysctl -w kernel.dmesg_restrict=0
+          dmesg >/dev/null 2>&1 || { echo "dmesg still unreadable" >&2; exit 1; }
+
+      - name: run until the host dies, then read the core
+        run: ./folio-dotnet/build/crash-trace.sh -n 60 --core-dir "$RUNNER_TEMP/cores"
+
+      # THE BACKTRACE IS THE PRODUCT, so it is kept whether the step passed or
+      # not -- a NO-CORE verdict exits non-zero and is exactly as informative.
+      # The cores themselves are gigabytes; only the text is uploaded.
+      - name: keep the backtrace
+        if: always()
+        run: |
+          mkdir -p "$RUNNER_TEMP/trace-out"
+          cp "$RUNNER_TEMP"/cores/backtrace-*.txt "$RUNNER_TEMP/trace-out/" 2>/dev/null || true
+          ls -la "$RUNNER_TEMP/cores" > "$RUNNER_TEMP/trace-out/cores-listing.txt" 2>&1 || true
+          sudo dmesg | tail -120 > "$RUNNER_TEMP/trace-out/dmesg.txt" 2>&1 || true
+      - name: upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: crash-trace-${{ matrix.rid }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/trace-out
+          if-no-files-found: warn
+          retention-days: 30
