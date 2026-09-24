@@ -470,6 +470,26 @@ namespace Folio8Tests
             // Inheriting it would make the refusing legs above pass for the
             // wrong reason on their machine and fail confusingly here.
             start.EnvironmentVariables.Remove("FolioLinuxSoakEvidence");
+
+            // AND THE 32-BIT LEG MUST NOT SEND `dotnet` TO A RUNTIME-ONLY
+            // INSTALL. ci.yml installs an x86 runtime by hand for the x86
+            // corpus legs -- "Runtime only, not the SDK", as it says -- and
+            // exports DOTNET_ROOT(x86) pointing at it. Every child of that
+            // test host inherits the variable, so the `dotnet` started here
+            // resolved an install with no SDK in it and answered "The command
+            // could not be loaded", which is not the refusal these tests are
+            // reading for: the gate tests then failed on the x86 leg while
+            // passing everywhere else. Clearing the roots lets the muxer use
+            // its own location, which is the SDK that built the suite.
+            //
+            // THE ALTERNATIVE WAS TO SKIP THESE TWO ON x86, AND IT IS WORSE.
+            // The pack gate is the one thing standing between an unsoaked
+            // Linux RID and NuGet; a leg that quietly does not run it is how
+            // that guard goes missing without anything reddening.
+            start.EnvironmentVariables.Remove("DOTNET_ROOT");
+            start.EnvironmentVariables.Remove("DOTNET_ROOT(x86)");
+            start.EnvironmentVariables.Remove("DOTNET_ROOT_X86");
+            start.EnvironmentVariables.Remove("DOTNET_ROOT_X64");
             if (soakEvidence != null)
             {
                 start.EnvironmentVariables["FolioLinuxSoakEvidence"] = soakEvidence;
