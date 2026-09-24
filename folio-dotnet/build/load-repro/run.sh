@@ -31,12 +31,27 @@
 # at baseline. Removing SA_ONSTACK from the handlers Go re-flagged is the fix.
 # The default arms are now the CONFIRMATION set, aimed at the residual 1/150:
 #
+# RUN 35993471395 ANSWERED THE RESIDUAL'S FIRST QUESTION, IN THE NEGATIVE:
+# restore-relocated 3/250, +sync=call 10/250, restore-rtmin+sync=call 3/250,
+# +sync=poll 4/250, against 206/250 and a clean control. The synced arms did
+# not go to zero, so the 1-4% residual is NOT the init race and NOT a window.
+# It is a second, rarer path, only with the engine loaded. The default arms
+# now ask what it is:
+#
 #   load                                     baseline
 #   noload                                   the control: identical, no dlopen
-#   load:fix=restore-relocated               as run 35990136271 (expect ~1/150)
-#   load:fix=restore-relocated:sync=call     Go's init forced complete first (expect 0)
-#   load:fix=restore-rtmin:sync=call         SIGRTMIN alone, the minimal fix (expect 0)
-#   load:fix=restore-relocated:sync=poll     wait for the flag to appear, then fix (expect 0)
+#   load:fix=restore-relocated               the fix (expect 1-4%)
+#   load:fix=restore-all                     the fix PLUS Go's own five handlers
+#                                            put back -- if the residual goes,
+#                                            it lives in Go's handler path on
+#                                            CLR threads (forwarding on the altstack)
+#   load:fix=restore-relocated:env=GODEBUG=asyncpreemptoff=1
+#                                            the fix, Go's SIGURG preemption off
+#   load:fix=restore-relocated:sync=call     the fix after the first export (what ships)
+#
+# Every arm now also reports the kernel's `overflowed sigaltstack` lines that
+# appeared DURING it, so the residual's deaths say whether they are
+# nested-delivery overflows on an altstack still in use.
 #
 # --arms a,b,c replaces that list; an arm is
 # `load|noload[:fix=MODE][:sync=none|call|poll][:env=K=V]...`.
@@ -68,7 +83,7 @@ gcflag=--gc
 out=""
 native=""
 iteration_timeout=60
-arms=(load noload "load:fix=restore-relocated" "load:fix=restore-relocated:sync=call" "load:fix=restore-rtmin:sync=call" "load:fix=restore-relocated:sync=poll")
+arms=(load noload "load:fix=restore-relocated" "load:fix=restore-all" "load:fix=restore-relocated:env=GODEBUG=asyncpreemptoff=1" "load:fix=restore-relocated:sync=call")
 selfcheck=0
 
 while [ "$#" -gt 0 ]; do
@@ -201,6 +216,7 @@ for arm in "${arms[@]}"; do
   args+=(--pool "$pool" --hold "$hold" "$gcflag" --fix "$arm_fix" --sync "$arm_sync")
   declare -A tally=()
   bad=0; first_line=""
+  kl_before="$( (dmesg 2>/dev/null || sudo -n dmesg 2>/dev/null) | grep -c 'overflowed sigaltstack' || true)"; kl_before="${kl_before:-0}"
   printf '  %-42s ' "$arm"
   for i in $(seq 1 "$iterations"); do
     # The baseline arm asks the runtime for its own dump on a fatal signal,
@@ -244,17 +260,19 @@ for arm in "${arms[@]}"; do
   # kernel forces SIG_DFL and logs `<comm>[pid] overflowed sigaltstack` -- the
   # line from the owner's WSL2 box that opened DW-396. Best-effort: needs
   # dmesg readable (the workflow lifts dmesg_restrict; elsewhere, sudo -n).
-  if [ "$arm" = load ] && [ "$bad" -gt 0 ]; then
-    # NO `| head` UNDER pipefail. Run 35992109447 did exactly that here, grep
-    # took SIGPIPE when head closed, the script exited 2 after the baseline
-    # arm, and five arms never ran -- the same mistake crash-trace.sh made
-    # and wrote down earlier. grep -m1 stops on its own.
-    kl="$( (dmesg 2>/dev/null || sudo -n dmesg 2>/dev/null) | grep -c 'overflowed sigaltstack' || true)"
-    if [ -n "$kl" ] && [ "$kl" -gt 0 ]; then
-      echo "      kernel: $kl 'overflowed sigaltstack' line(s) in dmesg after $bad death(s); first:"
-      (dmesg 2>/dev/null || sudo -n dmesg 2>/dev/null) | grep -m1 'overflowed sigaltstack' | sed 's/^/        /'
+  # THE KERNEL'S LINES DURING THIS ARM, EVERY ARM. A death that carries
+  # `overflowed sigaltstack` is a nested delivery onto an altstack already
+  # in use; one that does not is the silent push-fault or a genuine fault.
+  # The ratio per arm is part of the residual's description. (NO `| head`
+  # under pipefail -- run 35992109447 lost five arms to that; grep -m1.)
+  if [ "$bad" -gt 0 ]; then
+    kl_after="$( (dmesg 2>/dev/null || sudo -n dmesg 2>/dev/null) | grep -c 'overflowed sigaltstack' || true)"; kl_after="${kl_after:-0}"
+    kl=$(( kl_after - kl_before ))
+    if [ "$kl" -gt 0 ]; then
+      echo "      kernel: $kl 'overflowed sigaltstack' line(s) during this arm's $bad death(s)$( [ "$arm" = load ] && echo '; first:' )"
+      [ "$arm" = load ] && (dmesg 2>/dev/null || sudo -n dmesg 2>/dev/null) | grep -m1 'overflowed sigaltstack' | sed 's/^/        /'
     else
-      echo "      kernel: no 'overflowed sigaltstack' in dmesg (unreadable, rate-limited, or the fault was not a nested delivery)"
+      echo "      kernel: no 'overflowed sigaltstack' during this arm's $bad death(s) (silent push-fault, a genuine fault, or dmesg unreadable)"
     fi
   fi
   names+=("$arm"); totals+=("$bad"); breakdowns+=("${b:- none}"); touched+=("$first_line")

@@ -8143,6 +8143,24 @@ and the legs stay comparable, and when the pre-fix binding stays clean it consul
 reproducer anyway — "mechanism live, workload too light" and "mechanism not live here" are different
 next steps, and neither validates the harness. 93 self-check cases.
 
+**Run 35993471395 — THE PRE-REGISTRATION FAILED, and the residual is not the init race.** AMD EPYC
+7763 (AVX2), 250 per arm: baseline **206**, control **0**; `restore-relocated` **3**; `restore-relocated` with
+Go's init forced complete first (`sync=call`, `abi=2` returned before the fix) **10**; `restore-rtmin` +
+`sync=call` **3**; `restore-relocated` + `sync=poll` (restored within 1 ms of the flag appearing) **4**. The
+prediction written before the run was "the synced arms go to zero". They did not, and the arm that
+proves Go's runtime was up before the fix is the *worst* of them. The vulnerable-window reading dies
+with it: `poll` closes the window to a millisecond and is no better than restoring after the load. So
+**a second, rarer path exists — 1–4% of runs under forced collections, only with the engine loaded —
+and it is unexplained.** It has not shown under vstest (the fixed binding: 0/150 and 0/100 on the same
+host class), which bounds it but does not excuse it. The fix stands as the fix for the 82%; the
+residual is its own question and gets its own core.
+
+Two side-findings from the same run. The baseline's 206 deaths carried **34** `overflowed sigaltstack`
+lines — on an AVX2 host most deaths are the silent push-fault and the kernel line is the minority
+landing, which is why the soak's named-signature model missed it. And the 2.4 s per iteration that
+looked like a hang was the altstack read timing out on a saturated pool (fixed); the run was slow, not
+stuck.
+
 **Not yet tried, in order of cost:** *(the `restore-*` arms are struck — run and null)* a symbolised
 core (`dotnet-symbol` for `libcoreclr.so.dbg`, `dotnet-dump analyze … clrstack -all` for the managed
 frame the worker was interrupted in), which names the handler in one shot and is in the trace now;
