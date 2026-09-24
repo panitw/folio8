@@ -7428,6 +7428,46 @@ test, and `soak.sh` proves the claim at run time before every control leg: it mo
 aside, runs the filter once, and refuses the whole run if it does not pass. This is the second filter
 that looked engine-free and was not, so it is checked rather than reasoned about.
 
+#### 2026-09-24: THE ISOLATING LEG RAN, AND THE SHIPPED BINDING CRASHES ~27% ON LINUX amd64
+
+`load-exposure.sh` (run 35933716928), two arms of **HEAD's binding — the one carrying the fix** —
+same host, same native, back to back, differing only in whether the library is loaded:
+
+| Arm | Native loaded | amd64 | arm64 |
+|---|---|---|---|
+| A — filter that never crosses | **no**, proven by running it with the native moved aside | **0 / 500** | **0 / 500** |
+| B — arm A plus ONE version crossing | yes, once | **134 / 500 (27%)** | **0 / 500** |
+
+Arm B renders nothing and makes no second crossing. Arm A is verified engine-free rather than
+assumed. On a host whose soundness is not in question — arm A is 500 clean iterations — **loading the
+engine kills the test host about one run in four on amd64, and never on arm64.**
+
+**Independently corroborated by a job nobody wrote for this purpose.** CI's `folio-dotnet-host`
+renders the corpus on `ubuntu-24.04` against the host native, and over the last eleven runs it failed
+three times — `29dfe07`, `c594d82`, `01402b5` — **≈27%, the same rate**, with the same presentation:
+`The active test run was aborted. Reason: Test host process crashed`. That is the exact sentence that
+filed this entry on 2026-09-18.
+
+**What it does NOT establish.** None of the 134 deaths carried `overflowed sigaltstack`, and the
+runner logged no fatal signals at all — while the same runner logged one for the PRE-FIX binding in
+run 35889756264. So the tool returned `UNEXPLAINED` and did not attribute them, which is right. The
+mechanism is consistent with the handler-scope reading (Go's handlers process-wide, every CLR thread
+on 16 KiB) but consistent is not the same as measured, and this entry has twice paid for treating it
+as such.
+
+**Two hypotheses, neither tested:**
+
+1. It is DW-396, and the absent kernel line is a reporting gap rather than a different defect.
+2. **The fix made it worse.** DW-396 recorded 0-crashes-in-11 on this same CI job with the *pre-fix*
+   binding; it is now ~27%. `EngineThreads` adds a `ProcessorCount`-sized pool of long-lived threads
+   whose alternate stacks it replaces, and nothing has measured what that does to crash frequency.
+   That possibility is uncomfortable and is written down for exactly that reason.
+
+**What settles it: a stack trace.** `--blame-crash` names the test in flight and writes a dump;
+`DOTNET_DbgEnableMiniDump` writes one directly. Either turns "the host died" into a named frame.
+Until then the honest statement is: **the shipped binding crashes about one Linux amd64 run in four,
+the cause is unnamed, and no Linux RID can ship.** The pack gate already enforces the last part.
+
 ⚠ **If a long reproduction leg still cannot catch it on GitHub's runners, that is a finding, not a
 blocker to route around.** It would mean the amd64 evidence has to come from a host where the defect
 does fire, and the only one known to do so is the owner's WSL2 box — which is unsound for the soak
