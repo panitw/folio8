@@ -8197,6 +8197,42 @@ own frame running out of the CLR's altstack, the options are different from a CL
 run nested. Under vstest the fixed binding is still 0 / 150 and 0 / 100; the residual has only shown
 under forced collections.
 
+**Runs 36002483670 and 36003345966 — THE RESIDUAL IS THE WINDOW BEFORE THE RESTORE, and the
+paragraph above this one read a right result the wrong way.** Run 36002483670 (AMD EPYC 7763, 250 per
+arm): baseline **28** (2 kernel lines), control **0**, `restore-relocated` **0**, **`restore-all` 8 — with
+a kernel `overflowed sigaltstack` line**, `asyncpreemptoff` **4**; the `sync=call` arm, the one with
+`--core-arm`, never ran: `ulimit -c 0` without `-S` had lowered the *hard* limit at the top of the script
+and the arm's `ulimit -c unlimited` was refused (exit 1; soft-only now, reproduced and fixed locally).
+`restore-all` is not 0 and its deaths overflow the altstack, so the residual is **not** in Go's handlers,
+and **the altstack still overflows with the fix in**. Run 36003345966, the census: the control takes
+**no `SIGSEGV` at all** in 100 straced iterations (4,933 `SIGRTMIN` activations, nothing else); the fixed
+`sync=call` arm took 5,337 activations, 26 `SIGURG` on Go's threads, and **one death: `SEGV_ACCERR` at
+`0x7fcb21f39ff8`**, eight bytes under a page boundary. `thread.cpp EnsureSignalAlternateStack` maps
+`SIGSTKSZ + return-point + one page`, makes the **first page `PROT_NONE`**, and registers the mapping
+*from its start* — so the 16 KiB `ss_size` every run printed is **12 KiB of stack over a guard page**, and
+`…ff8` is a push into that guard: the fixed arm's death is the baseline's push-fault. The only way a
+handler frame is on the altstack with the fix in is **between Go's constructor and the restore**:
+`libpreinit → initsig(true) → setsigstack` runs inside `dlopen`, on the loading thread, while the workers
+are running; the restore runs after `dlopen` returns (the reproducer) or after `folio8_abi_version()`
+returns (the product's `CheckAbi`), which is after the whole Go runtime init. Every activation in that
+window is the pre-fix mechanism. That is why `sync=call` is worse three for three: it does not close the
+window, it *lengthens* it by the runtime init. Run 35993471395's "NOT a window" mistook "the sync arms
+did not go to zero" for "the exposure is not before the restore"; the exposure *is* before the restore,
+and the sync arms move the restore later. **Pre-registered for run R1** (default arms now `load noload
+load:fix=restore-relocated load:fix=restore-relocated:workers=after
+load:fix=restore-relocated:delay=400`, the pool started only after the fix, and the fix held off for
+the hold's length): `workers=after` **0**/250; `delay=400` **at the baseline's rate**, not the
+residual's. If `workers=after` is not 0, the window is not the whole residual and this paragraph is
+wrong the way the last one was. **The fix this implies** is to close the window in the library, where
+it opens: a prioritised constructor (`.init_array` priority sorts before Go's unprioritised entry)
+records every disposition before Go's `libpreinit`, and an unprioritised one — after `go.o` in the
+external link, so after Go's — puts back the flags of every handler Go left in place but re-flagged;
+the managed restore stays as the fallback. Tool faults, both fixed: the census died on `cat … |
+grep -m1` (the pitfall inverted — a consumer closing the pipe on the producer, under `pipefail`), and
+both runs uploaded nothing because the copy to `--out` was on the happy path (now an `EXIT` trap); the
+residual arms' stderr had never been kept (the first three deaths of a *run*, all baseline) — now two
+per arm.
+
 **Not yet tried, in order of cost:** *(the `restore-*` arms are struck — run and null)* a symbolised
 core (`dotnet-symbol` for `libcoreclr.so.dbg`, `dotnet-dump analyze … clrstack -all` for the managed
 frame the worker was interrupted in), which names the handler in one shot and is in the trace now;

@@ -31,30 +31,43 @@
 # at baseline. Removing SA_ONSTACK from the handlers Go re-flagged is the fix.
 # The default arms are now the CONFIRMATION set, aimed at the residual 1/150:
 #
-# RUN 35993471395 ANSWERED THE RESIDUAL'S FIRST QUESTION, IN THE NEGATIVE:
-# restore-relocated 3/250, +sync=call 10/250, restore-rtmin+sync=call 3/250,
-# +sync=poll 4/250, against 206/250 and a clean control. The synced arms did
-# not go to zero, so the 1-4% residual is NOT the init race and NOT a window.
-# It is a second, rarer path, only with the engine loaded. The default arms
-# now ask what it is:
+# RUN 35993471395: restore-relocated 3/250, +sync=call 10/250,
+# restore-rtmin+sync=call 3/250, +sync=poll 4/250, against 206/250 and a
+# clean control. This file then said the residual was "NOT a window", and
+# that was the wrong reading of a right result: the sync arms do not CLOSE
+# the window, they LENGTHEN it -- the restore runs after the sync returns,
+# and the workers are running the whole time. Run 36003345966's census
+# (strace on the control and on the fixed arm) said the rest: the control
+# takes no SIGSEGV at all in 100 iterations, and the fixed arm's one death
+# was SEGV_ACCERR eight bytes under a page boundary -- a push into the
+# guard page the CLR maps under its own altstack (its 16 KiB mapping is
+# 12 KiB of stack over a PROT_NONE page). Something still runs on the
+# altstack with the fix in, and the only thing that can is an activation
+# delivered between Go's constructor re-flagging the handler and this
+# process putting the flag back. Run 36002483670 fits: restore-all 8/250
+# with a kernel `overflowed sigaltstack` line, so the residual is not in
+# Go's handlers either. The default arms now test the window directly:
 #
 #   load                                     baseline
 #   noload                                   the control: identical, no dlopen
-#   load:fix=restore-relocated               the fix (expect 1-4%)
-#   load:fix=restore-all                     the fix PLUS Go's own five handlers
-#                                            put back -- if the residual goes,
-#                                            it lives in Go's handler path on
-#                                            CLR threads (forwarding on the altstack)
-#   load:fix=restore-relocated:env=GODEBUG=asyncpreemptoff=1
-#                                            the fix, Go's SIGURG preemption off
-#   load:fix=restore-relocated:sync=call     the fix after the first export (what ships)
+#   load:fix=restore-relocated               the fix, window = dlopen (expect 1-4%)
+#   load:fix=restore-relocated:workers=after the pool starts after the fix: no thread
+#                                            exists to be activated in the window
+#                                            (PREDICTION: 0)
+#   load:fix=restore-relocated:delay=400     the window held open for the hold's
+#                                            length before the fix (PREDICTION:
+#                                            the baseline's rate)
+#
+# Earlier default sets, kept runnable: fix=restore-all (Go's five put back
+# too), env=GODEBUG=asyncpreemptoff=1, sync=call (the fix after the first
+# export, which is the longer window the product has).
 #
 # Every arm now also reports the kernel's `overflowed sigaltstack` lines that
 # appeared DURING it, so the residual's deaths say whether they are
 # nested-delivery overflows on an altstack still in use.
 #
 # --arms a,b,c replaces that list; an arm is
-# `load|noload[:fix=MODE][:sync=none|call|poll][:env=K=V]...`.
+# `load|noload[:fix=MODE][:sync=none|call|poll][:workers=before|after][:delay=MS][:env=K=V]...`.
 # `--nogc` re-runs the first version's workload so the two are comparable.
 #
 # THE FIRST DEATH ALSO YIELDS A RUNTIME DUMP. Every core so far was a kernel
@@ -85,7 +98,8 @@ native=""
 iteration_timeout=60
 core_arm=""   # --core-arm NAME: keep the first core that arm produces, and read it
 strace_iterations=0   # --strace-iterations N: before each arm, N iterations under strace -f -e trace=signal, summarised
-arms=(load noload "load:fix=restore-relocated" "load:fix=restore-all" "load:fix=restore-relocated:env=GODEBUG=asyncpreemptoff=1" "load:fix=restore-relocated:sync=call")
+strace_arms=""        # --strace-arms a,b: only these arms get the census (default: every arm)
+arms=(load noload "load:fix=restore-relocated" "load:fix=restore-relocated:workers=after" "load:fix=restore-relocated:delay=400")
 selfcheck=0
 
 while [ "$#" -gt 0 ]; do
@@ -99,6 +113,7 @@ while [ "$#" -gt 0 ]; do
     --iteration-timeout) iteration_timeout="$2"; shift 2 ;;
     --core-arm) core_arm="$2"; shift 2 ;;
     --strace-iterations) strace_iterations="$2"; shift 2 ;;
+    --strace-arms) strace_arms=",$2,"; shift 2 ;;
     --arms) IFS=, read -r -a arms <<<"$2"; shift 2 ;;
     --self-check) selfcheck=1; shift ;;
     *) echo "unknown argument '$1'" >&2; exit 1 ;;
@@ -121,16 +136,20 @@ classify() {
   esac
 }
 
-# `load|noload[:fix=MODE][:env=K=V]...` -> sets arm_load, arm_fix, arm_env[].
+# `load|noload[:fix=MODE][:sync=..][:workers=..][:delay=MS][:env=K=V]...` ->
+# sets arm_load, arm_fix, arm_sync, arm_workers, arm_delay, arm_env[].
 # One function, so the self-check exercises the same parser the arms use.
 parse_arm() {
-  arm_load=""; arm_fix=none; arm_sync=none; arm_env=()
+  arm_load=""; arm_fix=none; arm_sync=none; arm_workers=before; arm_delay=0; arm_env=()
   local IFS=: part
   for part in $1; do
     case "$part" in
       load|noload) arm_load="$part" ;;
       fix=*) arm_fix="${part#fix=}" ;;
       sync=*) arm_sync="${part#sync=}" ;;
+      workers=before|workers=after) arm_workers="${part#workers=}" ;;
+      workers=*) echo "bad workers value in '$1' (before|after)" >&2; return 1 ;;
+      delay=*) arm_delay="${part#delay=}"; [[ "$arm_delay" =~ ^[0-9]+$ ]] || { echo "bad delay in '$1' (milliseconds)" >&2; return 1; } ;;
       env=*) arm_env+=("${part#env=}") ;;
       *) echo "bad arm token '$part' in '$1'" >&2; return 1 ;;
     esac
@@ -152,16 +171,20 @@ if [ "$selfcheck" = 1 ]; then
   check 137 signal9; check 143 signal15
   # The arm parser, on the shapes the default list uses and on two it must refuse.
   parm() {
-    if parse_arm "$1" 2>/dev/null; then got="$arm_load fix=$arm_fix sync=$arm_sync env=${arm_env[*]+${arm_env[*]}}"; else got="REFUSED"; fi
+    if parse_arm "$1" 2>/dev/null; then got="$arm_load fix=$arm_fix sync=$arm_sync workers=$arm_workers delay=$arm_delay env=${arm_env[*]+${arm_env[*]}}"; else got="REFUSED"; fi
     if [ "$got" = "$2" ]; then printf '  ok    %-24s -> %s\n' "arm '$1'" "$got"
     else printf '  FAIL  %-24s -> %s (want %s)\n' "arm '$1'" "$got" "$2"; fails=$((fails+1)); fi
   }
-  parm "load"                                  "load fix=none sync=none env="
-  parm "noload"                                "noload fix=none sync=none env="
-  parm "load:fix=restore-go"                   "load fix=restore-go sync=none env="
-  parm "load:fix=restore-rtmin:sync=call"      "load fix=restore-rtmin sync=call env="
-  parm "load:env=GODEBUG=asyncpreemptoff=1"    "load fix=none sync=none env=GODEBUG=asyncpreemptoff=1"
-  parm "load:fix=noonstack:env=A=1:env=B=2"    "load fix=noonstack sync=none env=A=1 B=2"
+  parm "load"                                  "load fix=none sync=none workers=before delay=0 env="
+  parm "noload"                                "noload fix=none sync=none workers=before delay=0 env="
+  parm "load:fix=restore-go"                   "load fix=restore-go sync=none workers=before delay=0 env="
+  parm "load:fix=restore-rtmin:sync=call"      "load fix=restore-rtmin sync=call workers=before delay=0 env="
+  parm "load:env=GODEBUG=asyncpreemptoff=1"    "load fix=none sync=none workers=before delay=0 env=GODEBUG=asyncpreemptoff=1"
+  parm "load:fix=noonstack:env=A=1:env=B=2"    "load fix=noonstack sync=none workers=before delay=0 env=A=1 B=2"
+  parm "load:fix=restore-relocated:workers=after" "load fix=restore-relocated sync=none workers=after delay=0 env="
+  parm "load:fix=restore-relocated:delay=400"  "load fix=restore-relocated sync=none workers=before delay=400 env="
+  parm "load:workers=sometimes"                "REFUSED"
+  parm "load:delay=soon"                       "REFUSED"
   parm "fix=noonstack"                         "REFUSED"
   parm "load:bogus"                            "REFUSED"
   # And a REAL status, so the arms are not reading a number bash never produces.
@@ -189,6 +212,19 @@ case "$(uname -m)" in x86_64) rid=linux-x64 ;; aarch64) rid=linux-arm64 ;; *) ec
 
 work="$(mktemp -d)"
 [ -n "$out" ] && mkdir -p "$out"
+# WHATEVER EXITS, THE ARTEFACTS GO OUT. Runs 36002483670 and 36003345966
+# both died mid-script (a ulimit, a pipe) and uploaded nothing, so every
+# copy to --out happens here, on exit, not at the end of a happy path.
+previous_pattern=""
+on_exit() {
+  [ -n "$previous_pattern" ] && { echo "$previous_pattern" | sudo -n tee /proc/sys/kernel/core_pattern >/dev/null 2>&1 || true; }
+  if [ -n "$out" ]; then
+    cp "$work"/death-*.txt "$out/" 2>/dev/null || true
+    [ -f "$work/analysis.txt" ] && cp "$work/analysis.txt" "$out/dump-analysis.txt" 2>/dev/null || true
+    [ -f "$work/core-report.txt" ] && cp "$work/core-report.txt" "$out/" 2>/dev/null || true
+  fi
+}
+trap on_exit EXIT
 export PATH="$HOME/.dotnet/tools:$PATH"
 command -v dotnet-dump >/dev/null 2>&1 || dotnet tool install -g dotnet-dump >/dev/null 2>&1 || echo "  (dotnet-dump not installable; the first dump will be kept unread)"
 echo "building the reproducer"
@@ -208,20 +244,19 @@ cat <<EOF2
 
 EOF2
 
-ulimit -c 0 2>/dev/null || true   # a core per death would dominate the runtime
+ulimit -S -c 0 2>/dev/null || true   # a core per death would dominate the runtime
 
 # A CORE FROM THE ARM NAMED BY --core-arm. The residual with the fix is 1-4%
 # and unexplained (runs 35993471395, 35999753222); its death has never been
 # read. For that one arm cores are enabled and routed to a file, the first
 # one is kept, and read-core.sh reads it after the arm. Needs passwordless
 # sudo for kernel.core_pattern; without it the arm runs and says so.
-core_dir=""; previous_pattern=""
+core_dir=""
 if [ -n "$core_arm" ]; then
   if sudo -n true 2>/dev/null; then
     core_dir="$work/cores"; mkdir -p "$core_dir"; chmod 777 "$core_dir"
     previous_pattern="$(cat /proc/sys/kernel/core_pattern)"
     echo "$core_dir/core.%e.%p" | sudo tee /proc/sys/kernel/core_pattern >/dev/null
-    trap 'echo "$previous_pattern" | sudo -n tee /proc/sys/kernel/core_pattern >/dev/null 2>&1 || true' EXIT
     echo "  cores     : enabled for arm '$core_arm' -> $core_dir"
   else
     echo "  cores     : --core-arm '$core_arm' needs passwordless sudo for kernel.core_pattern; running without cores"
@@ -236,10 +271,10 @@ dump=""
 for arm in "${arms[@]}"; do
   parse_arm "$arm" || exit 1
   args=(); [ "$arm_load" = load ] && args=("$native" --load) || args=(--noload)
-  args+=(--pool "$pool" --hold "$hold" "$gcflag" --fix "$arm_fix" --sync "$arm_sync")
+  args+=(--pool "$pool" --hold "$hold" "$gcflag" --fix "$arm_fix" --sync "$arm_sync" --workers "$arm_workers" --delay "$arm_delay")
   declare -A tally=()
-  bad=0; first_line=""
-  if [ -n "$core_arm" ] && [ "$arm" = "$core_arm" ]; then ulimit -c unlimited; else ulimit -c 0 2>/dev/null || true; fi
+  bad=0; first_line=""; saved_arm=0
+  if [ -n "$core_arm" ] && [ "$arm" = "$core_arm" ]; then ulimit -S -c unlimited; else ulimit -S -c 0 2>/dev/null || true; fi
   # WHICH SIGNALS A THREAD OF THIS PROCESS ACTUALLY TAKES. The residual with
   # the fix is a SIGSEGV that only kills the process with Go's handler in
   # front of the CLR's (run 36000448980: restore-all 0/250). A signal the CLR
@@ -248,8 +283,9 @@ for arm in "${arms[@]}"; do
   # and si_addr" has never been asked. strace answers it per thread; the
   # timing under strace is different, so these iterations are not counted
   # in the arm's rate, only their signals are summarised.
-  if [ "$strace_iterations" -gt 0 ] && command -v strace >/dev/null 2>&1; then
-    sdir="$work/strace-$(echo "$arm" | tr ':=/' '___')"; mkdir -p "$sdir"
+  if [ "$strace_iterations" -gt 0 ] && command -v strace >/dev/null 2>&1 \
+     && { [ -z "$strace_arms" ] || [[ "$strace_arms" == *",$arm,"* ]]; }; then
+    sdir="${out:-$work}/strace-$(echo "$arm" | tr ':=/' '___')"; mkdir -p "$sdir"
     sdeaths=0
     for i in $(seq 1 "$strace_iterations"); do
       set +e
@@ -257,16 +293,34 @@ for arm in "${arms[@]}"; do
         timeout -k 5 "$iteration_timeout" "$work/bin/repro" "${args[@]}" >/dev/null 2>&1
       st=$?
       set -e
-      [ "$st" -eq 0 ] || sdeaths=$((sdeaths + 1))
+      [ "$st" -eq 0 ] || { sdeaths=$((sdeaths + 1)); echo "$st" >"$sdir/it-$i.status"; }
     done
+    # Everything below reads FILES. `cat … | grep -m1` killed run 36003345966
+    # (grep closed the pipe on cat; pipefail; exit 1) after the census had
+    # already found what it was sent for.
+    cat "$sdir"/it-*.txt >"$sdir/all.txt"
     echo "      strace ($strace_iterations iterations, $sdeaths died under it): signals delivered, by signal and si_code:"
-    cat "$sdir"/it-*.txt | grep -oE -- '--- SIG[A-Z0-9_+]+ \{si_signo=[A-Z0-9_+]+, si_code=[A-Z_0-9]+' | sed -E 's/^--- ([A-Z0-9_+]+) \{si_signo=[A-Z0-9_+]+, si_code=([A-Z_0-9]+)/\1(\2)/' | sort | uniq -c | sort -rn | awk '{printf "        %6d  %s\n", $1, $2}' | head -12
-    segv="$(cat "$sdir"/it-*.txt | grep -oE -- '--- SIGSEGV \{[^}]*\}' | head -2000 || true)"
-    if [ -n "$segv" ]; then
-      echo "      SIGSEGV details (distinct si_code/si_addr, first 8):"
-      printf '%s\n' "$segv" | sed -E 's/.*si_code=([A-Z_0-9]+).*si_addr=([0-9a-fx]+).*/\1 \2/' | sort | uniq -c | sort -rn | head -8 | awk '{printf "        %6d  %s %s\n", $1, $2, $3}'
-      # Which thread, and what it was doing: the pid on the line is the LWP.
-      echo "      first SIGSEGV line, verbatim:"; cat "$sdir"/it-*.txt | grep -m1 -E -- '--- SIGSEGV' | sed 's/^/        /'
+    grep -oE -- '--- SIG[A-Z0-9_+]+ \{si_signo=[A-Z0-9_+]+, si_code=[A-Z_0-9]+' "$sdir/all.txt" \
+      | sed -E 's/^--- ([A-Z0-9_+]+) \{si_signo=[A-Z0-9_+]+, si_code=([A-Z_0-9]+)/\1(\2)/' | sort | uniq -c | sort -rn \
+      | awk '{printf "        %6d  %s\n", $1, $2}'
+    grep -oE -- '--- SIGSEGV \{[^}]*\}' "$sdir/all.txt" >"$sdir/segv.txt" || true
+    if [ -s "$sdir/segv.txt" ]; then
+      echo "      SIGSEGV details (si_code, si_addr; distinct, first 8):"
+      sed -E 's/.*si_code=([A-Z_0-9]+).*/\1 &/; s/^([A-Z_0-9]+) .*si_addr=(0x[0-9a-f]+).*/\1 \2/; s/^([A-Z_0-9]+) ---.*/\1 -/' "$sdir/segv.txt" \
+        | sort | uniq -c | sort -rn | awk 'NR<=8 {printf "        %6d  %s %s\n", $1, $2, $3}'
+      # THE FAULTING THREAD'S OWN SEQUENCE, per dying iteration. strace's
+      # trace=signal also logs rt_sigreturn, so two deliveries to one LWP
+      # with no rt_sigreturn between them mean the second fault happened
+      # inside the first handler -- on whatever stack that handler was on.
+      for f in "$sdir"/it-*.status; do
+        [ -f "$f" ] || continue
+        t="${f%.status}.txt"; it="${t##*/it-}"; it="${it%.txt}"
+        lwp="$(grep -m1 -E -- '--- SIGSEGV' "$t" | awk '{print $1}')"
+        [ -n "$lwp" ] || continue
+        echo "      iteration $it died (status $(cat "$f")); LWP $lwp's last signal-related lines, and the exit:"
+        grep -E "^$lwp " "$t" | grep -v '+++' | tail -14 | sed 's/^/        /'
+        grep -E -- '\+\+\+ killed by|overflowed' "$t" | tail -2 | sed 's/^/        /'
+      done
     else
       echo "      no SIGSEGV was delivered to any thread in $strace_iterations strace'd iterations"
     fi
@@ -302,11 +356,12 @@ for arm in "${arms[@]}"; do
     tally["$word"]=$(( ${tally["$word"]:-0} + 1 ))
     if [ "$word" = clean ]; then printf '.'; else
       bad=$((bad + 1)); printf 'X'
-      if [ "$saved" -lt 3 ] && [ -n "$err" ]; then
-        saved=$((saved + 1)); printf '%s' "$err" >"$work/death-$saved.txt"
+      if [ "$saved_arm" -lt 2 ] && [ -n "$err" ]; then
+        saved=$((saved + 1)); saved_arm=$((saved_arm + 1))
+        printf '%s' "$err" >"$work/death-$saved.txt"; echo "$arm" >"$work/death-$saved.arm"
       fi
       if [ -z "$dump" ]; then dump="$(ls -t "$work/dumps"/dump.* 2>/dev/null | head -1 || true)"; fi
-      if [ -n "$core_arm" ] && [ "$arm" = "$core_arm" ] && ls "$core_dir"/core.* >/dev/null 2>&1; then ulimit -c 0 2>/dev/null || true; fi
+      if [ -n "$core_arm" ] && [ "$arm" = "$core_arm" ] && ls "$core_dir"/core.* >/dev/null 2>&1; then ulimit -S -c 0 2>/dev/null || true; fi
     fi
   done
   b=""; for k in "${!tally[@]}"; do [ "$k" = clean ] && continue; b="$b $k=${tally[$k]}"; done
@@ -328,7 +383,7 @@ for arm in "${arms[@]}"; do
     kl=$(( kl_after - kl_before ))
     if [ "$kl" -gt 0 ]; then
       echo "      kernel: $kl 'overflowed sigaltstack' line(s) during this arm's $bad death(s)$( [ "$arm" = load ] && echo '; first:' )"
-      [ "$arm" = load ] && (dmesg 2>/dev/null || sudo -n dmesg 2>/dev/null) | grep -m1 'overflowed sigaltstack' | sed 's/^/        /'
+      if [ "$arm" = load ]; then (dmesg 2>/dev/null || sudo -n dmesg 2>/dev/null) >"$work/dmesg.txt" || true; grep -m1 'overflowed sigaltstack' "$work/dmesg.txt" | sed 's/^/        /'; fi
     else
       echo "      kernel: no 'overflowed sigaltstack' during this arm's $bad death(s) (silent push-fault, a genuine fault, or dmesg unreadable)"
     fi
@@ -350,8 +405,8 @@ done
 
 if [ "$saved" -gt 0 ]; then
   echo
-  echo "=== what the dying process said on stderr (first $saved, verbatim) ==="
-  for k in $(seq 1 "$saved"); do echo "--- death $k ---"; sed 's/^/  /' "$work/death-$k.txt"; done
+  echo "=== what the dying process said on stderr (first two per arm, verbatim) ==="
+  for k in $(seq 1 "$saved"); do echo "--- death $k, arm $(cat "$work/death-$k.arm") ---"; sed 's/^/  /' "$work/death-$k.txt"; done
 fi
 
 echo
@@ -370,14 +425,10 @@ else
   # any frame in this defect can carry a name.
   timeout 900 dotnet-dump analyze "$dump" -c "setsymbolserver -ms" -c "threads" -c "clrstack -f" -c "exit" \
     >"$work/analysis.txt" 2>&1 || echo "  (dotnet-dump did not complete cleanly; what it wrote follows)"
-  if [ -n "$out" ]; then cp "$work/analysis.txt" "$out/dump-analysis.txt" 2>/dev/null || true; fi
   set +o pipefail
   # The faulting thread's stack, trimmed; the whole thing is in the artefact.
   sed -n '/^OS Thread Id/,$p' "$work/analysis.txt" | grep -vE '^\s*$' | head -50 | sed 's/^/  /'
   set -o pipefail
-fi
-if [ -n "$out" ]; then
-  for k in $(seq 1 "$saved"); do cp "$work/death-$k.txt" "$out/" 2>/dev/null || true; done
 fi
 
 echo

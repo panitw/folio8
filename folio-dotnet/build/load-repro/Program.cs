@@ -9,6 +9,19 @@ using System.Threading;
 //
 //   repro <libfolio8_native.so> [--load|--noload] [--pool N] [--hold MS]
 //         [--gc|--nogc] [--fix none|restore-go|restore-relocated|restore-all|noonstack]
+//         [--workers before|after] [--delay MS]
+//
+// --workers AND --delay ARE THE WINDOW. The fix is applied AFTER the load
+// returns (and after --sync, when asked), and the workers are running from
+// before the load. Between Go's constructor adding SA_ONSTACK to the CLR's
+// activation handler and this process putting the flag back, every GC
+// activation on a worker runs on the 12 KiB usable altstack exactly as it
+// does with no fix at all. `--workers after` starts the pool only once the
+// fix is in, so nothing can be activated inside that window; `--delay MS`
+// holds the process in the same forced-collection loop as --hold for MS
+// BEFORE applying the fix, so the window is MS long instead of however long
+// dlopen takes. If the residual is the window: workers=after -> 0, and
+// delay=HOLD -> the baseline rate.
 //
 // THE WINDOW. Every core on record is a `.NET TP Worker` interrupted BY A
 // SIGNAL while executing JIT'd managed code, with the CLR's own handler then
@@ -144,6 +157,16 @@ internal static class Program
         }
     }
 
+    private static void Churn(int ms, bool gc)
+    {
+        var sw = Stopwatch.StartNew();
+        while (sw.ElapsedMilliseconds < ms)
+        {
+            if (gc) GC.Collect(2, GCCollectionMode.Forced, blocking: true);
+            else Thread.Sleep(1);
+        }
+    }
+
     private static string ApplyFix(string fix, byte[][] before)
     {
         var touched = new List<string>();
@@ -181,9 +204,9 @@ internal static class Program
 
     private static int Main(string[] argv)
     {
-        string so = null, fix = "none", sync = "none";
+        string so = null, fix = "none", sync = "none", workers = "before";
         bool load = true, gc = true;
-        int pool = 8, holdMs = 400;
+        int pool = 8, holdMs = 400, delayMs = 0;
 
         for (int i = 0; i < argv.Length; i++)
         {
@@ -197,6 +220,8 @@ internal static class Program
                 case "--hold":   holdMs = int.Parse(argv[++i]); break;
                 case "--fix":    fix = argv[++i]; break;
                 case "--sync":   sync = argv[++i]; break;
+                case "--workers": workers = argv[++i]; break;
+                case "--delay":  delayMs = int.Parse(argv[++i]); break;
                 default:         so = argv[i]; break;
             }
         }
@@ -215,6 +240,11 @@ internal static class Program
             case "none": case "call": case "poll": break;
             default: Console.Error.WriteLine("unknown --sync " + sync); return 2;
         }
+        switch (workers)
+        {
+            case "before": case "after": break;
+            default: Console.Error.WriteLine("unknown --workers " + workers); return 2;
+        }
 
         ThreadPool.SetMinThreads(Math.Max(pool, 1), 1);
 
@@ -222,24 +252,28 @@ internal static class Program
         // until told to stop -- which they never are.
         var stop = new ManualResetEventSlim(false);
         var started = new CountdownEvent(Math.Max(pool, 1));
-        for (int i = 0; i < pool; i++)
+        Action startWorkers = () =>
         {
-            ThreadPool.QueueUserWorkItem(_ =>
+            for (int i = 0; i < pool; i++)
             {
-                started.Signal();
-                var rnd = new Random(Environment.CurrentManagedThreadId);
-                while (!stop.IsSet)
+                ThreadPool.QueueUserWorkItem(_ =>
                 {
-                    var a = new byte[rnd.Next(16, 4096)];
-                    var o = new object[rnd.Next(1, 64)];
-                    for (int k = 0; k < o.Length; k++) o[k] = new int[4];
-                    s_sink += a.Length + o.Length;
-                    if ((s_sink & 0xff) == 0) Thread.Yield();
-                }
-            });
-        }
-        if (pool == 0) started.Signal();
-        started.Wait(2000);
+                    started.Signal();
+                    var rnd = new Random(Environment.CurrentManagedThreadId);
+                    while (!stop.IsSet)
+                    {
+                        var a = new byte[rnd.Next(16, 4096)];
+                        var o = new object[rnd.Next(1, 64)];
+                        for (int k = 0; k < o.Length; k++) o[k] = new int[4];
+                        s_sink += a.Length + o.Length;
+                        if ((s_sink & 0xff) == 0) Thread.Yield();
+                    }
+                });
+            }
+            if (pool == 0) started.Signal();
+            started.Wait(2000);
+        };
+        if (workers == "before") startWorkers();
 
         // Every handler's struct before the load, so a fix can put back the
         // CLR's own rather than a guess at it.
@@ -255,18 +289,19 @@ internal static class Program
             synced = Sync(sync, h);
         }
 
-        string touched = fix == "none" ? "-" : ApplyFix(fix, before);
-        Console.Error.WriteLine("[repro] load=" + (load ? "yes" : "no") + " gc=" + (gc ? "yes" : "no")
-                                + " sync=" + synced + " fix=" + fix + " touched=" + touched + StackNumbers());
+        // The window, made as long as asked: the same churn as the hold,
+        // with the load's change to the handlers still in force.
+        if (delayMs > 0) Churn(delayMs, gc);
 
-        // The window: forced collections for the whole hold, each one
+        string touched = fix == "none" ? "-" : ApplyFix(fix, before);
+        if (workers == "after") startWorkers();
+        Console.Error.WriteLine("[repro] load=" + (load ? "yes" : "no") + " gc=" + (gc ? "yes" : "no")
+                                + " sync=" + synced + " fix=" + fix + " touched=" + touched
+                                + " workers=" + workers + " delay=" + delayMs + StackNumbers());
+
+        // The hold: forced collections for the whole of it, each one
         // suspending every worker in managed code by signal.
-        var sw = Stopwatch.StartNew();
-        while (sw.ElapsedMilliseconds < holdMs)
-        {
-            if (gc) GC.Collect(2, GCCollectionMode.Forced, blocking: true);
-            else Thread.Sleep(1);
-        }
+        Churn(holdMs, gc);
 
         // Leave with the workers still running: every death under vstest
         // printed `Passed!` first, so the process dies on the way out.
