@@ -8163,6 +8163,17 @@ landing, which is why the soak's named-signature model missed it. And the 2.4 s 
 looked like a hang was the altstack read timing out on a saturated pool (fixed); the run was slow, not
 stuck.
 
+**Run 35999753222, a replicate on a different CPU (AMD EPYC 9V74, AVX2 flags), 250 per arm:** baseline
+**170**, control **0**, `restore-relocated` **4**, `+sync=call` **10**, `restore-rtmin+sync=call` **4**,
+`+sync=poll` **2**; 22 kernel lines under the baseline's 170 deaths. The same shape as run 35993471395
+(206 / 0 / 3 / 10 / 3 / 4). Two things are therefore reproducible across hosts: **the residual with the fix
+is ~1–2%**, and **the one arm that makes a call into the engine on the main thread before restoring is
+consistently ~2.5× worse (10 and 10) than the arms that never call (2–4)**. A call attaches a Go M to
+the calling thread (`needm`), which under cgo *adopts* that thread's existing alternate stack — the
+CLR's 16 KiB — for Go's `gsignal`, and `dropm` leaves that adoption behind; the calling thread then
+runs the collection loop. That is a lead, not a finding; the residual run's `restore-all` arm and a core
+from a residual death are what test it.
+
 **Not yet tried, in order of cost:** *(the `restore-*` arms are struck — run and null)* a symbolised
 core (`dotnet-symbol` for `libcoreclr.so.dbg`, `dotnet-dump analyze … clrstack -all` for the managed
 frame the worker was interrupted in), which names the handler in one shot and is in the trace now;
