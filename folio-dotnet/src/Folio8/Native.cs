@@ -43,7 +43,9 @@ internal static class Native
     // before any static member of this type is used, extern methods
     // included, and a class with one is not beforefieldinit, so the promise
     // is not relaxed. The restore stays in CheckAbi, after the first export
-    // has returned.
+    // has returned, as the FALLBACK: since dispositions_linux.c the engine
+    // puts the flags back itself, inside its own load, and what this class
+    // restores on a current native is nothing. See SignalDispositions.
     static Native()
     {
         SignalDispositions.TakeOnce();
@@ -105,6 +107,9 @@ internal static class Native
 
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
     internal static extern int folio8_version(out ulong token, out IntPtr result, out int length);
+
+    [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
+    internal static extern int folio8_signal_dispositions(out ulong token, out IntPtr result, out int length);
 
     [DllImport(Library, CallingConvention = CallingConvention.Cdecl)]
     internal static extern int folio8_parse(byte[] template, int templateLength, out ulong token, out IntPtr result, out int length);
@@ -202,16 +207,17 @@ internal static class Native
                     ". The managed and native halves of folio8 are from different builds; replace the one that is out of date.");
             }
 
-            // AFTER THE FIRST EXPORT HAS RETURNED — NOT AFTER THE LOAD. A
-            // c-shared Go runtime initialises on its own thread and dlopen
-            // returns before its initsig has run, so a restore placed right
-            // after Ensure() can be undone moments later. folio8_abi_version
-            // blocked until the runtime was up; Go's edits are all in place
-            // now, and this puts the CLR's own dispositions back for the
-            // handlers Go re-flagged without replacing (SIGRTMIN among them,
-            // which is DW-398). The matching snapshot was taken inside
-            // NativeLibraryLoader.Ensure(), immediately before the dlopen,
-            // whoever reached it first. See SignalDispositions.
+            // THE FALLBACK RESTORE, after the first export has returned.
+            // Go's initsig runs INSIDE dlopen (libpreinit, from the
+            // library's own constructor), so by the time any export has
+            // returned every edit Go makes is in place, and this puts the
+            // CLR's own dispositions back for the handlers Go re-flagged
+            // without replacing (SIGRTMIN among them, which is DW-398).
+            // On a current native it finds nothing to do: the engine's own
+            // constructor restored them microseconds after Go's, closing the
+            // window this late restore left open (run 36006849443). It stays
+            // for an older native and as the assertion's second witness. The
+            // snapshot was taken in the static constructor, before any load.
             SignalDispositions.RestoreOnce();
             _abiChecked = true;
         }
@@ -225,6 +231,20 @@ internal static class Native
     internal static string DispositionsRestored
     {
         get { return SignalDispositions.Restored; }
+    }
+
+    /// <summary>
+    /// The engine's own account of what it did to the process's signal
+    /// dispositions at load — <c>folio8_signal_dispositions</c>'s payload,
+    /// one line of <c>key=value</c> pairs on Linux (its keys are listed in
+    /// <c>dispositions_linux.c</c>) and a sentence saying "nothing" elsewhere.
+    /// Diagnostics and tests only; nothing in the binding branches on it.
+    /// </summary>
+    internal static string SignalDispositionsReport()
+    {
+        Frame frame = Invoke((out ulong token, out IntPtr result, out int length) =>
+            folio8_signal_dispositions(out token, out result, out length));
+        return System.Text.Encoding.UTF8.GetString(frame.Payload);
     }
 
     /// <summary>

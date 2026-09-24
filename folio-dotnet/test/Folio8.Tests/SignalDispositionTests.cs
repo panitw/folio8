@@ -110,5 +110,32 @@ namespace Folio8Tests
             int segv = SignalDispositions.FlagsOf(SigSegv);
             Assert.True((segv & SaOnStack) != 0, "SIGSEGV lost SA_ONSTACK: the restore touched a handler the load replaced, which it must never do.");
         }
+
+        /// <summary>
+        /// The window is closed where it opens. The engine's own constructor,
+        /// linked to run right after Go's, is what put the flags back — not
+        /// this binding's late restore, which leaves every GC activation
+        /// between the load and the first call on the small stack. The
+        /// engine says which in its report, and that word is the assertion.
+        /// </summary>
+        [Fact]
+        public void OnLinuxTheEngineItselfRestoredTheDispositionsInItsConstructor()
+        {
+            string report = Native.SignalDispositionsReport();
+            Assert.False(string.IsNullOrEmpty(report));
+            if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            {
+                Assert.StartsWith("not-linux", report);
+                return;
+            }
+            Assert.Contains(" snapshot=yes ", report);
+            Assert.Contains(" constructor-ran-before-go=no ", report);
+            Assert.True(report.Contains(" restored-by=constructor "),
+                "the engine did not restore the dispositions in its constructor (" + report + "): the .init_array order verify-linux-natives.sh checks did not hold, " +
+                "and every GC activation between the load and the first call runs on the 16 KiB alternate stack, which is DW-398's residual.");
+            Assert.Contains("SIGRTMIN", report);
+            // And so this binding's own restore had nothing left to do.
+            Assert.Equal(string.Empty, Native.DispositionsRestored);
+        }
     }
 }

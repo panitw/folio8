@@ -30,6 +30,8 @@ int32_t folio8_abi_version(void);
 
 int32_t folio8_version(uint64_t *token, void **result, int32_t *len);
 
+int32_t folio8_signal_dispositions(uint64_t *token, void **result, int32_t *len);
+
 int32_t folio8_parse(const void *tpl, int32_t tpl_len,
                      uint64_t *token, void **result, int32_t *len);
 
@@ -137,6 +139,7 @@ zero — so one reader serves every function:
 | Call | diagnostics | references | payload |
 | --- | --- | --- | --- |
 | `folio8_version` | empty | empty | the version string |
+| `folio8_signal_dispositions` | empty | empty | one line on what the load did to signal dispositions (below) |
 | `folio8_parse` | empty | empty | canonical template bytes |
 | `folio8_render` | Go's warnings, in Go's order | empty | the PDF |
 | `folio8_validate` | Go's diagnostic slice, verbatim | empty | empty |
@@ -223,20 +226,37 @@ nothing but the load and a `GC.Collect` loop reproduces it at 55 % on an
 AVX2 host and 98 % on an AVX-512 one; the identical process without the
 load, 0 %.
 
-**If you host this library from a runtime that owns signal handlers, put
-your dispositions back after Go's runtime has come up.** That is the fix
-folio-dotnet ships: snapshot every `sigaction` before the load; after the
-first exported call has *returned* — every export blocks until the Go
-runtime is initialised, and `dlopen` returns before that, because a
-`c-shared` runtime initialises on a thread of its own — write back the
-pre-load struct for every signal whose handler address the load left alone
-and whose flags it changed. Handlers Go installed are Go's and must stay.
-Under cgo Go's own threads are ordinary pthreads with ordinary stacks, so a
-handler of yours reaching one of them without `SA_ONSTACK` has room. On
-Linux amd64 that change took the reproduction above from 83 deaths in 150
-to 1. Do it once, after the first call, and assert it in a test that reads
-`sigaction` back — a run of clean calls is not evidence, and was how this
-defect was first "cleared".
+**On Linux this library puts your dispositions back itself, inside its own
+load.** Go's `initsig` runs *inside* `dlopen`, from the library's
+constructor, on the loading thread. `dispositions_linux.c` adds two
+constructors around it: one at `.init_array` priority 101, which sorts
+before Go's entry and records every catchable signal's `struct sigaction`;
+one unprioritised, which the Go linker places after Go's (`go.o` precedes
+the host objects in the external link) and which writes the recorded struct
+back for every signal whose handler address Go left alone and whose flags
+Go changed. Handlers Go installed are Go's and stay. The window between
+Go's edit and the restore is microseconds, on one thread, under the
+loader's lock. Under cgo Go's own threads are ordinary pthreads with
+ordinary stacks, so a handler of yours reaching one of them without
+`SA_ONSTACK` has room. `folio8_signal_dispositions` reports what happened
+as one line of `key=value` pairs — `restored-by=constructor` and the
+signal names are the two a host's test should read — and
+`folio-dotnet/build/verify-linux-natives.sh` refuses a shipped file whose
+`.init_array` order is not snapshot, Go, restore.
+
+**Why a restore made by the host, after the load, is not enough — and why
+folio-dotnet still makes one.** Before the constructors, folio-dotnet did
+exactly that: snapshot before the load, restore after the first exported
+call returned. It took the reproduction above from 83 deaths in 150 to 1,
+and the remaining one to four in a hundred were the window: between Go's
+edit inside `dlopen` and a restore that could only run after `dlopen` had
+returned, every GC activation on every other thread ran on the small stack
+as before, and the longer the host waited (an ABI check that blocks on the
+Go runtime coming up, say) the wider it was. folio-dotnet keeps its own
+restore as a fallback for a library older than this paragraph, and asserts
+both in a test that reads `sigaction` back and reads this library's report —
+a run of clean calls is not evidence, and was how this defect was first
+"cleared".
 
 **A large alternate stack on the threads that cross is a separate, smaller
 matter.** A fault taken *inside* the engine on one of your threads runs

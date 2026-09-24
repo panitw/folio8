@@ -93,7 +93,63 @@ check() {
     return 1
   fi
 
-  printf '%-13s %s  glibc floor %s (ceiling %s)\n' "$rid" "$want" "$bare" "$ceiling"
+  # THE RESTORE MUST FOLLOW GO'S ENTRY IN .init_array. dispositions_linux.c
+  # closes DW-398's window by putting the host's signal flags back in a
+  # constructor that runs right after Go's libpreinit; that only holds if
+  # the linker placed it after _rt0_<arch>_linux_lib, which cmd/link's
+  # object order guarantees and nothing else does. So the order is read
+  # off the file: the RELATIVE relocations that land inside .init_array,
+  # in offset order, each named through nm. Both entries must be present
+  # -- a native without them is one built before the fix.
+  local order
+  if ! order="$(init_array_order "$path")"; then
+    echo "verify-linux-natives: $path: could not read .init_array (see above)" >&2
+    return 1
+  fi
+  local snap_at rt0_at restore_at
+  snap_at="$(printf '%s\n' "$order" | grep -n -m1 '^folio8_dispositions_snapshot$' | cut -d: -f1 || true)"
+  rt0_at="$(printf '%s\n' "$order" | grep -n -m1 '^_rt0_.*_linux_lib$' | cut -d: -f1 || true)"
+  restore_at="$(printf '%s\n' "$order" | grep -n -m1 '^folio8_dispositions_restore_ctor$' | cut -d: -f1 || true)"
+  if [ -z "$snap_at" ] || [ -z "$rt0_at" ] || [ -z "$restore_at" ]; then
+    echo "verify-linux-natives: $path: .init_array lacks the disposition constructors or Go's entry: $(printf '%s' "$order" | tr '\n' ' ')" >&2
+    echo "  A native built before folio-go/cshared/cmd/folio8/dispositions_linux.c reopens DW-398's window. Rebuild with build-native.sh $rid." >&2
+    return 1
+  fi
+  if [ "$snap_at" -ge "$rt0_at" ] || [ "$restore_at" -le "$rt0_at" ]; then
+    echo "verify-linux-natives: $path: .init_array order is $(printf '%s' "$order" | tr '\n' ' ') -- the snapshot must precede and the restore must follow Go's entry." >&2
+    echo "  The engine's restore would run before Go's initsig and restore nothing; the host would be back on the managed fallback with the window open." >&2
+    return 1
+  fi
+
+  printf '%-13s %s  glibc floor %s (ceiling %s)  init_array: %s\n' "$rid" "$want" "$bare" "$ceiling" "$(printf '%s' "$order" | tr '\n' ' ')"
+}
+
+# init_array_order prints the symbol behind each .init_array entry, one per
+# line, in the order the loader will run them. readelf -SW for the section's
+# address and size; readelf -rW for the RELATIVE relocations whose offsets
+# fall inside it (their addends are the entries; the linker fills the same
+# values in place, but the relocation is the authoritative one); nm to name
+# each addend. No gawk: mawk has no strtonum, so hex goes through bash.
+init_array_order() {
+  local path="$1"
+  local addr size
+  read -r addr size < <(readelf -SW "$path" | awk '{ for (i = 1; i <= NF; i++) if ($i == ".init_array") { print $(i+2), $(i+4); exit } }')
+  if [ -z "${addr:-}" ] || [ -z "${size:-}" ]; then
+    echo "verify-linux-natives: $path has no .init_array section" >&2
+    return 1
+  fi
+  local lo=$((16#$addr)) hi=$((16#$addr + 16#$size))
+  local symbols
+  symbols="$(nm "$path" 2>/dev/null | awk 'NF == 3 { print $1, $3 }')"
+  local off type addend value found
+  while read -r off type addend; do
+    case "$type" in *RELATIVE*) ;; *) continue ;; esac
+    value=$((16#$off))
+    [ "$value" -ge "$lo" ] && [ "$value" -lt "$hi" ] || continue
+    # nm prints sixteen lowercase hex digits; readelf's addend has no leading zeros.
+    found="$(grep -m1 -E "^0*${addend} " <<<"$symbols" | awk '{ print $2 }' || true)"
+    printf '%s\n' "${found:-0x$addend}"
+  done < <(readelf -rW "$path" | awk 'NF >= 4 && $3 ~ /RELATIVE/ { print $1, $3, $NF }' | sort)
 }
 
 failed=0

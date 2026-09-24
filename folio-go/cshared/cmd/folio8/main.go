@@ -403,6 +403,22 @@ func folio8_version(outToken *C.uint64_t, outResult *unsafe.Pointer, outLen *C.i
 	})
 }
 
+// folio8_signal_dispositions reports what this library did to the host's
+// signal dispositions when it loaded — see dispositions_linux.c. On Linux
+// the payload is one line of `key=value` pairs whose keys are listed there
+// (`restored-by=constructor` is the one a host's test wants to see);
+// elsewhere it says the engine did nothing. Added after ABI version 2
+// without a bump: a caller built against 2 that never calls it is
+// unaffected, and one that does fails with the platform's missing-entry
+// error on a library too old to have it, which is a refusal to continue.
+//
+//export folio8_signal_dispositions
+func folio8_signal_dispositions(outToken *C.uint64_t, outResult *unsafe.Pointer, outLen *C.int32_t) C.int32_t {
+	return call(outToken, outResult, outLen, func() (int32, []byte) {
+		return okReply(nil, nil, []byte(signalDispositionsReport()))
+	})
+}
+
 // folio8_parse parses template bytes and writes the CANONICAL template bytes
 // as the payload, mirroring Go's ParseTemplate followed by SerializeTemplate.
 // No handle survives the call: the caller keeps the canonical bytes and hands

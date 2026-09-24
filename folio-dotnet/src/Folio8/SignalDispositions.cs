@@ -38,12 +38,21 @@ using System.Runtime.InteropServices;
 /// handler that reaches one of them without <c>SA_ONSTACK</c> has room.
 /// </para>
 /// <para>
-/// <b>The order is the whole point and it is not "after the load".</b> A
-/// c-shared Go runtime initialises on a thread of its own; <c>dlopen</c>
-/// returns before <c>initsig</c> has run, and a restore applied then can
-/// be undone moments later. Every export blocks until the runtime is up,
-/// so the restore runs after the first export has <i>returned</i> — which
-/// in this binding is the ABI check, the first crossing there is.
+/// <b>This class is the fallback; the engine closes the window itself.</b>
+/// Go's <c>initsig</c> runs <i>inside</i> <c>dlopen</c>, from the
+/// library's own constructor, on the loading thread — not later on the
+/// runtime's thread, as an earlier version of this remark claimed. So
+/// between that edit and any restore the host makes afterwards, every GC
+/// activation on every other thread runs on the small stack exactly as
+/// before the fix, and that window killed one to four processes in a
+/// hundred under GC pressure (DW-398, run 36006849443). The engine's
+/// <c>dispositions_linux.c</c> now puts the flags back in a constructor
+/// of its own that the linker places right after Go's, so on a current
+/// native <see cref="RestoreOnce"/> finds nothing to do. It runs anyway,
+/// after the first export has returned — by then every edit is in place —
+/// for an older native, and so the assertion has two witnesses:
+/// <c>sigaction</c> read back, and the engine's own report through
+/// <c>folio8_signal_dispositions</c>.
 /// </para>
 /// <para>
 /// Linux only, by the kernel's name. The struct layout below is glibc's

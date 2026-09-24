@@ -8233,6 +8233,31 @@ both runs uploaded nothing because the copy to `--out` was on the happy path (no
 residual arms' stderr had never been kept (the first three deaths of a *run*, all baseline) — now two
 per arm.
 
+**The window is closed where it opens — `dispositions_linux.c` (commit after 12778f2).** Read from
+the Go 1.26 source, not assumed: `_rt0_amd64_lib` calls `runtime·libpreinit` *before* creating the
+runtime's thread, `libpreinit` is `initsig(true)`, and for a c-shared build that is the only
+`initsig` that installs anything — so every edit Go makes to the host's handlers is made inside
+`dlopen`, on the loading thread. (`Native.cs` and `SignalDispositions.cs` said the opposite —
+"`dlopen` returns before `initsig` has run" — and that wrong premise is why the restore was placed
+after the first export *returned*, at the far end of the window; both remarks are corrected.) The
+engine now carries two constructors: one at `.init_array` priority 101, which sorts before every
+unprioritised entry and records every catchable signal's `struct sigaction`; one unprioritised,
+which `cmd/link`'s `hostlink` places after Go's (`argv = append(argv, godotopath)` then the host
+objects) and which writes the recorded struct back for every handler Go re-flagged without
+replacing. Its restore checks at run time that Go's `SIGSEGV` handler is already in (else it ran
+early, says so, and does nothing); the package's Go `init()` repeats the call — `cgocallbackg1`
+waits on `main_init_done`, so that lands before any export can return; and the binding's own restore
+stays as the third fallback. `folio8_signal_dispositions` (a new export, no ABI bump: additive)
+reports `restored-by=constructor|init|none` and the names; `verify-linux-natives.sh` now reads the
+`.init_array` order off each shipped file through `readelf -r` and `nm` and refuses one that is not
+snapshot, Go, restore — verified in a Debian container against both natives built in the pinned
+image: `folio8_dispositions_snapshot frame_dummy _rt0_amd64_linux_lib folio8_dispositions_restore_ctor`,
+the same on arm64. **Pre-registered for run R2** (the reproducer's plain `load` arm, no `--fix`, on
+the new native): the baseline goes from tens of deaths in 250 to **0 or 1**, the control stays 0, and
+`load:fix=restore-relocated` reports `touched=-` because there is nothing left to restore. If the
+`load` arm stays in double digits, the constructor did not run where the file says it will, and the
+report's `restored-by` says where it did.
+
 **Not yet tried, in order of cost:** *(the `restore-*` arms are struck — run and null)* a symbolised
 core (`dotnet-symbol` for `libcoreclr.so.dbg`, `dotnet-dump analyze … clrstack -all` for the managed
 frame the worker was interrupted in), which names the handler in one shot and is in the trace now;
