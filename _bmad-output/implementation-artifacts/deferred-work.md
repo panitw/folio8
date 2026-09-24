@@ -8174,6 +8174,26 @@ CLR's 16 KiB — for Go's `gsignal`, and `dropm` leaves that adoption behind; th
 runs the collection loop. That is a lead, not a finding; the residual run's `restore-all` arm and a core
 from a residual death are what test it.
 
+**Run 36000448980 — THE RESIDUAL IS IN GO'S REPLACED HANDLERS, ON CLR THREADS.** AMD EPYC 9V74, 250 per
+arm: baseline **169** (21 kernel lines; the first names the **`.NET Finalizer`** thread), control **0**,
+`restore-relocated` **3**, **`restore-all` 0**, `restore-relocated` + `GODEBUG=asyncpreemptoff=1` **3**,
+`restore-relocated` + `sync=call` **8**. Putting Go's own five handlers (`SIGSEGV/BUS/FPE/PIPE/URG`) back
+to the CLR's originals, on top of the relocated ones, removes the residual entirely; turning off Go's
+`SIGURG` preemption does nothing, so it is not that; and **no residual death carries `overflowed
+sigaltstack`** — they are silent faults. So: a signal Go handles reaches a CLR thread, Go's handler runs
+first on the CLR's 16 KiB altstack and forwards to the CLR's original (`sigfwdgo`), and ~1–2% of the time
+the process dies where the CLR handling the same signal directly survives. Which signal and which
+frames is what the residual-core run (36002483670, `--core-arm`) is for. The `sync=call` excess is now
+three for three (10, 10, 8): a call attaches a Go M to the calling thread and adopts its altstack, and
+that thread then runs the collections.
+
+**`restore-all` is a diagnostic, not a fix.** Go's `SIGSEGV`/`SIGBUS`/`SIGFPE` handlers are how a Go
+fault becomes a recoverable panic, and its `SIGURG` handler is async preemption; taking them away
+changes the engine's failure semantics. The shippable answer waits on the core: if the death is Go's
+own frame running out of the CLR's altstack, the options are different from a CLR handler that cannot
+run nested. Under vstest the fixed binding is still 0 / 150 and 0 / 100; the residual has only shown
+under forced collections.
+
 **Not yet tried, in order of cost:** *(the `restore-*` arms are struck — run and null)* a symbolised
 core (`dotnet-symbol` for `libcoreclr.so.dbg`, `dotnet-dump analyze … clrstack -all` for the managed
 frame the worker was interrupted in), which names the handler in one shot and is in the trace now;
