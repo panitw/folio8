@@ -50,7 +50,7 @@ on:
       job:
         description: "Which leg to run"
         type: choice
-        options: [soak, load-exposure, crash-trace, altstack-experiment, both-legs]
+        options: [soak, load-exposure, crash-trace, altstack-experiment, load-repro, both-legs]
         default: soak
 
 permissions:
@@ -373,3 +373,39 @@ jobs:
         run: ./folio-dotnet/build/verify-linux-natives.sh
       - name: three arms, one variable each
         run: ./folio-dotnet/build/altstack-experiment/run.sh -n "${{ inputs.iterations }}"
+
+  # ===================================================================
+  # DW-398 WITHOUT VSTEST.
+  # Every death on record happened inside `dotnet test`, which brings its own
+  # threads and has never been removed as a variable. This runs the same
+  # exposure in a bare console process, against a control that skips only the
+  # dlopen. Either DW-398 reproduces without vstest -- in which case every
+  # later experiment gets ~100x cheaper -- or it does not, and vstest is part
+  # of the trigger, which is a finding and changes what the recorded rates
+  # mean.
+  # ===================================================================
+  load-repro:
+    if: ${{ inputs.job == 'load-repro' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        rid: ${{ fromJSON(inputs.rid == 'both' && '["linux-x64","linux-arm64"]' || format('["{0}"]', inputs.rid)) }}
+    name: load-repro (${{ matrix.rid }})
+    runs-on: ${{ matrix.rid == 'linux-arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: ${{ matrix.rid == 'linux-arm64' && 'linux/amd64' || 'linux/arm64' }}
+      - name: build both Linux natives (pinned image)
+        run: ./folio-dotnet/build/build-native.sh linux-x64 linux-arm64
+      - name: assert both natives are the right machine and keep the glibc floor
+        run: ./folio-dotnet/build/verify-linux-natives.sh
+      - name: the classifier's own judgement, before it is trusted with a rate
+        run: ./folio-dotnet/build/load-repro/run.sh --self-check
+      - name: load against a control that differs only by the dlopen
+        run: ./folio-dotnet/build/load-repro/run.sh -n "${{ inputs.iterations }}"
