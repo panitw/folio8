@@ -59,7 +59,7 @@
   <PropertyGroup>
     <IsPackable>true</IsPackable>
     <PackageId>folio8</PackageId>
-    <Version>1.1.0</Version>
+    <Version>1.2.0</Version>
     <Authors>Panit Wechasil</Authors>
     <Company>Panit Wechasil</Company>
     <Product>folio8</Product>
@@ -90,7 +90,7 @@
       recorded into folio-js/test/data/go-parity.json, so the three cannot
       drift apart silently.
     -->
-    <FolioEngineVersion>1.1.0</FolioEngineVersion>
+    <FolioEngineVersion>1.2.0</FolioEngineVersion>
     <!-- No symbol or source-link package: a native-backed binding's symbols
          say nothing useful about the half that does the work. -->
     <IncludeSymbols>false</IncludeSymbols>

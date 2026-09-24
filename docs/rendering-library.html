@@ -351,11 +351,11 @@
 <!-- body -->
   <section id="install">
     <h2>Install</h2>
-    <p>Install the released module, <code>folio-go/v1.1.0</code>. From your application's directory:</p>
+    <p>Install the released module, <code>folio-go/v1.2.0</code>. From your application's directory:</p>
     <div class="sample"><pre data-lang="shell"><span class="tk-fn">go</span> mod init example.com/folio8-demo
-<span class="tk-fn">go</span> get github.com/panitw/folio8/folio-go@v1.1.0
+<span class="tk-fn">go</span> get github.com/panitw/folio8/folio-go@v1.2.0
 <span class="tk-fn">go</span> mod tidy</pre></div>
-    <p><code>go get</code> records <code>github.com/panitw/folio8/folio-go v1.1.0</code> in your <code>go.mod</code>. The public API is frozen at <code>v1.0.0</code> under semver: later <code>v1</code> releases make no breaking API change, and a breaking change would need a new <code>/v2</code> import path. If you previously installed a pseudo-version from <code>@main</code>, read the GitHub release notes for <code>folio-go/v1.0.0</code>, which list what changed.</p>
+    <p><code>go get</code> records <code>github.com/panitw/folio8/folio-go v1.2.0</code> in your <code>go.mod</code>. The public API is frozen at <code>v1.0.0</code> under semver: later <code>v1</code> releases make no breaking API change, and a breaking change would need a new <code>/v2</code> import path. If you previously installed a pseudo-version from <code>@main</code>, read the GitHub release notes for <code>folio-go/v1.0.0</code>, which list what changed.</p>
     <p>Import the module root as <code>folio8</code>. The shipped fonts are a separate, opt-in package:</p>
     <div class="sample"><pre data-lang="go"><span class="tk-kw">import</span> (
 	folio8 <span class="tk-str">"github.com/panitw/folio8/folio-go"</span>
@@ -996,7 +996,7 @@ for _, d := range result.Diagnostics {
         <tr><td><code>github.com/panitw/folio8/folio-go/fontdir</code></td><td><code>fontdir</code></td><td>Builds a <code>folio8.FontSet</code> from a directory of font files on disk. Opt-in, and independent of <code>fonts</code>: importing it adds no font bytes to your binary.</td></tr>
       </tbody>
     </table></div>
-    <p><strong>Stability.</strong> The API is frozen at <code>folio-go/v1.0.0</code> — later <code>v1</code> releases add to that surface and never break it — while <code>folio8.Version</code> names the release you installed, currently <code>"1.1.0"</code>. The rendering and validation entry points, the font input and the diagnostic types are the whole public surface. The canvas and authoring engine behind folio8 Designer is internal to the module and is not part of this API.</p>
+    <p><strong>Stability.</strong> The API is frozen at <code>folio-go/v1.0.0</code> — later <code>v1</code> releases add to that surface and never break it — while <code>folio8.Version</code> names the release you installed, currently <code>"1.2.0"</code>. The rendering and validation entry points, the font input and the diagnostic types are the whole public surface. The canvas and authoring engine behind folio8 Designer is internal to the module and is not part of this API.</p>
     <p><strong>Concurrency.</strong> Nothing in these packages documents or tests concurrent use. Do not share a <code>*folio8.Template</code> across goroutines without your own locking.</p>
     <h3 id="rendering-and-validation">Rendering and validation</h3>
     <h4 id="parsetemplate"><code>ParseTemplate</code></h4>
@@ -1226,13 +1226,13 @@ _ = res</pre></div>
     </ul>
     <h4 id="localetableversion-and-version"><code>LocaleTableVersion</code> and <code>Version</code></h4>
     <div class="sample"><pre data-lang="go"><span class="tk-kw">const</span> <span class="tk-type">LocaleTableVersion</span> = expr.<span class="tk-type">LocaleTableVersion</span> <span class="tk-com">// currently 1 (untyped integer)</span>
-<span class="tk-kw">const</span> <span class="tk-type">Version</span> = <span class="tk-str">"1.1.0"</span></pre></div>
-    <p><code>LocaleTableVersion</code> identifies the built-in locale formatting table; its current value is <code>1</code>. <code>Version</code> is the library version string, <code>"1.1.0"</code> for the <code>folio-go/v1.1.0</code> release.</p>
+<span class="tk-kw">const</span> <span class="tk-type">Version</span> = <span class="tk-str">"1.2.0"</span></pre></div>
+    <p><code>LocaleTableVersion</code> identifies the built-in locale formatting table; its current value is <code>1</code>. <code>Version</code> is the library version string, <code>"1.2.0"</code> for the <code>folio-go/v1.2.0</code> release.</p>
   </section>
 
   <section id="command-line-tool">
     <h2>Command-line tool</h2>
-    <p>The module also contains a <code>folio8</code> command with <code>validate</code> and <code>render</code> subcommands (<code>go run github.com/panitw/folio8/folio-go/cmd/folio8@v1.1.0 render -data data.json -o out.pdf template.folio</code>). It is a thin wrapper over <code>Validate</code> and <code>Render</code>; its flags are described in the repository README.</p>
+    <p>The module also contains a <code>folio8</code> command with <code>validate</code> and <code>render</code> subcommands (<code>go run github.com/panitw/folio8/folio-go/cmd/folio8@v1.2.0 render -data data.json -o out.pdf template.folio</code>). It is a thin wrapper over <code>Validate</code> and <code>Render</code>; its flags are described in the repository README.</p>
     <p>Both subcommands take <code>-fonts &lt;dir&gt;</code>, which renders with the faces in that directory in addition to the shipped eleven, through <code>fontdir.Set</code> above: a face there whose declared name matches a shipped one replaces it. A missing or unreadable directory fails the run. A file inside it that is not a face this build can read is reported on stderr and skipped, as is a directory that yields no faces at all; neither fails the run on its own — but <code>-strict</code> counts both, so a typo'd font directory fails a build that asked for strict.</p>
   </section>
 <!-- /body -->

@@ -30,7 +30,7 @@
   "engines": {
     "node": ">=22.12"
   },
-  "folio8EngineVersion": "1.1.0",
+  "folio8EngineVersion": "1.2.0",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

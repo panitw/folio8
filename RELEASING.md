@@ -9,11 +9,39 @@ published as `folio8` — the npm package built in `folio-js/` and the NuGet
 package built in `folio-dotnet/`.
 The designer's own version and force-upgrade policy are at the end.
 
-**Released version:** `folio-go/v1.1.0`
+**Released version:** `folio-go/v1.2.0`
 
 `TestVersionAgreesWithReleasingDoc` (`folio-go/version_test.go`) reads the line
 above and fails unless `folio8.Version` equals it, so the stamp in the code and
 the release this document names cannot drift apart.
+
+## `folio-go/v1.2.0`
+
+**A MINOR, not a major.** Nothing in the public Go surface moved; the change
+is in the `c-shared` library the client packages embed, and it is additive.
+
+**Inside the release:**
+
+- **The engine leaves the host's signal dispositions as it found them**
+  (`cshared/cmd/folio8/dispositions_linux.c`). A `c-shared` Go runtime's
+  start-up re-installs every signal handler it finds with `SA_ONSTACK`; on
+  the .NET runtime that moved the GC activation handler onto a 12 KiB
+  alternate stack, where it overflowed (folio-dotnet's DW-396 / DW-398). Two
+  constructors, one sorted before Go's entry and one linked after it, record
+  the host's dispositions and write back every one Go re-flagged without
+  replacing. Handlers Go installed stay. Linux only; measured on amd64.
+- **`folio8_signal_dispositions`**, a new export reporting what the load did
+  (`restored-by=constructor|init|none`, the signal names). Additive: the ABI
+  version stays **2**; a caller built against 2 that never calls it is
+  unaffected.
+- **`FOLIO8_SIGNAL_DISPOSITIONS=leave`**, read once at load, switches that
+  restore off so a harness can first show it can see the defect. For a soak,
+  not for a host.
+- **`folio-dotnet/build/verify-linux-natives.sh`** now refuses a shipped
+  Linux native whose `.init_array` order is not snapshot, Go, restore.
+
+No rendering byte moved: `go-corpus.json` and `go-parity.json` change only in
+their `folio8Version` string.
 
 ## `folio-go/v1.1.0`
 
@@ -212,7 +240,7 @@ additions and the one behaviour change:
   indents silently vanishing, so the new output is the intended one. No golden
   in this repository moved.
 
-For `v1.2.0`, **not yet released and not yet packable** — the notes will carry
+For `v1.2.0`, **not yet published** — the notes will carry
 one addition and one behaviour change a .NET integrator can observe:
 
 - **new** the `linux-x64` and `linux-arm64` runtime identifiers, restored
