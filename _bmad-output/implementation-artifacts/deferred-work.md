@@ -8129,7 +8129,9 @@ constructor on `Native`** — the CLR runs it before any static member of the ty
 methods included, and a class with one is not `beforefieldinit` — and both the snapshot and the
 restore latch. A consumer only ever reaches the engine through `Invoke` → `CheckAbi`, so for them the
 old placement was already right; the test suite was the caller that exposed it, which is what it is
-for. The Linux test now also asserts that a pre-load snapshot exists at all.
+for. The Linux test now also asserts that a pre-load snapshot exists at all. **CI run 35997793042 on that commit: `folio-dotnet-host` success, `folio-dotnet-linux` success on
+both RIDs, `folio-dotnet` (the Windows matrix and the 4.6 floor) success — 177/177 everywhere the suite
+runs.**
 
 **Run 35995188797: two more before/afters, and the soak's reproduce leg stayed clean for a reason
 that is now measured for.** `load-exposure` on HEAD (with the fix): **arm B 0 / 100** on the host class
