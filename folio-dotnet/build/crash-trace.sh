@@ -228,7 +228,14 @@ for core in "$core_dir"/core.*; do
   # libcoreclr's .dbg, placed beside the .so so gdb's debuglink lookup finds
   # it without being told. The runner has sudo; a host without it gets the
   # unsymbolised trace it would have got anyway.
-  coreclr="$(dirname "$(dotnet --list-runtimes 2>/dev/null | awk '/Microsoft.NETCore.App/{print $3}' | tr -d '[]' | tail -1)")/$(dotnet --list-runtimes 2>/dev/null | awk '/Microsoft.NETCore.App/{print $2}' | tail -1)/libcoreclr.so"
+  # `dotnet --list-runtimes` prints `Microsoft.NETCore.App 10.0.12 [/usr/share/dotnet/shared/Microsoft.NETCore.App]`:
+  # the bracketed path already ends in the framework name, so the version
+  # goes straight under it. Run 35987974678 wrapped it in dirname, looked for
+  # shared/10.0.12/libcoreclr.so, and reported "symbols: no" for a file that
+  # was there all along.
+  fw_dir="$(dotnet --list-runtimes 2>/dev/null | awk '/Microsoft.NETCore.App/{print $3}' | tr -d '[]' | tail -1)"
+  fw_ver="$(dotnet --list-runtimes 2>/dev/null | awk '/Microsoft.NETCore.App/{print $2}' | tail -1)"
+  coreclr="$fw_dir/$fw_ver/libcoreclr.so"
   symbolised=no
   if [ -f "$coreclr" ] && command -v dotnet-symbol >/dev/null 2>&1; then
     mkdir -p "$work/syms"
@@ -236,7 +243,8 @@ for core in "$core_dir"/core.*; do
       if sudo -n cp "$work/syms/libcoreclr.so.dbg" "$(dirname "$coreclr")/" 2>/dev/null; then symbolised=yes; fi
     fi
   fi
-  echo "  libcoreclr symbols: $symbolised"
+  echo "  libcoreclr symbols: $symbolised  ($coreclr)"
+  [ "$symbolised" = yes ] || { [ -f "$work/symbol.log" ] && sed 's/^/    dotnet-symbol: /' "$work/symbol.log" | head -5; }
 
   # THE FUTEX ERRNO, ASKED FOR IN A WAY THAT CANNOT LIE. The previous version
   # ran `frame function __futex_abstimed_wait_common` then `p err`, and on a

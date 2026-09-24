@@ -407,5 +407,13 @@ jobs:
         run: ./folio-dotnet/build/verify-linux-natives.sh
       - name: the classifier's own judgement, before it is trusted with a rate
         run: ./folio-dotnet/build/load-repro/run.sh --self-check
-      - name: load against a control that differs only by the dlopen
-        run: ./folio-dotnet/build/load-repro/run.sh -n "${{ inputs.iterations }}"
+      - name: baseline, control, and one arm per thing the load changes
+        run: ./folio-dotnet/build/load-repro/run.sh -n "${{ inputs.iterations }}" --out "$RUNNER_TEMP/repro-out"
+      - name: keep the dump analysis and the first deaths' stderr
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-repro-${{ matrix.rid }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/repro-out
+          if-no-files-found: warn
+          retention-days: 30
