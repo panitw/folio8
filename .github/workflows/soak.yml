@@ -318,7 +318,7 @@ jobs:
           dmesg >/dev/null 2>&1 || { echo "dmesg still unreadable" >&2; exit 1; }
 
       - name: run until the host dies, then read the core
-        run: ./folio-dotnet/build/crash-trace.sh -n 60 --core-dir "$RUNNER_TEMP/cores"
+        run: ./folio-dotnet/build/crash-trace.sh -n 150 --core-dir "$RUNNER_TEMP/cores"
 
       # THE BACKTRACE IS THE PRODUCT, so it is kept whether the step passed or
       # not -- a NO-CORE verdict exits non-zero and is exactly as informative.

@@ -183,17 +183,50 @@ for core in "$core_dir"/core.*; do
   [ -e "$core" ] || continue
   cores=$((cores + 1))
   echo "=== backtrace from $(basename "$core") ($(du -h "$core" | cut -f1)) ==="
-  gdb -q -batch -ex "set pagination off" -ex "thread apply all bt" --core="$core" \
+
+  # THE EXECUTABLE, OR GDB LOADS NO SHARED LIBRARIES AND EVERY FRAME IS `??`.
+  # The first cut passed --core alone and got exactly that, twice: once on the
+  # owner's WSL2 box and once here, where it produced an UNREADABLE verdict on
+  # a core that was perfectly good. `file` reports the core's execfn; without
+  # it gdb has no library list to attribute an address to, which is the whole
+  # analysis.
+  exe="$(file "$core" 2>/dev/null | sed -n "s/.*execfn: '\([^']*\)'.*/\1/p")"
+  if [ -z "$exe" ] || [ ! -f "$exe" ]; then
+    exe="$(file "$core" 2>/dev/null | sed -n "s/.*from '\([^ ']*\).*/\1/p" | head -1)"
+  fi
+  [ -n "$exe" ] && [ -f "$exe" ] || exe="$(command -v dotnet || true)"
+  echo "  executable: ${exe:-<unresolved>}"
+
+  gdb -q -batch -ex "set pagination off" \
+      -ex "thread apply all bt" \
+      -ex "echo \n===MAPPINGS===\n" -ex "info proc mappings" \
+      -ex "echo \n===REGISTERS===\n" -ex "info registers" \
+      ${exe:+"$exe"} --core="$core" \
       >"$work/backtrace.txt" 2>"$work/gdb.err" || true
+
+  # ATTRIBUTION WITHOUT SYMBOLS, WHICH IS ALL THIS QUESTION NEEDS. The engine
+  # is stripped Go and the CLR is not shipped with symbols, so frame NAMES may
+  # never resolve -- but a return address inside libfolio8_native.so is a Go
+  # frame whatever it is called, and that is the finding. gdb prints `from
+  # <path>` for any frame it can place in a shared object even with no symbols.
+  echo "--- frames placed in the engine (Go) ---"
+  grep -nE "libfolio8_native" "$work/backtrace.txt" | head -10 || echo "  (none)"
   # The faulting thread first, then anything naming a Go handler anywhere.
   sed -n '/^Thread 1 /,/^Thread 2 /p' "$work/backtrace.txt" | head -30
   echo
+  echo
   echo "--- frames naming a Go signal handler, any thread ---"
   if grep -nE "sigtramp|sigtrampgo|runtime\.sighandler|cgoSigtramp" "$work/backtrace.txt"; then
-    go_frames=$(grep -cE "sigtramp|sigtrampgo|runtime\.sighandler|cgoSigtramp" "$work/backtrace.txt")
+    :
   else
-    echo "  (none)"
+    echo "  (none by name — stripped Go resolves no symbols; the library placement above is the evidence)"
   fi
+  # EITHER IS THE SIGNAL PATH: a handler named, or ANY frame inside the engine
+  # on a thread that died. The binding never renders in this workload, so a
+  # frame in libfolio8_native.so on the faulting stack can only have arrived
+  # through a signal.
+  go_frames=$(( $(grep -cE "sigtramp|sigtrampgo|runtime\.sighandler|cgoSigtramp" "$work/backtrace.txt" || true) \
+              + $(sed -n '/^Thread 1 /,/^Thread 2 /p' "$work/backtrace.txt" | grep -cE "libfolio8_native" || true) ))
   echo
   echo "--- frames naming libcoreclr or the engine ---"
   grep -nE "libcoreclr|libfolio8_native" "$work/backtrace.txt" | head -10 || echo "  (none)"
