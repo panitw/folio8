@@ -141,9 +141,11 @@ build_linux() {
     -e CGO_ENABLED=1 -e GOFLAGS=-buildvcs=false \
     "$image" sh -c "
       set -e
-      dnf install -y -q gcc tar >/dev/null 2>&1
-      curl -sSLo /tmp/go.tgz https://go.dev/dl/go${go_version}.linux-${arch}.tar.gz
-      tar -C /usr/local -xzf /tmp/go.tgz
+      # A silent failure here is a bare 'exit code 1' in CI (run 36016056509's
+      # arm64 leg), so each step says what it was when it fails.
+      dnf install -y -q gcc tar >/tmp/dnf.log 2>&1 || { echo 'build-native.sh: dnf install failed inside the image:' >&2; cat /tmp/dnf.log >&2; exit 1; }
+      curl -sSLo /tmp/go.tgz https://go.dev/dl/go${go_version}.linux-${arch}.tar.gz || { echo \"build-native.sh: could not download go${go_version}.linux-${arch}.tar.gz\" >&2; exit 1; }
+      tar -C /usr/local -xzf /tmp/go.tgz || { echo 'build-native.sh: the Go tarball did not extract' >&2; exit 1; }
       export PATH=/usr/local/go/bin:\$PATH
       go build -trimpath -buildmode=c-shared -o /out/libfolio8_native.so ./cshared/cmd/folio8
     "
