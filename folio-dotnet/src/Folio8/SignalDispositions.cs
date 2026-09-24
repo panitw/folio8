@@ -78,6 +78,75 @@ internal static class SignalDispositions
         internal readonly byte[][] Records = new byte[65][];
     }
 
+    // THE SNAPSHOT IS TAKEN WHERE THE LOAD HAPPENS, NOT WHERE THE FIRST CALL
+    // HAPPENS. The first version snapshotted inside the ABI check, which is
+    // the first CROSSING -- but not necessarily the first LOAD: anything that
+    // reaches NativeLibraryLoader.Ensure() earlier (a test does) had already
+    // brought Go up, the snapshot then recorded Go's edits as the baseline,
+    // and there was nothing to put back. CI run 35995186412 caught it: the
+    // same assertion passed in one Linux job and failed in another, on test
+    // order alone. So Ensure() calls TakeOnce() immediately before its
+    // dlopen, whichever caller got there first, and the ABI check calls
+    // RestoreOnce() after the first export has returned. Both latch.
+    private static readonly object Gate = new object();
+    private static bool _taken;
+    private static Snapshot _before;
+    private static string _restored;
+
+    /// <summary>
+    /// Records every disposition, once per process, and only the first time —
+    /// a second call after the engine has loaded must not overwrite the
+    /// pre-load record with a post-load one. Call it immediately before the
+    /// load. Cheap and harmless off Linux.
+    /// </summary>
+    internal static void TakeOnce()
+    {
+        lock (Gate)
+        {
+            if (_taken)
+            {
+                return;
+            }
+            _taken = true;
+            _before = Take();
+        }
+    }
+
+    /// <summary>
+    /// Puts the recorded dispositions back where the load re-flagged them,
+    /// once, and remembers what it restored. Safe to call again; later calls
+    /// do nothing. Call it after the first export has returned, never merely
+    /// after the load.
+    /// </summary>
+    internal static string RestoreOnce()
+    {
+        lock (Gate)
+        {
+            if (_restored != null)
+            {
+                return _restored;
+            }
+            _restored = Restore(_before);
+            return _restored;
+        }
+    }
+
+    /// <summary>
+    /// What <see cref="RestoreOnce"/> put back, comma-separated; empty until
+    /// it has run, and empty off Linux. Whether the snapshot was ever taken
+    /// is reported separately so a test can tell "nothing needed restoring"
+    /// from "nothing was ever recorded".
+    /// </summary>
+    internal static string Restored
+    {
+        get { lock (Gate) { return _restored ?? string.Empty; } }
+    }
+
+    internal static bool SnapshotTaken
+    {
+        get { lock (Gate) { return _taken; } }
+    }
+
     /// <summary>
     /// Reads every catchable signal's disposition. Returns <c>null</c> off
     /// Linux, and on a Linux where <c>sigaction</c> is not reachable —

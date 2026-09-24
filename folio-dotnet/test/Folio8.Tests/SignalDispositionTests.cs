@@ -93,6 +93,10 @@ namespace Folio8Tests
             string version = Folio8.Version;
             Assert.False(string.IsNullOrEmpty(version));
 
+            // The record must predate the load, whichever test loaded first;
+            // Native's static constructor is what guarantees that.
+            Assert.True(SignalDispositions.SnapshotTaken, "no pre-load snapshot was ever taken: Native's static constructor did not run before the engine loaded");
+
             int rtmin = SignalDispositions.FlagsOf(SignalDispositions.SigRtMin);
             Assert.NotEqual(-1, rtmin);
             Assert.NotEqual(0L, SignalDispositions.HandlerOf(SignalDispositions.SigRtMin));

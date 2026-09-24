@@ -87,6 +87,11 @@ internal static class NativeLibraryLoader
             {
                 return;
             }
+            // Before any load this class performs. Off Linux it records
+            // nothing; on Linux this class performs no load, and the record
+            // is taken by Native's static constructor instead — but a caller
+            // that reaches here first must not be a way around it.
+            SignalDispositions.TakeOnce();
             if (IsWindows())
             {
                 Resolve(ProbeDirectories(), IntPtr.Size, File.Exists, LoadByPath);

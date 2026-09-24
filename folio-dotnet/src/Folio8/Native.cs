@@ -32,6 +32,23 @@ using System.Text;
 /// </remarks>
 internal static class Native
 {
+    // THE ONE PLACE THAT IS GUARANTEED TO RUN BEFORE THE ENGINE LOADS. On
+    // Linux and macOS nothing in this binding calls dlopen: the runtime does,
+    // on the first P/Invoke into the engine, from whichever caller makes it —
+    // the ABI check usually, but a test that reaches a DllImport directly
+    // first will do (CI run 35995186412: the same SIGRTMIN assertion passed
+    // in one Linux job and failed in another, on test order alone, because
+    // the snapshot was taken inside the ABI check and the engine was already
+    // up). An EXPLICIT static constructor is the guarantee: the CLR runs it
+    // before any static member of this type is used, extern methods
+    // included, and a class with one is not beforefieldinit, so the promise
+    // is not relaxed. The restore stays in CheckAbi, after the first export
+    // has returned.
+    static Native()
+    {
+        SignalDispositions.TakeOnce();
+    }
+
     /// <summary>
     /// The native library's base name. Probing resolves it to
     /// <c>folio8_native.dll</c> on Windows and
@@ -152,18 +169,6 @@ internal static class Native
             {
                 return;
             }
-            // BEFORE THE LOAD, ONCE: what every signal's disposition was
-            // before the engine touched it. Go's initsig re-flags handlers
-            // it does not own (DW-398); this is the reference the restore
-            // below writes back. Taken once for the process rather than per
-            // attempt, so a retry after a failed ABI check does not record
-            // the post-load state as "before".
-            if (_dispositionsBeforeLoad == null && !_dispositionsTaken)
-            {
-                _dispositionsTaken = true;
-                _dispositionsBeforeLoad = SignalDispositions.Take();
-            }
-
             // BEFORE THE FIRST P/INVOKE, AND THAT ORDER IS THE WHOLE POINT.
             // DllImport binds a module by name once; loading the
             // bitness-correct file by full path here means the seven imports
@@ -204,18 +209,13 @@ internal static class Native
             // blocked until the runtime was up; Go's edits are all in place
             // now, and this puts the CLR's own dispositions back for the
             // handlers Go re-flagged without replacing (SIGRTMIN among them,
-            // which is DW-398). See SignalDispositions for the whole account.
-            _dispositionsRestored = SignalDispositions.Restore(_dispositionsBeforeLoad);
+            // which is DW-398). The matching snapshot was taken inside
+            // NativeLibraryLoader.Ensure(), immediately before the dlopen,
+            // whoever reached it first. See SignalDispositions.
+            SignalDispositions.RestoreOnce();
             _abiChecked = true;
         }
     }
-
-    /// <summary>
-    /// Every signal's disposition before the engine loaded, taken once per
-    /// process; <c>null</c> off Linux.
-    /// </summary>
-    private static SignalDispositions.Snapshot _dispositionsBeforeLoad;
-    private static bool _dispositionsTaken;
 
     /// <summary>
     /// The signals whose dispositions the first crossing put back, as a
@@ -224,9 +224,8 @@ internal static class Native
     /// </summary>
     internal static string DispositionsRestored
     {
-        get { return _dispositionsRestored ?? string.Empty; }
+        get { return SignalDispositions.Restored; }
     }
-    private static string _dispositionsRestored;
 
     /// <summary>
     /// Names the file actually loaded under <see cref="Library"/>, for the
