@@ -273,8 +273,10 @@ signal stack of its own — an ordinary C program, or a Go caller — needs
 neither measure: Go installs its own 32 KiB stack when it finds nothing to
 adopt. Sizes measured here for the shape, not as constants: glibc's floor
 (`_SC_MINSIGSTKSZ`) 1776 bytes and its recommendation (`_SC_SIGSTKSZ`) 8192
-on an AVX2 host; the .NET runtime's alternate stack 16384 on amd64 and
-24576 on arm64; Go's own 32768.
+on an AVX2 host, 3632 and 14528 on an AVX-512 one, and 11952 and 47808 on
+a Xeon 6973P-C with AMX (run 36009781957) — while the .NET runtime's
+alternate stack is 16384 on amd64 on every one of them (it takes the 8192
+constant, not `sysconf`), and 24576 on arm64; Go's own 32768.
 
 ⚠ **Read your own size; do not copy ours.** The readings behind that work are
 **amd64: 16384 bytes**, taken on real amd64 silicon, and **arm64: 24576

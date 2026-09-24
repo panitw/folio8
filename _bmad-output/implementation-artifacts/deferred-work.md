@@ -8271,6 +8271,18 @@ the new native): the baseline goes from tens of deaths in 250 to **0 or 1**, the
 `load` arm stays in double digits, the constructor did not run where the file says it will, and the
 report's `restored-by` says where it did.
 
+**Run 36009781957 (R2, on the engine that restores in its own constructor) — THE PRE-REGISTERED
+PREDICTION HELD.** Xeon 6973P-C (AVX-512, AMX), 250 per arm: baseline with
+`FOLIO8_SIGNAL_DISPOSITIONS=leave` **5** (the mechanism is live on the host, and the engine's report
+on those processes reads `mode=leave restored-by=none`), control **0**, **`load` as shipped 0 / 250**,
+the binding's fallback on top **0 / 250** with nothing left to touch. The engine's report on the
+shipped arm, from the process itself: `mode=restore snapshot=yes constructor-ran-before-go=no
+restored-by=constructor restored=SIGINT,SIGQUIT,SIGILL,SIGTRAP,SIGABRT,SIGTERM,SIGRTMIN
+restore-calls=2` — the constructor did it, and the Go `init()` fallback found nothing to do. The
+first attempt at this run (36008698227) never reached an arm: `verify-linux-natives.sh` named the
+arm64 snapshot constructor `$x` — the runner's `nm` lists the AArch64 mapping symbol at the same
+address — and refused a correct file; the lookup now takes code symbols only.
+
 **Not yet tried, in order of cost:** *(the `restore-*` arms are struck — run and null)* a symbolised
 core (`dotnet-symbol` for `libcoreclr.so.dbg`, `dotnet-dump analyze … clrstack -all` for the managed
 frame the worker was interrupted in), which names the handler in one shot and is in the trace now;
