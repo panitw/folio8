@@ -163,6 +163,7 @@ cat <<EOF
   binding     : $(cd "$root" && git log --oneline -1 2>/dev/null || echo unknown)
   native      : $(sha256sum "$native" | awk '{print $1}')
   host        : $(uname -n), $(uname -s) $(uname -r), $(uname -m)
+  cpu         : $(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | sed 's/^ *//'); xsave: $(grep -m1 '^flags' /proc/cpuinfo 2>/dev/null | tr ' ' '\n' | grep -E '^(avx2|avx512f|avx512bw|amx_tile|amx_bf16|xsave|xsaves|pku)$' | sort -u | tr '\n' ' ')
   core_pattern: $(cat /proc/sys/kernel/core_pattern)   [restored on exit]
   cores       : $core_dir
   attempts    : up to $iterations
@@ -290,41 +291,61 @@ PYEOF
   # with no inference. Walks to the handler frame by name; says so if absent.
   cat >"$work/altstack.py" <<'PYEOF'
 import gdb
-print("===THE ALTERNATE STACK, FROM uc_stack===")
+print("===THE ALTERNATE STACK, FROM uc_stack, EVERY THREAD===")
+# EVERY THREAD, AND THE FAULT'S rsp, NOT THE HANDLER FRAME'S. The first
+# version read $rsp after selecting the handler frame and so printed that
+# frame's stack pointer, 8 KB above the real one (run 35991608135: "4640
+# used" where the fault block's own $rsp said 12,320). And it read one
+# thread, when the abort shape is a thread dying of a NEIGHBOUR's overflow:
+# the altstack is malloc'd, so a handler that runs below ss_sp writes into
+# whatever allocation sits under it and the fault lands elsewhere. Any
+# thread whose rsp is below its own ss_sp is the culprit, whichever thread
+# gdb calls Thread 1.
+HANDLERS = ("inject_activation_handler", "sigsegv_handler", "sigabrt_handler", "sigfpe_handler", "sigbus_handler", "sigill_handler", "sigtrap_handler")
 try:
-    gdb.execute("thread 1", to_string=True)
-    f = gdb.newest_frame(); hit = None
-    while f is not None:
-        n = f.name() or ""
-        if "inject_activation_handler" in n or "sigsegv_handler" in n or "sigabrt_handler" in n or "sigfpe_handler" in n or "sigbus_handler" in n:
-            hit = f; break
-        f = f.older()
-    if hit is None:
-        print("no PAL signal-handler frame on the faulting thread; nothing to measure")
-    else:
+    inf = gdb.selected_inferior()
+    rows = []
+    for th in sorted(inf.threads(), key=lambda t: t.num):
+        th.switch()
+        newest = gdb.newest_frame()
+        rsp = int(gdb.parse_and_eval("$rsp"))
+        f = newest; hit = None
+        while f is not None:
+            n = f.name() or ""
+            if any(h in n for h in HANDLERS):
+                hit = f; break
+            f = f.older()
+        if hit is None:
+            continue
         hit.select()
         ctx = None
         for cand in ("context", "ucontext"):
             try: ctx = hit.read_var(cand); break
             except Exception: pass
         if ctx is None:
-            print("handler frame %s has no readable `context` argument" % hit.name())
-        else:
+            rows.append((th.num, hit.name(), None)); continue
+        try:
             uc = gdb.parse_and_eval("*(ucontext_t*)%s" % ctx)
             ss = uc["uc_stack"]
             sp = int(ss["ss_sp"]); size = int(ss["ss_size"]); flags = int(ss["ss_flags"])
-            rsp = int(gdb.parse_and_eval("$rsp"))
-            print("handler frame     : %s" % hit.name())
-            print("uc_stack.ss_sp    : 0x%x" % sp)
-            print("uc_stack.ss_size  : %d bytes" % size)
-            print("uc_stack.ss_flags : %d  (1 = SS_ONSTACK: delivered ON the alternate stack)" % flags)
-            print("rsp at the fault  : 0x%x" % rsp)
-            if size:
-                top = sp + size
-                used = top - rsp
-                print("bytes used at fault: %d of %d  (%s)" % (used, size, "OVERFLOWED" if rsp < sp else "%d bytes remained" % (rsp - sp)))
-                ucaddr = int(ctx)
-                print("kernel frame      : ucontext at 0x%x, %d bytes below the top" % (ucaddr, top - ucaddr))
+            rows.append((th.num, hit.name(), (sp, size, flags, rsp, int(ctx))))
+        except Exception as e:
+            rows.append((th.num, hit.name(), "unreadable: %s" % e))
+    if not rows:
+        print("no thread is inside a PAL signal handler; nothing to measure")
+    for num, name, info in rows:
+        if info is None:
+            print("Thread %d  %s: no readable context argument" % (num, name)); continue
+        if isinstance(info, str):
+            print("Thread %d  %s: %s" % (num, name, info)); continue
+        sp, size, flags, rsp, ucaddr = info
+        top = sp + size
+        verdict = "OVERFLOWED by %d bytes -- THIS THREAD RAN OFF ITS ALTSTACK" % (sp - rsp) if rsp < sp else "%d bytes remained" % (rsp - sp)
+        print("Thread %d  %s" % (num, name))
+        print("    altstack ss_sp=0x%x ss_size=%d ss_flags=%d%s" % (sp, size, flags, "  (SS_ONSTACK: was already on it at delivery)" if flags & 1 else ""))
+        print("    rsp now 0x%x: %d of %d bytes used, %s" % (rsp, top - rsp, size, verdict))
+        print("    kernel frame: ucontext at 0x%x, %d bytes below the top" % (ucaddr, top - ucaddr))
+    gdb.execute("thread 1", to_string=True)
 except Exception as e:
     print("altstack probe failed: %s" % e)
 PYEOF
@@ -411,7 +432,7 @@ PYEOF
   sed -n '/===THE FUTEX ERRNO===/,/===THE ALTERNATE STACK/p' "$work/backtrace.txt" | grep -v '===THE ALTERNATE' | sed 's/^/  /' | head -8
   echo
   echo "--- the alternate stack, from the ucontext the kernel handed the handler ---"
-  sed -n '/===THE ALTERNATE STACK, FROM uc_stack===/,/===MAPPINGS===/p' "$work/backtrace.txt" | grep -v '===MAPPINGS===' | sed 's/^/  /' | head -12
+  sed -n '/===THE ALTERNATE STACK, FROM uc_stack, EVERY THREAD===/,/===MAPPINGS===/p' "$work/backtrace.txt" | grep -v '===MAPPINGS===' | sed 's/^/  /' | head -40
   echo
   echo "--- the faulting thread's MANAGED frames (dotnet-dump clrstack) ---"
   # The OS thread id of gdb's Thread 1 is its LWP; clrstack -all prints every
