@@ -2,7 +2,7 @@
 #
 # DW-398 WITHOUT VSTEST.
 #
-#   ./run.sh [-n N] [--pool N] [--hold MS]
+#   ./run.sh [-n N] [--pool N] [--hold MS] [--arms a,b,...] [--native PATH] [--out DIR]
 #   ./run.sh --self-check        # the classifier's own judgement, any OS
 #
 # WHY THIS EXISTS. Every death on record has happened inside `dotnet test`.
@@ -66,6 +66,7 @@ pool=8
 hold=400
 gcflag=--gc
 out=""
+native=""
 arms=(load noload "load:fix=restore-relocated" "load:fix=restore-relocated:sync=call" "load:fix=restore-rtmin:sync=call" "load:fix=restore-relocated:sync=poll")
 selfcheck=0
 
@@ -76,6 +77,7 @@ while [ "$#" -gt 0 ]; do
     --hold) hold="$2"; shift 2 ;;
     --nogc) gcflag=--nogc; shift ;;
     --out) out="$2"; shift 2 ;;
+    --native) native="$2"; shift 2 ;;
     --arms) IFS=, read -r -a arms <<<"$2"; shift 2 ;;
     --self-check) selfcheck=1; shift ;;
     *) echo "unknown argument '$1'" >&2; exit 1 ;;
@@ -158,7 +160,9 @@ fi
 
 [ "$(uname -s)" = Linux ] || { echo "Linux only (use --self-check elsewhere)." >&2; exit 1; }
 case "$(uname -m)" in x86_64) rid=linux-x64 ;; aarch64) rid=linux-arm64 ;; *) echo "unknown arch" >&2; exit 1 ;; esac
-native="$root/folio-dotnet/build/native/$rid/libfolio8_native.so"
+# --native lets soak.sh hand over the exact file its ledger row will name,
+# so the mechanism check and the row it validates cannot drift apart.
+[ -n "$native" ] || native="$root/folio-dotnet/build/native/$rid/libfolio8_native.so"
 [ -f "$native" ] || { echo "no native at $native" >&2; exit 1; }
 
 work="$(mktemp -d)"

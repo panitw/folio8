@@ -36,6 +36,13 @@
 #
 # WATCH THE KERNEL, NOT ONLY THE EXIT CODE. `overflowed sigaltstack` in dmesg
 # and `Internal CLR error (0x80131506)` are the NAMED signatures. A dead test
+# host with NEITHER is the defect's commonest landing on an AVX2-class host
+# (DW-398, 2026-09-24: the CLR's activation handler runs off its 16 KiB
+# alternate stack and the push faults, with no message anywhere), and it is
+# still not attributed by the fact of the death. On the reproduction leg
+# such a death sends this tool to the mechanism reproducer
+# (build/load-repro) on the SAME host and native: engine loaded against
+# engine absent. That independent evidence attributes it, or refuses to.
 # host with neither is reported as a crash of unknown cause -- never narrated as
 # DW-396, which is the exact misattribution this epic exists to stop making.
 #
@@ -97,6 +104,11 @@ Options (environment variable in brackets; the flag wins):
                        A commit is checked out as a git worktree; this tree's
                        native library is staged into it, so the ENGINE is held
                        fixed while the BINDING varies.  [SOAK_BINDING]
+      --mechanism-iterations N
+                       on the reproduction leg, when the pre-fix binding dies with no
+                       named signature: iterations per arm for the mechanism reproducer
+                       (build/load-repro, engine loaded vs absent) that attributes it.
+                       [SOAK_MECHANISM_ITERATIONS] default 40
       --reproduce      the validation leg. Implies --binding 7f6a936^ unless
                        --binding was given, and inverts the verdict: catching
                        the defect is success, and a clean run is a failure to
@@ -156,6 +168,7 @@ filter="${SOAK_FILTER:-FullyQualifiedName~GoldenTests|FullyQualifiedName~FontsTe
 # engine-free and was not.
 control_filter="${SOAK_CONTROL_FILTER:-(FullyQualifiedName~PackagingTests|FullyQualifiedName~DocsTests|FullyQualifiedName~SurfaceTests)&FullyQualifiedName!~TheRecordedEngineVersionMatchesTheEngine}"
 native="${SOAK_NATIVE:-}"
+mech_iterations="${SOAK_MECHANISM_ITERATIONS:-40}"
 log_dir="${SOAK_LOG_DIR:-}"
 ledger="${SOAK_LEDGER:-}"
 host_context="${SOAK_HOST_CONTEXT:-}"
@@ -170,6 +183,7 @@ while [ "$#" -gt 0 ]; do
     -h|--help) usage; exit 0 ;;
     --self-check) want_self_check=1; shift ;;
     --reproduce) want_reproduce=1; shift ;;
+    --mechanism-iterations) [ "$#" -ge 2 ] || { echo "soak: --mechanism-iterations needs a count" >&2; exit 1; }; mech_iterations="$2"; shift 2 ;;
     -n|--iterations) [ "$#" -ge 2 ] || { echo "soak: --iterations needs a number" >&2; exit 1; }; iterations="$2"; shift 2 ;;
     -b|--binding) [ "$#" -ge 2 ] || { echo "soak: --binding needs 'head' or a commit" >&2; exit 1; }; binding="$2"; binding_given=1; shift 2 ;;
     --filter) [ "$#" -ge 2 ] || { echo "soak: --filter needs an expression" >&2; exit 1; }; filter="$2"; shift 2 ;;
@@ -691,6 +705,77 @@ classify_run() {
   RUN_DETAIL="the suite exited $status with no dead host: an assertion, a refusal or a setup fault, not a crash"
 }
 
+# --- 3b. the mechanism check --------------------------------------------------
+#
+# WHY A DEATH WITHOUT A SIGNATURE CAN STILL BE ATTRIBUTED, AND BY WHAT. On
+# 2026-09-24 DW-398 named the cause behind DW-396: after the engine loads, Go
+# re-flags the CLR's own SIGRTMIN handler with SA_ONSTACK, the CLR's GC
+# activation handler then runs on the CLR's 16 KiB alternate stack, and it
+# overflows. On an AVX-512 host the kernel's own signal frame is large enough
+# that the NEXT signal cannot be delivered and the kernel logs `overflowed
+# sigaltstack` -- the named signature. On an AVX2 host the frame is smaller,
+# the handler itself runs off the end, and the death is a bare SIGSEGV with
+# no message anywhere. Same defect, no signature, and this tool was right to
+# refuse to attribute it on the death alone.
+#
+# The attribution comes from build/load-repro instead: a console process
+# that holds nothing but pool threads collecting garbage, run with the engine
+# loaded and, identically, without. On a host where the mechanism is live
+# the loaded arm dies at 55-98% and the control at 0. That is evidence about
+# THIS host and THIS native, independent of the binding's death, and it is
+# what the reproduction leg now consults when the death carried no name.
+#
+# mechanism_parse <log>       reads the reproducer's RESULT block into MECH_LOAD,
+#                             MECH_CONTROL, MECH_N; returns 1 if there is none.
+# mechanism_verdict           derives MECH_TAG from those three.
+# mechanism_check             runs the reproducer and does both.
+MECH_LOAD=""; MECH_CONTROL=""; MECH_N=""; MECH_TAG="NOT-RUN"; MECH_NOTE=""; MECH_LOG=""
+
+mechanism_parse() {
+  local file="$1"
+  MECH_LOAD=""; MECH_CONTROL=""; MECH_N=""
+  [ -f "$file" ] || return 1
+  # Only the RESULT block: the progress lines above it also begin with the
+  # arm's name, and they carry the dots.
+  local parsed
+  parsed="$(awk '
+    /^=== RESULT ===/ { in_result = 1; next }
+    in_result && $1 == "load"   && $3 == "/" { l = $2; n = $4 }
+    in_result && $1 == "noload" && $3 == "/" { c = $2 }
+    END { if (l != "" && c != "" && n != "") print l, c, n }' "$file")"
+  [ -n "$parsed" ] || return 1
+  MECH_LOAD="${parsed%% *}"; parsed="${parsed#* }"
+  MECH_CONTROL="${parsed%% *}"; MECH_N="${parsed#* }"
+  return 0
+}
+
+mechanism_verdict() {
+  if [ -z "$MECH_N" ]; then MECH_TAG="NOT-RUN"; return; fi
+  if [ "$MECH_CONTROL" -gt 0 ] 2>/dev/null; then MECH_TAG="HOST-MANUFACTURES"; return; fi
+  if [ "$MECH_LOAD" -eq 0 ] 2>/dev/null; then MECH_TAG="DID-NOT-FIRE"; return; fi
+  MECH_TAG="ATTRIBUTED"
+}
+
+mechanism_check() {
+  MECH_LOAD=""; MECH_CONTROL=""; MECH_N=""; MECH_TAG="NOT-RUN"; MECH_NOTE=""
+  MECH_LOG="$logs/mechanism.log"
+  local tool="$here/load-repro/run.sh"
+  if [ ! -x "$tool" ]; then MECH_NOTE="the mechanism reproducer is not at $tool"; return 0; fi
+  echo "==> the pre-fix binding died with no named signature. Asking the mechanism reproducer"
+  echo "    whether the defect is live on THIS host with THIS native: $mech_iterations iterations per arm,"
+  echo "    engine loaded against engine absent."
+  # Its exit status is not the answer -- it exits non-zero on a clean baseline
+  # too -- the numbers are.
+  "$tool" --arms load,noload -n "$mech_iterations" --native "$native" >"$MECH_LOG" 2>&1 || true
+  if ! mechanism_parse "$MECH_LOG"; then
+    MECH_NOTE="its RESULT block could not be read; see $MECH_LOG"
+    return 0
+  fi
+  mechanism_verdict
+  echo "    loaded: $MECH_LOAD/$MECH_N died   absent: $MECH_CONTROL/$MECH_N died   -> $MECH_TAG"
+  echo "    log: $MECH_LOG"
+}
+
 # --- 4. the verdict over the whole run -------------------------------------
 
 # final_verdict <mode soak|reproduce> <iterations-completed> <outcome-of-last-run> <validated yes|no> <kernel-signal-available yes|no>
@@ -722,9 +807,28 @@ final_verdict() {
         FINAL_STATUS=0
         ;;
       CRASH-UNKNOWN)
-        FINAL_TAG="NOT REPRODUCED — UNEXPLAINED CRASH"
-        FINAL_TEXT="the pre-fix binding died on iteration $completed with NEITHER named signature. A crash of unknown cause is not a reproduction of DW-396, and the harness stays unvalidated. Read the iteration's log before running anything else."
-        FINAL_STATUS=1
+        case "$MECH_TAG" in
+          ATTRIBUTED)
+            FINAL_TAG="REPRODUCED — BY MECHANISM"
+            FINAL_TEXT="the pre-fix binding died on iteration $completed with NEITHER named signature — and on THIS host, against THIS native, the mechanism reproducer (build/load-repro) died $MECH_LOAD/$MECH_N with the engine loaded and $MECH_CONTROL/$MECH_N without. The death is attributed to DW-396/DW-398 by that independent evidence — the CLR's GC activation handler overflowing the alternate stack Go moved it onto — and not by the fact of the death. THIS HOST'S HARNESS IS NOW VALIDATED for this architecture and this native library."
+            FINAL_STATUS=0
+            ;;
+          HOST-MANUFACTURES)
+            FINAL_TAG="NOT REPRODUCED — HOST MANUFACTURES DEATHS"
+            FINAL_TEXT="the pre-fix binding died on iteration $completed with NEITHER named signature, and the mechanism reproducer's CONTROL — the engine never loaded — died $MECH_CONTROL/$MECH_N on this host. A host that kills a process which never touched the engine can attribute nothing to it (DW-397). Nothing is validated here; find out what is killing the control first."
+            FINAL_STATUS=1
+            ;;
+          DID-NOT-FIRE)
+            FINAL_TAG="NOT REPRODUCED — UNEXPLAINED CRASH"
+            FINAL_TEXT="the pre-fix binding died on iteration $completed with NEITHER named signature, and the mechanism reproducer did NOT fire on this host: $MECH_LOAD/$MECH_N with the engine loaded, $MECH_CONTROL/$MECH_N without. The binding's death is therefore something else, and the harness stays unvalidated. Read the iteration's log before running anything else."
+            FINAL_STATUS=1
+            ;;
+          *)
+            FINAL_TAG="NOT REPRODUCED — UNEXPLAINED CRASH"
+            FINAL_TEXT="the pre-fix binding died on iteration $completed with NEITHER named signature. A crash of unknown cause is not a reproduction of DW-396, and the harness stays unvalidated. Read the iteration's log before running anything else.${MECH_NOTE:+ (The mechanism reproducer could not attribute it: $MECH_NOTE.)}"
+            FINAL_STATUS=1
+            ;;
+        esac
         ;;
       SUITE-FAILED)
         FINAL_TAG="INCONCLUSIVE"
@@ -1008,6 +1112,41 @@ LOG
   expect "  and it exits non-zero" 1 "$FINAL_STATUS"
   final_verdict reproduce 4 CRASH-UNKNOWN no yes
   expect "pre-fix binding died of something else" "NOT REPRODUCED — UNEXPLAINED CRASH" "$FINAL_TAG"
+
+  echo
+  echo "the mechanism check (a nameless death attributed by independent evidence, or refused):"
+  mech_dir="$(mktemp -d)"
+  cat >"$mech_dir/result.log" <<'MEOF'
+  load                                       ....XX..X  -> 81 / 100  ( SIGSEGV=81 )
+      load=yes gc=yes fix=none touched=-
+  noload                                     .........  -> 0 / 100
+
+=== RESULT ===
+  load                                         81 / 100   SIGSEGV=81
+  noload                                        0 / 100   none
+MEOF
+  mechanism_parse "$mech_dir/result.log"; expect "the RESULT block parses: loaded" 81 "$MECH_LOAD"
+  expect "  control" 0 "$MECH_CONTROL"; expect "  per arm" 100 "$MECH_N"
+  printf '  load   ....X -> 3 / 5\n' >"$mech_dir/noresult.log"
+  if mechanism_parse "$mech_dir/noresult.log"; then expect "a log with no RESULT block is refused" refused accepted; else expect "a log with no RESULT block is refused" refused refused; fi
+  MECH_LOAD=22; MECH_CONTROL=0; MECH_N=40; mechanism_verdict; expect "loaded dies, control clean" ATTRIBUTED "$MECH_TAG"
+  MECH_LOAD=22; MECH_CONTROL=1; MECH_N=40; mechanism_verdict; expect "control died: the host manufactures deaths" HOST-MANUFACTURES "$MECH_TAG"
+  MECH_LOAD=0;  MECH_CONTROL=0; MECH_N=40; mechanism_verdict; expect "nothing died: the mechanism did not fire here" DID-NOT-FIRE "$MECH_TAG"
+  MECH_LOAD=""; MECH_CONTROL=""; MECH_N=""; mechanism_verdict; expect "no numbers: not run" NOT-RUN "$MECH_TAG"
+  MECH_LOAD=22; MECH_CONTROL=0; MECH_N=40; MECH_TAG=ATTRIBUTED
+  final_verdict reproduce 2 CRASH-UNKNOWN no yes
+  expect "a nameless death, attributed by the mechanism" "REPRODUCED — BY MECHANISM" "$FINAL_TAG"
+  expect "  and it exits zero" 0 "$FINAL_STATUS"
+  MECH_TAG=HOST-MANUFACTURES; MECH_CONTROL=3
+  final_verdict reproduce 2 CRASH-UNKNOWN no yes
+  expect "a nameless death on a host whose control dies" "NOT REPRODUCED — HOST MANUFACTURES DEATHS" "$FINAL_TAG"
+  expect "  and it exits non-zero" 1 "$FINAL_STATUS"
+  MECH_TAG=DID-NOT-FIRE; MECH_LOAD=0; MECH_CONTROL=0
+  final_verdict reproduce 2 CRASH-UNKNOWN no yes
+  expect "a nameless death where the mechanism is not live" "NOT REPRODUCED — UNEXPLAINED CRASH" "$FINAL_TAG"
+  expect "  and it exits non-zero" 1 "$FINAL_STATUS"
+  MECH_LOAD=""; MECH_CONTROL=""; MECH_N=""; MECH_TAG=NOT-RUN
+  rm -rf "$mech_dir"
   final_verdict soak 100 KERNEL-OVERFLOW-ONLY yes yes
   expect "kernel overflowed while every iteration passed" "FAILED — DW-396 SIGNATURE, HOST SURVIVED" "$FINAL_TAG"
   expect "  and it exits non-zero" 1 "$FINAL_STATUS"
@@ -1670,7 +1809,14 @@ echo
 
 # ----------------------------------------------------------- the verdict
 
-if [ "$mode" = "reproduce" ] && [ "$outcome" = "DW396" ]; then
+# A DEATH WITH NO NAME GOES TO THE MECHANISM REPRODUCER, ON THIS HOST, NOW.
+# Linux only: the reproducer is, and so is the defect.
+if [ "$mode" = "reproduce" ] && [ "$outcome" = "CRASH-UNKNOWN" ] && [ "$(uname -s)" = "Linux" ]; then
+  mechanism_check
+  echo
+fi
+
+if [ "$mode" = "reproduce" ] && { [ "$outcome" = "DW396" ] || [ "$MECH_TAG" = "ATTRIBUTED" ]; }; then
   record_reproduction || true
   validated="yes"
 fi
