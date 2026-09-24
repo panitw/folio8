@@ -211,8 +211,18 @@ for core in "$core_dir"/core.*; do
   # <path>` for any frame it can place in a shared object even with no symbols.
   echo "--- frames placed in the engine (Go) ---"
   grep -nE "libfolio8_native" "$work/backtrace.txt" | head -10 || echo "  (none)"
+  # KEPT BEFORE IT IS PRINTED. The first version copied the backtrace out at
+  # the END of this block and a `sed | head` in the middle took SIGPIPE, which
+  # under `pipefail` killed the script with exit 4 -- losing the trace it had
+  # just spent 150 attempts earning. The artefact is written first now, and
+  # every pipe below tolerates a closed reader.
+  cp "$work/backtrace.txt" "$core_dir/backtrace-$(basename "$core").txt" 2>/dev/null || true
+  cp "$work/gdb.err" "$core_dir/gdb-$(basename "$core").err" 2>/dev/null || true
+
   # The faulting thread first, then anything naming a Go handler anywhere.
-  sed -n '/^Thread 1 /,/^Thread 2 /p' "$work/backtrace.txt" | head -30
+  set +o pipefail
+  sed -n '/^Thread 1 /,/^Thread 2 /p' "$work/backtrace.txt" | head -40
+  set -o pipefail
   echo
   echo
   echo "--- frames naming a Go signal handler, any thread ---"
@@ -231,7 +241,19 @@ for core in "$core_dir"/core.*; do
   echo "--- frames naming libcoreclr or the engine ---"
   grep -nE "libcoreclr|libfolio8_native" "$work/backtrace.txt" | head -10 || echo "  (none)"
   clr_only=$(grep -cE "libcoreclr" "$work/backtrace.txt" || true)
-  cp "$work/backtrace.txt" "$core_dir/backtrace-$(basename "$core").txt" 2>/dev/null || true
+
+  # ABORT IS A DIFFERENT DEATH FROM A SEGFAULT, AND THIS RUN FOUND ONE.
+  # Run 35945107391's faulting thread was inside glibc's futex_fatal_error --
+  # __libc_fatal, i.e. abort() -- reached from the CLR's handler under
+  # `<signal handler called>`. That is why no kernel line ever appeared for
+  # any of these deaths: the kernel logs an unhandled fatal signal, not a
+  # process that aborts itself. Surfaced by name so the next reader does not
+  # have to rediscover it from a stack.
+  if grep -qE "futex_fatal_error|__libc_fatal|abort \(\)" "$work/backtrace.txt" 2>/dev/null; then
+    echo
+    echo "--- NOTE: this is an ABORT, not a segfault ---"
+    grep -nE "futex_fatal_error|__libc_fatal|abort \(\)|<signal handler called>" "$work/backtrace.txt" | head -5
+  fi
   break
 done
 

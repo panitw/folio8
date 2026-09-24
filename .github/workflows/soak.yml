@@ -50,7 +50,7 @@ on:
       job:
         description: "Which leg to run"
         type: choice
-        options: [soak, load-exposure, crash-trace, both-legs]
+        options: [soak, load-exposure, crash-trace, altstack-experiment, both-legs]
         default: soak
 
 permissions:
@@ -338,3 +338,38 @@ jobs:
           path: ${{ runner.temp }}/trace-out
           if-no-files-found: warn
           retention-days: 30
+
+  # ===================================================================
+  # IS THE ALTERNATE SIGNAL STACK THE CAUSE, OR A BYSTANDER?
+  # crash-trace named the death: glibc's futex_fatal_error -- an ABORT, not a
+  # segfault -- reached from the CLR's handler under `<signal handler called>`
+  # on a `.NET TP Worker`. Corrupted futex, inside a signal handler, only when
+  # the engine is loaded. A handler running out of room on a 16 KiB alternate
+  # stack corrupts memory exactly like that, but so do other things.
+  #
+  # Three arms, one variable each. Neither workaround is shippable -- both
+  # reach into another runtime's signal handlers -- they exist to name a cause.
+  # ===================================================================
+  altstack-experiment:
+    if: ${{ inputs.job == 'altstack-experiment' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        rid: ${{ fromJSON(inputs.rid == 'both' && '["linux-x64","linux-arm64"]' || format('["{0}"]', inputs.rid)) }}
+    name: altstack-experiment (${{ matrix.rid }})
+    runs-on: ${{ matrix.rid == 'linux-arm64' && 'ubuntu-24.04-arm' || 'ubuntu-24.04' }}
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: ${{ matrix.rid == 'linux-arm64' && 'linux/amd64' || 'linux/arm64' }}
+      - name: build both Linux natives (pinned image)
+        run: ./folio-dotnet/build/build-native.sh linux-x64 linux-arm64
+      - name: assert both natives are the right machine and keep the glibc floor
+        run: ./folio-dotnet/build/verify-linux-natives.sh
+      - name: three arms, one variable each
+        run: ./folio-dotnet/build/altstack-experiment/run.sh -n "${{ inputs.iterations }}"
