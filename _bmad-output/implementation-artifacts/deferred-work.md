@@ -7468,6 +7468,66 @@ as such.
 Until then the honest statement is: **the shipped binding crashes about one Linux amd64 run in four,
 the cause is unnamed, and no Linux RID can ship.** The pack gate already enforces the last part.
 
+#### 2026-09-24: THE SIGNAL PATH IS NOT WHAT IS KILLING THE PROCESS — AND THERE ARE TWO DEFECTS, NOT ONE
+
+**The experiment.** Three arms, 200 iterations each, one variable apiece, on a GitHub amd64 runner
+(`folio-dotnet/build/altstack-experiment/`, run 35945952122). Same binding, same native, same host:
+
+| Arm | What it changes | Deaths |
+|---|---|---|
+| `none` | nothing — the shipped binding | **144 / 200** |
+| `noonstack` | `SA_ONSTACK` cleared after load, so Go's handlers run on the thread's ordinary megabyte-plus stack | **148 / 200** |
+| `restore` | the CLR's own `SIGSEGV`/`SIGBUS`/`SIGURG` handlers put back, so Go's never run on a .NET thread | **137 / 200** |
+
+**All three are the same number.** Moving the handler off the small stack does nothing. Removing
+Go's handler from the path entirely does nothing. **The alternate signal stack is not the cause of
+this crash, and neither is Go's handler.**
+
+**What the crash actually is** (`crash-trace.sh`, run 35945107391, backtrace from a 640 MB core):
+
+```
+#0  futex_fatal_error   "the futex facility returned an unexpected error code" — __libc_fatal, abort
+#4  ___pthread_cond_wait
+#5  libcoreclr.so
+#9  <signal handler called>
+Thread: .NET TP Worker
+```
+
+It **aborts**; it does not segfault. That single fact explains why every death all day was
+`CRASH-UNKNOWN` and why `dmesg` was always empty: the kernel logs an *unhandled fatal signal*, not a
+process that calls `abort()` on itself. The `overflowed sigaltstack` line was never going to appear
+for these crashes.
+
+**Ruled out, each by measurement rather than argument:** the alternate stack's size (`noonstack`),
+Go's handlers being in the path at all (`restore`), symbol interposition on glibc (63 exported
+symbols, all cgo/folio8-namespaced, none shadowing `malloc`, `free`, `pthread_*` or `memcpy`), and
+host unsoundness (the engine-free arm is 0 in 500).
+
+### THE CONSEQUENCE: SEPARATE THE TWO DEFECTS
+
+This entry has been treating one name as one bug. It is two:
+
+| | **DW-396 proper** | **the abort** |
+|---|---|---|
+| Symptom | `signal: <thread>[pid] overflowed sigaltstack`, SIGSEGV | `futex_fatal_error`, SIGABRT, no kernel line |
+| Observed on | owner's WSL2 box (2026-09-21, and again 2026-09-23 run 35889756264 on a GitHub runner, **pre-fix binding**) | GitHub amd64 runners, **HEAD's binding**, ~27–72% |
+| Mechanism | measured: Go's `SA_ONSTACK` handlers process-wide, CLR threads on 16 KiB, Go sizes 32 KiB | **unknown** |
+| Addressed by `7f6a936` | plausibly — the reproduction leg still fires on the pre-fix binding and has never been run to completion against HEAD | **no** — three arms say the signal path is irrelevant to it |
+
+**So the shipped fix has NOT been shown to fail.** The 2026-09-23 retraction stands and is reinforced:
+the crash-rate comparison that produced "the fix does not work" was comparing the *abort*, which the
+fix was never aimed at. What remains unknown is whether `EngineThreads` closes DW-396 proper — the
+soak has never completed, because the abort kills it first.
+
+**What ships, and what does not.** `linux-arm64` shows **0 deaths in 1000 iterations** across both
+arms of load-exposure and both architectures of the abort experiment — the abort appears to be
+amd64-only. `linux-x64` cannot ship until the abort is named. The pack gate holds both.
+
+**Next, and it is a different investigation from this entry's:** a minimal reproducer. A console app
+that `dlopen`s the engine and exercises the thread pool, with the test host and vstest removed from
+the picture, and the CLR's own stderr visible — `__libc_fatal` writes its message there and nothing
+has yet read it. Filed as **DW-398**.
+
 ⚠ **If a long reproduction leg still cannot catch it on GitHub's runners, that is a finding, not a
 blocker to route around.** It would mean the amd64 evidence has to come from a host where the defect
 does fire, and the only one known to do so is the owner's WSL2 box — which is unsound for the soak
@@ -7776,6 +7836,30 @@ count is **not configurable** and equals the soak's: a control shorter than the 
 the false clear one level up. The judgement lives in `control_verdict()` in the tool's pure half,
 and `--self-check` drives it over five synthetic cases including the 2026-09-23 reading itself —
 75 cases now, up from 70.
+
+### DW-398 — loading the engine aborts a .NET process on Linux amd64, and it is not DW-396
+
+- **Deferred by:** SPEC-dotnet-linux, 2026-09-24, on run 35945952122.
+- **Owner:** whoever next tries to ship `linux-x64`.
+- **Severity:** HIGH. It is ~27-72% of runs on amd64 and it blocks the RID.
+- **Status:** OPEN.
+
+**What happens.** Loading `libfolio8_native.so` into a .NET 10 process on Linux amd64 causes the
+process to **abort** — glibc's `futex_fatal_error` from `pthread_cond_wait` inside `libcoreclr`,
+under a `<signal handler called>` frame, on a `.NET TP Worker`. No render is needed; one crossing, or
+merely `NativeLibrary.Load`, is enough. Not loading it: **0 deaths in 500**. arm64: **0 in 1000**.
+
+**Ruled out:** the alternate signal stack's size, Go's signal handlers being in the path, symbol
+interposition, host unsoundness. See DW-396's 2026-09-24 subsection for the three-arm experiment.
+
+**Not yet tried, in order of cost:** read the CLR's stderr (`__libc_fatal` prints there and nobody has
+looked); a minimal console reproducer without vstest; `strace -f -e futex` for the errno; bisecting
+the Go toolchain and the .NET runtime version; testing whether the glibc 2.28 build floor against a
+2.39 host is implicated, which would be visible as an abort that a host-built native does not produce.
+
+⚠ **DO NOT fold this back into DW-396.** They have different symptoms, different signatures, and one
+of them is measured while the other is not. Conflating them is what produced a wrong conclusion on
+2026-09-23 and a day of chasing a kernel line that could never appear.
 
 ### DW-148 — comments that describe a sibling's behaviour go stale silently; four instances this run
 
