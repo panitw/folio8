@@ -43,6 +43,37 @@ internal static class Program
 
     [DllImport("libc", SetLastError = true)]
     private static extern int sigaction(int signum, byte[] act, byte[] oldact);
+    [DllImport("libc", SetLastError = true)]
+    private static extern long sysconf(int name);
+    [DllImport("libc", SetLastError = true)]
+    private static extern int sigaltstack(IntPtr ss, byte[] oldss);
+
+    // The three numbers the overflow arithmetic needs, from the process that
+    // is about to run it: the kernel's own statement of its signal-frame size
+    // on THIS cpu (_SC_MINSIGSTKSZ, glibc 2.34+), glibc's recommended
+    // altstack (_SC_SIGSTKSZ), and the altstack the CLR actually installed on
+    // a pool thread. Run 35990139779 died 7,200 bytes into a handler on a
+    // 16 KiB altstack with the kernel frame above it; these say whether the
+    // frame on this host could ever have fit.
+    private static string StackNumbers()
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) return "";
+        long minsig = -1, sigstk = -1; try { minsig = sysconf(249); sigstk = sysconf(250); } catch { }
+        long alt = -1; int altflags = -1;
+        var done = new ManualResetEventSlim(false);
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+            try
+            {
+                var ss = new byte[24];              // stack_t: ss_sp 8, ss_flags 4 (+4 pad), ss_size 8
+                if (sigaltstack(IntPtr.Zero, ss) == 0) { altflags = BitConverter.ToInt32(ss, 8); alt = BitConverter.ToInt64(ss, 16); }
+            }
+            catch { }
+            done.Set();
+        });
+        done.Wait(2000);
+        return " minsigstksz=" + minsig + " sigstksz=" + sigstk + " pool_altstack=" + alt + (altflags == 2 ? "(SS_DISABLE)" : "");
+    }
 
     private static byte[] Read(int sig) { var b = new byte[256]; return sigaction(sig, null, b) == 0 ? b : null; }
     private static long HandlerOf(byte[] a) { return BitConverter.ToInt64(a, 0); }
@@ -166,7 +197,7 @@ internal static class Program
 
         string touched = fix == "none" ? "-" : ApplyFix(fix, before);
         Console.Error.WriteLine("[repro] load=" + (load ? "yes" : "no") + " gc=" + (gc ? "yes" : "no")
-                                + " fix=" + fix + " touched=" + touched);
+                                + " fix=" + fix + " touched=" + touched + StackNumbers());
 
         // The window: forced collections for the whole hold, each one
         // suspending every worker in managed code by signal.

@@ -281,13 +281,66 @@ except Exception as e:
     print("errno probe failed: %s" % e)
 PYEOF
 
+  # THE ALTERNATE STACK, MEASURED FROM THE CORE. Run 35990139779 died at a
+  # CALL whose return-address push faulted, 7,200 bytes into the CLR's
+  # activation handler, ~10.5 KB below the kernel's signal frame: a stack
+  # overflow of a handler Go relocated onto the CLR's 16 KiB altstack. The
+  # ucontext the kernel handed the handler records the altstack in effect
+  # (uc_stack), so the core can say how big it was and how much was used,
+  # with no inference. Walks to the handler frame by name; says so if absent.
+  cat >"$work/altstack.py" <<'PYEOF'
+import gdb
+print("===THE ALTERNATE STACK, FROM uc_stack===")
+try:
+    gdb.execute("thread 1", to_string=True)
+    f = gdb.newest_frame(); hit = None
+    while f is not None:
+        n = f.name() or ""
+        if "inject_activation_handler" in n or "sigsegv_handler" in n or "sigabrt_handler" in n or "sigfpe_handler" in n or "sigbus_handler" in n:
+            hit = f; break
+        f = f.older()
+    if hit is None:
+        print("no PAL signal-handler frame on the faulting thread; nothing to measure")
+    else:
+        hit.select()
+        ctx = None
+        for cand in ("context", "ucontext"):
+            try: ctx = hit.read_var(cand); break
+            except Exception: pass
+        if ctx is None:
+            print("handler frame %s has no readable `context` argument" % hit.name())
+        else:
+            uc = gdb.parse_and_eval("*(ucontext_t*)%s" % ctx)
+            ss = uc["uc_stack"]
+            sp = int(ss["ss_sp"]); size = int(ss["ss_size"]); flags = int(ss["ss_flags"])
+            rsp = int(gdb.parse_and_eval("$rsp"))
+            print("handler frame     : %s" % hit.name())
+            print("uc_stack.ss_sp    : 0x%x" % sp)
+            print("uc_stack.ss_size  : %d bytes" % size)
+            print("uc_stack.ss_flags : %d  (1 = SS_ONSTACK: delivered ON the alternate stack)" % flags)
+            print("rsp at the fault  : 0x%x" % rsp)
+            if size:
+                top = sp + size
+                used = top - rsp
+                print("bytes used at fault: %d of %d  (%s)" % (used, size, "OVERFLOWED" if rsp < sp else "%d bytes remained" % (rsp - sp)))
+                ucaddr = int(ctx)
+                print("kernel frame      : ucontext at 0x%x, %d bytes below the top" % (ucaddr, top - ucaddr))
+except Exception as e:
+    print("altstack probe failed: %s" % e)
+PYEOF
+
   gdb -q -batch -ex "set pagination off" \
       -ex "set debuginfod enabled on" \
       -ex "thread apply all bt" \
       -ex "echo \n===FAULTING THREAD, WITH LOCALS===\n" \
       -ex "thread 1" -ex "bt full 12" \
+      -ex "echo \n===THE FAULT ITSELF===\n" \
+      -ex "p \$_siginfo.si_signo" -ex "p \$_siginfo.si_code" -ex "p/x \$_siginfo._sifields._sigfault.si_addr" \
+      -ex "p/x \$rip" -ex "p/x \$rsp" -ex "p/x \$fs_base" \
+      -ex "x/10i \$pc-24" \
       -ex "echo \n" \
       -x "$work/futex-errno.py" \
+      -x "$work/altstack.py" \
       -ex "echo \n===MAPPINGS===\n" -ex "info proc mappings" \
       -ex "echo \n===REGISTERS===\n" -ex "info registers" \
       ${exe:+"$exe"} --core="$core" \
@@ -350,9 +403,15 @@ PYEOF
   clr_only=$(grep -cE "libcoreclr" "$work/backtrace.txt" || true)
 
   echo
-  echo "--- the futex errno probe ---"
+  echo "--- the fault itself: signal, si_addr, rip/rsp/fs_base, the instructions at rip ---"
   set +o pipefail
-  sed -n '/===THE FUTEX ERRNO===/,/===MAPPINGS===/p' "$work/backtrace.txt" | grep -v '===MAPPINGS===' | sed 's/^/  /' | head -12
+  sed -n '/===THE FAULT ITSELF===/,/===THE FUTEX ERRNO===/p' "$work/backtrace.txt" | grep -v '===THE FUTEX' | sed 's/^/  /' | head -24
+  echo
+  echo "--- the futex errno probe ---"
+  sed -n '/===THE FUTEX ERRNO===/,/===THE ALTERNATE STACK/p' "$work/backtrace.txt" | grep -v '===THE ALTERNATE' | sed 's/^/  /' | head -8
+  echo
+  echo "--- the alternate stack, from the ucontext the kernel handed the handler ---"
+  sed -n '/===THE ALTERNATE STACK, FROM uc_stack===/,/===MAPPINGS===/p' "$work/backtrace.txt" | grep -v '===MAPPINGS===' | sed 's/^/  /' | head -12
   echo
   echo "--- the faulting thread's MANAGED frames (dotnet-dump clrstack) ---"
   # The OS thread id of gdb's Thread 1 is its LWP; clrstack -all prints every

@@ -169,6 +169,7 @@ cat <<EOF2
   native    : $(sha256sum "$native" | awk '{print $1}')
   host      : $(uname -n), $(uname -s) $(uname -r), $(uname -m)
   runtime   : $(dotnet --version)
+  cpu       : $(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2- | sed 's/^ *//'); xsave-relevant flags: $(grep -m1 '^flags' /proc/cpuinfo 2>/dev/null | tr ' ' '\n' | grep -E '^(avx2|avx512[a-z_]*|amx[a-z_]*|xsave[a-z]*|pku)$' | sort -u | tr '\n' ' ')
   iterations: $iterations per arm, pool $pool, hold ${hold}ms, $gcflag
   arms      : ${arms[*]}
 
