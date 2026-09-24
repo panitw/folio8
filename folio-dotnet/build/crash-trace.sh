@@ -83,7 +83,7 @@ classify() {
   local deaths="$1" cores="$2" go_frames="$3" clr_only="$4"
   if [ "$deaths" -eq 0 ]; then
     TAG="NO-CRASH"
-    TEXT="the host did not die in this run. Nothing to trace; raise -n or use a host where it does."
+    TEXT="the host did not die in this run. If the binding under test carries the DW-398 fix (SignalDispositions, 2026-09-24) this is the expected result and a measurement of it — run 35992930558: 150 clean on the host where the pre-fix binding died by attempt 2 four times running. To trace the defect itself, build a pre-fix binding (soak.sh --reproduce does) or use build/load-repro."
   elif [ "$cores" -eq 0 ]; then
     TAG="NO-CORE"
     TEXT="the host died $deaths time(s) and the kernel wrote NO core. It is therefore not dying on a signal, which rules out the alternate-signal-stack family entirely -- DW-396 included -- and points at an ordinary process exit: an unhandled exception on a background thread, a FailFast, or a runtime abort that was handled before reaching a signal."

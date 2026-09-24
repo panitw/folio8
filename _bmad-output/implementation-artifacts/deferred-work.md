@@ -8110,6 +8110,14 @@ tool's own hand: `grep | head -1` under `pipefail` took SIGPIPE after the baseli
 arm ran — the mistake `crash-trace.sh` made and recorded earlier the same day. Fixed; the confirmation
 is re-run.
 
+**Run 35992930558 — the fixed binding under vstest, by accident, and it is the cleanest before/after on
+record.** `crash-trace` builds the suite from HEAD, and HEAD now carries the fix; its workload makes the
+version call that triggers the restore. On `runnervmtr4k5` (AMD EPYC 7763, AVX2) — the host where the
+pre-fix binding died on attempt 1 or 2 in four consecutive crash-trace runs (35984125246, 35987974678,
+35990139779, 35991608135) and the reproducer scored 81/100 — the post-fix binding ran **150 iterations
+with no death.** Same host, same native (`9f1296a3…`), same suite and filter, same tool. The tool's
+NO-CRASH text now says what a clean run means once the fix is in the tree, instead of "raise -n".
+
 **Not yet tried, in order of cost:** *(the `restore-*` arms are struck — run and null)* a symbolised
 core (`dotnet-symbol` for `libcoreclr.so.dbg`, `dotnet-dump analyze … clrstack -all` for the managed
 frame the worker was interrupted in), which names the handler in one shot and is in the trace now;
