@@ -76,8 +76,12 @@ internal static class Program
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Linux)) return "";
         long minsig = -1, sigstk = -1; try { minsig = sysconf(249); sigstk = sysconf(250); } catch { }
         long alt = -1; int altflags = -1;
-        var done = new ManualResetEventSlim(false);
-        ThreadPool.QueueUserWorkItem(_ =>
+        // A dedicated thread, not a pool work item: on the fix arms the pool
+        // is saturated by the allocating workers and the read never ran
+        // (run 35991612843 printed pool_altstack=-1 there). The CLR gives
+        // every thread it creates the same alternate stack, so the number is
+        // the same one.
+        var reader = new Thread(() =>
         {
             try
             {
@@ -85,10 +89,11 @@ internal static class Program
                 if (sigaltstack(IntPtr.Zero, ss) == 0) { altflags = BitConverter.ToInt32(ss, 8); alt = BitConverter.ToInt64(ss, 16); }
             }
             catch { }
-            done.Set();
         });
-        done.Wait(2000);
-        return " minsigstksz=" + minsig + " sigstksz=" + sigstk + " pool_altstack=" + alt + (altflags == 2 ? "(SS_DISABLE)" : "");
+        reader.IsBackground = true;
+        reader.Start();
+        reader.Join(2000);
+        return " minsigstksz=" + minsig + " sigstksz=" + sigstk + " clr_altstack=" + alt + (altflags == 2 ? "(SS_DISABLE)" : "");
     }
 
     private static byte[] Read(int sig) { var b = new byte[256]; return sigaction(sig, null, b) == 0 ? b : null; }
