@@ -134,6 +134,11 @@ and on Azure's, with the engine's protection switched OFF, the pre-fix binding d
 ON the shipped configuration ran a clean hundred. A validated arm64 harness is not obtainable, and the
 assertion for `linux-arm64` rests on the mechanism's absence rather than on a reproduction.
 
+**Accepted by the owner, 2026-09-25.** With the four rows above in front of them the owner accepted
+that reading — amd64 validated and clean; arm64 clean with the mechanism shown absent on two hosts —
+as the evidence `FolioLinuxSoakEvidence` claims. The assertion is typed at the pack, by a person, as the
+gate requires; this line records who accepted what it stands for, and on which runs.
+
 Fill each cell with the runner's own verdict block: it already carries binding
 identity, native path and **SHA-256**, host, kernel, architecture, translation
 verdict, iteration count and every failure with its signature. Keep the

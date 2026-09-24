@@ -283,8 +283,9 @@ one addition and one behaviour change a .NET integrator can observe:
   `UNVALIDATED` by the tool's own rule. All of it is recorded in
   `_bmad-output/implementation-artifacts/dotnet-linux-soak.md`. The pack
   refuses without the assertion; typing it means accepting arm64 on the
-  mechanism's absence rather than on a reproduction. See the
-  package-contents section below.
+  mechanism's absence rather than on a reproduction — **which the owner
+  did on 2026-09-25**, recorded in that file. See the package-contents
+  section below.
 
 ### The cross-target hash matrix
 
@@ -417,9 +418,9 @@ no emulation and no Rosetta, both recorded in
 recorded there (run 36011142609: reproduced on iteration 27, then 100 / 100
 clean). The arm64 legs are recorded there too, and neither validates: the
 mechanism cannot fire on arm64, so the tool calls the clean hundred
-`UNVALIDATED`. **`1.2.0` is packable the moment the owner accepts that
-reading and types the assertion**; typing it without having read those rows
-would repeat the false clear DW-396 already records being made twice. A Windows-only pack — `-p:FolioPackPlatforms=windows`, which the
+`UNVALIDATED`. **The owner accepted that reading on 2026-09-25**, so `1.2.0`
+is packable with the assertion typed at the pack; typing it without having read
+those rows would repeat the false clear DW-396 already records being made twice. A Windows-only pack — `-p:FolioPackPlatforms=windows`, which the
 .NET Framework consumer harness uses — drops both Linux items and needs no
 assertion, because it ships no Linux native.
 
