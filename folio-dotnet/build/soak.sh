@@ -236,8 +236,12 @@ fi
 # engine honours it once, at load, leaves Go's edits in place, and reports
 # mode=leave. The soak leg runs without it, as shipped. The mechanism check
 # below sets it on its own baseline arm for the same reason.
-leave_env=""
-if [ "$mode" = "reproduce" ]; then leave_env="FOLIO8_SIGNAL_DISPOSITIONS=leave"; fi
+# leave_desc is computed HERE, in a plain assignment, because the banner is an
+# unquoted heredoc and an apostrophe inside ${var:-word} there opens a string
+# that closes lines later -- run 35998599319 lost a soak to that, and run
+# 36009787332 lost another to this very line before it was moved up here.
+leave_env=""; leave_desc="none (the engine restores the host signal flags in its own constructor, as shipped)"
+if [ "$mode" = "reproduce" ]; then leave_env="FOLIO8_SIGNAL_DISPOSITIONS=leave"; leave_desc="$leave_env on every test host of this leg"; fi
 
 # THE WHOLE ARGUMENT LIST IS KNOWN GOOD BEFORE THE HOST IS EVEN LOOKED AT.
 # `--iterations 0` must be refused as a bad argument wherever it is typed, not
@@ -1599,7 +1603,7 @@ cat <<HEADER
   suite                : $tests_csproj
   filter               : $filter
   gc pressure          : $gc_pressure_desc
-  engine switch: ${leave_env:-none (the engine restores the host's signal flags in its own constructor, as shipped)}}
+  engine switch        : $leave_desc
   iterations requested : $iterations
   host                 : $(uname -n)
   kernel               : $(uname -s) $(uname -r)

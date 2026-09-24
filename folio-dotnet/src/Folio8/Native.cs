@@ -242,7 +242,9 @@ internal static class Native
     /// </summary>
     internal static string SignalDispositionsReport()
     {
-        Frame frame = Invoke((out ulong token, out IntPtr result, out int length) =>
+        // Qualified on purpose: SurfaceTests reads every folio8_ call site
+        // for `Native.Invoke(`, the pooled path, and refuses the rest.
+        Frame frame = Native.Invoke((out ulong token, out IntPtr result, out int length) =>
             folio8_signal_dispositions(out token, out result, out length));
         return System.Text.Encoding.UTF8.GetString(frame.Payload);
     }
