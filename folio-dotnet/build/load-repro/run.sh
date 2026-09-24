@@ -83,6 +83,7 @@ gcflag=--gc
 out=""
 native=""
 iteration_timeout=60
+core_arm=""   # --core-arm NAME: keep the first core that arm produces, and read it
 arms=(load noload "load:fix=restore-relocated" "load:fix=restore-all" "load:fix=restore-relocated:env=GODEBUG=asyncpreemptoff=1" "load:fix=restore-relocated:sync=call")
 selfcheck=0
 
@@ -95,6 +96,7 @@ while [ "$#" -gt 0 ]; do
     --out) out="$2"; shift 2 ;;
     --native) native="$2"; shift 2 ;;
     --iteration-timeout) iteration_timeout="$2"; shift 2 ;;
+    --core-arm) core_arm="$2"; shift 2 ;;
     --arms) IFS=, read -r -a arms <<<"$2"; shift 2 ;;
     --self-check) selfcheck=1; shift ;;
     *) echo "unknown argument '$1'" >&2; exit 1 ;;
@@ -206,6 +208,25 @@ EOF2
 
 ulimit -c 0 2>/dev/null || true   # a core per death would dominate the runtime
 
+# A CORE FROM THE ARM NAMED BY --core-arm. The residual with the fix is 1-4%
+# and unexplained (runs 35993471395, 35999753222); its death has never been
+# read. For that one arm cores are enabled and routed to a file, the first
+# one is kept, and read-core.sh reads it after the arm. Needs passwordless
+# sudo for kernel.core_pattern; without it the arm runs and says so.
+core_dir=""; previous_pattern=""
+if [ -n "$core_arm" ]; then
+  if sudo -n true 2>/dev/null; then
+    core_dir="$work/cores"; mkdir -p "$core_dir"; chmod 777 "$core_dir"
+    previous_pattern="$(cat /proc/sys/kernel/core_pattern)"
+    echo "$core_dir/core.%e.%p" | sudo tee /proc/sys/kernel/core_pattern >/dev/null
+    trap 'echo "$previous_pattern" | sudo -n tee /proc/sys/kernel/core_pattern >/dev/null 2>&1 || true' EXIT
+    echo "  cores     : enabled for arm '$core_arm' -> $core_dir"
+  else
+    echo "  cores     : --core-arm '$core_arm' needs passwordless sudo for kernel.core_pattern; running without cores"
+    core_arm=""
+  fi
+fi
+
 declare -a names=() totals=() breakdowns=() touched=()
 saved=0
 mkdir -p "$work/dumps"
@@ -216,6 +237,7 @@ for arm in "${arms[@]}"; do
   args+=(--pool "$pool" --hold "$hold" "$gcflag" --fix "$arm_fix" --sync "$arm_sync")
   declare -A tally=()
   bad=0; first_line=""
+  if [ -n "$core_arm" ] && [ "$arm" = "$core_arm" ]; then ulimit -c unlimited; else ulimit -c 0 2>/dev/null || true; fi
   kl_before="$( (dmesg 2>/dev/null || sudo -n dmesg 2>/dev/null) | grep -c 'overflowed sigaltstack' || true)"; kl_before="${kl_before:-0}"
   printf '  %-42s ' "$arm"
   for i in $(seq 1 "$iterations"); do
@@ -249,6 +271,7 @@ for arm in "${arms[@]}"; do
         saved=$((saved + 1)); printf '%s' "$err" >"$work/death-$saved.txt"
       fi
       if [ -z "$dump" ]; then dump="$(ls -t "$work/dumps"/dump.* 2>/dev/null | head -1 || true)"; fi
+      if [ -n "$core_arm" ] && [ "$arm" = "$core_arm" ] && ls "$core_dir"/core.* >/dev/null 2>&1; then ulimit -c 0 2>/dev/null || true; fi
     fi
   done
   b=""; for k in "${!tally[@]}"; do [ "$k" = clean ] && continue; b="$b $k=${tally[$k]}"; done
@@ -277,6 +300,17 @@ for arm in "${arms[@]}"; do
   fi
   names+=("$arm"); totals+=("$bad"); breakdowns+=("${b:- none}"); touched+=("$first_line")
   unset tally
+  if [ -n "$core_arm" ] && [ "$arm" = "$core_arm" ]; then
+    echo
+    echo "=== a residual death from arm '$arm', read from its core ==="
+    core="$(ls -t "$core_dir"/core.* 2>/dev/null | head -1 || true)"
+    if [ -z "$core" ]; then
+      echo "  no core was written by this arm ($bad death(s)). A death the kernel delivers as SIG_DFL"
+      echo "  after failing to build a signal frame writes no core either; check dmesg above."
+    else
+      "$here/../read-core.sh" "$core" "$work/bin/repro" "${out:-$work}" || echo "  (read-core.sh did not complete cleanly)"
+    fi
+  fi
 done
 
 if [ "$saved" -gt 0 ]; then

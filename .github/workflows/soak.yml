@@ -47,6 +47,11 @@ on:
         description: "Reproduction-leg iterations (must catch the defect or the soak is refused)"
         type: string
         default: "150"
+      core_arm:
+        description: "load-repro only: the arm whose first death is kept as a core and read (e.g. load:fix=restore-relocated:sync=call); empty for none"
+        required: false
+        default: ""
+        type: string
       job:
         description: "Which leg to run"
         type: choice
@@ -408,7 +413,7 @@ jobs:
       - name: the classifier's own judgement, before it is trusted with a rate
         run: ./folio-dotnet/build/load-repro/run.sh --self-check
       - name: baseline, control, and one arm per thing the load changes
-        run: ./folio-dotnet/build/load-repro/run.sh -n "${{ inputs.iterations }}" --out "$RUNNER_TEMP/repro-out"
+        run: ./folio-dotnet/build/load-repro/run.sh -n "${{ inputs.iterations }}" --out "$RUNNER_TEMP/repro-out" --core-arm "${{ inputs.core_arm }}"
       - name: keep the dump analysis and the first deaths' stderr
         if: always()
         uses: actions/upload-artifact@v4
