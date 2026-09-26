@@ -43,6 +43,20 @@ is in the `c-shared` library the client packages embed, and it is additive.
 No rendering byte moved: `go-corpus.json` and `go-parity.json` change only in
 their `folio8Version` string.
 
+**The client packages.** Both publish as `folio8`, both carry this engine,
+and both are numbered **1.2.0**, so Go, Node and .NET name one version:
+
+- **NuGet `folio8` 1.2.0**, from `901003d`, tag `folio-dotnet/v1.2.0`: four
+  natives, `win-x64`, `win-x86`, `linux-x64`, `linux-arm64`. The Linux pair
+  is what this release exists for; see "Publishing `folio8` to NuGet".
+- **npm `folio8` 1.2.0**, from the commit `folio-js/v1.2.0` tags, one after
+  `901003d`: the bump of `folio-js/package.json`. **Nothing a Node caller can
+  see changed.** The wasm is built from `wasm/cmd/render` and never compiles
+  `cshared/`, so `dist/`, `wasm/` and `fonts/` render the same bytes as 1.1.0
+  and differ only in the version they report: `version` and
+  `folio8EngineVersion` now say `1.2.0`. The bump exists for the number, and
+  it is why this tag sits one commit after the other two.
+
 ## `folio-go/v1.1.0`
 
 **A MINOR, not a major.** Everything added since `v1.0.0` is additive — no
@@ -359,6 +373,37 @@ red then, the judgement is made again, on that release's own evidence. What
 would remove the question entirely is discharging DW-208 — naming and fixing
 the blocking action in preview admission, or measuring the timeout as
 environmental and saying which environments it does not reproduce in.
+
+#### v1.2.0: cut with `folio-designer-e2e` red, on the owner's decision
+
+The judgement was made again, on this release's evidence, and this time the
+rule above was **not** met: both `folio8` packages were cut from commits on
+which `ci.yml` was red. Recorded here so the next release does not read the
+rule as one that has always held.
+
+**What was red.** One job, `folio-designer-e2e`, on one test,
+`browser-native-roundtrip.spec.ts:362` ("fresh authored sessions close
+exactly through admitted Preview and native folio8"): the Preview was not
+admitted inside its 150 s budget, so the comparison the test exists to make
+never ran; the other 136 e2e tests passed. It failed on every `ci.yml` run on
+`main` after `46c97dd` (2026-09-24 15:03 UTC, the last green): `d3eeb37`,
+`50e94be`, `1e0fcd7`, `05f1361`, and both attempts of run 36074747812 on
+`901003d`. `matrix.yml` was green on `901003d` (run 36074747668).
+
+**What the decision rested on.** Not a green run, since there was none.
+Between `46c97dd` and `901003d`, `git diff` over `folio-go/` outside
+`cshared/`, `folio-js/src/` and `folio-designer/src/` touches two files,
+`folio-go/version.go` and `folio-js/src/version.ts`, and only the version
+string in each. This release's engine change is in `cshared/`, which the wasm
+does not compile and the browser never loads. So the browser-and-native
+agreement the test measures was last measured, and passed, on sources
+identical but for that string to the ones tagged. The owner deferred DW-208
+on 2026-09-25 for the NuGet package, and on 2026-09-26 for npm, whose
+tarball changes only in the version it reports.
+
+**Not precedent.** DW-208 is open, and this is the second release in a row to
+reason around it instead of discharging it. The next release meets the rule
+as written, or discharges DW-208 first.
 
 ### The commands
 
