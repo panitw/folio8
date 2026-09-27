@@ -42,11 +42,16 @@ the [architecture spine](_bmad-output/planning-artifacts/architecture/architectu
 | [folio-go/](folio-go/) | The rendering engine and reference implementation — expression evaluation, layout, pagination, PDF output. A Go module: `github.com/panitw/folio8/folio-go`. See its [README](folio-go/README.md). |
 | [folio-go/cmd/folio8/](folio-go/cmd/folio8/) | The `folio8` CLI: `validate` and `render`, and nothing else. |
 | [folio-go/wasm/cmd/engine/](folio-go/wasm/cmd/engine/) | The designer's js/wasm entry point over the internal session engine in `folio-go/internal/wasm` — the same engine, compiled to wasm. Not public API. |
+| [folio-go/cshared/](folio-go/cshared/) | The same engine as a C ABI (`folio8_native`), which the .NET package loads. |
+| [folio-js/](folio-js/) | The npm package `folio8`: a promise-based Node binding over the engine compiled to js/wasm (`folio-go/wasm/cmd/render`). See the [folio-js guide](docs/folio-js.md). |
+| [folio-dotnet/](folio-dotnet/) | The NuGet package `folio8`: a `netstandard2.0` binding over the C ABI, with natives for `win-x86`, `win-x64`, `linux-x64` and `linux-arm64`. See the [folio-dotnet guide](docs/folio-dotnet.md). |
 | [folio-designer/](folio-designer/) | The visual designer: React + Vite, running the wasm engine in a worker. No server, no account, no upload — your templates, data and rendered PDFs never leave your machine. On usage measurement in the hosted build, see above. |
 | [fixtures/](fixtures/) | The golden corpus — template, data, params and the expected PDF for each fixture document. These bytes are the contract every renderer conforms against. |
 | [lint/](lint/) | The guardrails that fail the build: architecture/import rules, the float ban, and the third-party licence check ([MANIFEST.md](lint/MANIFEST.md)). A separate Go module. |
 | [hashmatrix/](hashmatrix/) | A deliberately-broken floating-point probe, kept out of the guards' reach, that proves the cross-target matrix can actually *detect* divergence. See its [README](hashmatrix/README.md). |
 | [tools/fontgen/](tools/fontgen/) | Derives the shipped static faces from upstream variable builds. The outputs are committed; this exists so the derivation can be replayed. |
+| [deploy/](deploy/) | The static host for the hosted designer: a Caddyfile implementing `folio-designer/static-host-contract.json`, rolled out by [deploy.yml](.github/workflows/deploy.yml). |
+| [evidence/](evidence/) | Measurement records kept beside the docs rather than in them — the soak of the .NET Linux natives. |
 | [docs/](docs/) | User documentation, the source of truth: the [rendering library guide](docs/rendering-library.md), the [folio-js guide](docs/folio-js.md) (the npm package `folio8`), the [folio-dotnet guide](docs/folio-dotnet.md) (the NuGet package `folio8`), the [`.folio` format reference](docs/folio-format.md), the [expression reference](docs/expression-reference.md), and the original [MVP plan](docs/folio8-mvp-plan.md). |
 | [_bmad-output/](_bmad-output/) | Planning and delivery record: PRD, architecture spine, specs, epics, and [sprint status](_bmad-output/implementation-artifacts/sprint-status.yaml). |
 
@@ -65,19 +70,22 @@ params and font set produce the same PDF bytes whichever you pick.
 
 | Build | Install | Needs |
 | --- | --- | --- |
-| **folio-go** — the reference engine | `go get github.com/panitw/folio8/folio-go@v1.0.0` | Go 1.25 or newer; byte-identity is pinned to the go1.26.0 toolchain |
+| **folio-go** — the reference engine | `go get github.com/panitw/folio8/folio-go@v1.2.0` | Go 1.25 or newer; byte-identity is pinned to the go1.26.0 toolchain |
 | **folio-js** — npm `folio8` | `npm install folio8` | Node 22.12 or newer, ESM only |
-| **folio-dotnet** — NuGet `folio8` | `dotnet add package folio8` | .NET Framework 4.6+ or .NET Core 2.0+, **Windows x86/x64 only** |
+| **folio-dotnet** — NuGet `folio8` | `dotnet add package folio8` | .NET Framework 4.6+ or .NET Core 2.0+, on **Windows x86/x64** and, from 1.2.0, **Linux x64/arm64** (glibc 2.28+; no musl, no macOS) |
 
 Each package carries the engine and all eleven shipped font faces, so there is
 nothing to build, no toolchain to install beside it and no network access at
-render time. On a host that is not Windows, folio-js is the portable build.
+render time. Where neither native set reaches — macOS, Alpine, Windows ARM64 —
+folio-js is the portable build.
 
 ### Render a PDF
 
-A template at `invoice.folio`, its data at `invoice.json`, and the same three
-steps in every language: load the template, render it with a font set, write the
-bytes out. Warnings arrive beside a successful render rather than instead of it.
+A template at [`invoice.folio`](folio-designer/public/templates/examples/invoice.folio),
+its data at [`invoice.json`](folio-designer/public/templates/examples/invoice.sample.json)
+— the invoice example the designer opens — and the same three steps in every
+language: load the template, render it with a font set, write the bytes out.
+Warnings arrive beside a successful render rather than instead of it.
 
 **Fonts are always an explicit argument.** There is no default set and no lookup
 on the machine that renders — which is half of why the output is reproducible.
@@ -159,6 +167,8 @@ your binary only if you ask for them — and covers `Data` vs `Params`, the
 
 ### Render from the command line
 
+Install it with `go install github.com/panitw/folio8/folio-go/cmd/folio8@v1.2.0`.
+
 ```
 folio8 validate [-data <path>] [-params <path>] [-fonts <dir>] [-strict] <template.folio>
 folio8 render   [-data <path>] [-params <path>] [-fonts <dir>] [-o <path>] [-strict] <template.folio>
@@ -196,8 +206,9 @@ static, offline-capable release and verifies it.
 ## Templates and data
 
 A `.folio` file is JSON: page setup, three bands (page header, content, page
-footer), and components placed at absolute coordinates. Five component types —
-Text, Image, Table, Line, Rectangle.
+footer) — the content band optionally split by a section break or laid out as
+several designed pages — and elements placed at absolute coordinates. Seven
+element types — Text, Image, Table, Line, Rectangle, Barcode, QR code.
 
 Data binds through double braces, `{{customer.name}}`, and tables bind to a
 collection with an explicit row scope. Expressions are deliberately small:
@@ -253,7 +264,12 @@ cd folio-designer
 npm run test        # unit and contract tests
 npm run typecheck
 npm run lint
-npm run test:e2e    # Playwright; CI compiles the suite, gates run it
+npm run test:e2e    # Playwright; CI runs it in its own job, folio-designer-e2e
+```
+
+```
+cd folio-js     && npm ci && npm test   # builds the wasm first, so Go is needed
+cd folio-dotnet && dotnet test test/Folio8.Tests/Folio8.Tests.csproj -c Release   # after build/build-native.ps1 or .sh
 ```
 
 Repository-level targets — only what spans modules or drives non-Go tooling:
@@ -265,8 +281,10 @@ make fonts-verify   # assert the committed faces still reproduce, writing nothin
 ```
 
 CI ([ci.yml](.github/workflows/ci.yml)) runs build, vet, gofmt, tests and
-guardrails per module. One test is **expected red** and is run in its own job to
-keep that visible rather than skipped.
+guardrails per Go module, folio-js across its Node matrix, folio-dotnet on
+Windows and Linux, and the designer's unit and browser suites. One Go test is
+**expected red** and is run in its own job to keep that visible rather than
+skipped.
 
 ---
 
@@ -276,15 +294,19 @@ The MVP is delivered: Epics 1–6 are closed — deterministic rendering, three
 scripts, expressions and aggregates, tables with pagination and repeating
 headers, the designer, and data binding round-tripping through the file.
 
-Post-MVP work is in flight: long-form body text and a multi-page authoring canvas
-(Epic 7), embeddable fonts (8), component box paint and colour (9–10), the
-inspector and designer chrome (12–14), and the release blockers (15).
+The post-MVP epics are closed too: long-form body text and a multi-page authoring
+canvas (Epic 7), embeddable fonts (8), component box paint and colour (9–10),
+bold and italic (11), the inspector and designer chrome (12–14). Epic 15, the
+release blockers, is the one still open — the engine tag it once carried moved
+to the client-libraries spec and has shipped; what remains is the catalogue-face
+fetch (15.0) and the story that makes CI's red mean something (15.2).
 [sprint-status.yaml](_bmad-output/implementation-artifacts/sprint-status.yaml)
 is the current record, including what is deliberately deferred and why.
 
-`folio-go/v1.0.0` is the first release. Its public Go API — rendering, validation, the
-font input and the diagnostic types — is frozen under semver: a breaking change needs a
-`/v2` import path. See [RELEASING.md](RELEASING.md).
+`folio-go/v1.2.0` is the current release, and the npm and NuGet packages ship the
+same engine at 1.2.0. `v1.0.0` froze the public Go API — rendering, validation, the
+font input and the diagnostic types — under semver: a breaking change needs a `/v2`
+import path. See [RELEASING.md](RELEASING.md).
 
 ---
 
@@ -293,4 +315,5 @@ font input and the diagnostic types — is frozen under semver: a breaking chang
 MIT. See [LICENSE](LICENSE). Third-party dependency licences across all three Go
 modules and the designer's lockfile are resolved and recorded in
 [lint/MANIFEST.md](lint/MANIFEST.md); an unresolved or forbidden licence fails
-the build rather than appearing there silently.
+the build rather than appearing there silently. folio-js and folio-dotnet carry
+no third-party runtime dependency at all.
