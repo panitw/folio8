@@ -10179,7 +10179,7 @@ The caller at `:1043-1045` wraps every refusal from `applyPropertyChanges` as `c
 - **Owner:** **unassigned — this entry exists to get it one.** It is not Epic 16's to fix and not
   Epics 11–15's to absorb.
 - **Severity:** **HIGH** — not because a test is red, but because of which guarantee stops being checked.
-- **Status:** OPEN
+- **Status:** **DISCHARGED 2026-09-27** — see the last dated section of this entry. The history below is kept as written.
 
 **Measured, not inferred.**
 
@@ -10273,6 +10273,66 @@ were beaten by measuring.
 **Also seen, unexplained:** the CJK asset produced TWO request events in the failing run, one
 service-worker-mediated and one from the page. This spec asserts it crosses the wire exactly once,
 and that assertion sits after the admission wait, so it never runs.
+
+#### 2026-09-27: the blocking action is NAMED, and it is fixed
+
+**Where it blocked.** Not in the transport. `EngineClient` settled the retried render — the
+candidate the previous note named, `#abandoned`, was never reached — and `runPreview`
+(`App.tsx`) received the result. What refused it was one condition on the line after the
+`await`: `result.preview.identity !== identity`, followed by a bare `return`. The identity is the
+engine's hash of the canonical bytes, the data, the params **and its font set**
+(`designer.PreviewIdentity(…, e.faces)` in `internal/wasm/engine.go`). `runPreview` asks for it
+once, BEFORE the render; the render reports it again AFTER. Between the two, the transport's
+absent-face recovery had installed the CJK face (`InstallFace` merges it into `e.faces`), so the
+render — for exactly the inputs this run sent, at the same revision — came back carrying an
+identity the check could not have known. The `return` kept `previewStatus` at `rendering`,
+installed nothing, scheduled nothing and reported nothing: "Rendering local PDF", "no render
+yet", for as long as anyone waited. That is the snapshot every red run printed.
+
+**Why it was intermittent, then constant.** The mismatch needs the face to arrive DURING the run
+whose identity is compared. When Preview's first run (on entering the mode) got as far as its
+render, the recovery happened there, and the run the test measures — after the parameters are
+filled — found the face already installed, identities agreeing, and passed. When the parameter
+fill landed before that first render was sent, the first run stopped at `serialize` (`current()`
+false), the recovery moved into the measured run, and it failed. Which side of that race a run
+lands on is timing the harness does not control; no source moved on 2026-09-24 when it went from
+half the runs to all of them, and the shift was not measured further. The worker evidence in every
+failure is the same sequence — `render:error(TEXT_FACE_ABSENT)`, `install-face:ok`, `render:ok` —
+and the page never moving.
+
+**The fix** (`App.tsx`, `runPreview`): the render's own identity is the one recorded on the
+installed preview. The token, generation and revision checks still fence the render to this run's
+inputs; the identity is the engine's statement about them, and recording it is what lets the next
+identity check — made against the same font set — find the preview current rather than render
+again. A row in `App.test.tsx` replays the sequence with a fake engine whose `identity` answers
+before the install and whose `render` answers after it; it is red on the old line and green on
+the new one.
+
+**It was a user-facing hang, as the previous note said.** Any document whose first render needs
+a deferred face, opened when Preview's first pass did not reach a render, sat at "Rendering local
+PDF" until the author changed something. The e2e was the only thing in the repository that walked
+that path with the real engine, which is why the entry ranked it as it did.
+
+**Measured after the fix.**
+
+| where | result |
+|---|---|
+| `App.test.tsx`, the new row, against the old line | FAIL — nothing is ever installed, the stale-PDF control never appears |
+| the same row against the fix | PASS |
+| the designer suite, typecheck and lint | 97 files, 2316 tests, all green |
+| `browser-native-roundtrip.spec.ts:362` locally (macOS, arm64), against the fix | **PASSED**: 9.9 s for the test inside a 3.7 min run (the rest is the production build the config performs). Both sessions admitted; the once-only CJK assertion, which sits after admission and had never executed, passed. |
+
+The CI record is the `folio-designer-e2e` job on the commit carrying this note and on those after
+it; it is not a claim this note can make about itself.
+
+**What the note of 2026-09-22 got right and wrong.** Right: the render succeeded and the page
+never moved; right: it was user-facing. Wrong: "the promise neither resolved nor rejected" — it
+resolved, and the application declined the result in silence. The transport candidate it named
+was not the cause; nothing in `engine-client.ts` changed.
+
+**Status: DISCHARGED**, on the entry's own terms — the blocking action is named and fixed, and
+the test that proves the browser and the native binary agree on a human-authored document runs
+green again.
 
 ---
 

@@ -1127,6 +1127,37 @@ describe('application shell', () => {
     expect(screen.getByText('Unsaved local changes')).toBeInTheDocument()
   })
 
+  it('installs a render whose identity the engine moved under it, as an installed face does, instead of leaving Preview rendering for ever (DW-208)', async () => {
+    // The engine hashes its font set into the preview identity, and the
+    // transport's absent-face recovery installs a face BETWEEN the identity
+    // check and the render (engine-client.ts, `#retryAfterRecovery`). The
+    // render is for exactly the inputs this run sent — the revision agrees —
+    // and reports the identity the engine holds NOW. This fake is that sequence
+    // with the ~10 MiB fetch elided: `identity` answers before the install,
+    // `render` after it. What this row guards against was a bare `return` that
+    // left "Rendering local PDF" on screen with no failure and no retry — the
+    // browser-native roundtrip e2e's red, every time the CJK face arrived
+    // mid-run.
+    let installed = false
+    const request = vi.fn(async (operation: string) => {
+      if (operation === 'identity') return { snapshot: snapshot(1), preview: { revision: 1, identity: (installed ? 'c' : 'b').repeat(64) } }
+      if (operation === 'serialize') return { snapshot: snapshot(1), bytes }
+      if (operation === 'render') {
+        installed = true
+        return { snapshot: snapshot(1), bytes: new Uint8Array([9]).buffer, preview: { revision: 1, identity: 'c'.repeat(64), pdfSha256: PDF_FIXTURE_DIGEST, elapsedMs: RENDER_ELAPSED_MS, version: RENDER_ENGINE_VERSION, diagnostics: [] } }
+      }
+      return { snapshot: snapshot(1) }
+    })
+    render(<App engine={engine(request)} initialSnapshot={snapshot(1)} initialSampleData={sample} />)
+    fireEvent.click(screen.getByRole('button', { name: 'PREVIEW' }))
+    const admitted = await screen.findByRole('button', { name: /Stale historical PDF/ })
+    fireEvent.click(admitted)
+    await waitFor(() => expect(screen.getByRole('button', { name: /Current exact local production PDF/ })).toBeInTheDocument())
+    expect(screen.queryByText('Rendering local PDF')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Local render failure')).not.toBeInTheDocument()
+    expect(request.mock.calls.filter(([operation]) => operation === 'render')).toHaveLength(1)
+  })
+
   it('forces a fresh FIFO render after a same-identity last-good PDF failure and retains that PDF as stale', async () => {
     let renders = 0
     const failure = Object.assign(new Error('The template could not be processed'), { code: 'RENDER_INVALID', elementId: 'e7', producerRenderFailure: true as const })
