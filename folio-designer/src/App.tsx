@@ -1448,7 +1448,22 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
       if (revision !== revisionAtStart || !current(identity)) return
       setPreviewStatus(previewRef.current ? 'stale' : 'rendering')
       const result = await engine.request('render', { template: canonical.bytes, data, params }, controller.signal)
-      if (!result.bytes || !result.preview?.pdfSha256 || !result.preview.diagnostics || result.preview.elapsedMs === undefined || result.preview.version === undefined || result.preview.identity !== identity || result.preview.revision !== revision || !current(identity)) return
+      if (!result.bytes || !result.preview?.pdfSha256 || !result.preview.diagnostics || result.preview.elapsedMs === undefined || result.preview.version === undefined || !result.preview.identity || result.preview.revision !== revision || !current(identity)) return
+      // DW-208 — THE RENDER'S OWN IDENTITY IS THE ONE RECORDED, not the one the
+      // identity check computed a moment before it. The engine hashes its font
+      // set into the identity, and `EngineClient`'s absent-face recovery can
+      // install a face BETWEEN that check and this render: the render then
+      // reports an identity the check could not have known, for exactly the
+      // inputs this run sent. This line used to refuse such a render with a
+      // bare `return`, which left Preview at "Rendering local PDF" with no
+      // failure, no retry and nothing for the author to act on — the
+      // browser-native roundtrip e2e failed on precisely that whenever the CJK
+      // face arrived mid-run. The token, generation and revision checks above
+      // still fence the render to this run's inputs; the identity is the
+      // engine's own statement about them, and recording it is what lets the
+      // next identity check — made against the same font set — find this
+      // preview current instead of rendering it again.
+      const identityRendered = result.preview.identity
       // STORY 13.3 / DW-270 — THE BROWSER HASHES THE BYTES IT IS HOLDING.
       //
       // Until here the digest had been admitted by SHAPE alone. The rail
@@ -1472,7 +1487,7 @@ export default function App({ engine, fileAccess, sampleFileAccess, imageFileAcc
         setPreviewStatus('error')
         return
       }
-      installPreview({ bytes: result.bytes.slice(0), revision, identity, digest: result.preview.pdfSha256, diagnostics: result.preview.diagnostics, token, generation, standIn: !sample, elapsedMs: result.preview.elapsedMs, version: result.preview.version, installedAt: Date.now() })
+      installPreview({ bytes: result.bytes.slice(0), revision, identity: identityRendered, digest: result.preview.pdfSha256, diagnostics: result.preview.diagnostics, token, generation, standIn: !sample, elapsedMs: result.preview.elapsedMs, version: result.preview.version, installedAt: Date.now() })
       previewNeedsFreshRender.current = false
       setDismissedDiagnostics(new Set())
       // STORY 13.2 — THE VIEW STATE IS NOT RESET HERE ANY MORE, AND THAT IS THE

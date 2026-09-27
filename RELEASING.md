@@ -405,6 +405,12 @@ tarball changes only in the version it reports.
 reason around it instead of discharging it. The next release meets the rule
 as written, or discharges DW-208 first.
 
+**2026-09-27: DW-208 discharged.** The blocking action was named and fixed —
+`runPreview` refused a render whose identity the engine had moved under it by
+installing a face, and left Preview rendering for ever — and the roundtrip
+passes again (`deferred-work.md`, DW-208's last section). The rule above
+stands as written for the next release, with nothing left to reason around.
+
 ### The commands
 
 Run from `folio-js/`, on `main`, with the release commit at `HEAD`.
